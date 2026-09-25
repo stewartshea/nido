@@ -29,23 +29,28 @@ family; keep the data on your own hardware.
 ```bash
 git clone https://github.com/stewartshea/nido.git
 cd nido
-cp .env.example .env
+./scripts/init-env.sh   # writes .env with freshly generated secrets
 docker compose up -d
 ```
 
 The web client is on <http://localhost:3001>, the API on
 <http://localhost:3000/health>.
 
-### Generate a master key first
+### About the master key
 
 Nido encrypts every family's database with a key derived from
-`NIDO_MASTER_KEY`. The development compose file tolerates an unset value by
-falling back to a hardcoded key — **which is public in this repository** — so
-set your own before you put any real data in:
+`NIDO_MASTER_KEY`, and there is no default — deliberately. If the value is
+missing or blank the API refuses to start, and `docker compose` fails during
+variable interpolation with:
 
-```bash
-openssl rand -hex 32
 ```
+error while interpolating services.api.environment.[]:
+required variable NIDO_MASTER_KEY is missing a value
+```
+
+`./scripts/init-env.sh` generates the key for you (`openssl rand -hex 32`) and
+writes a `.env` at mode `0600`. It refuses to overwrite an existing `.env`,
+because the key cannot be rotated once family databases exist.
 
 Losing this key means losing every family's data. Back it up separately from
 the data volume.
@@ -129,9 +134,10 @@ than a public issue.
 
 A few things worth knowing before deploying:
 
-- `NIDO_MASTER_KEY` unset ⇒ the API falls back to a hardcoded development key
-  and logs a warning. The deploy Compose file makes it mandatory; the root
-  development Compose file does not.
+- `NIDO_MASTER_KEY` and `JWT_SECRET` are both mandatory everywhere — root
+  Compose, `deploy/docker-compose`, and Kubernetes. There is no fallback key and
+  no default JWT secret. The API resolves both before it binds a port, so a
+  misconfigured process exits instead of serving traffic.
 - Choose `NIDO_MASTER_KEY` once, before any real data exists. It cannot be
   rotated later: every family's key is derived from it, and there is no
   recovery path without a backup of both the key and the data.
