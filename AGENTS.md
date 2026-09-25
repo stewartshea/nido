@@ -123,58 +123,21 @@
   data in/out of a family in bulk. Extend these instead of adding a parallel
   bulk-import/export mechanism.
 
-## Key Derivation & Persistence Contracts
+## Key Derivation
 
-The values in this table look like ordinary strings, but they are data-format
-and key-derivation contracts. A find-and-replace across any of them silently
-destroys user data with no error at the point of change. If you touch one, you
-are editing stored data, not source.
+Family databases are encrypted with a key derived from `NIDO_MASTER_KEY`.
+The derivation is part of the data format, not an implementation detail:
 
-| Value | Where | What breaks if changed |
-| --- | --- | --- |
-| `DEV_FALLBACK_MASTER_KEY`'s `'nido-dev-insecure-key'` | `api/src/db-core.ts` | Re-derives every subkey → all dev databases undecryptable |
-| `'nido:db'` (HKDF info) | `api/src/db-core.ts`, `api/src/db-namespaces.ts` (2 call sites) | Re-derives every family subkey → all family DBs undecryptable |
-| `'nido:registry'` (salt + info) | `api/src/db-namespaces.ts` | `registry.db` undecryptable |
-| `NIDO_MASTER_KEY` | env, all deploy manifests | If a deployment still sets only the old name, the API silently falls back to the public dev key → corruption. Rename in the manifest and the environment together. |
-| `NIDO_DATA_DIR` | env, all deploy manifests | Data dir resets to `./data` → app looks empty |
-| `'nido_restore'`, `'nido-backup.json'` | `api/src/routes/families.ts` | `import_runs` rows no longer match prior history |
-| `nido.theme`, `nido.theme.custom` | `web/src/lib/theme.ts` | Every user's saved theme silently resets (no migration exists) |
-| `nido.quicklinks.*` | `web/src/lib/shared.ts` + 4 routes | Saved quick links silently reset |
-| `nido.familyId`, `nido.defaultProfile`, `nido.lastFeed`, `nido.timer.*`, `nido.outbox`, `nido.section` | `web/src/routes/{home,dashboard,family,settings}`, `web/src/lib/stores/uiStore.ts` | Queued offline writes, timers and selected family are lost |
-
-The two `deriveKey(..., familyId, 'nido:db')` call sites in
-`db-namespaces.ts` (attach vs. provision) must also stay **identical to each
-other** — if they drift, an existing database opens on one path and fails to
-decrypt on the other.
-
-Changing any key-derivation value is a **re-encryption migration**, not a
-rename: read each database with the old derived key and rewrite it with the
-new one. Never rotate a key derivation input in place.
-
-### Re-encrypting after a key-derivation change
-
-`api/scripts/rekey-databases.ts` (`npm run db:rekey` from `api/`) performs that
-migration. The previous scheme is supplied entirely through flags, so the
-script carries no hardcoded legacy values and stays correct across renames.
-
-Stop the API and back up the data directory first — this rewrites every
-database file in place.
-
-```bash
-# 1. Prove the old key opens everything. Writes nothing.
-npm run db:rekey -- \
-  --data-dir ./data \
-  --from-master-key <old-64-hex> \
-  --from-db-info <old-info> \
-  --from-registry-salt <old-salt> \
-  --from-registry-info <old-info> \
-  --dry-run
-
-# 2. Same command without --dry-run to rewrite in place.
-```
-
-The target scheme defaults to the current constants
-(`nido:db` / `nido:registry`), so only the `--from-*` side and the old master
-key are needed. Pass `--to-master-key` as well to rotate the master key at the
-same time. The script fails loudly rather than silently skipping a file it
-cannot decrypt, so a partial migration cannot pass unnoticed.
+- Every database is keyed by HKDF-SHA256 of the master key, with the family
+  `familyId` as salt and the string `nido:db` as info. `registry.db` uses
+  `nido:registry` as both salt and info.
+- Those strings and `DEV_FALLBACK_MASTER_KEY` in `db-core.ts` are therefore
+  part of the data format. Changing one re-derives every subkey and makes
+  existing databases unreadable, with no error to signal it.
+- The two `deriveKey(..., familyId, ...)` call sites in `db-namespaces.ts`
+  (attach vs. provision) must stay identical to each other. If they drift, a
+  database opens on one path and fails to decrypt on the other.
+- Never derive a family key any other way, and never reuse a subkey across
+  families or purposes.
+- `NIDO_MASTER_KEY` must be set in any deployed environment. Losing it means
+  losing every family database; there is no recovery path.

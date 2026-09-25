@@ -9,8 +9,7 @@
     "start": "node dist/server.js",
     "lint": "eslint src --ext ts",
     "test": "vitest",
-    "db:init": "tsx scripts/init-db.ts",
-    "db:rekey": "tsx scripts/rekey-databases.ts"
+    "db:init": "tsx scripts/init-db.ts"
   },
   "keywords": [
     "nido",

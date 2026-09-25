@@ -33,9 +33,10 @@ const MAX_FAMILY_CLIENTS = 16;
 // Dev-only fallback so tests / local dev keep working without env. Family
 // files would be encrypted with a known key — never acceptable in production.
 //
-// DO NOT CHANGE 'nido-dev-insecure-key' without a re-encryption migration. It
-// is a key-derivation input, not branding: altering it changes every derived
-// subkey, so any database already written with it becomes undecryptable.
+// Dev-only fallback so tests / local dev keep working without env. Family
+// files would be encrypted with a known key — never acceptable in production.
+// This literal is the effective master key whenever the env var is unset, so
+// databases written against it are only readable while it stays unchanged.
 const DEV_FALLBACK_MASTER_KEY = Buffer.from('nido-dev-insecure-key', 'utf8').toString('hex');
 
 let cachedMasterKey: string | null = null;
@@ -74,9 +75,8 @@ export function getDataDir(): string {
 // namespaces/uses derive distinct keys from the single master key via the
 // info parameter, so one exposed subkey never compromises the others.
 //
-// DO NOT CHANGE the default info 'nido:db'. It is a key-derivation input:
-// changing it re-derives every family subkey and makes existing databases
-// undecryptable.
+// 'nido:db' is a key-derivation input. Changing it re-derives every family
+// subkey and makes existing databases unreadable.
 export function deriveKey(masterKeyHex: string, salt: string, info = 'nido:db'): string {
   const okm = hkdfSync('sha256', Buffer.from(masterKeyHex, 'hex'), salt, info, 32);
   // Node 25 returns an ArrayBuffer — wrap so .toString('hex') yields the key.

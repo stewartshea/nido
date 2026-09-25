@@ -295,8 +295,8 @@ export async function ensureRegistry(): Promise<SqliteFacade> {
   const dir = getDataDir();
   fs.mkdirSync(dir, { recursive: true });
   fs.mkdirSync(path.join(dir, 'db'), { recursive: true });
-  // DO NOT CHANGE 'nido:registry': it is an HKDF input, not branding.
-  // Changing it makes an existing registry.db undecryptable.
+  // 'nido:registry' is an HKDF input, not branding: changing it makes an
+  // existing registry.db unreadable.
   const client = openDb(
     path.join(dir, 'registry.db'),
     deriveKey(getMasterKeyHex(), 'nido:registry', 'nido:registry'),
@@ -333,10 +333,9 @@ export function getFamilyClient(familyId: string): SqliteFacade {
   if (!fs.existsSync(familyDbPath(familyId))) {
     throw new Error(`Family namespace not provisioned: ${familyId}`);
   }
-  // DO NOT CHANGE the 'nido:db' info below: it is an HKDF input and MUST
-  // stay identical to the provisioning call site below. The two drifting
-  // apart re-derives the family subkey, and an existing database then opens
-  // on one path but fails to decrypt on the other.
+  // The 'nido:db' info below MUST stay identical to the provisioning call
+  // site further down. If the two drift, a family database opens on one path
+  // and fails to decrypt on the other.
   const client = openDb(
     familyDbPath(familyId),
     deriveKey(getMasterKeyHex(), familyId, 'nido:db'),

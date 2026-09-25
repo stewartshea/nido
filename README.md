@@ -132,11 +132,9 @@ A few things worth knowing before deploying:
 - `NIDO_MASTER_KEY` unset ⇒ the API falls back to a hardcoded development key
   and logs a warning. The deploy Compose file makes it mandatory; the root
   development Compose file does not.
-- Each family's encryption key is an HKDF subkey of `NIDO_MASTER_KEY`. Rotating
-  `NIDO_MASTER_KEY`, or changing the derivation inputs in `api/src/db-core.ts`,
-  makes existing databases unreadable — re-encrypt them with
-  `npm run db:rekey` (see [`AGENTS.md`](AGENTS.md)) rather than swapping the
-  value in place.
+- Choose `NIDO_MASTER_KEY` once, before any real data exists. It cannot be
+  rotated later: every family's key is derived from it, and there is no
+  recovery path without a backup of both the key and the data.
 - Photos are stored unencrypted on disk and are served only through
   authenticated, family-scoped routes. A photo's original EXIF (including GPS)
   is preserved — strip it before uploading anything you would rather not keep.
