@@ -27,6 +27,11 @@ export const FAMILY_ID_RE = /^[A-Za-z0-9-]{10,64}$/;
 
 const MAX_FAMILY_CLIENTS = 16;
 
+// HKDF accepts an IKM of any length, so a short key would boot happily and
+// silently derive every family subkey from a low-entropy secret. Enforce it.
+const MASTER_KEY_HEX_LENGTH = 64;
+const HEX_RE = /^[0-9a-fA-F]+$/;
+
 // ---------------------------------------------------------------------------
 // Master key + HKDF key derivation
 // ---------------------------------------------------------------------------
@@ -43,10 +48,16 @@ export function getMasterKeyHex(): string {
         'be stored and backed up alongside the data.',
     );
   }
-  if (!/^[0-9a-fA-F]+$/.test(env)) {
+  if (!HEX_RE.test(env)) {
     throw new Error(
       `NIDO_MASTER_KEY must be a hex string (generate with: openssl rand -hex 32). ` +
         `Got ${env.length} characters of non-hex input.`,
+    );
+  }
+  if (env.length !== MASTER_KEY_HEX_LENGTH) {
+    throw new Error(
+      `NIDO_MASTER_KEY must be exactly ${MASTER_KEY_HEX_LENGTH} hex characters ` +
+        `(32 bytes; generate with: openssl rand -hex 32). Got ${env.length}.`,
     );
   }
   cachedMasterKey = env.toLowerCase();
