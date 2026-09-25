@@ -12,7 +12,7 @@ const initialUiState: UiState = {
 };
 
 if (browser) {
-  const savedSection = localStorage.getItem('kamori.section');
+  const savedSection = localStorage.getItem('nido.section');
   if (savedSection === 'dashboard' || savedSection === 'home' || savedSection === 'family' || savedSection === 'account') {
     initialUiState.section = savedSection;
   }
@@ -27,7 +27,7 @@ export const uiActions = {
   setSection: (section: 'dashboard' | 'family' | 'home' | 'account') => {
     uiStore.update(state => ({ ...state, section }));
     if (browser) {
-      localStorage.setItem('kamori.section', section);
+      localStorage.setItem('nido.section', section);
     }
   }
 };

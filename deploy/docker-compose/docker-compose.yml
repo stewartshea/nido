@@ -10,9 +10,9 @@ services:
       # Required. Encrypts every per-family database via HKDF-SHA256; unset
       # would fall back to a hardcoded key that is public in this repo.
       # Generate with: openssl rand -hex 32
-      - KAMORI_MASTER_KEY=${KAMORI_MASTER_KEY:?set KAMORI_MASTER_KEY in .env (openssl rand -hex 32)}
+      - NIDO_MASTER_KEY=${NIDO_MASTER_KEY:?set NIDO_MASTER_KEY in .env (openssl rand -hex 32)}
       # Holds registry.db, db/<familyId>.db and photos/.
-      - KAMORI_DATA_DIR=${KAMORI_DATA_DIR:-/data}
+      - NIDO_DATA_DIR=${NIDO_DATA_DIR:-/data}
       - JWT_SECRET=${JWT_SECRET:?set JWT_SECRET in .env}
       - ADMIN_EMAIL=${ADMIN_EMAIL:-}
       - SIGNUP_ENABLED=${SIGNUP_ENABLED:-}

@@ -20,9 +20,9 @@ SQLite file. Create a `.env` file in the repository root:
 # Keys every per-family database (HKDF-SHA256). Generate with: openssl rand -hex 32
 # Unset in development only: the API logs a loud warning and falls back to a
 # hardcoded key that is public in this repo.
-KAMORI_MASTER_KEY=""
+NIDO_MASTER_KEY=""
 # Where registry.db, db/<familyId>.db and photos/ live
-KAMORI_DATA_DIR="./data"
+NIDO_DATA_DIR="./data"
 JWT_SECRET="your-super-secret-jwt-key"
 ```
 

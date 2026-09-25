@@ -454,7 +454,7 @@
 				return;
 			}
 			// Prefer the saved default family, else the first.
-			const savedFamily = localStorage.getItem('kamori.familyId');
+			const savedFamily = localStorage.getItem('nido.familyId');
 			activeFamily = families.find((f) => f.familyId === savedFamily) ?? families[0];
 			activeFamilyId = activeFamily.familyId;
 
@@ -500,14 +500,14 @@
 
 	function setActiveFamily(familyId: string) {
 		activeFamilyId = familyId;
-		if (browser) localStorage.setItem('kamori.familyId', familyId);
+		if (browser) localStorage.setItem('nido.familyId', familyId);
 		loadFamilies();
 	}
 
 	function setDefaultProfile(babyId: number) {
 		defaultProfileId = babyId;
 		selectedBabyId = babyId;
-		if (browser) localStorage.setItem('kamori.defaultProfile', String(babyId));
+		if (browser) localStorage.setItem('nido.defaultProfile', String(babyId));
 		notice = 'Default profile updated.';
 		error = '';
 	}
@@ -636,7 +636,7 @@
 			familyName = '';
 			newMemberName = '';
 			newBabyBirthDate = '';
-			if (browser) localStorage.setItem('kamori.familyId', fam.familyId);
+			if (browser) localStorage.setItem('nido.familyId', fam.familyId);
 			await loadFamilies();
 		} catch (err: any) {
 			error = err.response?.data?.error || 'Failed to create your family.';
@@ -800,7 +800,7 @@
 	}
 
 	function repeatLastFeed() {
-		const last = localStorage.getItem('kamori.lastFeed');
+		const last = localStorage.getItem('nido.lastFeed');
 		if (!last) { error = 'No previous feed to repeat.'; return; }
 		const l = JSON.parse(last);
 		manualType = l.type || 'breast';
@@ -829,7 +829,7 @@
 				notes: manualNotes || undefined,
 			});
 			// Remember for "repeat last"
-			localStorage.setItem('kamori.lastFeed', JSON.stringify({ type: manualType, side: manualType === 'breast' ? manualSide : undefined, formulaId: manualFormulaId, amount: manualAmount }));
+			localStorage.setItem('nido.lastFeed', JSON.stringify({ type: manualType, side: manualType === 'breast' ? manualSide : undefined, formulaId: manualFormulaId, amount: manualAmount }));
 			manualStart = ''; manualEnd = ''; manualAmount = ''; manualNotes = '';
 			notice = 'Feed recorded.';
 			sheetOpen = false;
@@ -1182,7 +1182,7 @@
 	// dropped connection mid-session does not lose accumulated time. The outbox
 	// queues records that fail to reach the API (offline/5xx) and retries later.
 	function timerKey(): string {
-		return `kamori.timer.${selectedBabyId ?? 0}`;
+		return `nido.timer.${selectedBabyId ?? 0}`;
 	}
 
 	function persistTimerState() {
@@ -1223,7 +1223,7 @@
 
 	function enqueueRecord(kind: 'feeding' | 'sleep', payload: any) {
 		try {
-			const key = 'kamori.outbox';
+			const key = 'nido.outbox';
 			const outbox = JSON.parse(localStorage.getItem(key) || '[]');
 			outbox.push({ kind, payload, queuedAt: new Date().toISOString() });
 			localStorage.setItem(key, JSON.stringify(outbox.slice(-200)));
@@ -1231,7 +1231,7 @@
 	}
 
 	async function flushOutbox() {
-		const key = 'kamori.outbox';
+		const key = 'nido.outbox';
 		try {
 			const outbox = JSON.parse(localStorage.getItem(key) || '[]');
 			if (outbox.length === 0) return;
@@ -1511,7 +1511,7 @@
 			}
 			const token = localStorage.getItem('token');
 			isAuthenticated = !!token && !tokenExpired();
-			const savedDefault = localStorage.getItem('kamori.defaultProfile');
+			const savedDefault = localStorage.getItem('nido.defaultProfile');
 			if (savedDefault) {
 				defaultProfileId = Number(savedDefault);
 			}

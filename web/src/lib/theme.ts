@@ -55,8 +55,8 @@ export const DEFAULT_THEME = 'forest-light';
 // DO NOT CHANGE these keys. They are persisted in users' browsers, not in the
 // database, so there is no migration path: renaming them silently resets
 // everyone's theme to the default.
-const STORE_KEY = 'kamori.theme';
-const CUSTOM_KEY = 'kamori.theme.custom';
+const STORE_KEY = 'nido.theme';
+const CUSTOM_KEY = 'nido.theme.custom';
 
 function readState(): ThemeState {
 	const out: ThemeState = { mode: DEFAULT_THEME, custom: {} };

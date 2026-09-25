@@ -39,7 +39,7 @@ The web client is on <http://localhost:3001>, the API on
 ### Generate a master key first
 
 Nido encrypts every family's database with a key derived from
-`KAMORI_MASTER_KEY`. The development compose file tolerates an unset value by
+`NIDO_MASTER_KEY`. The development compose file tolerates an unset value by
 falling back to a hardcoded key — **which is public in this repository** — so
 set your own before you put any real data in:
 
@@ -54,9 +54,9 @@ the data volume.
 
 | Variable | Required | Purpose |
 | --- | --- | --- |
-| `KAMORI_MASTER_KEY` | in production | Hex secret that keys every per-family database. `openssl rand -hex 32` |
+| `NIDO_MASTER_KEY` | in production | Hex secret that keys every per-family database. `openssl rand -hex 32` |
 | `JWT_SECRET` | in production | Signs session JWTs |
-| `KAMORI_DATA_DIR` | no | Data root. Default `/data` in Compose, `./data` locally |
+| `NIDO_DATA_DIR` | no | Data root. Default `/data` in Compose, `./data` locally |
 | `ADMIN_EMAIL` | no | Grants platform admin on first boot |
 | `SIGNUP_ENABLED` | no | Set to enable open registration |
 | `PUBLIC_URL` | no | Origin used in verification/reset emails |
@@ -102,7 +102,7 @@ cd api && npm test   # vitest
   `db/<familyId>.db`, plus a `registry.db` holding only email → family routing
   and instance settings
 - **Key derivation** — each family's file is keyed by an HKDF-SHA256 subkey
-  derived from `KAMORI_MASTER_KEY`. The encrypted file *is* the tenant
+  derived from `NIDO_MASTER_KEY`. The encrypted file *is* the tenant
   boundary; there is no `WHERE family_id = ?` filter inside a family database
 - **Deployment** — two containers (`api`, `web`) with data on a volume
 
@@ -129,9 +129,14 @@ than a public issue.
 
 A few things worth knowing before deploying:
 
-- `KAMORI_MASTER_KEY` unset ⇒ the API falls back to a hardcoded development key
+- `NIDO_MASTER_KEY` unset ⇒ the API falls back to a hardcoded development key
   and logs a warning. The deploy Compose file makes it mandatory; the root
   development Compose file does not.
+- Each family's encryption key is an HKDF subkey of `NIDO_MASTER_KEY`. Rotating
+  `NIDO_MASTER_KEY`, or changing the derivation inputs in `api/src/db-core.ts`,
+  makes existing databases unreadable — re-encrypt them with
+  `npm run db:rekey` (see [`AGENTS.md`](AGENTS.md)) rather than swapping the
+  value in place.
 - Photos are stored unencrypted on disk and are served only through
   authenticated, family-scoped routes. A photo's original EXIF (including GPS)
   is preserved — strip it before uploading anything you would rather not keep.

@@ -295,11 +295,11 @@ export async function ensureRegistry(): Promise<SqliteFacade> {
   const dir = getDataDir();
   fs.mkdirSync(dir, { recursive: true });
   fs.mkdirSync(path.join(dir, 'db'), { recursive: true });
-  // DO NOT CHANGE 'kamori:registry': it is an HKDF input, not branding.
+  // DO NOT CHANGE 'nido:registry': it is an HKDF input, not branding.
   // Changing it makes an existing registry.db undecryptable.
   const client = openDb(
     path.join(dir, 'registry.db'),
-    deriveKey(getMasterKeyHex(), 'kamori:registry', 'kamori:registry'),
+    deriveKey(getMasterKeyHex(), 'nido:registry', 'nido:registry'),
   );
   runMigrations(client.raw, REGISTRY_MIGRATIONS);
   await client.execute({ sql: 'INSERT OR IGNORE INTO app_settings (id) VALUES (1)' });
@@ -333,13 +333,13 @@ export function getFamilyClient(familyId: string): SqliteFacade {
   if (!fs.existsSync(familyDbPath(familyId))) {
     throw new Error(`Family namespace not provisioned: ${familyId}`);
   }
-  // DO NOT CHANGE the 'kamori:db' info below: it is an HKDF input and MUST
+  // DO NOT CHANGE the 'nido:db' info below: it is an HKDF input and MUST
   // stay identical to the provisioning call site below. The two drifting
   // apart re-derives the family subkey, and an existing database then opens
   // on one path but fails to decrypt on the other.
   const client = openDb(
     familyDbPath(familyId),
-    deriveKey(getMasterKeyHex(), familyId, 'kamori:db'),
+    deriveKey(getMasterKeyHex(), familyId, 'nido:db'),
     { fileMustExist: true },
   );
   if (familyClients.size >= 16) {
@@ -384,10 +384,10 @@ export async function provisionFamily(familyId: string, name: string): Promise<S
   const registry = await ensureRegistry();
   fs.mkdirSync(path.join(getDataDir(), 'db'), { recursive: true });
 
-  // Same 'kamori:db' info as the attach path — see the note there.
+  // Same 'nido:db' info as the attach path — see the note there.
   const client = openDb(
     familyDbPath(familyId),
-    deriveKey(getMasterKeyHex(), familyId, 'kamori:db'),
+    deriveKey(getMasterKeyHex(), familyId, 'nido:db'),
   );
   runMigrations(client.raw, FAMILY_MIGRATIONS);
   await client.execute({

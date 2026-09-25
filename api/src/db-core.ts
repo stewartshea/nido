@@ -33,31 +33,31 @@ const MAX_FAMILY_CLIENTS = 16;
 // Dev-only fallback so tests / local dev keep working without env. Family
 // files would be encrypted with a known key — never acceptable in production.
 //
-// DO NOT CHANGE 'kamori-dev-insecure-key'. It is a key-derivation input, not
-// branding: altering it changes every derived subkey, so any database already
-// written with it becomes undecryptable. The Kamori -> Nido rebrand left it
-// alone for exactly this reason.
-const DEV_FALLBACK_MASTER_KEY = Buffer.from('kamori-dev-insecure-key', 'utf8').toString('hex');
+// DO NOT CHANGE 'nido-dev-insecure-key' without a re-encryption migration. It
+// is a key-derivation input, not branding: altering it changes every derived
+// subkey, so any database already written with it becomes undecryptable.
+const DEV_FALLBACK_MASTER_KEY = Buffer.from('nido-dev-insecure-key', 'utf8').toString('hex');
 
 let cachedMasterKey: string | null = null;
 
 export function getMasterKeyHex(): string {
   if (cachedMasterKey) return cachedMasterKey;
-  // KAMORI_MASTER_KEY keeps its pre-rename name on purpose so deployments
-  // configured before the rebrand keep resolving. Renaming the env var would
-  // silently fall through to the dev fallback and corrupt existing data.
-  const env = process.env.KAMORI_MASTER_KEY?.trim();
+  // Changing this env var name does not break stored data (the master key is
+  // whatever hex is supplied), but a deployment still setting the old name
+  // would silently fall through to the insecure dev fallback below. Rename it
+  // in the manifest and the environment together, never one alone.
+  const env = process.env.NIDO_MASTER_KEY?.trim();
   if (env && /^[0-9a-fA-F]+$/.test(env)) {
     cachedMasterKey = env.toLowerCase();
     return cachedMasterKey;
   }
   if (env) {
     throw new Error(
-      'KAMORI_MASTER_KEY must be a hex string (generate with: openssl rand -hex 32)',
+      'NIDO_MASTER_KEY must be a hex string (generate with: openssl rand -hex 32)',
     );
   }
   console.warn(
-    '[nido] KAMORI_MASTER_KEY is not set — using an INSECURE development fallback key. ' +
+    '[nido] NIDO_MASTER_KEY is not set — using an INSECURE development fallback key. ' +
       'Family databases would be encrypted with a known key. Set it in production (openssl rand -hex 32).',
   );
   cachedMasterKey = DEV_FALLBACK_MASTER_KEY;
@@ -65,19 +65,19 @@ export function getMasterKeyHex(): string {
 }
 
 export function getDataDir(): string {
-  // KAMORI_DATA_DIR keeps its pre-rename name for the same reason as
-  // KAMORI_MASTER_KEY. Point it at a mounted volume in production.
-  return process.env.KAMORI_DATA_DIR || './data';
+  // Point this at a persisted volume in production; the default './data' is
+  // container-local and is lost on recreate.
+  return process.env.NIDO_DATA_DIR || './data';
 }
 
 // HKDF-SHA256 -> 32-byte SQLCipher raw key (64 lowercase hex). Distinct
 // namespaces/uses derive distinct keys from the single master key via the
 // info parameter, so one exposed subkey never compromises the others.
 //
-// DO NOT CHANGE the default info 'kamori:db'. It is a key-derivation input:
+// DO NOT CHANGE the default info 'nido:db'. It is a key-derivation input:
 // changing it re-derives every family subkey and makes existing databases
 // undecryptable.
-export function deriveKey(masterKeyHex: string, salt: string, info = 'kamori:db'): string {
+export function deriveKey(masterKeyHex: string, salt: string, info = 'nido:db'): string {
   const okm = hkdfSync('sha256', Buffer.from(masterKeyHex, 'hex'), salt, info, 32);
   // Node 25 returns an ArrayBuffer — wrap so .toString('hex') yields the key.
   return Buffer.from(okm).toString('hex');

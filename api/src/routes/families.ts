@@ -687,11 +687,11 @@ async function handleRestoreFamily(c: Context<AuthEnv>) {
 	}
 
 	// Restore audit row.
-	// 'kamori_restore' and 'kamori-backup.json' predate the Nido rebrand. They
-	// are written into import_runs and surface in export history, so changing
-	// them would make older rows look like a different importer.
-	const RESTORE_IMPORT_TYPE = 'kamori_restore';
-	const RESTORE_FILENAME = 'kamori-backup.json';
+	// These two literals are written into import_runs and surface in export
+	// history, so treat them as a stable schema value: changing them makes
+	// older rows look like a different importer.
+	const RESTORE_IMPORT_TYPE = 'nido_restore';
+	const RESTORE_FILENAME = 'nido-backup.json';
 	await db.execute({
 		sql: 'INSERT INTO import_runs (family_id, baby_id, importer_user_id, import_type, filename, counts) VALUES (?, ?, ?, ?, ?, ?)',
 		args: [NAMESPACE_HOUSEHOLD_ID, null, userId, RESTORE_IMPORT_TYPE, RESTORE_FILENAME, JSON.stringify(recordCounts)],

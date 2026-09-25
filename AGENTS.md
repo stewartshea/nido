@@ -70,19 +70,19 @@
 
 - **Per-family encrypted namespaces are the tenant boundary.** Every family
   gets its own SQLCipher-encrypted SQLite file (`{familyId}.db` under
-  `KAMORI_DATA_DIR/db/`), opened via `getFamilyClient(familyId)`
+  `NIDO_DATA_DIR/db/`), opened via `getFamilyClient(familyId)`
   (`api/src/db-namespaces.ts`). There is no `WHERE family_id = ?` filter
   inside a family DB because the file itself *is* the boundary — never open
   another family's DB file to answer a request; access control belongs in
   `authz.ts`, before `getFamilyClient()` is ever called.
 - **Key derivation**: each family DB is keyed by an HKDF-SHA256 subkey
-  derived from a single `KAMORI_MASTER_KEY` (`deriveKey()` in
-  `api/src/db-core.ts`, salt = familyId, info = `'kamori:db'`; the registry
+  derived from a single `NIDO_MASTER_KEY` (`deriveKey()` in
+  `api/src/db-core.ts`, salt = familyId, info = `'nido:db'`; the registry
   DB uses its own fixed salt/info). Never derive a key any other way, never
   reuse a subkey across families or purposes, and never log or expose
-  `KAMORI_MASTER_KEY` or a derived key. The dev fallback key
+  `NIDO_MASTER_KEY` or a derived key. The dev fallback key
   (`DEV_FALLBACK_MASTER_KEY`) logs a loud warning on use — never silence or
-  remove that warning, and `KAMORI_MASTER_KEY` must be set via env in any
+  remove that warning, and `NIDO_MASTER_KEY` must be set via env in any
   deployed environment (enforced by the comment/convention in
   `docker-compose.yml`, generate with `openssl rand -hex 32`).
 - **`familyId` is attacker-influenceable** (it comes straight from the JWT
@@ -107,7 +107,7 @@
   supplied filename or path. There is currently no max-file-size check; add
   one before exposing an upload path to untrusted or high-volume traffic.
 - **Offline queueing**: client-side writes that might fail offline are
-  queued under the `kamori.outbox` localStorage key (capped to the most
+  queued under the `nido.outbox` localStorage key (capped to the most
   recent 200 entries) and flushed on page mount plus every 60s
   (`enqueueRecord()` / `flushOutbox()`, currently duplicated per-page in
   family/dashboard/home/settings). Reuse this exact shape for new
@@ -123,30 +123,58 @@
   data in/out of a family in bulk. Extend these instead of adding a parallel
   bulk-import/export mechanism.
 
-## Frozen Names — Do Not Rename
+## Key Derivation & Persistence Contracts
 
-The app was called **Kamori** before the rebrand to Nido. A set of
-`kamori`-prefixed strings survived it deliberately. They are not stale
-branding, they are persistence contracts, and a global find-and-replace on
-`kamori` will silently destroy user data with no error. If you touch any of
-them, you are editing stored data, not source.
+The values in this table look like ordinary strings, but they are data-format
+and key-derivation contracts. A find-and-replace across any of them silently
+destroys user data with no error at the point of change. If you touch one, you
+are editing stored data, not source.
 
-| String | Where | What breaks if renamed |
+| Value | Where | What breaks if changed |
 | --- | --- | --- |
-| `DEV_FALLBACK_MASTER_KEY`'s `'kamori-dev-insecure-key'` | `api/src/db-core.ts` | Re-derives every subkey → all dev databases undecryptable |
-| `'kamori:db'` (HKDF info) | `api/src/db-core.ts`, `api/src/db-namespaces.ts` (2 call sites) | Re-derives every family subkey → all family DBs undecryptable |
-| `'kamori:registry'` (salt + info) | `api/src/db-namespaces.ts` | `registry.db` undecryptable |
-| `KAMORI_MASTER_KEY` | env, all deploy manifests | Env stops resolving → silent fallback to the public dev key → corruption |
-| `KAMORI_DATA_DIR` | env, all deploy manifests | Data dir resets to `./data` → app looks empty |
-| `'kamori_restore'`, `'kamori-backup.json'` | `api/src/routes/families.ts` | `import_runs` rows no longer match prior history |
-| `kamori.theme`, `kamori.theme.custom` | `web/src/lib/theme.ts` | Every user's saved theme silently resets (no migration exists) |
-| `kamori.quicklinks.*` | `web/src/lib/shared.ts` + 4 routes | Saved quick links silently reset |
-| `kamori.familyId`, `kamori.defaultProfile`, `kamori.lastFeed`, `kamori.timer.*`, `kamori.outbox`, `kamori.section` | `web/src/routes/{home,dashboard,family,settings}`, `web/src/lib/stores/uiStore.ts` | Queued offline writes, timers and selected family are lost |
+| `DEV_FALLBACK_MASTER_KEY`'s `'nido-dev-insecure-key'` | `api/src/db-core.ts` | Re-derives every subkey → all dev databases undecryptable |
+| `'nido:db'` (HKDF info) | `api/src/db-core.ts`, `api/src/db-namespaces.ts` (2 call sites) | Re-derives every family subkey → all family DBs undecryptable |
+| `'nido:registry'` (salt + info) | `api/src/db-namespaces.ts` | `registry.db` undecryptable |
+| `NIDO_MASTER_KEY` | env, all deploy manifests | If a deployment still sets only the old name, the API silently falls back to the public dev key → corruption. Rename in the manifest and the environment together. |
+| `NIDO_DATA_DIR` | env, all deploy manifests | Data dir resets to `./data` → app looks empty |
+| `'nido_restore'`, `'nido-backup.json'` | `api/src/routes/families.ts` | `import_runs` rows no longer match prior history |
+| `nido.theme`, `nido.theme.custom` | `web/src/lib/theme.ts` | Every user's saved theme silently resets (no migration exists) |
+| `nido.quicklinks.*` | `web/src/lib/shared.ts` + 4 routes | Saved quick links silently reset |
+| `nido.familyId`, `nido.defaultProfile`, `nido.lastFeed`, `nido.timer.*`, `nido.outbox`, `nido.section` | `web/src/routes/{home,dashboard,family,settings}`, `web/src/lib/stores/uiStore.ts` | Queued offline writes, timers and selected family are lost |
 
-The two `deriveKey(..., familyId, 'kamori:db')` call sites in
+The two `deriveKey(..., familyId, 'nido:db')` call sites in
 `db-namespaces.ts` (attach vs. provision) must also stay **identical to each
 other** — if they drift, an existing database opens on one path and fails to
 decrypt on the other.
 
-If a rename is ever genuinely required, it needs a data migration that reads
-the old key and writes the new one. It is not a rename; it is a migration.
+Changing any key-derivation value is a **re-encryption migration**, not a
+rename: read each database with the old derived key and rewrite it with the
+new one. Never rotate a key derivation input in place.
+
+### Re-encrypting after a key-derivation change
+
+`api/scripts/rekey-databases.ts` (`npm run db:rekey` from `api/`) performs that
+migration. The previous scheme is supplied entirely through flags, so the
+script carries no hardcoded legacy values and stays correct across renames.
+
+Stop the API and back up the data directory first — this rewrites every
+database file in place.
+
+```bash
+# 1. Prove the old key opens everything. Writes nothing.
+npm run db:rekey -- \
+  --data-dir ./data \
+  --from-master-key <old-64-hex> \
+  --from-db-info <old-info> \
+  --from-registry-salt <old-salt> \
+  --from-registry-info <old-info> \
+  --dry-run
+
+# 2. Same command without --dry-run to rewrite in place.
+```
+
+The target scheme defaults to the current constants
+(`nido:db` / `nido:registry`), so only the `--from-*` side and the old master
+key are needed. Pass `--to-master-key` as well to rotate the master key at the
+same time. The script fails loudly rather than silently skipping a file it
+cannot decrypt, so a partial migration cannot pass unnoticed.

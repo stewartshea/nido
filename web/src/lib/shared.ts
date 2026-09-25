@@ -20,9 +20,9 @@ export const CATEGORIES = [
 export const QUICK_LINK_DEFAULT = ['feeds', 'diapers', 'sleep'];
 
 export function quickLinksKey(userId: number | null) {
-    // DO NOT CHANGE the 'kamori.' prefix — see note in lib/theme.ts. Quick links
+    // DO NOT CHANGE the 'nido.' prefix — see note in lib/theme.ts. Quick links
     // are browser-persisted with no migration, so a rename drops them silently.
-    return `kamori.quicklinks.${userId}`;
+    return `nido.quicklinks.${userId}`;
 }
 
 export function loadQuickLinks(userId: number | null): string[] {

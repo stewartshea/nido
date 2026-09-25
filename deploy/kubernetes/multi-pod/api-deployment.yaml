@@ -27,13 +27,13 @@ spec:
               value: "/data/photos"
             # Runtime data directory (registry DB + per-family DBs). Defaults
             # to ./data when unset; pinned to the PVC mount here.
-            - name: KAMORI_DATA_DIR
+            - name: NIDO_DATA_DIR
               value: "/data"
-            - name: KAMORI_MASTER_KEY
+            - name: NIDO_MASTER_KEY
               valueFrom:
                 secretKeyRef:
                   name: nido
-                  key: KAMORI_MASTER_KEY
+                  key: NIDO_MASTER_KEY
             - name: JWT_SECRET
               valueFrom:
                 secretKeyRef:

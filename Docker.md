@@ -7,7 +7,7 @@ under `/data` (`registry.db`, `db/<familyId>.db`, photos at `/data/photos`) on a
 them. There is no separate database service.
 
 Each family gets its own encrypted file, keyed by an HKDF-SHA256 subkey
-derived from `KAMORI_MASTER_KEY`. The encrypted file *is* the tenant boundary.
+derived from `NIDO_MASTER_KEY`. The encrypted file *is* the tenant boundary.
 
 ## Docker Files
 
@@ -25,7 +25,7 @@ derived from `KAMORI_MASTER_KEY`. The encrypted file *is* the tenant boundary.
 ## Compose Files
 
 ### Root `docker-compose.yml` (development)
-- **api**: port 3000, `KAMORI_MASTER_KEY`, `KAMORI_DATA_DIR`, `JWT_SECRET`, and
+- **api**: port 3000, `NIDO_MASTER_KEY`, `NIDO_DATA_DIR`, `JWT_SECRET`, and
   the host folder `./data` bind-mounted to `/data` so the DBs and photos live as
   plain, inspectable/backup-able files on the host
 - **web**: port 3001, `API_PROXY_TARGET=http://api:3000` (dev server forwards `/api` to the api service), depends on api
@@ -33,7 +33,7 @@ derived from `KAMORI_MASTER_KEY`. The encrypted file *is* the tenant boundary.
 ### Deploy `deploy/docker-compose/docker-compose.yml`
 - Same two services, built from the repo root
 - DBs + photos persisted on the **named volume `nido-data`** mounted at `/data`
-- `KAMORI_MASTER_KEY` and `JWT_SECRET` are both required — compose fails fast if
+- `NIDO_MASTER_KEY` and `JWT_SECRET` are both required — compose fails fast if
   either is unset
 - API exposes a `/health` healthcheck
 - For registry-published images (GHCR) replace the `build:`/`image:` blocks
@@ -65,10 +65,10 @@ docker compose build web
   - Bind mount: move/delete `./data` while the container is stopped
 
 ## Environment Variables
-- `KAMORI_MASTER_KEY`: hex secret that keys every per-family database
+- `NIDO_MASTER_KEY`: hex secret that keys every per-family database
   (required in the deploy compose). `openssl rand -hex 32`. **Losing it means
   losing every family's data** — back it up separately from the volume
-- `KAMORI_DATA_DIR`: runtime data directory holding `registry.db`,
+- `NIDO_DATA_DIR`: runtime data directory holding `registry.db`,
   `db/<familyId>.db` and `photos/` (default `/data`)
 - `JWT_SECRET`: Secret for JWT authentication (required in the deploy compose)
 - `PUBLIC_API_URL`: optional explicit API origin for the browser (defaults to same-origin `/api/v1`)
