@@ -4,7 +4,8 @@ import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
 import { secureHeaders } from 'hono/secure-headers';
 
-import { requireAuth, PUBLIC_AUTH_PATHS, type AuthEnv } from './auth';
+import { requireAuth, jwtSecret, PUBLIC_AUTH_PATHS, type AuthEnv } from './auth';
+import { getMasterKeyHex } from './db-core';
 
 import { authRoutes } from './routes/auth';
 import { userRoutes } from './routes/user';
@@ -86,6 +87,12 @@ const port = Number(process.env.PORT || 3000);
 // Do not bind a port when imported by the test suite (vitest sets NODE_ENV=test);
 // tests exercise the app via app.fetch and must not race for the listener.
 if (process.env.NODE_ENV !== 'test') {
+  // Resolve the required secrets before binding a port. A process that serves
+  // traffic without a usable master key can only fail later, on first write,
+  // with the port already accepting connections.
+  getMasterKeyHex();
+  jwtSecret();
+
   serve({ fetch: app.fetch, port }, (info) => {
     console.log(`Nido API listening on http://localhost:${info.port}`);
   });
@@ -93,6 +100,3 @@ if (process.env.NODE_ENV !== 'test') {
   // Designate the single platform admin after the DB is ready.
   bootstrapAdmin();
 }
-
-// Designate the single platform admin after the DB is ready.
-bootstrapAdmin();

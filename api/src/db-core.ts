@@ -30,38 +30,26 @@ const MAX_FAMILY_CLIENTS = 16;
 // ---------------------------------------------------------------------------
 // Master key + HKDF key derivation
 // ---------------------------------------------------------------------------
-// Dev-only fallback so tests / local dev keep working without env. Family
-// files would be encrypted with a known key — never acceptable in production.
-//
-// Dev-only fallback so tests / local dev keep working without env. Family
-// files would be encrypted with a known key — never acceptable in production.
-// This literal is the effective master key whenever the env var is unset, so
-// databases written against it are only readable while it stays unchanged.
-const DEV_FALLBACK_MASTER_KEY = Buffer.from('nido-dev-insecure-key', 'utf8').toString('hex');
-
 let cachedMasterKey: string | null = null;
 
 export function getMasterKeyHex(): string {
   if (cachedMasterKey) return cachedMasterKey;
-  // Changing this env var name does not break stored data (the master key is
-  // whatever hex is supplied), but a deployment still setting the old name
-  // would silently fall through to the insecure dev fallback below. Rename it
-  // in the manifest and the environment together, never one alone.
   const env = process.env.NIDO_MASTER_KEY?.trim();
-  if (env && /^[0-9a-fA-F]+$/.test(env)) {
-    cachedMasterKey = env.toLowerCase();
-    return cachedMasterKey;
-  }
-  if (env) {
+  if (!env) {
     throw new Error(
-      'NIDO_MASTER_KEY must be a hex string (generate with: openssl rand -hex 32)',
+      'NIDO_MASTER_KEY is not set. It is required: there is no default. ' +
+        'Generate one with `openssl rand -hex 32` and supply it via the environment. ' +
+        'Every family database is encrypted with a key derived from it, so it must ' +
+        'be stored and backed up alongside the data.',
     );
   }
-  console.warn(
-    '[nido] NIDO_MASTER_KEY is not set — using an INSECURE development fallback key. ' +
-      'Family databases would be encrypted with a known key. Set it in production (openssl rand -hex 32).',
-  );
-  cachedMasterKey = DEV_FALLBACK_MASTER_KEY;
+  if (!/^[0-9a-fA-F]+$/.test(env)) {
+    throw new Error(
+      `NIDO_MASTER_KEY must be a hex string (generate with: openssl rand -hex 32). ` +
+        `Got ${env.length} characters of non-hex input.`,
+    );
+  }
+  cachedMasterKey = env.toLowerCase();
   return cachedMasterKey;
 }
 

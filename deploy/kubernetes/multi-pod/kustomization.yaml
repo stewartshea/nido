@@ -3,7 +3,6 @@ kind: Kustomization
 namespace: nido
 resources:
   - namespace.yaml
-  - secret.yaml
   - pvc.yaml
   - api-deployment.yaml
   - api-service.yaml

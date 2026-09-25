@@ -80,9 +80,9 @@
   `api/src/db-core.ts`, salt = familyId, info = `'nido:db'`; the registry
   DB uses its own fixed salt/info). Never derive a key any other way, never
   reuse a subkey across families or purposes, and never log or expose
-  `NIDO_MASTER_KEY` or a derived key. The dev fallback key
-  (`DEV_FALLBACK_MASTER_KEY`) logs a loud warning on use — never silence or
-  remove that warning, and `NIDO_MASTER_KEY` must be set via env in any
+  `NIDO_MASTER_KEY` or a derived key. Both `NIDO_MASTER_KEY` and
+  `JWT_SECRET` are required with no defaults; the API refuses to boot without them.
+  Never  remove that warning, and `NIDO_MASTER_KEY` must be set via env in any
   deployed environment (enforced by the comment/convention in
   `docker-compose.yml`, generate with `openssl rand -hex 32`).
 - **`familyId` is attacker-influenceable** (it comes straight from the JWT
@@ -131,8 +131,7 @@ The derivation is part of the data format, not an implementation detail:
 - Every database is keyed by HKDF-SHA256 of the master key, with the family
   `familyId` as salt and the string `nido:db` as info. `registry.db` uses
   `nido:registry` as both salt and info.
-- Those strings and `DEV_FALLBACK_MASTER_KEY` in `db-core.ts` are therefore
-  part of the data format. Changing one re-derives every subkey and makes
+- The `'nido:db'` / `'nido:registry'` strings in `db-core.ts` / `db-namespaces.ts` are part of the data format. Changing one re-derives every subkey and makes
   existing databases unreadable, with no error to signal it.
 - The two `deriveKey(..., familyId, ...)` call sites in `db-namespaces.ts`
   (attach vs. provision) must stay identical to each other. If they drift, a

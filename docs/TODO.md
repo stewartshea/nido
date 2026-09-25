@@ -16,11 +16,12 @@ token via the request context, never from a client header.
 - All route groups typed as `Hono<AuthEnv>`; handlers use `c.get('userId')`.
 - `web/src/lib/api.ts` — client no longer sends `X-User-ID` (only `Authorization`).
 
-**Residual (worth a follow-up):** `JWT_SECRET` falls back to a well-known
-development secret (`fallback-secret-key`) when unset. The deploy compose
-already requires it (`${JWT_SECRET:?set JWT_SECRET in .env}`) and production
-sets it — but a bare local run without env still signs with the known secret.
-Consider failing fast instead of falling back.
+**Fixed:** `JWT_SECRET` no longer falls back to a well-known development secret.
+It is now required and the process throws at boot if it is unset, resolved in
+`server.ts` before the port binds. `NIDO_MASTER_KEY` was hardened the same way
+(it previously fell back to a public literal). Both compose files now use
+`${VAR:?message}` so a missing value fails at `docker compose up` rather than at
+container start.
 
 ## Web client: same-origin API target — DONE
 

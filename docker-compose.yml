@@ -6,11 +6,10 @@ services:
     ports:
       - "3000:3000"
     environment:
-      # Encrypted per-family namespaces + registry (Phase A). NIDO_MASTER_KEY
-      # is REQUIRED in production — generate with: openssl rand -hex 32
-      - NIDO_MASTER_KEY=${NIDO_MASTER_KEY:-}
+      # Encrypted per-family namespaces + registry (Phase A). No defaults exist.
+      - NIDO_MASTER_KEY=${NIDO_MASTER_KEY:?set NIDO_MASTER_KEY in .env (openssl rand -hex 32)}
       - NIDO_DATA_DIR=${NIDO_DATA_DIR:-/data}
-      - JWT_SECRET=${JWT_SECRET:-nido-secret-key-change-in-production}
+      - JWT_SECRET=${JWT_SECRET:?set JWT_SECRET in .env (openssl rand -hex 32)}
       - ADMIN_EMAIL=${ADMIN_EMAIL:-}
       - SIGNUP_ENABLED=${SIGNUP_ENABLED:-}
     volumes:

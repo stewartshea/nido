@@ -19,11 +19,17 @@ export const PUBLIC_AUTH_PATHS = new Set([
 	'/api/v1/auth/reset-password',
 ]);
 
-// Single source of truth for the signing/verification secret. Must match the
-// fallback used by authRoutes (jsonwebtoken): JWT_SECRET env beats the
-// development-only fallback.
+// A known default here would let anyone mint a valid session token.
 export function jwtSecret(): string {
-	return process.env.JWT_SECRET || 'fallback-secret-key';
+	const env = process.env.JWT_SECRET?.trim();
+	if (!env) {
+		throw new Error(
+			'JWT_SECRET is not set. It is required: there is no default. ' +
+				'Generate one with `openssl rand -hex 32` and supply it via the environment. ' +
+				'Changing it later invalidates every issued session.',
+		);
+	}
+	return env;
 }
 
 // Global auth guard for protected API routes. Verifies the Bearer token and
