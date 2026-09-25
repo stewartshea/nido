@@ -1,0 +1,361 @@
+@import '@fontsource/inter/400.css';
+@import '@fontsource/inter/500.css';
+@import '@fontsource/inter/600.css';
+@import '@fontsource/inter/700.css';
+@import '@fontsource/lora/400.css';
+@import '@fontsource/lora/500.css';
+@import '@fontsource/lora/600.css';
+@import '@fontsource/lora/700.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+	--c-page: 247 245 240;
+	--c-surface: 255 255 255;
+	--c-surface2: 243 245 240;
+	--c-ink: 43 38 34;
+	--c-ink-soft: 63 77 62;
+	--c-primary: 30 42 29;
+	--c-primary-hover: 24 33 23;
+	--c-on-primary: 247 245 240;
+	--c-accent: 207 173 94;
+	--c-accent-soft: 243 233 207;
+	--c-line: 154 171 151;
+	--c-line-soft: 215 223 210;
+	--c-ok-bg: 233 250 233;
+	--c-ok-text: 38 92 48;
+	--c-ok-line: 186 230 186;
+	--c-danger-bg: 253 242 242;
+	--c-danger-text: 163 39 39;
+	--c-danger-line: 252 214 210;
+}
+
+[data-theme='forest-light'] {
+	--c-page: 247 245 240;
+	--c-surface: 255 255 255;
+	--c-surface2: 243 245 240;
+	--c-ink: 43 38 34;
+	--c-ink-soft: 63 77 62;
+	--c-primary: 30 42 29;
+	--c-primary-hover: 24 33 23;
+	--c-on-primary: 247 245 240;
+	--c-accent: 207 173 94;
+	--c-accent-soft: 243 233 207;
+	--c-line: 154 171 151;
+	--c-line-soft: 215 223 210;
+	--c-ok-bg: 233 250 233;
+	--c-ok-text: 38 92 48;
+	--c-ok-line: 186 230 186;
+	--c-danger-bg: 253 242 242;
+	--c-danger-text: 163 39 39;
+	--c-danger-line: 252 214 210;
+}
+
+[data-theme='forest-dark'] {
+	--c-page: 24 30 24;
+	--c-surface: 30 38 30;
+	--c-surface2: 34 42 34;
+	--c-ink: 230 228 223;
+	--c-ink-soft: 188 197 190;
+	--c-primary: 15 20 15;
+	--c-primary-hover: 10 14 10;
+	--c-on-primary: 240 240 236;
+	--c-accent: 207 173 94;
+	--c-accent-soft: 70 62 40;
+	--c-line: 85 102 85;
+	--c-line-soft: 60 72 60;
+	--c-ok-bg: 34 56 36;
+	--c-ok-text: 150 202 150;
+	--c-ok-line: 60 100 60;
+	--c-danger-bg: 60 32 32;
+	--c-danger-text: 230 140 135;
+	--c-danger-line: 110 60 60;
+}
+
+[data-theme='sage-light'] {
+	--c-page: 250 248 243;
+	--c-surface: 255 255 252;
+	--c-surface2: 244 246 241;
+	--c-ink: 47 42 38;
+	--c-ink-soft: 74 102 89;
+	--c-primary: 42 58 51;
+	--c-primary-hover: 33 46 40;
+	--c-on-primary: 250 248 243;
+	--c-accent: 201 122 73;
+	--c-accent-soft: 249 231 220;
+	--c-line: 127 160 143;
+	--c-line-soft: 192 206 190;
+	--c-ok-bg: 233 250 233;
+	--c-ok-text: 38 92 48;
+	--c-ok-line: 186 230 186;
+	--c-danger-bg: 253 242 242;
+	--c-danger-text: 163 39 39;
+	--c-danger-line: 252 214 210;
+}
+
+[data-theme='sage-dark'] {
+	--c-page: 28 36 30;
+	--c-surface: 34 43 36;
+	--c-surface2: 40 50 42;
+	--c-ink: 234 230 224;
+	--c-ink-soft: 160 190 173;
+	--c-primary: 20 27 22;
+	--c-primary-hover: 14 19 15;
+	--c-on-primary: 240 244 238;
+	--c-accent: 201 122 73;
+	--c-accent-soft: 90 60 40;
+	--c-line: 97 128 113;
+	--c-line-soft: 60 78 66;
+	--c-ok-bg: 34 56 36;
+	--c-ok-text: 150 202 150;
+	--c-ok-line: 60 100 60;
+	--c-danger-bg: 60 32 32;
+	--c-danger-text: 230 140 135;
+	--c-danger-line: 110 60 60;
+}
+
+[data-theme='slate-light'] {
+	--c-page: 245 247 248;
+	--c-surface: 255 255 255;
+	--c-surface2: 238 242 246;
+	--c-ink: 38 48 64;
+	--c-ink-soft: 70 85 106;
+	--c-primary: 38 48 64;
+	--c-primary-hover: 30 38 51;
+	--c-on-primary: 245 247 248;
+	--c-accent: 207 173 94;
+	--c-accent-soft: 243 233 207;
+	--c-line: 122 140 160;
+	--c-line-soft: 202 213 226;
+	--c-ok-bg: 233 250 233;
+	--c-ok-text: 38 92 48;
+	--c-ok-line: 186 230 186;
+	--c-danger-bg: 253 242 242;
+	--c-danger-text: 163 39 39;
+	--c-danger-line: 252 214 210;
+}
+
+[data-theme='slate-dark'] {
+	--c-page: 30 36 46;
+	--c-surface: 36 44 56;
+	--c-surface2: 42 51 64;
+	--c-ink: 226 230 236;
+	--c-ink-soft: 148 164 182;
+	--c-primary: 22 28 36;
+	--c-primary-hover: 16 21 27;
+	--c-on-primary: 238 241 246;
+	--c-accent: 207 173 94;
+	--c-accent-soft: 80 66 42;
+	--c-line: 90 104 122;
+	--c-line-soft: 56 66 80;
+	--c-ok-bg: 34 56 36;
+	--c-ok-text: 150 202 150;
+	--c-ok-line: 60 100 60;
+	--c-danger-bg: 60 32 32;
+	--c-danger-text: 230 140 135;
+	--c-danger-line: 110 60 60;
+}
+
+[data-theme='espresso-light'] {
+	--c-page: 248 244 237;
+	--c-surface: 255 255 252;
+	--c-surface2: 242 235 224;
+	--c-ink: 57 36 23;
+	--c-ink-soft: 99 79 53;
+	--c-primary: 57 36 23;
+	--c-primary-hover: 45 28 17;
+	--c-on-primary: 248 244 237;
+	--c-accent: 191 151 69;
+	--c-accent-soft: 244 228 192;
+	--c-line: 150 104 77;
+	--c-line-soft: 212 186 166;
+	--c-ok-bg: 233 250 233;
+	--c-ok-text: 38 92 48;
+	--c-ok-line: 186 230 186;
+	--c-danger-bg: 253 242 242;
+	--c-danger-text: 163 39 39;
+	--c-danger-line: 252 214 210;
+}
+
+[data-theme='espresso-dark'] {
+	--c-page: 36 28 20;
+	--c-surface: 44 34 25;
+	--c-surface2: 50 39 29;
+	--c-ink: 238 232 222;
+	--c-ink-soft: 176 146 120;
+	--c-primary: 28 20 13;
+	--c-primary-hover: 21 15 10;
+	--c-on-primary: 240 236 228;
+	--c-accent: 191 151 69;
+	--c-accent-soft: 90 70 40;
+	--c-line: 110 78 58;
+	--c-line-soft: 70 52 38;
+	--c-ok-bg: 34 56 36;
+	--c-ok-text: 150 202 150;
+	--c-ok-line: 60 100 60;
+	--c-danger-bg: 60 32 32;
+	--c-danger-text: 230 140 135;
+	--c-danger-line: 110 60 60;
+}
+
+[data-theme='terracotta-light'] {
+	--c-page: 251 248 244;
+	--c-surface: 255 255 252;
+	--c-surface2: 246 241 235;
+	--c-ink: 60 40 32;
+	--c-ink-soft: 110 70 52;
+	--c-primary: 74 50 30;
+	--c-primary-hover: 58 39 23;
+	--c-on-primary: 251 248 244;
+	--c-accent: 201 122 73;
+	--c-accent-soft: 250 232 220;
+	--c-line: 170 112 86;
+	--c-line-soft: 224 204 192;
+	--c-ok-bg: 233 250 233;
+	--c-ok-text: 38 92 48;
+	--c-ok-line: 186 230 186;
+	--c-danger-bg: 253 242 242;
+	--c-danger-text: 163 39 39;
+	--c-danger-line: 252 214 210;
+}
+
+[data-theme='terracotta-dark'] {
+	--c-page: 40 28 20;
+	--c-surface: 48 34 25;
+	--c-surface2: 54 39 29;
+	--c-ink: 240 232 222;
+	--c-ink-soft: 190 140 114;
+	--c-primary: 32 21 12;
+	--c-primary-hover: 24 16 9;
+	--c-on-primary: 242 238 232;
+	--c-accent: 201 122 73;
+	--c-accent-soft: 96 62 42;
+	--c-line: 128 84 64;
+	--c-line-soft: 76 52 40;
+	--c-ok-bg: 34 56 36;
+	--c-ok-text: 150 202 150;
+	--c-ok-line: 60 100 60;
+	--c-danger-bg: 60 32 32;
+	--c-danger-text: 230 140 135;
+	--c-danger-line: 110 60 60;
+}
+
+[data-theme='ocean-light'] {
+	--c-page: 244 246 250;
+	--c-surface: 255 255 255;
+	--c-surface2: 236 241 248;
+	--c-ink: 28 32 44;
+	--c-ink-soft: 56 72 92;
+	--c-primary: 20 34 58;
+	--c-primary-hover: 15 25 43;
+	--c-on-primary: 244 246 250;
+	--c-accent: 207 173 94;
+	--c-accent-soft: 243 233 207;
+	--c-line: 110 136 166;
+	--c-line-soft: 196 208 230;
+	--c-ok-bg: 233 250 233;
+	--c-ok-text: 38 92 48;
+	--c-ok-line: 186 230 186;
+	--c-danger-bg: 253 242 242;
+	--c-danger-text: 163 39 39;
+	--c-danger-line: 252 214 210;
+}
+
+[data-theme='ocean-dark'] {
+	--c-page: 24 30 40;
+	--c-surface: 30 38 50;
+	--c-surface2: 36 45 59;
+	--c-ink: 224 228 236;
+	--c-ink-soft: 140 160 186;
+	--c-primary: 14 20 30;
+	--c-primary-hover: 9 14 21;
+	--c-on-primary: 236 240 246;
+	--c-accent: 207 173 94;
+	--c-accent-soft: 80 66 42;
+	--c-line: 82 104 134;
+	--c-line-soft: 50 64 82;
+	--c-ok-bg: 34 56 36;
+	--c-ok-text: 150 202 150;
+	--c-ok-line: 60 100 60;
+	--c-danger-bg: 60 32 32;
+	--c-danger-text: 230 140 135;
+	--c-danger-line: 110 60 60;
+}
+
+[data-theme='blush-light'] {
+	--c-page: 250 248 246;
+	--c-surface: 255 255 253;
+	--c-surface2: 247 242 240;
+	--c-ink: 50 36 38;
+	--c-ink-soft: 104 72 82;
+	--c-primary: 78 46 54;
+	--c-primary-hover: 62 36 43;
+	--c-on-primary: 250 248 246;
+	--c-accent: 190 120 130;
+	--c-accent-soft: 250 232 236;
+	--c-line: 168 120 134;
+	--c-line-soft: 222 202 206;
+	--c-ok-bg: 233 250 233;
+	--c-ok-text: 38 92 48;
+	--c-ok-line: 186 230 186;
+	--c-danger-bg: 253 242 242;
+	--c-danger-text: 163 39 39;
+	--c-danger-line: 252 214 210;
+}
+
+[data-theme='blush-dark'] {
+	--c-page: 38 28 32;
+	--c-surface: 46 34 38;
+	--c-surface2: 52 39 44;
+	--c-ink: 236 228 230;
+	--c-ink-soft: 186 146 158;
+	--c-primary: 28 16 20;
+	--c-primary-hover: 20 12 15;
+	--c-on-primary: 240 236 238;
+	--c-accent: 190 120 130;
+	--c-accent-soft: 92 58 66;
+	--c-line: 120 80 92;
+	--c-line-soft: 70 48 56;
+	--c-ok-bg: 34 56 36;
+	--c-ok-text: 150 202 150;
+	--c-ok-line: 60 100 60;
+	--c-danger-bg: 60 32 32;
+	--c-danger-text: 230 140 135;
+	--c-danger-line: 110 60 60;
+}
+
+body {
+	background-color: rgb(var(--c-page));
+	font-family: 'Inter', 'ui-sans-serif', 'system-ui', sans-serif;
+	color: rgb(var(--c-ink));
+	font-feature-settings: 'cv11', 'ss01';
+	-webkit-font-smoothing: antialiased;
+	@apply text-base;
+}
+
+*:focus-visible {
+	@apply outline-none ring-2 ring-accent ring-offset-2 ring-offset-page;
+}
+
+h1,
+h2,
+h3,
+h4 {
+	font-family: 'Lora', 'Georgia', serif;
+	letter-spacing: -0.01em;
+}
+
+a {
+	color: inherit;
+}
+
+::selection {
+	background: rgb(var(--c-accent-soft));
+}
+/* Accent backgrounds are warm mid-tones in every preset; dark text reads on all of them. */
+[data-theme],
+:root {
+	--c-on-accent: 43 38 34;
+}

@@ -1,0 +1,34 @@
+{
+  "name": "nido",
+  "version": "0.1.0",
+  "description": "Self-hosted newborn and infant tracker: feeds, diapers, sleep, growth, milestones and vaccinations, shared with the caregivers in your family",
+  "private": true,
+  "workspaces": [
+    "api",
+    "web"
+  ],
+  "scripts": {
+    "dev": "docker-compose up",
+    "build": "docker-compose build",
+    "start": "docker-compose up -d",
+    "test": "npm run test --workspaces --if-present"
+  },
+  "keywords": [
+    "family",
+    "tracking",
+    "newborn",
+    "infant",
+    "parenting",
+    "self-hosted"
+  ],
+  "author": "Stewart Shea",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/stewartshea/nido.git"
+  },
+  "bugs": {
+    "url": "https://github.com/stewartshea/nido/issues"
+  },
+  "homepage": "https://github.com/stewartshea/nido#readme"
+}

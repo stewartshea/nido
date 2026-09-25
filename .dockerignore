@@ -1,0 +1,47 @@
+# Version control
+.git
+.gitignore
+
+# Environment — never ship secrets or local config into an image
+.env
+.env.*
+**/.env
+**/.env.*
+!.env.example
+
+# Runtime data — local dev database, photos, any DB artifacts.
+# These must never enter a build context: they hold real user data and have
+# no place inside (or in transit to) a container image.
+data/
+**/data/
+**/*.db
+**/*.db-journal
+**/*.db-wal
+**/*.db-shm
+**/*.sqlite
+**/*.sqlite3
+
+# Dependencies — re-installed inside the image
+node_modules/
+**/node_modules/
+
+# Build outputs
+dist/
+**/dist/
+build/
+**/build/
+.svelte-kit/
+**/.svelte-kit/
+**/*.tsbuildinfo
+
+# Tooling / caches / agents
+.omo/
+.openchamber/
+.playwright-mcp/
+.codegraph/
+.npm/
+.pnpm-store/
+
+# OS noise
+.DS_Store
+Thumbs.db

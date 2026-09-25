@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: nido-web
+  namespace: nido
+spec:
+  selector:
+    app: nido-web
+  ports:
+    - port: 80
+      targetPort: 3001

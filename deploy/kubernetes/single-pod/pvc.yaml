@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: nido-data
+  namespace: nido
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+  # Uncomment and set to a storage class available in your cluster if the
+  # default one is not appropriate (e.g. for long-lived local volumes):
+  # storageClassName: standard

@@ -1,0 +1,48 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nido-web
+  namespace: nido
+  labels:
+    app: nido-web
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: nido-web
+  template:
+    metadata:
+      labels:
+        app: nido-web
+    spec:
+      containers:
+        - name: web
+          # Replace with your registry image, e.g. ghcr.io/you/nido-web:latest
+          image: nido/web:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 3001
+          env:
+            # Proxy the browser's /api requests to the api Service (nido-api).
+            # Browsers call the API same-origin (/api/v1) so no CORS is needed;
+            # the Ingress /api path also routes there for public traffic.
+            - name: API_PROXY_TARGET
+              value: "http://nido-api:3000"
+            # Hostname browsers use to reach this pod — must match ingress.yaml.
+            # The Vite dev server rejects Host headers outside this list
+            # (localhost and bare IPs are always allowed).
+            - name: ALLOWED_HOSTS
+              value: "nido.example.com"
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 3001
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi

@@ -1,0 +1,67 @@
+{
+  "name": "@nido/web",
+  "version": "0.1.0",
+  "description": "Web client for the Nido app",
+  "private": true,
+  "scripts": {
+    "dev": "vite dev",
+    "build": "vite build",
+    "preview": "vite preview",
+    "check": "svelte-check --tsconfig ./tsconfig.json",
+    "check:watch": "svelte-check --tsconfig ./tsconfig.json --watch",
+    "lint": "eslint ."
+  },
+  "keywords": [
+    "nido",
+    "web",
+    "sveltekit",
+    "typescript"
+  ],
+  "author": "Stewart Shea",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/stewartshea/nido.git",
+    "directory": "web"
+  },
+  "bugs": {
+    "url": "https://github.com/stewartshea/nido/issues"
+  },
+  "homepage": "https://github.com/stewartshea/nido#readme",
+  "type": "module",
+  "dependencies": {
+    "@fontsource/fira-mono": "^4.5.10",
+    "@fontsource/inter": "^5.0.0",
+    "@fontsource/lora": "^5.0.0",
+    "@sveltejs/kit": "^2.0.0",
+    "@sveltejs/vite-plugin-svelte": "^3.0.0",
+    "axios": "^1.6.0",
+    "chart.js": "^4.4.0",
+    "date-fns": "^2.30.0",
+    "floating-vue": "^5.2.2",
+    "lucide-svelte": "^1.0.1",
+    "svelte": "^4.2.0",
+    "svelte-chartjs": "^3.1.2",
+    "svelte-routing": "^2.11.0",
+    "vaul-svelte": "^0.3.2"
+  },
+  "devDependencies": {
+    "@sveltejs/adapter-auto": "^3.0.0",
+    "@sveltejs/adapter-node": "^4.0.0",
+    "@sveltejs/adapter-static": "^3.0.0",
+    "@sveltejs/vite-plugin-svelte": "^3.0.0",
+    "@tailwindcss/forms": "^0.5.11",
+    "@types/eslint": "^8.55.0",
+    "@types/node": "^20.9.0",
+    "autoprefixer": "^10.4.0",
+    "eslint": "^8.54.0",
+    "eslint-plugin-svelte": "^2.35.0",
+    "postcss": "^8.4.0",
+    "postcss-import": "^15.1.0",
+    "svelte-check": "^3.6.0",
+    "tailwindcss": "^3.4.0",
+    "tslib": "^2.4.1",
+    "typescript": "^5.0.0",
+    "vite": "^5.0.3"
+  }
+}
