@@ -1,0 +1,128 @@
+---
+title: Support Nido
+description: Sponsorship buys maintainer time — releases, security work, and answers. It never unlocks a feature.
+---
+
+import { funding, isLive } from '../../site.config';
+
+<div class="nido-card nido-card--edge" style="margin:0 0 1.75rem">
+	<p style="margin:0">
+		<strong>Every feature of Nido is free, and always will be.</strong>
+		Sponsorship buys maintainer time — releases, security work, answering
+		issues. It does not unlock anything, and no feature is ever gated behind
+		it. <a href="../self-host/">Self-hosting is free and requires no account.</a>
+	</p>
+</div>
+
+## Where to sponsor
+
+{[
+	{
+		key: 'githubSponsors',
+		title: 'GitHub Sponsors',
+		role: 'primary, recurring',
+		blurb:
+			'Sits alongside the GitHub billing you already use, so supporting it costs no extra account. It also handles cross-border tax withholding and reporting that a solo maintainer would otherwise own.',
+	},
+	{
+		key: 'liberapay',
+		title: 'Liberapay',
+		role: 'secondary, recurring, non-profit operated',
+		blurb: 'An alternative to depending on a single vendor.',
+	},
+	{
+		key: 'buyMeACoffee',
+		title: 'Buy Me a Coffee',
+		role: 'one-time tip',
+		blurb:
+			'For giving once without creating a GitHub account. One-time by design, which is why it is last and never the default.',
+	},
+].map(({ key, title, role, blurb }) => {
+	const live = isLive(key);
+	const url = live ? funding[key] : '';
+	const host = url.replace(/^https?:\/\//, '').replace(/\/+$/, '');
+	return (
+		<div class="nido-card" style="margin:0 0 1rem">
+			<p style="margin:0 0 .35rem">
+				<strong>{title}</strong> — {role}
+			</p>
+			<p style="margin:0 0 .75rem;color:var(--sl-color-gray-2)">
+				{blurb}
+				{live ? '' : ' Not yet configured.'}
+			</p>
+			{live ? (
+				<a href={url} rel="noopener">
+					{host} →
+				</a>
+			) : (
+				<p style="margin:0;color:var(--sl-color-gray-3)">
+					<em>Not set up yet — please use GitHub Sponsors in the meantime.</em>
+				</p>
+			)}
+		</div>
+	);
+})}
+
+:::note[These two links are marked as unconfigured on purpose]
+The maintainer can set real URLs in one place — `site/src/site.config.ts` — and
+they appear here automatically. Until then the inactive panels render as
+inactive, so a half-configured deploy never ships a 404 to someone who came to
+support the project. `npm run build` passes either way.
+:::
+
+## Why not Patreon
+
+Short version: it is a membership platform, and this is not a membership.
+
+- **Nido has nothing to ship members.** Patreon tiers exist because there is
+  stuff behind them — early builds, private channels, badges, discounts. Here
+  there is exactly one thing, the software, and it is already free. A tier would
+  be a label on a donation.
+- **It would be a dependency the project could not shed.** A hosted service in
+  the path of a self-hosted tool is a single point of failure, and possibly a
+  reason for the project to disappear. GitHub Sponsors has the same
+  dependency, but it is the one the audience already has an account with.
+- **It adds an account to a project whose premise is having none.** Nido has no
+  third-party accounts and no social login. A recurring-membership subscription
+  for a self-hosted app undercuts the argument it is making.
+
+## What sponsorship pays for
+
+The unglamorous work that keeps a dependency-bearing project safe:
+
+- Security advisories in the SvelteKit, Node and SQLite trees
+- Keeping these docs and the in-app guidance aligned with the code
+- Reproducing the reports that arrive as "it broke during the 3am feed"
+- CVE-digest releases nobody notices until the day they matter
+
+## What it does not buy
+
+- **No feature requests.** The [roadmap](./project/roadmap/) responds to what
+  people actually hit. A concrete use case moves further than a larger invoice.
+- **No priority support.** Issues are answered in the order they arrive; a
+  reproducible bug report is worth more than any tier.
+- **No guarantee.** Nido is maintained in one person's evenings, as-is, with no
+  SLA.
+
+## Ways to help that cost nothing
+
+Often worth more than money, and much cheaper for a household with a newborn:
+
+- **[Report a bug with a reproduction](./project/contributing/)** — vague reports
+  are the main thing that slows fixes down
+- **[Answer someone else's issue](./project/contributing/)** — you already hit
+  it, so you know the answer
+- **[Write a note about your setup](./project/roadmap/)** — "running on a
+  Raspberry Pi with X" is genuinely useful information that does not exist
+  anywhere else
+- **[Star the repo](https://github.com/stewartshea/nido)** if that is what
+  visibility means to you
+
+## Elsewhere
+
+- **Source** — [github.com/stewartshea/nido](https://github.com/stewartshea/nido),
+  Apache-2.0
+- **Issues** — [github.com/stewartshea/nido/issues](https://github.com/stewartshea/nido/issues)
+- **Security** — please use a
+  [private advisory](https://github.com/stewartshea/nido/security/advisories/new),
+  not a public issue

@@ -1,0 +1,77 @@
+---
+title: Nido documentation
+description: Install, configure, secure and back up Nido — the self-hosted newborn and infant tracker.
+template: splash
+hero:
+  tagline: Feeds, diapers, sleep, growth, milestones and vaccinations. On your own hardware, free forever.
+  actions:
+    - text: Install Nido
+      link: ./getting-started/installation/
+      icon: right-arrow
+    - text: Back up & restore
+      link: ./guides/backup-and-restore/
+      variant: minimal
+---
+
+import { Card, CardGrid } from '@astrojs/starlight/components';
+
+Nido is a newborn and infant tracker you run yourself. There is no hosted
+version to sign up for, no telemetry, and no account that lives anywhere except
+your own disk.
+
+<CardGrid stagger>
+	<Card title="Installation" icon="rocket" href="./getting-started/installation/">
+		From `git clone` to a running stack in about a minute.
+	</Card>
+	<Card title="First run" icon="rocket" href="./getting-started/first-run/">
+		Generate the master key, register the first account, invite a caregiver.
+	</Card>
+	<Card title="Configuration" icon="setting" href="./reference/configuration/">
+		Every environment variable, when it is required, and what breaks without it.
+	</Card>
+	<Card title="Backup & restore" icon="seti:file-backup" href="./guides/backup-and-restore/">
+		Back up the data volume *and* the master key. This is the page that matters
+		most.
+	</Card>
+	<Card title="Security model" icon="shield" href="./reference/security/">
+		What is encrypted, what is not, and the things worth knowing before you
+		deploy.
+	</Card>
+	<Card title="Architecture" icon="seti:database" href="./reference/architecture/">
+		Two containers, one encrypted SQLite file per family, and why the file is
+		the tenant boundary.
+	</Card>
+</CardGrid>
+
+## What Nido records
+
+| Area | What you get |
+| --- | --- |
+| **Feeding** | Breast and formula timers, side and session tracking, amounts |
+| **Diapers** | Wet, soiled, dry and combinations |
+| **Sleep** | Start/stop with live duration |
+| **Growth** | Weight, height and head circumference against WHO and CDC percentiles |
+| **Milestones & vaccinations** | Logging plus a schedule |
+| **Photos** | Per-member avatars and uploads (MIME-validated) |
+| **Journal & mood** | Free-form notes per day |
+| **Shared access** | Invite caregivers, with owner / admin / member roles |
+| **Reminders** | Inactivity and interval nudges |
+| **Export / restore** | Move a family's whole dataset as JSON |
+| **Offline queue** | Writes made without a connection are queued and replayed |
+| **Themes** | 7 palettes × light and dark, plus a custom theme editor |
+
+## The short version
+
+```bash
+git clone https://github.com/stewartshea/nido.git
+cd nido
+./scripts/init-env.sh   # writes .env with freshly generated secrets
+docker compose up -d
+```
+
+Web client on [http://localhost:3001](http://localhost:3001), API health on
+[http://localhost:3000/health](http://localhost:3000/health).
+
+> **Read this before your first backup:** `NIDO_MASTER_KEY` is unrecoverable.
+> Every family's database is keyed from it. Lose it and the data is gone, with
+> no error to warn you first — see [Security model → the master key](./reference/security/#the-master-key).
