@@ -3,6 +3,7 @@ import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 import { ensureRegistry } from '../db-namespaces';
 import { getAppSettings, sendMail, effectiveSignup } from '../mail';
+import { renderSmtpTestEmail } from '../mail-templates';
 import { isPlatformAdmin } from '../authz';
 import { type AuthEnv } from '../auth';
 
@@ -81,7 +82,7 @@ settingsRoutes.post('/test', async (c) => {
 	const userRes = await db.execute({ sql: 'SELECT email FROM users WHERE id = ?', args: [userId] });
 	const to = String(userRes.rows[0]?.email || '');
 	try {
-		await sendMail(s, to, 'Nido — SMTP test', 'This is a test email from Nido. SMTP is configured correctly.');
+		await sendMail(s, to, renderSmtpTestEmail({ to }));
 		return c.json({ message: `Test email sent to ${to}` });
 	} catch (e: any) {
 		return c.json({ error: `Failed to send test email: ${String(e?.message || e).slice(0, 200)}` }, 500);

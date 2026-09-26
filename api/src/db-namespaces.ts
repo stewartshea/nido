@@ -282,6 +282,113 @@ export const FAMILY_MIGRATIONS: Migration[] = [
       );
     `,
   },
+  {
+    version: 2,
+    name: 'family-v2-members-homes-sharing',
+    sql: `
+      ALTER TABLE formulas ADD COLUMN formula_type TEXT;
+      ALTER TABLE family_settings ADD COLUMN share_anonymized_daily INTEGER NOT NULL DEFAULT 0;
+
+      CREATE TABLE IF NOT EXISTS family_members (
+        id             INTEGER PRIMARY KEY AUTOINCREMENT,
+        household_id   INTEGER NOT NULL,
+        legacy_baby_id INTEGER,
+        name           TEXT NOT NULL,
+        member_type    TEXT NOT NULL DEFAULT 'child',
+        birth_date     TEXT,
+        gender         TEXT,
+        email          TEXT,
+        avatar         TEXT,
+        categories     TEXT,
+        created_at     TEXT DEFAULT CURRENT_TIMESTAMP,
+        updated_at     TEXT DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (household_id) REFERENCES households(id),
+        FOREIGN KEY (legacy_baby_id) REFERENCES babies(id),
+        UNIQUE(legacy_baby_id)
+      );
+
+      CREATE TABLE IF NOT EXISTS homes (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        household_id INTEGER NOT NULL,
+        name        TEXT NOT NULL,
+        kind        TEXT DEFAULT 'residence',
+        address     TEXT,
+        timezone    TEXT,
+        is_primary  INTEGER NOT NULL DEFAULT 0,
+        created_at  TEXT DEFAULT CURRENT_TIMESTAMP,
+        updated_at  TEXT DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (household_id) REFERENCES households(id)
+      );
+
+      CREATE TABLE IF NOT EXISTS member_homes (
+        member_id   INTEGER NOT NULL,
+        home_id     INTEGER NOT NULL,
+        relation    TEXT DEFAULT 'resident',
+        is_primary  INTEGER NOT NULL DEFAULT 0,
+        created_at  TEXT DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (member_id) REFERENCES family_members(id),
+        FOREIGN KEY (home_id) REFERENCES homes(id),
+        UNIQUE(member_id, home_id)
+      );
+
+      CREATE TABLE IF NOT EXISTS account_members (
+        user_id     TEXT NOT NULL,
+        member_id   INTEGER NOT NULL,
+        created_at  TEXT DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id),
+        FOREIGN KEY (member_id) REFERENCES family_members(id),
+        UNIQUE(user_id, member_id)
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_family_members_household ON family_members(household_id, member_type);
+      CREATE INDEX IF NOT EXISTS idx_family_members_email ON family_members(email);
+      CREATE INDEX IF NOT EXISTS idx_account_members_user ON account_members(user_id);
+      CREATE INDEX IF NOT EXISTS idx_member_homes_home ON member_homes(home_id);
+
+      INSERT OR IGNORE INTO homes (household_id, name, kind, is_primary, created_at, updated_at)
+      SELECT h.id, 'Primary Home', 'primary', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+      FROM households h;
+
+      INSERT OR IGNORE INTO family_members (
+        household_id, legacy_baby_id, name, member_type, birth_date, gender, email, avatar, categories, created_at, updated_at
+      )
+      SELECT
+        b.household_id,
+        b.id,
+        b.name,
+        CASE WHEN COALESCE(b.type, 'child') = 'adult' THEN 'adult' ELSE 'child' END,
+        b.birth_date,
+        b.gender,
+        b.email,
+        b.avatar,
+        b.categories,
+        COALESCE(b.created_at, CURRENT_TIMESTAMP),
+        COALESCE(b.updated_at, CURRENT_TIMESTAMP)
+      FROM babies b
+      LEFT JOIN family_members fm ON fm.legacy_baby_id = b.id
+      WHERE fm.id IS NULL;
+
+      INSERT OR IGNORE INTO member_homes (member_id, home_id, relation, is_primary, created_at)
+      SELECT
+        fm.id,
+        h.id,
+        CASE WHEN fm.member_type = 'adult' THEN 'resident' ELSE 'child' END,
+        1,
+        CURRENT_TIMESTAMP
+      FROM family_members fm
+      JOIN homes h ON h.household_id = fm.household_id AND h.is_primary = 1;
+
+      INSERT OR IGNORE INTO account_members (user_id, member_id, created_at)
+      SELECT u.id, fm.id, CURRENT_TIMESTAMP
+      FROM family_members fm
+      JOIN users u ON lower(u.email) = lower(fm.email)
+      WHERE fm.email IS NOT NULL AND trim(fm.email) <> '';
+
+      UPDATE formulas
+      SET formula_type = 'standard'
+      WHERE formula_type IS NULL OR trim(formula_type) = '';
+    `,
+  },
 ];
 
 // ---------------------------------------------------------------------------

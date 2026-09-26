@@ -14,6 +14,38 @@
 
 	import { CATEGORIES, loadQuickLinks as loadSharedQuickLinks } from '$lib/shared';
 
+	const FORMULA_TYPES = [
+		'standard',
+		'gentle',
+		'hypoallergenic',
+		'hydrolyzed',
+		'anti-reflux',
+		'lactose-free',
+		'soy',
+		'goat-milk',
+		'premature',
+		'sensitive',
+	];
+
+	const DIAPER_CONSISTENCY_ICON: Record<string, string> = {
+		mushy: '🍌',
+		runny: '💧',
+		formed: '🟤',
+		soft: '☁️',
+		blowout: '💥',
+		other: '🧷',
+	};
+
+	const DIAPER_COLOR_ICON: Record<string, string> = {
+		yellow: '🟨',
+		brown: '🟫',
+		green: '🟩',
+		black: '⬛',
+		red: '🟥',
+	};
+
+	type FeedLogType = 'breast' | 'formula' | 'bottle' | 'pump' | 'solid';
+
 	let familyView: 'dashboard' | 'detail' = 'dashboard';
 	let sheetOpen = false;
 
@@ -184,10 +216,11 @@
 	let showAddFormula = false;
 	let newFormulaName = '';
 	let newFormulaBrand = '';
+	let newFormulaType = 'standard';
 	// Manual feed entry (backdated) + repeat-last
 	let manualStart = '';
 	let manualEnd = '';
-	let manualType = 'breast';
+	let manualType: FeedLogType = 'breast';
 	let manualSide = 'left';
 	let manualFormulaId: number | null = null;
 	let manualAmount = '';
@@ -776,8 +809,14 @@
 	async function addFormula() {
 		if (!newFormulaName.trim() || !activeFamilyId) return;
 		try {
-			await formulasAPI.create(activeFamilyId, { name: newFormulaName.trim(), brand: newFormulaBrand.trim() || undefined });
-			newFormulaName = ''; newFormulaBrand = '';
+			await formulasAPI.create(activeFamilyId, {
+				name: newFormulaName.trim(),
+				brand: newFormulaBrand.trim() || undefined,
+				formulaType: newFormulaType,
+			});
+			newFormulaName = '';
+			newFormulaBrand = '';
+			newFormulaType = 'standard';
 			await loadFormulas();
 		} catch (e: any) { error = e.response?.data?.error || 'Failed to add formula.'; }
 	}
@@ -791,6 +830,7 @@
 
 	function setFeedMode(mode: 'timer' | 'log') {
 		feedMode = mode;
+		if (mode === 'timer') feedType = 'breast';
 		if (mode === 'log' && !manualStart) manualStart = nowLocalISO();
 	}
 
@@ -803,7 +843,7 @@
 		const last = localStorage.getItem('nido.lastFeed');
 		if (!last) { error = 'No previous feed to repeat.'; return; }
 		const l = JSON.parse(last);
-		manualType = l.type || 'breast';
+		manualType = (l.type || 'breast') as FeedLogType;
 		manualSide = l.side === 'right' ? 'right' : 'left';
 		manualFormulaId = l.formulaId ?? null;
 		manualAmount = l.amount ?? '';
@@ -814,9 +854,14 @@
 		event.preventDefault();
 		if (!selectedBabyId) return;
 		if (!manualStart) manualStart = nowLocalISO();
+		if (manualType === 'formula' && !manualFormulaId) {
+			error = 'Pick a formula for bottle feeding.';
+			return;
+		}
 		error = '';
 		const start = manualStart ? new Date(manualStart).toISOString() : new Date().toISOString();
-		const end = manualEnd ? new Date(manualEnd).toISOString() : undefined;
+		const usesEndTime = manualType === 'pump' || manualType === 'solid';
+		const end = usesEndTime && manualEnd ? new Date(manualEnd).toISOString() : undefined;
 		try {
 			await feedingAPI.create({
 				babyId: selectedBabyId,
@@ -829,7 +874,12 @@
 				notes: manualNotes || undefined,
 			});
 			// Remember for "repeat last"
-			localStorage.setItem('nido.lastFeed', JSON.stringify({ type: manualType, side: manualType === 'breast' ? manualSide : undefined, formulaId: manualFormulaId, amount: manualAmount }));
+			localStorage.setItem('nido.lastFeed', JSON.stringify({
+				type: manualType,
+				side: manualType === 'breast' ? manualSide : undefined,
+				formulaId: manualType === 'formula' ? manualFormulaId : null,
+				amount: manualAmount,
+			}));
 			manualStart = ''; manualEnd = ''; manualAmount = ''; manualNotes = '';
 			notice = 'Feed recorded.';
 			sheetOpen = false;
@@ -1717,11 +1767,9 @@
 							{#if feedMode === 'timer'}
 								<div class="mb-3">
 									<label class="block text-sm font-medium text-ink-soft mb-1">Type</label>
-									<select bind:value={feedType} class="w-full px-3 py-2 border border-line rounded-md">
-										<option value="breast">Breast</option>
-										<option value="formula">Formula</option>
-										<option value="solid">Solid</option>
-									</select>
+							<select bind:value={feedType} class="w-full px-3 py-2 border border-line rounded-md">
+								<option value="breast">Breast</option>
+							</select>
 								</div>
 
 								{#if feedType === 'breast'}
@@ -1779,16 +1827,16 @@
 											<button type="button" on:click={repeatLastFeed} title="Repeat last selection" class="px-3 py-2 bg-surface2 text-ink-soft rounded-md hover:bg-line-soft"><RotateCcw class="w-4 h-4 inline mr-1" /> Repeat last</button>
 										</div>
 									</div>
-									<div>
-										<label class="block text-sm font-medium text-ink-soft mb-1">Type</label>
-										<select bind:value={manualType} class="w-full px-3 py-2 border border-line rounded-md">
-											<option value="breast">Breast</option>
-											<option value="formula">Formula</option>
-											<option value="bottle">Bottle</option>
-											<option value="pump">Pump</option>
-											<option value="solid">Solid</option>
-										</select>
+								<div>
+									<label class="block text-sm font-medium text-ink-soft mb-1">Type</label>
+									<div class="grid grid-cols-2 gap-2">
+										<button type="button" on:click={() => (manualType = 'breast')} class="{manualType === 'breast' ? 'bg-primary text-on-primary border-primary' : 'bg-surface text-ink-soft border-line-soft'} border rounded-lg py-2 px-3 text-sm font-semibold flex items-center justify-center gap-2"><Milk class="w-4 h-4" /> Breast</button>
+										<button type="button" on:click={() => (manualType = 'formula')} class="{manualType === 'formula' ? 'bg-primary text-on-primary border-primary' : 'bg-surface text-ink-soft border-line-soft'} border rounded-lg py-2 px-3 text-sm font-semibold flex items-center justify-center gap-2"><Milk class="w-4 h-4" /> Bottle + Formula</button>
+										<button type="button" on:click={() => (manualType = 'bottle')} class="{manualType === 'bottle' ? 'bg-primary text-on-primary border-primary' : 'bg-surface text-ink-soft border-line-soft'} border rounded-lg py-2 px-3 text-sm font-semibold flex items-center justify-center gap-2"><Droplet class="w-4 h-4" /> Bottle + Breast milk</button>
+										<button type="button" on:click={() => (manualType = 'pump')} class="{manualType === 'pump' ? 'bg-primary text-on-primary border-primary' : 'bg-surface text-ink-soft border-line-soft'} border rounded-lg py-2 px-3 text-sm font-semibold flex items-center justify-center gap-2"><Activity class="w-4 h-4" /> Pump</button>
 									</div>
+									<button type="button" on:click={() => (manualType = 'solid')} class="mt-2 w-full {manualType === 'solid' ? 'bg-primary text-on-primary border-primary' : 'bg-surface text-ink-soft border-line-soft'} border rounded-lg py-2 px-3 text-sm font-semibold flex items-center justify-center gap-2"><PenLine class="w-4 h-4" /> Solid food</button>
+								</div>
 									{#if manualType === 'formula'}
 										<div>
 											<label class="block text-sm font-medium text-ink-soft mb-1">Formula</label>
@@ -1796,7 +1844,7 @@
 												<select bind:value={manualFormulaId} class="flex-1 px-3 py-2 border border-line rounded-md">
 													<option value="">—</option>
 													{#each formulas as f}
-														<option value={f.id}>{f.name}{f.brand ? ` (${f.brand})` : ''}</option>
+														<option value={f.id}>{f.name}{f.brand ? ` (${f.brand})` : ''} · {f.formulaType || 'standard'}</option>
 													{/each}
 												</select>
 												<button type="button" on:click={() => (showAddFormula = !showAddFormula)} class="px-3 py-2 bg-surface2 text-ink-soft rounded-md"><Plus class="w-4 h-4" /></button>
@@ -1804,7 +1852,12 @@
 											{#if showAddFormula}
 												<div class="flex gap-2 mt-2">
 													<input type="text" bind:value={newFormulaName} placeholder="Formula name" class="flex-1 px-3 py-2 border border-line rounded-md" />
-													<input type="text" bind:value={newFormulaBrand} placeholder="Brand" class="flex-1 px-3 py-2 border border-line rounded-md" />
+												<input type="text" bind:value={newFormulaBrand} placeholder="Brand" class="flex-1 px-3 py-2 border border-line rounded-md" />
+												<select bind:value={newFormulaType} class="flex-1 px-3 py-2 border border-line rounded-md">
+													{#each FORMULA_TYPES as t}
+														<option value={t}>{t}</option>
+													{/each}
+												</select>
 													<button type="button" on:click={addFormula} class="px-3 py-2 bg-primary text-on-primary rounded-md">Add</button>
 												</div>
 {/if}
@@ -1838,7 +1891,7 @@
 											<input type="number" step="0.1" bind:value={manualAmount} class="w-full px-3 py-2 border border-line rounded-md" placeholder="4.5" />
 										</div>
 									{/if}
-									{#if manualType !== 'breast'}
+									{#if manualType === 'pump' || manualType === 'solid'}
 										<div>
 											<label class="block text-sm font-medium text-ink-soft mb-1">End time (optional)</label>
 											<input type="datetime-local" bind:value={manualEnd} class="w-full px-3 py-2 border border-line rounded-md" />
@@ -1880,24 +1933,24 @@
 									</div>
 									<div>
 										<label class="block text-sm font-medium text-ink-soft mb-1">Consistency</label>
-										<select bind:value={diaperConsistency} class="w-full px-3 py-2 border border-line rounded-md">
-											<option value="">—</option>
+										<div class="flex flex-wrap gap-2">
+											<button type="button" on:click={() => (diaperConsistency = '')} class="{diaperConsistency === '' ? 'bg-primary text-on-primary border-primary' : 'bg-surface2 text-ink-soft border-line-soft'} px-2.5 py-1.5 rounded-full border text-xs">—</button>
 											{#each currentCategoryOptions('diapers', 'consistency') as opt}
-												<option value={opt}>{opt}</option>
+												<button type="button" on:click={() => (diaperConsistency = opt)} class="{diaperConsistency === opt ? 'bg-primary text-on-primary border-primary' : 'bg-surface2 text-ink-soft border-line-soft'} px-2.5 py-1.5 rounded-full border text-xs inline-flex items-center gap-1"><span>{DIAPER_CONSISTENCY_ICON[opt] || '🧷'}</span>{opt}</button>
 											{/each}
-										</select>
+										</div>
 									</div>
 								</div>
 
 								<div class="grid grid-cols-2 gap-3">
 									<div>
 										<label class="block text-sm font-medium text-ink-soft mb-1">Color (optional)</label>
-										<select bind:value={diaperColor} class="w-full px-3 py-2 border border-line rounded-md">
-											<option value="">—</option>
+										<div class="flex flex-wrap gap-2">
+											<button type="button" on:click={() => (diaperColor = '')} class="{diaperColor === '' ? 'bg-primary text-on-primary border-primary' : 'bg-surface2 text-ink-soft border-line-soft'} px-2.5 py-1.5 rounded-full border text-xs">—</button>
 											{#each currentCategoryOptions('diapers', 'color') as opt}
-												<option value={opt}>{opt}</option>
+												<button type="button" on:click={() => (diaperColor = opt)} class="{diaperColor === opt ? 'bg-primary text-on-primary border-primary' : 'bg-surface2 text-ink-soft border-line-soft'} px-2.5 py-1.5 rounded-full border text-xs inline-flex items-center gap-1"><span>{DIAPER_COLOR_ICON[opt] || '◻︎'}</span>{opt}</button>
 											{/each}
-										</select>
+										</div>
 									</div>
 									<div>
 										<label class="block text-sm font-medium text-ink-soft mb-1">Notes (optional)</label>

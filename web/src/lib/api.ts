@@ -133,7 +133,7 @@ export const familiesAPI = {
   listInvites: (familyId: string) => api.get(`/families/${familyId}/invitations`),
   revokeInvite: (familyId: string, inviteId: number) =>
     api.delete(`/families/${familyId}/invitations/${inviteId}`),
-  join: (token: string) => api.post('/families/join', { token }),
+    join: (familyId: string, token: string) => api.post('/families/join', { familyId, token }),
   getAvatar: (familyId: string, memberId: number) => {
     return api.get(`/families/${familyId}/members/${memberId}/avatar`, { responseType: 'blob' });
   },
@@ -145,17 +145,18 @@ export const familiesAPI = {
     });
   },
   getSettings: (familyId: string) => api.get(`/families/${familyId}/settings`),
-  updateSettings: (familyId: string, data: { categories?: string[]; categoryOptions?: Record<string, Record<string, string[]>> }) =>
+  updateSettings: (familyId: string, data: { categories?: string[]; categoryOptions?: Record<string, Record<string, string[]>>; shareAnonymizedDaily?: boolean }) =>
     api.put(`/families/${familyId}/settings`, data),
+  getAnonymizedPreview: (familyId: string) => api.get(`/families/${familyId}/settings/anonymized-preview`),
 };
 
 // Feeding API functions
 export const feedingAPI = {
   getAll: (babyId: number) => api.get(`/feedings?babyId=${babyId}`),
   getById: (id: number) => api.get(`/feedings/${id}`),
-  create: (feedingData: { babyId: number; startTime: string; endTime?: string; amount?: number; type: 'breast' | 'formula' | 'solid'; side?: 'left' | 'right' | 'both'; notes?: string }) => 
+  create: (feedingData: { babyId: number; startTime: string; endTime?: string; amount?: number; type: 'breast' | 'bottle' | 'formula' | 'pump' | 'solid'; side?: 'left' | 'right' | 'both'; formulaId?: number; notes?: string }) => 
     api.post('/feedings', feedingData),
-  update: (id: number, feedingData: Partial<{ startTime: string; endTime?: string; amount?: number; type: 'breast' | 'formula' | 'solid'; side?: 'left' | 'right' | 'both'; notes?: string }>) => 
+  update: (id: number, feedingData: Partial<{ startTime: string; endTime?: string; amount?: number; type: 'breast' | 'bottle' | 'formula' | 'pump' | 'solid'; side?: 'left' | 'right' | 'both'; formulaId?: number; notes?: string }>) => 
     api.put(`/feedings/${id}`, feedingData),
   delete: (id: number) => api.delete(`/feedings/${id}`),
 };
@@ -279,9 +280,9 @@ export const photosAPI = {
 // Formulas API — family-scoped formula catalog.
 export const formulasAPI = {
   list: (familyId: string) => api.get(`/formulas?familyId=${familyId}`),
-  create: (familyId: string, data: { name: string; brand?: string }) =>
+  create: (familyId: string, data: { name: string; brand?: string; formulaType?: string }) =>
     api.post('/formulas', { familyId, ...data }),
-  update: (id: number, data: { name?: string; brand?: string | null }) =>
+  update: (id: number, data: { name?: string; brand?: string | null; formulaType?: string | null }) =>
     api.put(`/formulas/${id}`, data),
   remove: (id: number) => api.delete(`/formulas/${id}`),
 };

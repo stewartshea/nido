@@ -57,7 +57,7 @@ if (babyCheck.rows.length === 0) {
     // Get feedings for the baby
     const feedingsResult = await db.execute({
       sql: `
-      SELECT id, baby_id, start_time, end_time, duration, amount, type, side, notes, created_at
+      SELECT id, baby_id, start_time, end_time, duration, amount, type, side, formula_id, notes, created_at
       FROM feedings
       WHERE baby_id = ?
       LIMIT 100
@@ -96,7 +96,7 @@ feedingRoutes.get('/:id{[0-9]+}', async (c) => {
     // Verify user has access to this feeding
     const feedingResult = await db.execute({
       sql: `
-      SELECT f.id, f.baby_id, f.start_time, f.end_time, f.duration, f.amount, f.type, f.side, f.notes, f.created_at
+      SELECT f.id, f.baby_id, f.start_time, f.end_time, f.duration, f.amount, f.type, f.side, f.formula_id, f.notes, f.created_at
       FROM feedings f
       JOIN babies b ON f.baby_id = b.id
       JOIN households h ON b.household_id = h.id
@@ -182,7 +182,7 @@ feedingRoutes.post('/', zValidator('json', createFeedingSchema), async (c) => {
     // Return the created feeding
     const feedingResult = await db.execute({
       sql: `
-      SELECT id, baby_id, start_time, end_time, duration, amount, type, side, notes, created_at
+      SELECT id, baby_id, start_time, end_time, duration, amount, type, side, formula_id, notes, created_at
       FROM feedings
       WHERE id = ?
     `,
@@ -303,7 +303,7 @@ feedingRoutes.put('/:id{[0-9]+}', zValidator('json', updateFeedingSchema), async
     // Return updated feeding
     const updatedFeedingResult = await db.execute({
       sql: `
-      SELECT id, baby_id, start_time, end_time, duration, amount, type, side, notes, created_at
+      SELECT id, baby_id, start_time, end_time, duration, amount, type, side, formula_id, notes, created_at
       FROM feedings
       WHERE id = ?
     `,

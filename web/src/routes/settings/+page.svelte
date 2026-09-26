@@ -159,8 +159,10 @@
 
 	// Family-scoped tracking settings (categories + per-category option lists).
 	let settingsTab: 'profile' | 'family' | 'import' | 'members' | 'backup' | 'admin' | null = null;
-	let familySettings: { categories: string[] | null; categoryOptions: Record<string, Record<string, string[]>>; defaultCategoryOptions: Record<string, Record<string, string[]>> } | null = null;
+	let familySettings: { categories: string[] | null; categoryOptions: Record<string, Record<string, string[]>>; defaultCategoryOptions: Record<string, Record<string, string[]>>; shareAnonymizedDaily?: boolean } | null = null;
 	let savingFamilySettings = false;
+	let anonymizedPreview: any = null;
+	let loadingAnonymizedPreview = false;
 
 	let editingMember: any = null;
 	let editMemberName = '';
@@ -684,9 +686,16 @@
 		}
 	}
 
+	let inviteFallbackUrl = '';
+
+	function selectAll(event: FocusEvent) {
+		(event.currentTarget as HTMLInputElement).select();
+	}
+
 	async function sendInvite(event: SubmitEvent) {
 		event.preventDefault();
 		error = '';
+		inviteFallbackUrl = '';
 		if (!inviteEmail.trim() || !activeFamilyId) return;
 		try {
 			const res = await familiesAPI.invite(activeFamilyId, inviteEmail.trim());
@@ -695,6 +704,10 @@
 			await loadInvitations();
 		} catch (err: any) {
 			error = err.response?.data?.error || 'Failed to send invitation.';
+			// The server keeps the pending invite and hands back a link so the
+			// invite can still reach the recipient without working SMTP.
+			inviteFallbackUrl = err.response?.data?.invitation?.inviteUrl ?? '';
+			if (inviteFallbackUrl) await loadInvitations();
 			console.error(err);
 		}
 	}
@@ -1038,12 +1051,26 @@
 		try {
 			const res = await familiesAPI.getSettings(activeFamilyId);
 			familySettings = res.data.settings;
+			anonymizedPreview = res.data.anonymizedPreview ?? anonymizedPreview;
 			const cats = familySettings.categories;
 			if (cats && cats.length) {
 				activeCategories = cats;
 			}
 		} catch (err: any) {
 			console.error('Failed to load family settings:', err);
+		}
+	}
+
+	async function refreshAnonymizedPreview() {
+		if (!activeFamilyId) return;
+		loadingAnonymizedPreview = true;
+		try {
+			const res = await familiesAPI.getAnonymizedPreview(activeFamilyId);
+			anonymizedPreview = res.data.preview;
+		} catch (err: any) {
+			error = err.response?.data?.error || 'Failed to load anonymized preview.';
+		} finally {
+			loadingAnonymizedPreview = false;
 		}
 	}
 
@@ -1075,6 +1102,28 @@
 			notice = 'Category options saved.';
 		} catch (err: any) {
 			error = err.response?.data?.error || 'Failed to save category options.';
+		} finally {
+			savingFamilySettings = false;
+		}
+	}
+
+	async function toggleAnonymizedSharing() {
+		if (!activeFamilyId || !familySettings) return;
+		savingFamilySettings = true;
+		const next = !familySettings.shareAnonymizedDaily;
+		try {
+			const res = await familiesAPI.updateSettings(activeFamilyId, { shareAnonymizedDaily: next });
+			familySettings = {
+				...familySettings,
+				...res.data.settings,
+				defaultCategoryOptions: familySettings.defaultCategoryOptions,
+			};
+			anonymizedPreview = res.data.anonymizedPreview ?? anonymizedPreview;
+			notice = next
+				? 'Daily anonymized sharing enabled.'
+				: 'Daily anonymized sharing disabled.';
+		} catch (err: any) {
+			error = err.response?.data?.error || 'Failed to update anonymized sharing setting.';
 		} finally {
 			savingFamilySettings = false;
 		}
@@ -1658,7 +1707,14 @@
 										<button type="submit" disabled={changingPw} class="bg-primary text-on-primary px-4 py-2 rounded-md hover:bg-primary disabled:opacity-50">
 											{changingPw ? 'Saving...' : 'Change Password'}
 										</button>
-									</form>
+								</form>
+								{#if inviteFallbackUrl}
+									<div class="mt-3 p-3 border border-line-soft rounded-md bg-surface-soft">
+										<p class="text-xs text-ink-soft uppercase mb-1">Share this link manually</p>
+										<p class="text-xs text-ink-soft mb-2">The invitation was saved, but the email did not go out. Send this link to the recipient yourself.</p>
+										<input readonly value={inviteFallbackUrl} class="w-full px-3 py-2 border border-line rounded-md text-xs" on:focus={selectAll} aria-label="Invitation link" />
+									</div>
+								{/if}
 								</div>
 								<div class="border-t border-line-soft pt-4">
 									<h4 class="font-display font-semibold mb-3">Mobile quick links</h4>
@@ -1759,9 +1815,30 @@
 													{/each}
 												</div>
 											{/if}
-										{/each}
+									{/each}
+								</div>
+								<div class="border-t border-line-soft pt-4 mt-4">
+									<h4 class="font-display font-semibold text-sm mb-2">Daily anonymized summary sharing</h4>
+									<ToggleSwitch
+										checked={familySettings?.shareAnonymizedDaily === true}
+										disabled={savingFamilySettings}
+										label="Opt in to daily anonymized roundup sharing"
+										description="Default is off. Shared data never includes names, emails, notes, or exact timestamps."
+										onToggle={toggleAnonymizedSharing}
+									/>
+									<div class="mt-3 p-3 bg-surface2 rounded-md border border-line-soft">
+										<div class="flex items-center justify-between mb-2">
+											<p class="text-xs text-ink-soft uppercase">Preview of anonymized payload</p>
+											<button type="button" on:click={refreshAnonymizedPreview} class="text-xs text-primary underline" disabled={loadingAnonymizedPreview}>{loadingAnonymizedPreview ? 'Refreshing…' : 'Refresh'}</button>
+										</div>
+										{#if anonymizedPreview}
+											<pre class="text-[11px] leading-4 text-ink-soft whitespace-pre-wrap break-words">{JSON.stringify(anonymizedPreview, null, 2)}</pre>
+										{:else}
+											<p class="text-xs text-ink-soft">No preview loaded yet.</p>
+										{/if}
 									</div>
-								{/if}
+								</div>
+							{/if}
 							</div>
 							{:else if settingsTab === 'members'}
 							<div class="bg-surface rounded-lg shadow-card p-4 md:p-6 border border-line-soft mb-4">
@@ -1786,8 +1863,46 @@
 									</div>
 								{/if}
 							</div>
+							<div class="bg-surface rounded-lg shadow-card p-4 md:p-6 border border-line-soft mb-4">
+								<h3 class="text-lg font-display font-semibold mb-2">People in {activeFamily?.name}</h3>
+								<p class="text-sm text-ink-soft mb-3">Family members are people in the household (children and adults). Accounts are optional and can be linked through invitations.</p>
+								{#if babies.length === 0}
+									<p class="text-sm text-ink-soft">No members yet.</p>
+								{:else}
+									<ul class="divide-y divide-line-soft">
+										{#each babies as baby}
+											<li class="py-2 flex items-start justify-between gap-3">
+												<div>
+													<p class="text-sm font-semibold text-ink">{baby.name}</p>
+													<div class="flex flex-wrap items-center gap-2 mt-1 text-xs">
+														<span class="px-2 py-0.5 rounded-full bg-surface2 text-ink-soft">{baby.type || 'child'}</span>
+														{#if baby.trackable !== false}
+															<span class="px-2 py-0.5 rounded-full bg-surface2 text-ink-soft">trackable profile</span>
+														{/if}
+														{#if baby.linkedAccount}
+															<span class="px-2 py-0.5 rounded-full bg-primary/10 text-primary">account linked</span>
+														{:else}
+															<span class="px-2 py-0.5 rounded-full bg-danger/10 text-danger-text">no account linked</span>
+														{/if}
+													</div>
+													{#if baby.email}
+														<p class="text-xs text-ink-soft mt-1">{baby.email}</p>
+													{/if}
+												</div>
+												<div class="flex flex-col gap-1 items-end">
+													{#if baby.email && !baby.linkedAccount}
+														<button type="button" class="text-xs text-primary underline" on:click={() => inviteMemberEmail(String(baby.email))}>invite account</button>
+													{/if}
+													<button type="button" class="text-xs text-ink-soft underline" on:click={() => openEditMember(baby)}>edit</button>
+												</div>
+											</li>
+										{/each}
+									</ul>
+								{/if}
+							</div>
 							<div class="bg-surface rounded-lg shadow-card p-4 md:p-6 border border-line-soft">
 								<h3 class="text-lg font-display font-semibold mb-3">Add a family member</h3>
+								<p class="text-xs text-ink-soft mb-3">Adults can exist without accounts. Add an email and invite them later. Children create a trackable profile for feeds/sleep/diapers.</p>
 								<form on:submit={addFamilyMember}>
 									<div class="mb-2">
 										<label for="member-type-x" class="block text-sm font-medium text-ink-soft mb-1">Member Type</label>
@@ -1799,6 +1914,10 @@
 									<div class="mb-2">
 										<label for="member-name-x" class="block text-sm font-medium text-ink-soft mb-1">Name</label>
 										<input id="member-name-x" bind:value={newMemberName} required class="w-full px-3 py-2 border border-line rounded-md" placeholder="Name" />
+									</div>
+									<div class="mb-2">
+										<label for="member-email-x" class="block text-sm font-medium text-ink-soft mb-1">Email (optional)</label>
+										<input id="member-email-x" type="email" bind:value={editMemberEmail} class="w-full px-3 py-2 border border-line rounded-md" placeholder="adult@email.com" />
 									</div>
 									<div class="grid grid-cols-2 gap-3 mb-2">
 										<div>

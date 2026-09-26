@@ -26,6 +26,16 @@
 	let resetNewPassword = '';
 	let resetDone = false;
 
+	// Invitation links land on /login?next=/join?... so the invite survives sign-in.
+	// Only same-origin relative paths are honoured: "//evil.example" and
+	// "https://evil.example" are both parsed as absolute and would turn the
+	// post-login redirect into an open redirect.
+	function nextPath(): string {
+		if (!browser) return '/dashboard';
+		const next = new URLSearchParams(window.location.search).get('next');
+		return next && next.startsWith('/') && !next.startsWith('//') ? next : '/dashboard';
+	}
+
 	async function handleLogin(event: SubmitEvent) {
 		event.preventDefault();
 		error = '';
@@ -41,7 +51,7 @@
 				createdAt: user.created_at ?? user.createdAt,
 			});
 			if (browser) {
-				goto('/dashboard');
+				goto(nextPath());
 			}
 		} catch (err: any) {
 			error = err.response?.data?.error || 'Login failed. Check your credentials.';
@@ -80,7 +90,7 @@
 				createdAt: user.created_at ?? user.createdAt,
 			});
 			if (browser) {
-				goto('/dashboard');
+				goto(nextPath());
 			}
 		} catch (err: any) {
 			error = err.response?.data?.error || 'Registration failed.';
@@ -136,7 +146,7 @@
 			}
 			const token = localStorage.getItem('token');
 			if (token && !tokenExpired()) {
-				goto('/dashboard');
+				goto(nextPath());
 			}
 		}
 	});

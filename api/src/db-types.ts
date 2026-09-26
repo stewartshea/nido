@@ -33,6 +33,7 @@ export interface FeedingRow {
   amount: number | null;
   type: string;
   side: string | null;
+  formula_id?: number | null;
   notes: string | null;
   created_at: string;
 }

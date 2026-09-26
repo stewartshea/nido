@@ -12,6 +12,7 @@ import {
   removeFamily,
 } from '../db-namespaces';
 import { getAppSettings, sendMail, baseUrl, effectiveSignup } from '../mail';
+import { renderVerifyEmail, renderPasswordResetEmail } from '../mail-templates';
 import { jwtSecret } from '../auth';
 
 const authRoutes = new Hono();
@@ -116,14 +117,7 @@ authRoutes.post('/register', zValidator('json', registerSchema), async (c) => {
 
     if (verificationNeeded) {
       try {
-        await sendMail(settings, email, 'Verify your Nido email', [
-          `Hi ${firstName},`,
-          '',
-          'Confirm your Nido account by opening the link below (valid 24 hours):',
-          `${baseUrl()}/?verify=${verificationToken}`,
-          '',
-          'If you did not create this account, you can ignore this email.',
-        ].join('\n'));
+        await sendMail(settings, email, renderVerifyEmail({ firstName, url: `${baseUrl()}/?verify=${verificationToken}` }));
       } catch (mailErr) {
         // SMTP may be misconfigured; do not block registration, but surface the state.
         console.error('Verification email failed to send:', mailErr);
@@ -214,14 +208,7 @@ authRoutes.post('/forgot-password', zValidator('json', forgotSchema), async (c) 
   // The token is persisted before sendMail; a broken SMTP config yields a 500
   // but the link stays valid so operators can still complete the reset.
   try {
-    await sendMail(settings, email, 'Reset your Nido password', [
-      `Hi ${firstName},`,
-      '',
-      'Reset your password by opening the link below (valid 1 hour):',
-      `${baseUrl()}/?reset=${token}`,
-      '',
-      'If you did not request this, you can ignore this email.',
-    ].join('\n'));
+    await sendMail(settings, email, renderPasswordResetEmail({ firstName, url: `${baseUrl()}/?reset=${token}` }));
   } catch (mailErr) {
     console.error('Reset email failed to send:', mailErr);
     return c.json({ error: 'SMTP is not configured — reset emails cannot be sent' }, 500);

@@ -38,7 +38,18 @@ export function effectiveSignup(s: { signup_enabled: number }): { enabled: boole
 	return { enabled: Number(s.signup_enabled ?? 1) === 1, envLocked: false };
 }
 
-export async function sendMail(s: AppSettings, to: string, subject: string, text: string): Promise<void> {
+// Nodemailer defaults to a 120s connection timeout; with 587 firewalled in-cluster
+// (only 2525 is open) that made every mail-sending request hang for two minutes.
+const SMTP_CONNECT_TIMEOUT_MS = 10_000;
+const SMTP_SOCKET_TIMEOUT_MS = 20_000;
+
+export interface MailContent {
+	subject: string;
+	text: string;
+	html?: string;
+}
+
+export async function sendMail(s: AppSettings, to: string, message: MailContent): Promise<void> {
 	if (!smtpConfigured(s)) {
 		throw new Error('SMTP is not configured');
 	}
@@ -49,9 +60,17 @@ export async function sendMail(s: AppSettings, to: string, subject: string, text
 		auth: s.smtp_user && s.smtp_pass
 			? { user: s.smtp_user, pass: s.smtp_pass }
 			: undefined,
+		connectionTimeout: SMTP_CONNECT_TIMEOUT_MS,
+		socketTimeout: SMTP_SOCKET_TIMEOUT_MS,
 	});
 	const from = s.smtp_from || `Nido <nido@${s.smtp_host}>`;
-	await transporter.sendMail({ from, to, subject, text });
+	await transporter.sendMail({
+		from,
+		to,
+		subject: message.subject,
+		text: message.text,
+		...(message.html ? { html: message.html } : {}),
+	});
 }
 
 export function baseUrl(): string {
