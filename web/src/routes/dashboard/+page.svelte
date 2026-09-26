@@ -9,7 +9,7 @@
 	import ToggleSwitch from '$lib/components/ToggleSwitch.svelte';
 	import LogSheet from '$lib/components/LogSheet.svelte';
 	import Avatar from '$lib/components/Avatar.svelte';
-	import { Milk, Baby, Moon, TrendingUp, Calendar, Star, Trophy, Stethoscope, Syringe, Smile, Book, Users, Home, Trash2, Mail, Timer, PenLine, ArrowLeft, ArrowRight, Pause, Play, RotateCcw, Plus, Camera, Droplet, AlertCircle, Activity, ChevronDown, Settings, Check } from 'lucide-svelte';
+	import { Milk, Baby, Moon, TrendingUp, Calendar, Star, Trophy, Stethoscope, Syringe, Smile, Book, Users, Home, Trash2, Mail, Timer, PenLine, ArrowLeft, ArrowRight, Pause, Play, RotateCcw, Plus, Camera, Droplet, AlertCircle, Activity, ChevronDown, Settings, Check, Infinity, Heart } from 'lucide-svelte';
 
 
 	import { CATEGORIES, loadQuickLinks as loadSharedQuickLinks } from '$lib/shared';
@@ -45,6 +45,7 @@
 	};
 
 	type FeedLogType = 'breast' | 'formula' | 'bottle' | 'pump' | 'solid';
+	type BottleSource = 'breastmilk' | 'formula';
 
 	let familyView: 'dashboard' | 'detail' = 'dashboard';
 	let sheetOpen = false;
@@ -220,7 +221,8 @@
 	// Manual feed entry (backdated) + repeat-last
 	let manualStart = '';
 	let manualEnd = '';
-	let manualType: FeedLogType = 'breast';
+	let manualType: FeedLogType | 'combo' | null = null;
+	let manualBottleSource: BottleSource = 'breastmilk';
 	let manualSide = 'left';
 	let manualFormulaId: number | null = null;
 	let manualAmount = '';
@@ -267,7 +269,7 @@
 	let feedSide = 'left';
 	let feedAmount = '';
 	let feedNotes = '';
-	let feedMode: 'timer' | 'log' = 'timer';
+	let feedMode: 'timer' | 'log' = 'log';
 
 	let sleepStartedAt: number | null = null;
 	let sleepElapsed = 0;
@@ -834,6 +836,18 @@
 		if (mode === 'log' && !manualStart) manualStart = nowLocalISO();
 	}
 
+	function chooseManualFeedType(type: 'breast' | 'bottle' | 'combo') {
+		manualType = type;
+		if (type === 'breast') {
+			feedMode = 'timer';
+			manualBottleSource = 'breastmilk';
+		} else {
+			feedMode = 'log';
+			if (type === 'bottle') manualBottleSource = 'breastmilk';
+		}
+		if (!manualStart) manualStart = nowLocalISO();
+	}
+
 	function setSleepMode(mode: 'timer' | 'log') {
 		sleepMode = mode;
 		if (mode === 'log' && !sleepTime) sleepTime = nowLocalISO();
@@ -843,7 +857,19 @@
 		const last = localStorage.getItem('nido.lastFeed');
 		if (!last) { error = 'No previous feed to repeat.'; return; }
 		const l = JSON.parse(last);
-		manualType = (l.type || 'breast') as FeedLogType;
+		if (l.type === 'formula') {
+			manualType = 'bottle';
+			manualBottleSource = 'formula';
+			feedMode = 'log';
+		} else if (l.type === 'combo') {
+			manualType = 'combo';
+			manualBottleSource = l.bottleSource === 'formula' ? 'formula' : 'breastmilk';
+			feedMode = 'log';
+		} else {
+			manualType = (l.type || 'breast') as FeedLogType | 'combo';
+			if (manualType === 'bottle') { manualBottleSource = 'breastmilk'; feedMode = 'log'; }
+			else feedMode = 'timer';
+		}
 		manualSide = l.side === 'right' ? 'right' : 'left';
 		manualFormulaId = l.formulaId ?? null;
 		manualAmount = l.amount ?? '';
@@ -853,8 +879,13 @@
 	async function saveManualFeed(event: SubmitEvent) {
 		event.preventDefault();
 		if (!selectedBabyId) return;
+		if (!manualType) {
+			error = 'Choose Breast feed, Bottle feed, or Combo first.';
+			return;
+		}
 		if (!manualStart) manualStart = nowLocalISO();
-		if (manualType === 'formula' && !manualFormulaId) {
+		const isBottleBased = manualType === 'bottle' || manualType === 'combo';
+		if (isBottleBased && manualBottleSource === 'formula' && !manualFormulaId) {
 			error = 'Pick a formula for bottle feeding.';
 			return;
 		}
@@ -863,24 +894,47 @@
 		const usesEndTime = manualType === 'pump' || manualType === 'solid';
 		const end = usesEndTime && manualEnd ? new Date(manualEnd).toISOString() : undefined;
 		try {
-			await feedingAPI.create({
-				babyId: selectedBabyId,
-				startTime: start,
-				endTime: end,
-				type: manualType as any,
-				side: manualType === 'breast' ? (manualSide as any) : undefined,
-				formulaId: manualType === 'formula' ? manualFormulaId : undefined,
-				amount: manualAmount ? Number(manualAmount) : undefined,
-				notes: manualNotes || undefined,
-			});
+			if (manualType === 'combo') {
+				const bottleType = manualBottleSource === 'formula' ? 'formula' : 'bottle';
+				await feedingAPI.create({
+					babyId: selectedBabyId,
+					startTime: start,
+					type: 'breast' as any,
+					side: manualSide as any,
+					notes: manualNotes || undefined,
+				});
+				await feedingAPI.create({
+					babyId: selectedBabyId,
+					startTime: start,
+					type: bottleType as any,
+					formulaId: bottleType === 'formula' ? manualFormulaId : undefined,
+					amount: manualAmount ? Number(manualAmount) : undefined,
+					notes: manualNotes || undefined,
+				});
+			} else {
+				const resolvedType = manualType === 'bottle' && manualBottleSource === 'formula' ? 'formula' : manualType;
+				await feedingAPI.create({
+					babyId: selectedBabyId,
+					startTime: start,
+					endTime: end,
+					type: resolvedType as any,
+					side: manualType === 'breast' ? (manualSide as any) : undefined,
+					formulaId: resolvedType === 'formula' ? manualFormulaId : undefined,
+					amount: manualAmount ? Number(manualAmount) : undefined,
+					notes: manualNotes || undefined,
+				});
+			}
 			// Remember for "repeat last"
 			localStorage.setItem('nido.lastFeed', JSON.stringify({
 				type: manualType,
-				side: manualType === 'breast' ? manualSide : undefined,
-				formulaId: manualType === 'formula' ? manualFormulaId : null,
+				side: manualType === 'breast' || manualType === 'combo' ? manualSide : undefined,
+				bottleSource: isBottleBased ? manualBottleSource : undefined,
+				formulaId: isBottleBased && manualBottleSource === 'formula' ? manualFormulaId : null,
 				amount: manualAmount,
 			}));
 			manualStart = ''; manualEnd = ''; manualAmount = ''; manualNotes = '';
+			manualType = null;
+			manualBottleSource = 'breastmilk';
 			notice = 'Feed recorded.';
 			sheetOpen = false;
 			await refreshLists(); await refreshSummary();
@@ -1765,12 +1819,7 @@
 								</div>
 							</div>
 							{#if feedMode === 'timer'}
-								<div class="mb-3">
-									<label for="feed-type-main" class="block text-sm font-medium text-ink-soft mb-1">Type</label>
-						<select id="feed-type-main" bind:value={feedType} class="w-full px-3 py-2 border border-line rounded-md">
-								<option value="breast">Breast</option>
-							</select>
-								</div>
+								<div class="mb-3 text-sm text-ink-soft">Timer mode is available for breast feeds only.</div>
 
 								{#if feedType === 'breast'}
 									<div class="flex items-center justify-between mb-2">
@@ -1828,16 +1877,23 @@
 										</div>
 									</div>
 								<div>
-								<div class="block text-sm font-medium text-ink-soft mb-1">Type</div>
-									<div class="grid grid-cols-2 gap-2">
-										<button type="button" on:click={() => (manualType = 'breast')} class="{manualType === 'breast' ? 'bg-primary text-on-primary border-primary' : 'bg-surface text-ink-soft border-line-soft'} border rounded-lg py-2 px-3 text-sm font-semibold flex items-center justify-center gap-2"><Milk class="w-4 h-4" /> Breast</button>
-										<button type="button" on:click={() => (manualType = 'formula')} class="{manualType === 'formula' ? 'bg-primary text-on-primary border-primary' : 'bg-surface text-ink-soft border-line-soft'} border rounded-lg py-2 px-3 text-sm font-semibold flex items-center justify-center gap-2"><Milk class="w-4 h-4" /> Bottle + Formula</button>
-										<button type="button" on:click={() => (manualType = 'bottle')} class="{manualType === 'bottle' ? 'bg-primary text-on-primary border-primary' : 'bg-surface text-ink-soft border-line-soft'} border rounded-lg py-2 px-3 text-sm font-semibold flex items-center justify-center gap-2"><Droplet class="w-4 h-4" /> Bottle + Breast milk</button>
-										<button type="button" on:click={() => (manualType = 'pump')} class="{manualType === 'pump' ? 'bg-primary text-on-primary border-primary' : 'bg-surface text-ink-soft border-line-soft'} border rounded-lg py-2 px-3 text-sm font-semibold flex items-center justify-center gap-2"><Activity class="w-4 h-4" /> Pump</button>
+									<div class="block text-sm font-medium text-ink-soft mb-1">BreastFeed, Bottle Feed, or Combo?</div>
+									<div class="grid grid-cols-3 gap-2">
+										<button type="button" on:click={() => chooseManualFeedType('breast')} class="{manualType === 'breast' ? 'bg-primary text-on-primary border-primary' : 'bg-surface text-ink-soft border-line-soft'} border rounded-lg py-2 px-3 text-sm font-semibold flex items-center justify-center gap-2"><Heart class="w-4 h-4" /> BreastFeed</button>
+										<button type="button" on:click={() => chooseManualFeedType('bottle')} class="{manualType === 'bottle' ? 'bg-primary text-on-primary border-primary' : 'bg-surface text-ink-soft border-line-soft'} border rounded-lg py-2 px-3 text-sm font-semibold flex items-center justify-center gap-2"><Baby class="w-4 h-4" /> Bottle Feed</button>
+										<button type="button" on:click={() => chooseManualFeedType('combo')} class="{manualType === 'combo' ? 'bg-primary text-on-primary border-primary' : 'bg-surface text-ink-soft border-line-soft'} border rounded-lg py-2 px-3 text-sm font-semibold flex items-center justify-center gap-2"><Infinity class="w-4 h-4" /> Combo</button>
 									</div>
-									<button type="button" on:click={() => (manualType = 'solid')} class="mt-2 w-full {manualType === 'solid' ? 'bg-primary text-on-primary border-primary' : 'bg-surface text-ink-soft border-line-soft'} border rounded-lg py-2 px-3 text-sm font-semibold flex items-center justify-center gap-2"><PenLine class="w-4 h-4" /> Solid food</button>
 								</div>
-									{#if manualType === 'formula'}
+									{#if manualType === 'bottle' || manualType === 'combo'}
+										<div>
+											<label for="manual-bottle-source" class="block text-sm font-medium text-ink-soft mb-1">Bottle contents</label>
+											<select id="manual-bottle-source" bind:value={manualBottleSource} class="w-full px-3 py-2 border border-line rounded-md">
+												<option value="breastmilk">Breast milk</option>
+												<option value="formula">Formula</option>
+											</select>
+										</div>
+									{/if}
+									{#if (manualType === 'bottle' || manualType === 'combo') && manualBottleSource === 'formula'}
 										<div>
 											<label for="manual-feed-formula" class="block text-sm font-medium text-ink-soft mb-1">Formula</label>
 											<div class="flex gap-2">
@@ -1863,7 +1919,7 @@
 {/if}
 									</div>
 									{/if}
-									{#if manualType === 'breast'}
+									{#if manualType === 'breast' || manualType === 'combo'}
 										<div>
 											<div class="flex items-center justify-between mb-1">
 												<div class="block text-sm font-medium text-ink-soft">Breast</div>
@@ -1885,9 +1941,9 @@
 											</div>
 										</div>
 									{/if}
-									{#if manualType !== 'breast'}
+									{#if manualType && manualType !== 'breast'}
 										<div>
-											<label for="manual-feed-amount" class="block text-sm font-medium text-ink-soft mb-1">Amount ({manualType === 'formula' || manualType === 'bottle' || manualType === 'pump' ? 'oz' : 'servings'})</label>
+											<label for="manual-feed-amount" class="block text-sm font-medium text-ink-soft mb-1">Amount (oz)</label>
 											<input id="manual-feed-amount" type="number" step="0.1" bind:value={manualAmount} class="w-full px-3 py-2 border border-line rounded-md" placeholder="4.5" />
 										</div>
 									{/if}

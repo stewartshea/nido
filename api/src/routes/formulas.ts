@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 import { type AuthEnv } from '../auth';
+import { DEFAULT_FORMULA_CATALOG } from '../data/formula-catalog';
 
 const formulaRoutes = new Hono<AuthEnv>();
 
@@ -18,6 +19,27 @@ async function familyRole(db: any, userId: string, familyId: number) {
 	return res.rows[0]?.role ? String(res.rows[0].role) : null;
 }
 
+async function seedFormulaCatalog(db: any, familyId: number) {
+	const existing = await db.execute({
+		sql: 'SELECT name, COALESCE(brand, \'\') AS brand FROM formulas WHERE family_id = ?',
+		args: [familyId],
+	});
+
+	const keys = new Set(
+		existing.rows.map((r: any) => `${String(r?.name || '').trim().toLowerCase()}::${String(r?.brand || '').trim().toLowerCase()}`),
+	);
+
+	for (const formula of DEFAULT_FORMULA_CATALOG) {
+		const key = `${formula.name.trim().toLowerCase()}::${formula.brand.trim().toLowerCase()}`;
+		if (keys.has(key)) continue;
+		await db.execute({
+			sql: 'INSERT INTO formulas (family_id, name, brand, formula_type, created_at) VALUES (?, ?, ?, ?, ?)',
+			args: [familyId, formula.name, formula.brand, formula.formulaType, isoNow()],
+		});
+		keys.add(key);
+	}
+}
+
 // GET /?familyId= — list this family's formula catalog.
 formulaRoutes.get('/', async (c) => {
 	const userId = c.get('userId');
@@ -25,6 +47,8 @@ formulaRoutes.get('/', async (c) => {
 	const familyId = parseInt(c.req.query('familyId') || '0');
 	if (!familyId) return c.json({ error: 'familyId is required' }, 400);
 	if (!(await familyRole(db, userId, familyId))) return c.json({ error: 'Not a member of this family' }, 403);
+
+	await seedFormulaCatalog(db, familyId);
 
 	const res = await db.execute({
 		sql: 'SELECT id, name, brand, formula_type, created_at FROM formulas WHERE family_id = ? ORDER BY name',
