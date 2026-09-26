@@ -495,7 +495,7 @@
 				selectedMemberId = null;
 				activeCategories = [];
 			}
-			await Promise.all([loadFamilySettings(), refreshLists(), refreshSummary(), loadInvitations(), loadImportRuns()]);
+			await Promise.all([loadFamilySettings(), refreshLists(), refreshSummary(), loadInvitations(), loadImportRuns(), loadFormulas()]);
 		} catch (e: any) {
 			const status = e.response?.status;
 			if (status === 401 || status === 403) {
