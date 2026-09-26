@@ -7,7 +7,7 @@ import type { JournalEntryRow } from '../db-types';
 const journalRoutes = new Hono<AuthEnv>();
 
 const createJournalSchema = z.object({
-  babyId: z.number(),
+  memberId: z.number(),
   title: z.string().max(200).optional(),
   body: z.string().max(20000).optional(),
   entryDate: z.string().datetime().optional(),
@@ -21,12 +21,12 @@ const updateJournalSchema = z.object({
 
 const getUserId = (c: any) => c.get('userId') as string;
 
-async function babyAccess(db: any, babyId: number, userId: string): Promise<boolean> {
+async function babyAccess(db: any, memberId: number, userId: string): Promise<boolean> {
   const res = await db.execute({
     sql: `SELECT b.id FROM babies b
           JOIN user_households uh ON uh.household_id = b.household_id
           WHERE b.id = ? AND uh.user_id = ? LIMIT 1`,
-    args: [babyId, userId],
+    args: [memberId, userId],
   });
   return res.rows.length > 0;
 }
@@ -34,31 +34,31 @@ async function babyAccess(db: any, babyId: number, userId: string): Promise<bool
 journalRoutes.get('/', async (c) => {
   const db = c.get('db');
   const userId = getUserId(c);
-  const babyId = parseInt(c.req.query('babyId') || '0');
-  if (!babyId) return c.json({ error: 'babyId is required' }, 400);
-  if (!(await babyAccess(db, babyId, userId))) return c.json({ error: 'Access denied' }, 403);
+  const memberId = parseInt(c.req.query('memberId') || '0');
+  if (!memberId) return c.json({ error: 'memberId is required' }, 400);
+  if (!(await babyAccess(db, memberId, userId))) return c.json({ error: 'Access denied' }, 403);
 
   const res = await db.execute({
     sql: `SELECT id, baby_id, title, body, entry_date, created_at FROM journal_entries WHERE baby_id = ? ORDER BY COALESCE(entry_date, created_at) DESC`,
-    args: [babyId],
+    args: [memberId],
   });
   return c.json({ entries: res.rows.map((r) => ({
-    id: Number(r?.id), babyId: Number(r?.baby_id), title: r?.title, body: r?.body, entryDate: r?.entry_date, createdAt: r?.created_at,
+    id: Number(r?.id), memberId: Number(r?.baby_id), title: r?.title, body: r?.body, entryDate: r?.entry_date, createdAt: r?.created_at,
   })) });
 });
 
 journalRoutes.post('/', zValidator('json', createJournalSchema), async (c) => {
   const db = c.get('db');
   const userId = getUserId(c);
-  const { babyId, title, body, entryDate } = c.req.valid('json');
-  if (!(await babyAccess(db, babyId, userId))) return c.json({ error: 'Access denied' }, 403);
+  const { memberId, title, body, entryDate } = c.req.valid('json');
+  if (!(await babyAccess(db, memberId, userId))) return c.json({ error: 'Access denied' }, 403);
 
   const now = new Date().toISOString();
   const ins = await db.execute({
     sql: `INSERT INTO journal_entries (baby_id, title, body, entry_date, created_at) VALUES (?, ?, ?, ?, ?)`,
-    args: [babyId, title || null, body || null, entryDate || now, now],
+    args: [memberId, title || null, body || null, entryDate || now, now],
   });
-  return c.json({ message: 'Journal entry saved', entry: { id: Number(ins.lastInsertRowid), babyId, title, body, entryDate: entryDate || now } }, 201);
+  return c.json({ message: 'Journal entry saved', entry: { id: Number(ins.lastInsertRowid), memberId, title, body, entryDate: entryDate || now } }, 201);
 });
 
 journalRoutes.put('/:id{[0-9]+}', zValidator('json', updateJournalSchema), async (c) => {
@@ -68,8 +68,8 @@ journalRoutes.put('/:id{[0-9]+}', zValidator('json', updateJournalSchema), async
   const { title, body, entryDate } = c.req.valid('json');
   const rowRes = await db.execute({ sql: `SELECT baby_id FROM journal_entries WHERE id = ? LIMIT 1`, args: [id] });
   if (rowRes.rows.length === 0) return c.json({ error: 'Journal entry not found' }, 404);
-  const babyId = Number((rowRes.rows[0] as any).baby_id);
-  if (!(await babyAccess(db, babyId, userId))) return c.json({ error: 'Access denied' }, 403);
+  const memberId = Number((rowRes.rows[0] as any).baby_id);
+  if (!(await babyAccess(db, memberId, userId))) return c.json({ error: 'Access denied' }, 403);
 
   const updates: string[] = [];
   const params: Array<number | string | null> = [];
@@ -88,8 +88,8 @@ journalRoutes.delete('/:id{[0-9]+}', async (c) => {
   const id = parseInt(c.req.param('id'));
   const rowRes = await db.execute({ sql: `SELECT baby_id FROM journal_entries WHERE id = ? LIMIT 1`, args: [id] });
   if (rowRes.rows.length === 0) return c.json({ error: 'Journal entry not found' }, 404);
-  const babyId = Number((rowRes.rows[0] as any).baby_id);
-  if (!(await babyAccess(db, babyId, userId))) return c.json({ error: 'Access denied' }, 403);
+  const memberId = Number((rowRes.rows[0] as any).baby_id);
+  if (!(await babyAccess(db, memberId, userId))) return c.json({ error: 'Access denied' }, 403);
 
   await db.execute({ sql: `DELETE FROM journal_entries WHERE id = ?`, args: [id] });
   return c.json({ message: 'Journal entry deleted' });

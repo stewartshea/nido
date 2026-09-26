@@ -7,24 +7,20 @@ const milestoneRoutes = new Hono<AuthEnv>();
 
 // Zod schemas for validation
 const createMilestoneSchema = z.object({
-  babyId: z.number(),
+  memberId: z.number(),
   title: z.string().min(1),
   description: z.string().optional(),
   achievedDate: z.string().datetime(),
-  category: z.enum([
-    'motor', 'cognitive', 'social', 'emotional', 'communication', 
-    'physical', 'behavioral', 'sensory', 'other'
-  ]).optional(),
+  category: z.string().max(80).optional(),
+  tags: z.array(z.string().max(40)).max(10).optional(),
 });
 
 const updateMilestoneSchema = z.object({
   title: z.string().min(1).optional(),
   description: z.string().optional(),
   achievedDate: z.string().datetime().optional(),
-  category: z.enum([
-    'motor', 'cognitive', 'social', 'emotional', 'communication', 
-    'physical', 'behavioral', 'sensory', 'other'
-  ]).optional(),
+  category: z.string().max(80).optional(),
+  tags: z.array(z.string().max(40)).max(10).optional(),
 });
 
 // Get all milestones for a baby
@@ -32,14 +28,14 @@ milestoneRoutes.get('/', async (c) => {
   try {
     const userId = c.get('userId');
     const db = c.get('db');
-    const babyId = parseInt(c.req.query('babyId') || '0');
+    const memberId = parseInt(c.req.query('memberId') || '0');
     
-    if (!babyId) {
-      return c.json({ error: 'Baby ID is required' }, 400);
+    if (!memberId) {
+      return c.json({ error: 'Member ID is required' }, 400);
     }
     
     // Verify user has access to this baby
-    const babyCheck = await db.execute({
+    const memberCheck = await db.execute({
       sql: `
       SELECT b.id
       FROM babies b
@@ -47,21 +43,21 @@ milestoneRoutes.get('/', async (c) => {
       JOIN user_households uh ON h.id = uh.household_id
       WHERE b.id = ? AND uh.user_id = ?
     `,
-      args: [babyId, userId]
+      args: [memberId, userId]
     });
     
-    if (babyCheck.rows.length === 0) {
-      return c.json({ error: 'Baby not found or access denied' }, 404);
+    if (memberCheck.rows.length === 0) {
+      return c.json({ error: 'Member not found or access denied' }, 404);
     }
     
     // Get milestones for the baby
     const milestonesResult = await db.execute({
       sql: `
-      SELECT id, baby_id, title, description, achieved_date, category, created_at
+      SELECT id, baby_id, title, description, achieved_date, category, tags, created_at
       FROM milestones
       WHERE baby_id = ?
     `,
-      args: [babyId]
+      args: [memberId]
     });
     
     const milestonesSorted = [...milestonesResult.rows]
@@ -108,12 +104,12 @@ milestoneRoutes.get('/:id{[0-9]+}', async (c) => {
 // Create a new milestone
 milestoneRoutes.post('/', zValidator('json', createMilestoneSchema), async (c) => {
   try {
-    const { babyId, title, description, achievedDate, category } = c.req.valid('json');
+    const { memberId, title, description, achievedDate, category, tags } = c.req.valid('json');
     const userId = c.get('userId');
     const db = c.get('db');
     
     // Verify user has access to this baby
-    const babyCheck = await db.execute({
+    const memberCheck = await db.execute({
       sql: `
       SELECT b.id
       FROM babies b
@@ -121,26 +117,29 @@ milestoneRoutes.post('/', zValidator('json', createMilestoneSchema), async (c) =
       JOIN user_households uh ON h.id = uh.household_id
       WHERE b.id = ? AND uh.user_id = ?
     `,
-      args: [babyId, userId]
+      args: [memberId, userId]
     });
     
-    if (babyCheck.rows.length === 0) {
-      return c.json({ error: 'Baby not found or access denied' }, 404);
+    if (memberCheck.rows.length === 0) {
+      return c.json({ error: 'Member not found or access denied' }, 404);
     }
     
+    const tagsJson = tags?.length ? JSON.stringify(tags) : null;
+
     // Insert new milestone
     const result = await db.execute({
       sql: `
         INSERT INTO milestones (
-          baby_id, title, description, achieved_date, category, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?)
+          baby_id, title, description, achieved_date, category, tags, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)
       `,
       args: [
-        babyId, 
+        memberId, 
         title, 
         description || null, 
         achievedDate, 
-        category || null, 
+        category || null,
+        tagsJson,
         new Date().toISOString()
       ]
     });
@@ -169,7 +168,7 @@ milestoneRoutes.post('/', zValidator('json', createMilestoneSchema), async (c) =
 milestoneRoutes.put('/:id{[0-9]+}', zValidator('json', updateMilestoneSchema), async (c) => {
   try {
     const milestoneId = parseInt(c.req.param('id'));
-    const { title, description, achievedDate, category } = c.req.valid('json');
+    const { title, description, achievedDate, category, tags } = c.req.valid('json');
     const userId = c.get('userId');
     const db = c.get('db');
     
@@ -212,6 +211,11 @@ milestoneRoutes.put('/:id{[0-9]+}', zValidator('json', updateMilestoneSchema), a
     if (category !== undefined) {
       updates.push('category = ?');
       params.push(category);
+    }
+
+    if (tags !== undefined) {
+      updates.push('tags = ?');
+      params.push(tags.length ? JSON.stringify(tags) : null);
     }
     
     if (updates.length === 0) {
@@ -284,26 +288,72 @@ milestoneRoutes.delete('/:id{[0-9]+}', async (c) => {
   }
 });
 
-// Get milestone categories
 milestoneRoutes.get('/categories', async (c) => {
   try {
-    // Return predefined milestone categories
-    const categories = [
-      { id: 'motor', name: 'Motor Skills', description: 'Physical movement and coordination milestones' },
-      { id: 'cognitive', name: 'Cognitive', description: 'Thinking, learning, and problem-solving milestones' },
-      { id: 'social', name: 'Social', description: 'Interacting with others and social awareness' },
-      { id: 'emotional', name: 'Emotional', description: 'Emotional regulation and expression' },
-      { id: 'communication', name: 'Communication', description: 'Speaking, listening, and understanding' },
-      { id: 'physical', name: 'Physical', description: 'Growth and physical development' },
-      { id: 'behavioral', name: 'Behavioral', description: 'Behavior patterns and habits' },
-      { id: 'sensory', name: 'Sensory', description: 'Processing sensory information' },
-      { id: 'other', name: 'Other', description: 'Other developmental milestones' }
-    ];
-    
+    const userId = c.get('userId');
+    const db = c.get('db');
+
+    const res = await db.execute({
+      sql: `
+      SELECT DISTINCT category FROM milestones m
+      JOIN babies b ON m.baby_id = b.id
+      JOIN households h ON b.household_id = h.id
+      JOIN user_households uh ON h.id = uh.household_id
+      WHERE uh.user_id = ? AND m.category IS NOT NULL AND trim(m.category) <> ''
+      ORDER BY category
+    `,
+      args: [userId],
+    });
+    const categories = res.rows.map((r: any) => ({
+      id: String(r.category),
+      name: String(r.category).charAt(0).toUpperCase() + String(r.category).slice(1),
+    }));
     return c.json({ categories });
   } catch (error) {
     console.error('Get categories error:', error);
     return c.json({ error: 'Failed to fetch milestone categories' }, 500);
+  }
+});
+
+milestoneRoutes.get('/trends', async (c) => {
+  try {
+    const userId = c.get('userId');
+    const db = c.get('db');
+    const memberId = parseInt(c.req.query('memberId') || '0');
+    const category = c.req.query('category') || '';
+    const days = parseInt(c.req.query('days') || '30');
+
+    if (!memberId) return c.json({ error: 'memberId is required' }, 400);
+
+    const memberCheck = await db.execute({
+      sql: `
+      SELECT b.id FROM babies b
+      JOIN households h ON b.household_id = h.id
+      JOIN user_households uh ON h.id = uh.household_id
+      WHERE b.id = ? AND uh.user_id = ?
+    `,
+      args: [memberId, userId],
+    });
+    if (memberCheck.rows.length === 0) return c.json({ error: 'Member not found or access denied' }, 404);
+
+    const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+
+    let sql = 'SELECT category, COUNT(*) as count FROM milestones WHERE baby_id = ? AND achieved_date >= ?';
+    const args: any[] = [memberId, since];
+    if (category) { sql += ' AND category = ?'; args.push(category); }
+    sql += ' GROUP BY category ORDER BY count DESC';
+
+    const res = await db.execute({ sql, args });
+    const trends = res.rows.map((r: any) => ({
+      category: String(r.category || 'uncategorized'),
+      count: Number(r.count || 0),
+    }));
+
+    const total = trends.reduce((s, t) => s + t.count, 0);
+    return c.json({ trends, total, days, memberId, since });
+  } catch (error) {
+    console.error('Get trends error:', error);
+    return c.json({ error: 'Failed to fetch trends' }, 500);
   }
 });
 

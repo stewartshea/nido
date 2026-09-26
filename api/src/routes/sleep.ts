@@ -8,7 +8,7 @@ const sleepRoutes = new Hono<AuthEnv>();
 
 // Zod schemas for validation
 const createSleepSchema = z.object({
-  babyId: z.number(),
+  memberId: z.number(),
   startTime: z.string().datetime(),
   endTime: z.string().datetime().optional(),
   location: z.string().optional(),
@@ -27,14 +27,14 @@ sleepRoutes.get('/', async (c) => {
   try {
     const userId = c.get('userId');
     const db = c.get('db');
-    const babyId = parseInt(c.req.query('babyId') || '0');
+    const memberId = parseInt(c.req.query('memberId') || '0');
     
-    if (!babyId) {
-      return c.json({ error: 'Baby ID is required' }, 400);
+    if (!memberId) {
+      return c.json({ error: 'Member ID is required' }, 400);
     }
     
     // Verify user has access to this baby
-    const babyCheck = await db.execute({
+    const memberCheck = await db.execute({
       sql: `
       SELECT b.id
       FROM babies b
@@ -42,11 +42,11 @@ sleepRoutes.get('/', async (c) => {
       JOIN user_households uh ON h.id = uh.household_id
       WHERE b.id = ? AND uh.user_id = ?
     `,
-      args: [babyId, userId]
+      args: [memberId, userId]
     });
     
-    if (babyCheck.rows.length === 0) {
-      return c.json({ error: 'Baby not found or access denied' }, 404);
+    if (memberCheck.rows.length === 0) {
+      return c.json({ error: 'Member not found or access denied' }, 404);
     }
     
     // Get sleep records for the baby
@@ -57,7 +57,7 @@ sleepRoutes.get('/', async (c) => {
       WHERE baby_id = ?
       LIMIT 100
     `,
-      args: [babyId]
+      args: [memberId]
     });
     
     // Calculate duration if not already calculated
@@ -125,12 +125,12 @@ sleepRoutes.get('/:id{[0-9]+}', async (c) => {
 // Create a new sleep record
 sleepRoutes.post('/', zValidator('json', createSleepSchema), async (c) => {
   try {
-    const { babyId, startTime, endTime, location, notes } = c.req.valid('json');
+    const { memberId, startTime, endTime, location, notes } = c.req.valid('json');
     const userId = c.get('userId');
     const db = c.get('db');
     
     // Verify user has access to this baby
-    const babyCheck = await db.execute({
+    const memberCheck = await db.execute({
       sql: `
       SELECT b.id
       FROM babies b
@@ -138,11 +138,11 @@ sleepRoutes.post('/', zValidator('json', createSleepSchema), async (c) => {
       JOIN user_households uh ON h.id = uh.household_id
       WHERE b.id = ? AND uh.user_id = ?
     `,
-      args: [babyId, userId]
+      args: [memberId, userId]
     });
     
-    if (babyCheck.rows.length === 0) {
-      return c.json({ error: 'Baby not found or access denied' }, 404);
+    if (memberCheck.rows.length === 0) {
+      return c.json({ error: 'Member not found or access denied' }, 404);
     }
     
     // Calculate duration if both start and end times are provided
@@ -161,7 +161,7 @@ sleepRoutes.post('/', zValidator('json', createSleepSchema), async (c) => {
         ) VALUES (?, ?, ?, ?, ?, ?, ?)
       `,
       args: [
-        babyId, 
+        memberId, 
         startTime, 
         endTime || null, 
         duration, 

@@ -98,7 +98,7 @@
 	let families: any[] = [];
 	let activeFamily: any = null;
 	let activeFamilyId: string | null = null;
-	let selectedBabyId: number | null = null;
+	let selectedMemberId: number | null = null;
 	let activeTab = 'feeds';
 	let viewMode: 'list' | 'table' = 'list';
 	let defaultProfileId: number | null = null;
@@ -352,9 +352,9 @@
 	}
 
 	async function refreshSummary() {
-		if (!selectedBabyId) return;
+		if (!selectedMemberId) return;
 		try {
-			const res = await healthAPI.getSummary(selectedBabyId);
+			const res = await healthAPI.getSummary(selectedMemberId);
 			summary = res.data.summary;
 		} catch {
 			summary = null;
@@ -362,17 +362,17 @@
 	}
 
 	async function refreshLists() {
-		if (!selectedBabyId) return;
+		if (!selectedMemberId) return;
 		try {
 			const [f, d, s, g, m, v, mo, j] = await Promise.all([
-				feedingAPI.getAll(selectedBabyId),
-				diaperAPI.getAll(selectedBabyId),
-				sleepAPI.getAll(selectedBabyId),
-				growthAPI.getAll(selectedBabyId),
-				milestoneAPI.getAll(selectedBabyId),
-				vaccinationAPI.getAll(selectedBabyId),
-				moodAPI.getAll(selectedBabyId),
-				journalAPI.getAll(selectedBabyId),
+				feedingAPI.getAll(selectedMemberId),
+				diaperAPI.getAll(selectedMemberId),
+				sleepAPI.getAll(selectedMemberId),
+				growthAPI.getAll(selectedMemberId),
+				milestoneAPI.getAll(selectedMemberId),
+				vaccinationAPI.getAll(selectedMemberId),
+				moodAPI.getAll(selectedMemberId),
+				journalAPI.getAll(selectedMemberId),
 			]);
 			feedings = f.data.feedings;
 			diapers = d.data.diapers;
@@ -459,7 +459,7 @@
 			const res = await familiesAPI.list();
 			families = res.data.families;
 			if (families.length === 0) {
-				selectedBabyId = null;
+				selectedMemberId = null;
 				babies = [];
 				return;
 			}
@@ -486,13 +486,13 @@
 			if (babies.length > 0) {
 				const savedDefault = defaultProfileId ?? null;
 				const match = savedDefault ? babies.find((b) => Number(b.id) === savedDefault) : null;
-				selectedBabyId = match ? Number(match.id) : Number(babies[0].id);
-				const selected = babies.find((b) => Number(b.id) === selectedBabyId);
+				selectedMemberId = match ? Number(match.id) : Number(babies[0].id);
+				const selected = babies.find((b) => Number(b.id) === selectedMemberId);
 				activeCategories = selected?.categories?.length ? selected.categories : CATEGORIES.map((c) => c.id);
 				if (!activeCategories.includes(activeTab)) activeTab = activeCategories[0] || 'feeds';
 				restoreTimerState();
 			} else {
-				selectedBabyId = null;
+				selectedMemberId = null;
 				activeCategories = [];
 			}
 			await Promise.all([loadFamilySettings(), refreshLists(), refreshSummary(), loadInvitations(), loadImportRuns()]);
@@ -514,10 +514,10 @@
 		loadFamilies();
 	}
 
-	function setDefaultProfile(babyId: number) {
-		defaultProfileId = babyId;
-		selectedBabyId = babyId;
-		if (browser) localStorage.setItem('nido.defaultProfile', String(babyId));
+	function setDefaultProfile(memberId: number) {
+		defaultProfileId = memberId;
+		selectedMemberId = memberId;
+		if (browser) localStorage.setItem('nido.defaultProfile', String(memberId));
 		notice = 'Default profile updated.';
 		error = '';
 	}
@@ -612,7 +612,7 @@
 		authActions.logout();
 		isAuthenticated = false;
 		babies = [];
-		selectedBabyId = null;
+		selectedMemberId = null;
 		feedStartedAt = null;
 		leftStartedAt = null;
 		rightStartedAt = null;
@@ -822,14 +822,14 @@
 
 	async function saveManualFeed(event: SubmitEvent) {
 		event.preventDefault();
-		if (!selectedBabyId) return;
+		if (!selectedMemberId) return;
 		if (!manualStart) manualStart = nowLocalISO();
 		error = '';
 		const start = manualStart ? new Date(manualStart).toISOString() : new Date().toISOString();
 		const end = manualEnd ? new Date(manualEnd).toISOString() : undefined;
 		try {
 			await feedingAPI.create({
-				babyId: selectedBabyId,
+				memberId: selectedMemberId,
 				startTime: start,
 				endTime: end,
 				type: manualType as any,
@@ -848,13 +848,13 @@
 
 	async function saveDiaperManual(event: SubmitEvent) {
 		event.preventDefault();
-		if (!selectedBabyId) return;
+		if (!selectedMemberId) return;
 		error = '';
 		savingDiaper = true;
 		const time = diaperTime ? new Date(diaperTime).toISOString() : new Date().toISOString();
 		try {
 			await diaperAPI.create({
-				babyId: selectedBabyId,
+				memberId: selectedMemberId,
 				changeTime: time,
 				type: diaperType as any,
 				consistency: diaperConsistency || undefined,
@@ -1023,9 +1023,9 @@
 		} catch (err: any) { error = err.response?.data?.error || 'Failed to delete family.'; }
 	}
 
-	async function selectBaby(babyId: number) {
-		selectedBabyId = babyId;
-		const selected = babies.find((b) => Number(b.id) === babyId);
+	async function selectMember(memberId: number) {
+		selectedMemberId = memberId;
+		const selected = babies.find((b) => Number(b.id) === memberId);
 		activeCategories = selected?.categories?.length ? selected.categories : CATEGORIES.map((c) => c.id);
 		if (!activeCategories.includes(activeTab)) activeTab = activeCategories[0] || 'feeds';
 		restoreTimerState();
@@ -1191,11 +1191,11 @@
 	// dropped connection mid-session does not lose accumulated time. The outbox
 	// queues records that fail to reach the API (offline/5xx) and retries later.
 	function timerKey(): string {
-		return `nido.timer.${selectedBabyId ?? 0}`;
+		return `nido.timer.${selectedMemberId ?? 0}`;
 	}
 
 	function persistTimerState() {
-		if (!selectedBabyId) return;
+		if (!selectedMemberId) return;
 		try {
 			localStorage.setItem(timerKey(), JSON.stringify({
 				leftElapsed, rightElapsed,
@@ -1306,7 +1306,7 @@
 		stopTimerLoop();
 		leftElapsed = 0; rightElapsed = 0; feedElapsed = 0; feedStartedAt = null;
 		clearTimerState();
-		const payload = { babyId: selectedBabyId, startTime, endTime, type: 'breast', side: side as 'left' };
+		const payload = { memberId: selectedMemberId, startTime, endTime, type: 'breast', side: side as 'left' };
 		try {
 			await feedingAPI.create(payload);
 			notice = 'Feeding recorded.';
@@ -1346,7 +1346,7 @@
 		stopTimerLoop();
 		sleepElapsed = 0;
 		clearTimerState();
-		const payload = { babyId: selectedBabyId, startTime, endTime, location: sleepLocation, notes: sleepNotes || undefined };
+		const payload = { memberId: selectedMemberId, startTime, endTime, location: sleepLocation, notes: sleepNotes || undefined };
 		try {
 			await sleepAPI.create(payload);
 			sleepNotes = '';
@@ -1369,11 +1369,11 @@
 
 	async function saveManualSleep(event: SubmitEvent) {
 		event.preventDefault();
-		if (!selectedBabyId) return;
+		if (!selectedMemberId) return;
 		error = '';
 		const start = sleepTime ? new Date(sleepTime).toISOString() : new Date().toISOString();
 		try {
-			await sleepAPI.create({ babyId: selectedBabyId, startTime: start, location: sleepLocation, notes: sleepNotes || undefined });
+			await sleepAPI.create({ memberId: selectedMemberId, startTime: start, location: sleepLocation, notes: sleepNotes || undefined });
 			sleepTime = ''; sleepNotes = '';
 			notice = 'Sleep recorded.';
 			await refreshLists(); await refreshSummary();
@@ -1382,11 +1382,11 @@
 
 	async function saveManualGrowth(event: SubmitEvent) {
 		event.preventDefault();
-		if (!selectedBabyId) return;
+		if (!selectedMemberId) return;
 		error = '';
 		try {
 			await growthAPI.create({
-				babyId: selectedBabyId,
+				memberId: selectedMemberId,
 				measurementDate: growthTime ? new Date(growthTime).toISOString() : new Date().toISOString(),
 				weight: growthWeight ? Number(growthWeight) : undefined,
 				height: growthHeight ? Number(growthHeight) : undefined,
@@ -1401,12 +1401,12 @@
 
 	async function saveManualMilestone(event: SubmitEvent) {
 		event.preventDefault();
-		if (!selectedBabyId) return;
+		if (!selectedMemberId) return;
 		error = '';
 		if (!milestoneTitle.trim()) { error = 'Milestone name is required.'; return; }
 		try {
 			await milestoneAPI.create({
-				babyId: selectedBabyId,
+				memberId: selectedMemberId,
 				title: milestoneTitle.trim(),
 				achievedDate: milestoneTime ? new Date(milestoneTime).toISOString() : new Date().toISOString(),
 				category: milestoneCategory || undefined,
@@ -1419,12 +1419,12 @@
 
 	async function saveManualVaccine(event: SubmitEvent) {
 		event.preventDefault();
-		if (!selectedBabyId) return;
+		if (!selectedMemberId) return;
 		error = '';
 		if (!vaccineName.trim()) { error = 'Vaccine name is required.'; return; }
 		try {
 			await vaccinationAPI.create({
-				babyId: selectedBabyId,
+				memberId: selectedMemberId,
 				name: vaccineName.trim(),
 				dateGiven: vaccineTime ? new Date(vaccineTime).toISOString() : undefined,
 				notes: vaccineNotes || undefined,
@@ -1437,11 +1437,11 @@
 
 	async function saveMood(event: SubmitEvent) {
 		event.preventDefault();
-		if (!selectedBabyId) return;
+		if (!selectedMemberId) return;
 		error = '';
 		try {
 			await moodAPI.create({
-				babyId: selectedBabyId,
+				memberId: selectedMemberId,
 				mood: moodMood,
 				recordedAt: moodTime ? new Date(moodTime).toISOString() : undefined,
 				notes: moodNotes || undefined,
@@ -1454,12 +1454,12 @@
 
 	async function saveJournal(event: SubmitEvent) {
 		event.preventDefault();
-		if (!selectedBabyId) return;
+		if (!selectedMemberId) return;
 		error = '';
 		if (!journalTitle.trim() && !journalBody.trim()) { error = 'Add a title or a note.'; return; }
 		try {
 			await journalAPI.create({
-				babyId: selectedBabyId,
+				memberId: selectedMemberId,
 				title: journalTitle.trim() || undefined,
 				body: journalBody.trim() || undefined,
 				entryDate: journalTime ? new Date(journalTime).toISOString() : undefined,
@@ -1475,7 +1475,7 @@
 		error = '';
 		try {
 			await growthAPI.create({
-				babyId: selectedBabyId,
+				memberId: selectedMemberId,
 				measurementDate: new Date().toISOString(),
 				weight: growthWeight ? Number(growthWeight) : undefined,
 				height: growthHeight ? Number(growthHeight) : undefined,

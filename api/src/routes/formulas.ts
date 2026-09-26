@@ -3,6 +3,7 @@ import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 import { type AuthEnv } from '../auth';
 import { DEFAULT_FORMULA_CATALOG } from '../data/formula-catalog';
+import { NAMESPACE_HOUSEHOLD_ID } from '../db-core';
 
 const formulaRoutes = new Hono<AuthEnv>();
 
@@ -20,40 +21,49 @@ async function familyRole(db: any, userId: string, familyId: number) {
 }
 
 async function seedFormulaCatalog(db: any, familyId: number) {
-	const existing = await db.execute({
-		sql: 'SELECT name, COALESCE(brand, \'\') AS brand FROM formulas WHERE family_id = ?',
-		args: [familyId],
-	});
-
-	const keys = new Set(
-		existing.rows.map((r: any) => `${String(r?.name || '').trim().toLowerCase()}::${String(r?.brand || '').trim().toLowerCase()}`),
-	);
-
-	for (const formula of DEFAULT_FORMULA_CATALOG) {
-		const key = `${formula.name.trim().toLowerCase()}::${formula.brand.trim().toLowerCase()}`;
-		if (keys.has(key)) continue;
-		await db.execute({
-			sql: 'INSERT INTO formulas (family_id, name, brand, formula_type, created_at) VALUES (?, ?, ?, ?, ?)',
-			args: [familyId, formula.name, formula.brand, formula.formulaType, isoNow()],
+	try {
+		const existing = await db.execute({
+			sql: 'SELECT name, COALESCE(brand, \'\') AS brand FROM formulas WHERE family_id = ?',
+			args: [familyId],
 		});
-		keys.add(key);
+
+		const keys = new Set(
+			existing.rows.map((r: any) => `${String(r?.name || '').trim().toLowerCase()}::${String(r?.brand || '').trim().toLowerCase()}`),
+		);
+
+		for (const formula of DEFAULT_FORMULA_CATALOG) {
+			const key = `${formula.name.trim().toLowerCase()}::${formula.brand.trim().toLowerCase()}`;
+			if (keys.has(key)) continue;
+			await db.execute({
+				sql: 'INSERT OR IGNORE INTO formulas (family_id, name, brand, formula_type, created_at) VALUES (?, ?, ?, ?, ?)',
+				args: [familyId, formula.name, formula.brand, formula.formulaType, isoNow()],
+			});
+			keys.add(key);
+		}
+	} catch (err) {
+		console.error('seedFormulaCatalog failed:', err);
 	}
 }
 
-// GET /?familyId= — list this family's formula catalog.
+// GET / — list this family's formula catalog (within the current namespace).
 formulaRoutes.get('/', async (c) => {
 	const userId = c.get('userId');
 	const db = c.get('db');
-	const familyId = parseInt(c.req.query('familyId') || '0');
-	if (!familyId) return c.json({ error: 'familyId is required' }, 400);
-	if (!(await familyRole(db, userId, familyId))) return c.json({ error: 'Not a member of this family' }, 403);
+	const householdId = NAMESPACE_HOUSEHOLD_ID;
 
-	await seedFormulaCatalog(db, familyId);
+	const role = await familyRole(db, userId, householdId);
+	if (!role) {
+		console.error('[formulas] familyRole returned null — userId=%s householdId=%d', userId, householdId);
+		return c.json({ error: 'Not a member of this family' }, 403);
+	}
+
+	await seedFormulaCatalog(db, householdId);
 
 	const res = await db.execute({
 		sql: 'SELECT id, name, brand, formula_type, created_at FROM formulas WHERE family_id = ? ORDER BY name',
-		args: [familyId],
+		args: [householdId],
 	});
+	console.log('[formulas] returned %d formulas for householdId=%d', res.rows.length, householdId);
 	return c.json({
 		formulas: res.rows.map((r) => ({
 			id: Number(r?.id),
@@ -65,24 +75,22 @@ formulaRoutes.get('/', async (c) => {
 });
 
 const formulaSchema = z.object({
-	familyId: z.number(),
 	name: z.string().min(1).max(80),
 	brand: z.string().max(80).optional(),
 	formulaType: z.string().min(1).max(80).default('standard').optional(),
 });
 
-// POST / — add a formula to the family catalog.
 formulaRoutes.post('/', zValidator('json', formulaSchema), async (c) => {
 	const userId = c.get('userId');
 	const db = c.get('db');
-	const { familyId, name, brand, formulaType } = c.req.valid('json');
+	const { name, brand, formulaType } = c.req.valid('json');
+	const householdId = NAMESPACE_HOUSEHOLD_ID;
 
-	const role = await familyRole(db, userId, familyId);
-	if (!role) return c.json({ error: 'Not a member of this family' }, 403);
+	if (!(await familyRole(db, userId, householdId))) return c.json({ error: 'Not a member of this family' }, 403);
 
 	const ins = await db.execute({
 		sql: 'INSERT INTO formulas (family_id, name, brand, formula_type, created_at) VALUES (?, ?, ?, ?, ?)',
-		args: [familyId, name, brand || null, formulaType || 'standard', isoNow()],
+		args: [householdId, name, brand || null, formulaType || 'standard', isoNow()],
 	});
 	return c.json(
 		{ message: 'Formula added', formula: { id: Number(ins.lastInsertRowid), name, brand: brand || null, formulaType: formulaType || 'standard' } },

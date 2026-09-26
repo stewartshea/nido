@@ -7,7 +7,7 @@ import type { MoodRow } from '../db-types';
 const moodRoutes = new Hono<AuthEnv>();
 
 const createMoodSchema = z.object({
-  babyId: z.number(),
+  memberId: z.number(),
   mood: z.string().min(1).max(60),
   recordedAt: z.string().datetime().optional(),
   notes: z.string().optional(),
@@ -21,12 +21,12 @@ const updateMoodSchema = z.object({
 
 const getUserId = (c: any) => c.get('userId') as string;
 
-async function babyAccess(db: any, babyId: number, userId: string): Promise<boolean> {
+async function babyAccess(db: any, memberId: number, userId: string): Promise<boolean> {
   const res = await db.execute({
     sql: `SELECT b.id FROM babies b
           JOIN user_households uh ON uh.household_id = b.household_id
           WHERE b.id = ? AND uh.user_id = ? LIMIT 1`,
-    args: [babyId, userId],
+    args: [memberId, userId],
   });
   return res.rows.length > 0;
 }
@@ -34,31 +34,31 @@ async function babyAccess(db: any, babyId: number, userId: string): Promise<bool
 moodRoutes.get('/', async (c) => {
   const db = c.get('db');
   const userId = getUserId(c);
-  const babyId = parseInt(c.req.query('babyId') || '0');
-  if (!babyId) return c.json({ error: 'babyId is required' }, 400);
-  if (!(await babyAccess(db, babyId, userId))) return c.json({ error: 'Access denied' }, 403);
+  const memberId = parseInt(c.req.query('memberId') || '0');
+  if (!memberId) return c.json({ error: 'memberId is required' }, 400);
+  if (!(await babyAccess(db, memberId, userId))) return c.json({ error: 'Access denied' }, 403);
 
   const res = await db.execute({
     sql: `SELECT id, baby_id, mood, recorded_at, notes, created_at FROM moods WHERE baby_id = ? ORDER BY recorded_at DESC`,
-    args: [babyId],
+    args: [memberId],
   });
   return c.json({ moods: res.rows.map((r) => ({
-    id: Number(r?.id), babyId: Number(r?.baby_id), mood: r?.mood, recordedAt: r?.recorded_at, notes: r?.notes, createdAt: r?.created_at,
+    id: Number(r?.id), memberId: Number(r?.baby_id), mood: r?.mood, recordedAt: r?.recorded_at, notes: r?.notes, createdAt: r?.created_at,
   })) });
 });
 
 moodRoutes.post('/', zValidator('json', createMoodSchema), async (c) => {
   const db = c.get('db');
   const userId = getUserId(c);
-  const { babyId, mood, recordedAt, notes } = c.req.valid('json');
-  if (!(await babyAccess(db, babyId, userId))) return c.json({ error: 'Access denied' }, 403);
+  const { memberId, mood, recordedAt, notes } = c.req.valid('json');
+  if (!(await babyAccess(db, memberId, userId))) return c.json({ error: 'Access denied' }, 403);
 
   const now = new Date().toISOString();
   const ins = await db.execute({
     sql: `INSERT INTO moods (baby_id, mood, recorded_at, notes, created_at) VALUES (?, ?, ?, ?, ?)`,
-    args: [babyId, mood, recordedAt || now, notes || null, now],
+    args: [memberId, mood, recordedAt || now, notes || null, now],
   });
-  return c.json({ message: 'Mood recorded', mood: { id: Number(ins.lastInsertRowid), babyId, mood, recordedAt: recordedAt || now, notes } }, 201);
+  return c.json({ message: 'Mood recorded', mood: { id: Number(ins.lastInsertRowid), memberId, mood, recordedAt: recordedAt || now, notes } }, 201);
 });
 
 moodRoutes.put('/:id{[0-9]+}', zValidator('json', updateMoodSchema), async (c) => {
@@ -68,8 +68,8 @@ moodRoutes.put('/:id{[0-9]+}', zValidator('json', updateMoodSchema), async (c) =
   const { mood, recordedAt, notes } = c.req.valid('json');
   const rowRes = await db.execute({ sql: `SELECT baby_id FROM moods WHERE id = ? LIMIT 1`, args: [id] });
   if (rowRes.rows.length === 0) return c.json({ error: 'Mood not found' }, 404);
-  const babyId = Number((rowRes.rows[0] as any).baby_id);
-  if (!(await babyAccess(db, babyId, userId))) return c.json({ error: 'Access denied' }, 403);
+  const memberId = Number((rowRes.rows[0] as any).baby_id);
+  if (!(await babyAccess(db, memberId, userId))) return c.json({ error: 'Access denied' }, 403);
 
   const updates: string[] = [];
   const params: Array<number | string | null> = [];
@@ -88,8 +88,8 @@ moodRoutes.delete('/:id{[0-9]+}', async (c) => {
   const id = parseInt(c.req.param('id'));
   const rowRes = await db.execute({ sql: `SELECT baby_id FROM moods WHERE id = ? LIMIT 1`, args: [id] });
   if (rowRes.rows.length === 0) return c.json({ error: 'Mood not found' }, 404);
-  const babyId = Number((rowRes.rows[0] as any).baby_id);
-  if (!(await babyAccess(db, babyId, userId))) return c.json({ error: 'Access denied' }, 403);
+  const memberId = Number((rowRes.rows[0] as any).baby_id);
+  if (!(await babyAccess(db, memberId, userId))) return c.json({ error: 'Access denied' }, 403);
 
   await db.execute({ sql: `DELETE FROM moods WHERE id = ?`, args: [id] });
   return c.json({ message: 'Mood deleted' });

@@ -8,7 +8,7 @@ const growthRoutes = new Hono<AuthEnv>();
 
 // Zod schemas for validation
 const createGrowthSchema = z.object({
-  babyId: z.number(),
+  memberId: z.number(),
   measurementDate: z.string().datetime(),
   weight: z.number().positive().optional(), // in lbs or kg
   height: z.number().positive().optional(), // in inches or cm
@@ -139,14 +139,14 @@ growthRoutes.get('/', async (c) => {
   try {
     const userId = c.get('userId');
     const db = c.get('db');
-    const babyId = parseInt(c.req.query('babyId') || '0');
+    const memberId = parseInt(c.req.query('memberId') || '0');
     
-    if (!babyId) {
-      return c.json({ error: 'Baby ID is required' }, 400);
+    if (!memberId) {
+      return c.json({ error: 'Member ID is required' }, 400);
     }
     
     // Verify user has access to this baby
-    const babyCheck = await db.execute({
+    const memberCheck = await db.execute({
       sql: `
       SELECT b.id, b.birth_date, b.gender
       FROM babies b
@@ -154,14 +154,14 @@ growthRoutes.get('/', async (c) => {
       JOIN user_households uh ON h.id = uh.household_id
       WHERE b.id = ? AND uh.user_id = ?
     `,
-      args: [babyId, userId]
+      args: [memberId, userId]
     });
     
-    if (babyCheck.rows.length === 0) {
-      return c.json({ error: 'Baby not found or access denied' }, 404);
+    if (memberCheck.rows.length === 0) {
+      return c.json({ error: 'Member not found or access denied' }, 404);
     }
     
-    const baby = babyCheck.rows[0] as unknown as BabyRow;
+    const baby = memberCheck.rows[0] as unknown as BabyRow;
     
     // Get growth records for the baby
     const growthResult = await db.execute({
@@ -171,7 +171,7 @@ growthRoutes.get('/', async (c) => {
       WHERE baby_id = ?
       LIMIT 100
     `,
-      args: [babyId]
+      args: [memberId]
     });
     
     // Calculate WHO/CDC comparisons for each record
@@ -310,12 +310,12 @@ growthRoutes.get('/:id{[0-9]+}', async (c) => {
 // Create a new growth record
 growthRoutes.post('/', zValidator('json', createGrowthSchema), async (c) => {
   try {
-    const { babyId, measurementDate, weight, height, headCircumference, bmi, unitSystem, notes } = c.req.valid('json');
+    const { memberId, measurementDate, weight, height, headCircumference, bmi, unitSystem, notes } = c.req.valid('json');
     const userId = c.get('userId');
     const db = c.get('db');
     
     // Verify user has access to this baby
-    const babyCheck = await db.execute({
+    const memberCheck = await db.execute({
       sql: `
       SELECT b.id, b.birth_date, b.gender
       FROM babies b
@@ -323,14 +323,14 @@ growthRoutes.post('/', zValidator('json', createGrowthSchema), async (c) => {
       JOIN user_households uh ON h.id = uh.household_id
       WHERE b.id = ? AND uh.user_id = ?
     `,
-      args: [babyId, userId]
+      args: [memberId, userId]
     });
     
-    if (babyCheck.rows.length === 0) {
-      return c.json({ error: 'Baby not found or access denied' }, 404);
+    if (memberCheck.rows.length === 0) {
+      return c.json({ error: 'Member not found or access denied' }, 404);
     }
     
-    const baby = babyCheck.rows[0] as unknown as BabyRow;
+    const baby = memberCheck.rows[0] as unknown as BabyRow;
     
     // Calculate BMI if not provided and we have weight and height
     let calculatedBmi = bmi;
@@ -358,7 +358,7 @@ growthRoutes.post('/', zValidator('json', createGrowthSchema), async (c) => {
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
       args: [
-        babyId, 
+        memberId, 
         measurementDate, 
         weight || null, 
         height || null, 
@@ -645,12 +645,12 @@ growthRoutes.delete('/:id{[0-9]+}', async (c) => {
 // Get growth chart data for visualization
 growthRoutes.get('/:id{[0-9]+}/chart-data', async (c) => {
   try {
-    const babyId = parseInt(c.req.param('id'));
+    const memberId = parseInt(c.req.param('id'));
     const userId = c.get('userId');
     const db = c.get('db');
     
     // Verify user has access to this baby
-    const babyCheck = await db.execute({
+    const memberCheck = await db.execute({
       sql: `
       SELECT b.id, b.birth_date, b.gender
       FROM babies b
@@ -658,14 +658,14 @@ growthRoutes.get('/:id{[0-9]+}/chart-data', async (c) => {
       JOIN user_households uh ON h.id = uh.household_id
       WHERE b.id = ? AND uh.user_id = ?
     `,
-      args: [babyId, userId]
+      args: [memberId, userId]
     });
     
-    if (babyCheck.rows.length === 0) {
-      return c.json({ error: 'Baby not found or access denied' }, 404);
+    if (memberCheck.rows.length === 0) {
+      return c.json({ error: 'Member not found or access denied' }, 404);
     }
     
-    const baby = babyCheck.rows[0] as unknown as BabyRow;
+    const baby = memberCheck.rows[0] as unknown as BabyRow;
     const gender = baby.gender || 'male';
     
     // Get all growth records for this baby
@@ -675,7 +675,7 @@ growthRoutes.get('/:id{[0-9]+}/chart-data', async (c) => {
       FROM growth
       WHERE baby_id = ?
     `,
-      args: [babyId]
+      args: [memberId]
     });
     
     // Prepare chart data with WHO standards

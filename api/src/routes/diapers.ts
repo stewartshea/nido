@@ -7,7 +7,7 @@ const diaperRoutes = new Hono<AuthEnv>();
 
 // Zod schemas for validation
 const createDiaperSchema = z.object({
-  babyId: z.number(),
+  memberId: z.number(),
   changeTime: z.string().datetime(),
   type: z.enum(['wet', 'dirty', 'both', 'dry']),
   color: z.string().optional(), // For solid waste
@@ -28,14 +28,14 @@ diaperRoutes.get('/', async (c) => {
   try {
     const userId = c.get('userId');
     const db = c.get('db');
-    const babyId = parseInt(c.req.query('babyId') || '0');
+    const memberId = parseInt(c.req.query('memberId') || '0');
     
-    if (!babyId) {
-      return c.json({ error: 'Baby ID is required' }, 400);
+    if (!memberId) {
+      return c.json({ error: 'Member ID is required' }, 400);
     }
     
     // Verify user has access to this baby
-    const babyCheck = await db.execute({
+    const memberCheck = await db.execute({
       sql: `
       SELECT b.id
       FROM babies b
@@ -43,11 +43,11 @@ diaperRoutes.get('/', async (c) => {
       JOIN user_households uh ON h.id = uh.household_id
       WHERE b.id = ? AND uh.user_id = ?
     `,
-      args: [babyId, userId]
+      args: [memberId, userId]
     });
     
-    if (babyCheck.rows.length === 0) {
-      return c.json({ error: 'Baby not found or access denied' }, 404);
+    if (memberCheck.rows.length === 0) {
+      return c.json({ error: 'Member not found or access denied' }, 404);
     }
     
     // Get diapers for the baby
@@ -58,7 +58,7 @@ diaperRoutes.get('/', async (c) => {
       WHERE baby_id = ?
       LIMIT 100
     `,
-      args: [babyId]
+      args: [memberId]
     });
     
     const diapersSorted = [...diapersResult.rows]
@@ -106,12 +106,12 @@ diaperRoutes.get('/:id{[0-9]+}', async (c) => {
 // Create a new diaper
 diaperRoutes.post('/', zValidator('json', createDiaperSchema), async (c) => {
   try {
-    const { babyId, changeTime, type, color, consistency, notes } = c.req.valid('json');
+    const { memberId, changeTime, type, color, consistency, notes } = c.req.valid('json');
     const userId = c.get('userId');
     const db = c.get('db');
     
     // Verify user has access to this baby
-    const babyCheck = await db.execute({
+    const memberCheck = await db.execute({
       sql: `
       SELECT b.id
       FROM babies b
@@ -119,11 +119,11 @@ diaperRoutes.post('/', zValidator('json', createDiaperSchema), async (c) => {
       JOIN user_households uh ON h.id = uh.household_id
       WHERE b.id = ? AND uh.user_id = ?
     `,
-      args: [babyId, userId]
+      args: [memberId, userId]
     });
     
-    if (babyCheck.rows.length === 0) {
-      return c.json({ error: 'Baby not found or access denied' }, 404);
+    if (memberCheck.rows.length === 0) {
+      return c.json({ error: 'Member not found or access denied' }, 404);
     }
     
     // Insert new diaper
@@ -134,7 +134,7 @@ diaperRoutes.post('/', zValidator('json', createDiaperSchema), async (c) => {
         ) VALUES (?, ?, ?, ?, ?, ?, ?)
       `,
       args: [
-        babyId, 
+        memberId, 
         changeTime, 
         type, 
         color || null, 

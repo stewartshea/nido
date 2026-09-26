@@ -389,6 +389,15 @@ export const FAMILY_MIGRATIONS: Migration[] = [
       WHERE formula_type IS NULL OR trim(formula_type) = '';
     `,
   },
+  {
+    version: 3,
+    name: 'milestone-tags-and-reminders-index',
+    sql: `
+      ALTER TABLE milestones ADD COLUMN tags TEXT;
+      CREATE INDEX IF NOT EXISTS idx_milestones_category ON milestones(category);
+      CREATE INDEX IF NOT EXISTS idx_reminders_kind_category ON reminders(kind, category);
+    `,
+  },
 ];
 
 // ---------------------------------------------------------------------------

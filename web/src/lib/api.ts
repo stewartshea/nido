@@ -109,10 +109,10 @@ export const userAPI = {
 export const babyAPI = {
   getAll: () => api.get('/babies'),
   getById: (id: number) => api.get(`/babies/${id}`),
-  create: (babyData: { name: string; birthDate: string; gender?: string; householdId: number }) => 
-    api.post('/babies', babyData),
-  update: (id: number, babyData: Partial<{ name: string; birthDate: string; gender?: string }>) => 
-    api.put(`/babies/${id}`, babyData),
+  create: (memberData: { name: string; birthDate: string; gender?: string; householdId: number }) => 
+    api.post('/babies', memberData),
+  update: (id: number, memberData: Partial<{ name: string; birthDate: string; gender?: string }>) => 
+    api.put(`/babies/${id}`, memberData),
   delete: (id: number) => api.delete(`/babies/${id}`),
 };
 
@@ -152,9 +152,9 @@ export const familiesAPI = {
 
 // Feeding API functions
 export const feedingAPI = {
-  getAll: (babyId: number) => api.get(`/feedings?babyId=${babyId}`),
+  getAll: (memberId: number) => api.get(`/feedings?memberId=${memberId}`),
   getById: (id: number) => api.get(`/feedings/${id}`),
-  create: (feedingData: { babyId: number; startTime: string; endTime?: string; amount?: number; type: 'breast' | 'bottle' | 'formula' | 'pump' | 'solid'; side?: 'left' | 'right' | 'both'; formulaId?: number; notes?: string }) => 
+  create: (feedingData: { memberId: number; startTime: string; endTime?: string; amount?: number; type: 'breast' | 'bottle' | 'formula' | 'pump' | 'solid'; side?: 'left' | 'right' | 'both'; formulaId?: number; notes?: string }) => 
     api.post('/feedings', feedingData),
   update: (id: number, feedingData: Partial<{ startTime: string; endTime?: string; amount?: number; type: 'breast' | 'bottle' | 'formula' | 'pump' | 'solid'; side?: 'left' | 'right' | 'both'; formulaId?: number; notes?: string }>) => 
     api.put(`/feedings/${id}`, feedingData),
@@ -163,9 +163,9 @@ export const feedingAPI = {
 
 // Diaper API functions
 export const diaperAPI = {
-  getAll: (babyId: number) => api.get(`/diapers?babyId=${babyId}`),
+  getAll: (memberId: number) => api.get(`/diapers?memberId=${memberId}`),
   getById: (id: number) => api.get(`/diapers/${id}`),
-  create: (diaperData: { babyId: number; changeTime: string; type: 'wet' | 'dirty' | 'both'; color?: string; consistency?: string; notes?: string }) => 
+  create: (diaperData: { memberId: number; changeTime: string; type: 'wet' | 'dirty' | 'both'; color?: string; consistency?: string; notes?: string }) => 
     api.post('/diapers', diaperData),
   update: (id: number, diaperData: Partial<{ changeTime: string; type: 'wet' | 'dirty' | 'both'; color?: string; consistency?: string; notes?: string }>) => 
     api.put(`/diapers/${id}`, diaperData),
@@ -174,9 +174,9 @@ export const diaperAPI = {
 
 // Sleep API functions
 export const sleepAPI = {
-  getAll: (babyId: number) => api.get(`/sleep?babyId=${babyId}`),
+  getAll: (memberId: number) => api.get(`/sleep?memberId=${memberId}`),
   getById: (id: number) => api.get(`/sleep/${id}`),
-  create: (sleepData: { babyId: number; startTime: string; endTime?: string; location?: string; notes?: string }) => 
+  create: (sleepData: { memberId: number; startTime: string; endTime?: string; location?: string; notes?: string }) => 
     api.post('/sleep', sleepData),
   update: (id: number, sleepData: Partial<{ startTime: string; endTime?: string; location?: string; notes?: string }>) => 
     api.put(`/sleep/${id}`, sleepData),
@@ -185,10 +185,10 @@ export const sleepAPI = {
 
 // Growth API functions
 export const growthAPI = {
-  getAll: (babyId: number) => api.get(`/growth?babyId=${babyId}`),
+  getAll: (memberId: number) => api.get(`/growth?memberId=${memberId}`),
   getById: (id: number) => api.get(`/growth/${id}`),
   getChartData: (id: number) => api.get(`/growth/${id}/chart-data`),
-  create: (growthData: { babyId: number; measurementDate: string; weight?: number; height?: number; headCircumference?: number; bmi?: number; unitSystem?: 'imperial' | 'metric'; notes?: string }) => 
+  create: (growthData: { memberId: number; measurementDate: string; weight?: number; height?: number; headCircumference?: number; bmi?: number; unitSystem?: 'imperial' | 'metric'; notes?: string }) => 
     api.post('/growth', growthData),
   update: (id: number, growthData: Partial<{ measurementDate: string; weight?: number; height?: number; headCircumference?: number; bmi?: number; unitSystem?: 'imperial' | 'metric'; notes?: string }>) => 
     api.put(`/growth/${id}`, growthData),
@@ -197,10 +197,12 @@ export const growthAPI = {
 
 // Milestone API functions
 export const milestoneAPI = {
-  getAll: (babyId: number) => api.get(`/milestones?babyId=${babyId}`),
+  getAll: (memberId: number) => api.get(`/milestones?memberId=${memberId}`),
   getById: (id: number) => api.get(`/milestones/${id}`),
   getCategories: () => api.get('/milestones/categories'),
-  create: (milestoneData: { babyId: number; title: string; description?: string; achievedDate: string; category?: string }) => 
+  getTrends: (memberId: number, opts?: { category?: string; days?: number }) =>
+    api.get(`/milestones/trends?memberId=${memberId}${opts?.category ? `&category=${opts.category}` : ''}${opts?.days ? `&days=${opts.days}` : ''}`),
+  create: (milestoneData: { memberId: number; title: string; description?: string; achievedDate: string; category?: string; tags?: string[] }) => 
     api.post('/milestones', milestoneData),
   update: (id: number, milestoneData: Partial<{ title: string; description?: string; achievedDate: string; category?: string }>) => 
     api.put(`/milestones/${id}`, milestoneData),
@@ -209,10 +211,10 @@ export const milestoneAPI = {
 
 // Vaccination API functions
 export const vaccinationAPI = {
-  getAll: (babyId: number) => api.get(`/vaccinations?babyId=${babyId}`),
+  getAll: (memberId: number) => api.get(`/vaccinations?memberId=${memberId}`),
   getById: (id: number) => api.get(`/vaccinations/${id}`),
   getSchedule: () => api.get('/vaccinations/schedule'),
-  create: (vaccinationData: { babyId: number; name: string; dateGiven?: string; nextDueDate?: string; administeredBy?: string; notes?: string }) => 
+  create: (vaccinationData: { memberId: number; name: string; dateGiven?: string; nextDueDate?: string; administeredBy?: string; notes?: string }) => 
     api.post('/vaccinations', vaccinationData),
   update: (id: number, vaccinationData: Partial<{ name: string; dateGiven?: string; nextDueDate?: string; administeredBy?: string; notes?: string }>) => 
     api.put(`/vaccinations/${id}`, vaccinationData),
@@ -220,8 +222,8 @@ export const vaccinationAPI = {
 };
 
 export const moodAPI = {
-  getAll: (babyId: number) => api.get(`/moods?babyId=${babyId}`),
-  create: (data: { babyId: number; mood: string; recordedAt?: string; notes?: string }) =>
+  getAll: (memberId: number) => api.get(`/moods?memberId=${memberId}`),
+  create: (data: { memberId: number; mood: string; recordedAt?: string; notes?: string }) =>
     api.post('/moods', data),
   update: (id: number, data: Partial<{ mood: string; recordedAt?: string; notes?: string }>) =>
     api.put(`/moods/${id}`, data),
@@ -229,8 +231,8 @@ export const moodAPI = {
 };
 
 export const journalAPI = {
-  getAll: (babyId: number) => api.get(`/journal?babyId=${babyId}`),
-  create: (data: { babyId: number; title?: string; body?: string; entryDate?: string }) =>
+  getAll: (memberId: number) => api.get(`/journal?memberId=${memberId}`),
+  create: (data: { memberId: number; title?: string; body?: string; entryDate?: string }) =>
     api.post('/journal', data),
   update: (id: number, data: Partial<{ title?: string; body?: string; entryDate?: string }>) =>
     api.put(`/journal/${id}`, data),
@@ -239,8 +241,8 @@ export const journalAPI = {
 
 // Health API functions
 export const healthAPI = {
-  getSummary: (babyId: number) => api.get(`/health/summary/${babyId}`),
-  getInsights: (babyId: number) => api.get(`/health/insights/${babyId}`),
+  getSummary: (memberId: number) => api.get(`/health/summary/${memberId}`),
+  getInsights: (memberId: number) => api.get(`/health/insights/${memberId}`),
 };
 
 // Import API functions (Narababy CSV upload + per-family summary)
@@ -254,7 +256,7 @@ export const importsAPI = {
       headers: { 'Content-Type': undefined },
     });
   },
-  runs: (babyId?: number | null) => api.get(`/imports/runs${babyId ? `?babyId=${babyId}` : ''}`),
+  runs: (babyId?: number | null) => api.get(`/imports/runs${babyId ? `?memberId=${memberId}` : ''}`),
   undoRun: (runId: number) => api.post(`/imports/runs/${runId}/undo`),
   summary: () => api.get('/imports/summary'),
 };
@@ -280,8 +282,8 @@ export const photosAPI = {
 // Formulas API — family-scoped formula catalog.
 export const formulasAPI = {
   list: (familyId: string) => api.get(`/formulas?familyId=${familyId}`),
-  create: (familyId: string, data: { name: string; brand?: string; formulaType?: string }) =>
-    api.post('/formulas', { familyId, ...data }),
+create: (familyId: string, data: { name: string; brand?: string; formulaType?: string }) =>
+		api.post('/formulas', data),
   update: (id: number, data: { name?: string; brand?: string | null; formulaType?: string | null }) =>
     api.put(`/formulas/${id}`, data),
   remove: (id: number) => api.delete(`/formulas/${id}`),

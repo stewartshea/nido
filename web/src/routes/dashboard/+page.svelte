@@ -122,7 +122,7 @@
 	let families: any[] = [];
 	let activeFamily: any = null;
 	let activeFamilyId: string | null = null;
-	let selectedBabyId: number | null = null;
+	let selectedMemberId: number | null = null;
 	let activeTab = 'feeds';
 	let viewMode: 'list' | 'table' = 'list';
 	let defaultProfileId: number | null = null;
@@ -265,6 +265,7 @@
 	let leftElapsed = 0;
 	let rightStartedAt: number | null = null;
 	let rightElapsed = 0;
+	let timerNow = 0;
 	let feedType = 'breast';
 	let feedSide = 'left';
 	let feedAmount = '';
@@ -361,11 +362,9 @@
 
 	function startTimerLoop() {
 		stopTimerLoop();
+		timerNow = Date.now();
 		timerTick = window.setInterval(() => {
-			const now = Date.now();
-			if (leftStartedAt) leftElapsed = now - leftStartedAt;
-			if (rightStartedAt) rightElapsed = now - rightStartedAt;
-			if (sleepStartedAt) sleepElapsed = now - sleepStartedAt;
+			timerNow = Date.now();
 		}, 1000);
 	}
 
@@ -377,9 +376,9 @@
 	}
 
 	async function refreshSummary() {
-		if (!selectedBabyId) return;
+		if (!selectedMemberId) return;
 		try {
-			const res = await healthAPI.getSummary(selectedBabyId);
+			const res = await healthAPI.getSummary(selectedMemberId);
 			summary = res.data.summary;
 		} catch {
 			summary = null;
@@ -387,17 +386,17 @@
 	}
 
 	async function refreshLists() {
-		if (!selectedBabyId) return;
+		if (!selectedMemberId) return;
 		try {
 			const [f, d, s, g, m, v, mo, j] = await Promise.all([
-				feedingAPI.getAll(selectedBabyId),
-				diaperAPI.getAll(selectedBabyId),
-				sleepAPI.getAll(selectedBabyId),
-				growthAPI.getAll(selectedBabyId),
-				milestoneAPI.getAll(selectedBabyId),
-				vaccinationAPI.getAll(selectedBabyId),
-				moodAPI.getAll(selectedBabyId),
-				journalAPI.getAll(selectedBabyId),
+				feedingAPI.getAll(selectedMemberId),
+				diaperAPI.getAll(selectedMemberId),
+				sleepAPI.getAll(selectedMemberId),
+				growthAPI.getAll(selectedMemberId),
+				milestoneAPI.getAll(selectedMemberId),
+				vaccinationAPI.getAll(selectedMemberId),
+				moodAPI.getAll(selectedMemberId),
+				journalAPI.getAll(selectedMemberId),
 			]);
 			feedings = f.data.feedings;
 			diapers = d.data.diapers;
@@ -484,7 +483,7 @@
 			const res = await familiesAPI.list();
 			families = res.data.families;
 			if (families.length === 0) {
-				selectedBabyId = null;
+				selectedMemberId = null;
 				babies = [];
 				return;
 			}
@@ -511,13 +510,13 @@
 			if (babies.length > 0) {
 				const savedDefault = defaultProfileId ?? null;
 				const match = savedDefault ? babies.find((b) => Number(b.id) === savedDefault) : null;
-				selectedBabyId = match ? Number(match.id) : Number(babies[0].id);
-				const selected = babies.find((b) => Number(b.id) === selectedBabyId);
+				selectedMemberId = match ? Number(match.id) : Number(babies[0].id);
+				const selected = babies.find((b) => Number(b.id) === selectedMemberId);
 				activeCategories = selected?.categories?.length ? selected.categories : CATEGORIES.map((c) => c.id);
 				if (!activeCategories.includes(activeTab)) activeTab = activeCategories[0] || 'feeds';
 				restoreTimerState();
 			} else {
-				selectedBabyId = null;
+				selectedMemberId = null;
 				activeCategories = [];
 			}
 			await Promise.all([loadFamilySettings(), refreshLists(), refreshSummary(), loadInvitations(), loadImportRuns()]);
@@ -539,10 +538,10 @@
 		loadFamilies();
 	}
 
-	function setDefaultProfile(babyId: number) {
-		defaultProfileId = babyId;
-		selectedBabyId = babyId;
-		if (browser) localStorage.setItem('nido.defaultProfile', String(babyId));
+	function setDefaultProfile(memberId: number) {
+		defaultProfileId = memberId;
+		selectedMemberId = memberId;
+		if (browser) localStorage.setItem('nido.defaultProfile', String(memberId));
 		notice = 'Default profile updated.';
 		error = '';
 	}
@@ -637,7 +636,7 @@
 		authActions.logout();
 		isAuthenticated = false;
 		babies = [];
-		selectedBabyId = null;
+		selectedMemberId = null;
 		feedStartedAt = null;
 		leftStartedAt = null;
 		rightStartedAt = null;
@@ -805,7 +804,11 @@
 		try {
 			const res = await formulasAPI.list(activeFamilyId);
 			formulas = res.data.formulas || [];
-		} catch { formulas = []; }
+			if (formulas.length === 0) console.warn('Formulas list is empty — catalog may not have seeded yet');
+		} catch (e: any) {
+			console.error('Failed to load formulas:', e?.response?.status, e?.response?.data);
+			formulas = [];
+		}
 	}
 
 	async function addFormula() {
@@ -838,12 +841,12 @@
 
 	function chooseManualFeedType(type: 'breast' | 'bottle' | 'combo') {
 		manualType = type;
-		if (type === 'breast') {
+		if (type === 'breast' || type === 'combo') {
 			feedMode = 'timer';
 			manualBottleSource = 'breastmilk';
 		} else {
 			feedMode = 'log';
-			if (type === 'bottle') manualBottleSource = 'breastmilk';
+			manualBottleSource = 'breastmilk';
 		}
 		if (!manualStart) manualStart = nowLocalISO();
 	}
@@ -864,7 +867,7 @@
 		} else if (l.type === 'combo') {
 			manualType = 'combo';
 			manualBottleSource = l.bottleSource === 'formula' ? 'formula' : 'breastmilk';
-			feedMode = 'log';
+			feedMode = 'timer';
 		} else {
 			manualType = (l.type || 'breast') as FeedLogType | 'combo';
 			if (manualType === 'bottle') { manualBottleSource = 'breastmilk'; feedMode = 'log'; }
@@ -878,7 +881,7 @@
 
 	async function saveManualFeed(event: SubmitEvent) {
 		event.preventDefault();
-		if (!selectedBabyId) return;
+		if (!selectedMemberId) return;
 		if (!manualType) {
 			error = 'Choose Breast feed, Bottle feed, or Combo first.';
 			return;
@@ -897,14 +900,14 @@
 			if (manualType === 'combo') {
 				const bottleType = manualBottleSource === 'formula' ? 'formula' : 'bottle';
 				await feedingAPI.create({
-					babyId: selectedBabyId,
+					memberId: selectedMemberId,
 					startTime: start,
 					type: 'breast' as any,
 					side: manualSide as any,
 					notes: manualNotes || undefined,
 				});
 				await feedingAPI.create({
-					babyId: selectedBabyId,
+					memberId: selectedMemberId,
 					startTime: start,
 					type: bottleType as any,
 					formulaId: bottleType === 'formula' ? manualFormulaId : undefined,
@@ -914,7 +917,7 @@
 			} else {
 				const resolvedType = manualType === 'bottle' && manualBottleSource === 'formula' ? 'formula' : manualType;
 				await feedingAPI.create({
-					babyId: selectedBabyId,
+					memberId: selectedMemberId,
 					startTime: start,
 					endTime: end,
 					type: resolvedType as any,
@@ -943,13 +946,13 @@
 
 	async function saveDiaperManual(event: SubmitEvent) {
 		event.preventDefault();
-		if (!selectedBabyId) return;
+		if (!selectedMemberId) return;
 		error = '';
 		savingDiaper = true;
 		const time = diaperTime ? new Date(diaperTime).toISOString() : new Date().toISOString();
 		try {
 			await diaperAPI.create({
-				babyId: selectedBabyId,
+				memberId: selectedMemberId,
 				changeTime: time,
 				type: diaperType as any,
 				consistency: diaperConsistency || undefined,
@@ -1118,9 +1121,9 @@
 		} catch (err: any) { error = err.response?.data?.error || 'Failed to delete family.'; }
 	}
 
-	async function selectBaby(babyId: number) {
-		selectedBabyId = babyId;
-		const selected = babies.find((b) => Number(b.id) === babyId);
+	async function selectMember(memberId: number) {
+		selectedMemberId = memberId;
+		const selected = babies.find((b) => Number(b.id) === memberId);
 		activeCategories = selected?.categories?.length ? selected.categories : CATEGORIES.map((c) => c.id);
 		if (!activeCategories.includes(activeTab)) activeTab = activeCategories[0] || 'feeds';
 		restoreTimerState();
@@ -1276,21 +1279,22 @@
 	}
 
 	// Live per-side elapsed (ms) = frozen total + live running time.
-	$: leftTotalMs = leftElapsed + (leftStartedAt ? Date.now() - leftStartedAt : 0);
-	$: rightTotalMs = rightElapsed + (rightStartedAt ? Date.now() - rightStartedAt : 0);
+	$: leftTotalMs = leftElapsed + (leftStartedAt ? timerNow - leftStartedAt : 0);
+	$: rightTotalMs = rightElapsed + (rightStartedAt ? timerNow - rightStartedAt : 0);
 	$: feedTotalMs = leftTotalMs + rightTotalMs;
 	$: anyBreastRunning = !!(leftStartedAt || rightStartedAt);
+	$: liveSleepElapsed = sleepStartedAt ? timerNow - sleepStartedAt : sleepElapsed;
 
 	// ----- Connection-resilience: persisted timers + offline outbox -----
 	// Timer state is written to localStorage on every mutation so a reload or a
 	// dropped connection mid-session does not lose accumulated time. The outbox
 	// queues records that fail to reach the API (offline/5xx) and retries later.
 	function timerKey(): string {
-		return `nido.timer.${selectedBabyId ?? 0}`;
+		return `nido.timer.${selectedMemberId ?? 0}`;
 	}
 
 	function persistTimerState() {
-		if (!selectedBabyId) return;
+		if (!selectedMemberId) return;
 		try {
 			localStorage.setItem(timerKey(), JSON.stringify({
 				leftElapsed, rightElapsed,
@@ -1394,16 +1398,29 @@
 		const endTime = new Date().toISOString();
 		const bothSides = leftElapsed > 0 && rightElapsed > 0;
 		const side = bothSides ? 'both' : leftElapsed > 0 || leftStartedAt ? 'left' : 'right';
-		// Freeze live timers into totals before computing duration.
 		if (leftStartedAt) { leftElapsed += Date.now() - leftStartedAt; leftStartedAt = null; }
 		if (rightStartedAt) { rightElapsed += Date.now() - rightStartedAt; rightStartedAt = null; }
 		const totalMs = leftElapsed + rightElapsed;
 		stopTimerLoop();
 		leftElapsed = 0; rightElapsed = 0; feedElapsed = 0; feedStartedAt = null;
 		clearTimerState();
-		const payload = { babyId: selectedBabyId, startTime, endTime, type: 'breast', side: side as 'left' };
+		const payload = { memberId: selectedMemberId, startTime, endTime, type: 'breast', side: side as 'left' };
 		try {
 			await feedingAPI.create(payload);
+			if (manualType === 'combo') {
+				const bottleType = manualBottleSource === 'formula' ? 'formula' : 'bottle';
+				await feedingAPI.create({
+					memberId: selectedMemberId,
+					startTime,
+					type: bottleType as any,
+					formulaId: bottleType === 'formula' ? manualFormulaId : undefined,
+					amount: manualAmount ? Number(manualAmount) : undefined,
+				});
+			}
+			manualType = null;
+			manualBottleSource = 'breastmilk';
+			manualFormulaId = null;
+			manualAmount = '';
 			notice = 'Feeding recorded.';
 			sheetOpen = false;
 			await refreshLists();
@@ -1443,7 +1460,7 @@
 		stopTimerLoop();
 		sleepElapsed = 0;
 		clearTimerState();
-		const payload = { babyId: selectedBabyId, startTime, endTime, location: sleepLocation, notes: sleepNotes || undefined };
+		const payload = { memberId: selectedMemberId, startTime, endTime, location: sleepLocation, notes: sleepNotes || undefined };
 		try {
 			await sleepAPI.create(payload);
 			sleepNotes = '';
@@ -1466,11 +1483,11 @@
 
 	async function saveManualSleep(event: SubmitEvent) {
 		event.preventDefault();
-		if (!selectedBabyId) return;
+		if (!selectedMemberId) return;
 		error = '';
 		const start = sleepTime ? new Date(sleepTime).toISOString() : new Date().toISOString();
 		try {
-			await sleepAPI.create({ babyId: selectedBabyId, startTime: start, location: sleepLocation, notes: sleepNotes || undefined });
+			await sleepAPI.create({ memberId: selectedMemberId, startTime: start, location: sleepLocation, notes: sleepNotes || undefined });
 			sleepTime = ''; sleepNotes = '';
 			notice = 'Sleep recorded.';
 			await refreshLists(); await refreshSummary();
@@ -1479,11 +1496,11 @@
 
 	async function saveManualGrowth(event: SubmitEvent) {
 		event.preventDefault();
-		if (!selectedBabyId) return;
+		if (!selectedMemberId) return;
 		error = '';
 		try {
 			await growthAPI.create({
-				babyId: selectedBabyId,
+				memberId: selectedMemberId,
 				measurementDate: growthTime ? new Date(growthTime).toISOString() : new Date().toISOString(),
 				weight: growthWeight ? Number(growthWeight) : undefined,
 				height: growthHeight ? Number(growthHeight) : undefined,
@@ -1498,12 +1515,12 @@
 
 	async function saveManualMilestone(event: SubmitEvent) {
 		event.preventDefault();
-		if (!selectedBabyId) return;
+		if (!selectedMemberId) return;
 		error = '';
 		if (!milestoneTitle.trim()) { error = 'Milestone name is required.'; return; }
 		try {
 			await milestoneAPI.create({
-				babyId: selectedBabyId,
+				memberId: selectedMemberId,
 				title: milestoneTitle.trim(),
 				achievedDate: milestoneTime ? new Date(milestoneTime).toISOString() : new Date().toISOString(),
 				category: milestoneCategory || undefined,
@@ -1516,12 +1533,12 @@
 
 	async function saveManualVaccine(event: SubmitEvent) {
 		event.preventDefault();
-		if (!selectedBabyId) return;
+		if (!selectedMemberId) return;
 		error = '';
 		if (!vaccineName.trim()) { error = 'Vaccine name is required.'; return; }
 		try {
 			await vaccinationAPI.create({
-				babyId: selectedBabyId,
+				memberId: selectedMemberId,
 				name: vaccineName.trim(),
 				dateGiven: vaccineTime ? new Date(vaccineTime).toISOString() : undefined,
 				notes: vaccineNotes || undefined,
@@ -1534,11 +1551,11 @@
 
 	async function saveMood(event: SubmitEvent) {
 		event.preventDefault();
-		if (!selectedBabyId) return;
+		if (!selectedMemberId) return;
 		error = '';
 		try {
 			await moodAPI.create({
-				babyId: selectedBabyId,
+				memberId: selectedMemberId,
 				mood: moodMood,
 				recordedAt: moodTime ? new Date(moodTime).toISOString() : undefined,
 				notes: moodNotes || undefined,
@@ -1551,12 +1568,12 @@
 
 	async function saveJournal(event: SubmitEvent) {
 		event.preventDefault();
-		if (!selectedBabyId) return;
+		if (!selectedMemberId) return;
 		error = '';
 		if (!journalTitle.trim() && !journalBody.trim()) { error = 'Add a title or a note.'; return; }
 		try {
 			await journalAPI.create({
-				babyId: selectedBabyId,
+				memberId: selectedMemberId,
 				title: journalTitle.trim() || undefined,
 				body: journalBody.trim() || undefined,
 				entryDate: journalTime ? new Date(journalTime).toISOString() : undefined,
@@ -1572,7 +1589,7 @@
 		error = '';
 		try {
 			await growthAPI.create({
-				babyId: selectedBabyId,
+				memberId: selectedMemberId,
 				measurementDate: new Date().toISOString(),
 				weight: growthWeight ? Number(growthWeight) : undefined,
 				height: growthHeight ? Number(growthHeight) : undefined,
@@ -1702,7 +1719,7 @@
 							</div>
 
 							{#if summary}
-								<h3 class="text-lg font-display font-semibold mb-3">Today for {babies.find(b => b.id === selectedBabyId)?.name || 'Selected'}</h3>
+								<h3 class="text-lg font-display font-semibold mb-3">Today for {babies.find(b => b.id === selectedMemberId)?.name || 'Selected'}</h3>
 								<div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
 <div class="bg-surface rounded-lg shadow-card p-4 border-l-4 border-line">
 									<div class="flex items-center gap-2 mb-1">
@@ -1858,6 +1875,40 @@
 											<button type="button" on:click={cancelFeed} class="bg-surface2 text-ink-soft px-4 py-2 rounded-md hover:bg-line-soft">Cancel</button>
 										{/if}
 									</div>
+									{#if manualType === 'combo'}
+										<div class="mt-4 space-y-3 border-t pt-3">
+											<p class="text-sm font-medium text-ink-soft">Bottle</p>
+											<select bind:value={manualBottleSource} class="w-full px-3 py-2 border border-line rounded-md">
+												<option value="breastmilk">Breast milk</option>
+												<option value="formula">Formula</option>
+											</select>
+											{#if manualBottleSource === 'formula'}
+												<div class="flex gap-2">
+													<select bind:value={manualFormulaId} class="flex-1 px-3 py-2 border border-line rounded-md">
+														<option value="">—</option>
+														{#each formulas as f}
+															<option value={f.id}>{f.name}{f.brand ? ` (${f.brand})` : ''}</option>
+														{/each}
+													</select>
+													<button type="button" on:click={() => (showAddFormula = !showAddFormula)} class="px-3 py-2 bg-surface2 text-ink-soft rounded-md"><Plus class="w-4 h-4" /></button>
+												</div>
+												{#if showAddFormula}
+													<div class="flex gap-2 mt-2">
+														<input type="text" bind:value={newFormulaName} placeholder="Formula name" class="flex-1 px-3 py-2 border border-line rounded-md" />
+														<input type="text" bind:value={newFormulaBrand} placeholder="Brand" class="flex-1 px-3 py-2 border border-line rounded-md" />
+														<select bind:value={newFormulaType} class="flex-1 px-3 py-2 border border-line rounded-md">
+															{#each FORMULA_TYPES as t}
+																<option value={t}>{t}</option>
+															{/each}
+														</select>
+														<button type="button" on:click={addFormula} class="px-3 py-2 bg-primary text-on-primary rounded-md">Add</button>
+													</div>
+												{/if}
+											{/if}
+											<label for="combo-feed-amount" class="block text-sm font-medium text-ink-soft">Amount (oz)</label>
+											<input id="combo-feed-amount" type="number" step="0.1" bind:value={manualAmount} class="w-full px-3 py-2 border border-line rounded-md" placeholder="4.5" />
+										</div>
+									{/if}
 								{:else}
 									<div class="mb-3">
 										<label for="feed-timer-amount" class="block text-sm font-medium text-ink-soft mb-1">Amount ({feedType === 'formula' ? 'oz' : 'servings'})</label>
@@ -2033,7 +2084,7 @@
 							{#if sleepMode === 'timer'}
 								{#if sleepStartedAt}
 									<div class="text-center mb-4">
-										<p class="text-5xl font-display font-bold text-ink-soft">{formatElapsed(sleepElapsed)}</p>
+										<p class="text-5xl font-display font-bold text-ink-soft">{formatElapsed(liveSleepElapsed)}</p>
 										<p class="text-sm text-ink-soft">sleeping since {formatTime(new Date(sleepStartedAt).toISOString())}</p>
 									</div>
 								{/if}
@@ -2133,15 +2184,20 @@
 								<input id="milestone-time" type="datetime-local" bind:value={milestoneTime} class="w-full px-3 py-2 border border-line rounded-md" />
 							</div>
 							<div>
-								<label for="milestone-category" class="block text-sm font-medium text-ink-soft mb-1">Category</label>
-								<select id="milestone-category" bind:value={milestoneCategory} class="w-full px-3 py-2 border border-line rounded-md">
-									<option value="motor">Motor</option>
-									<option value="cognitive">Cognitive</option>
-									<option value="social">Social</option>
-									<option value="communication">Communication</option>
-									<option value="firsts">First</option>
-									<option value="other">Other</option>
-								</select>
+								<label for="milestone-category" class="block text-sm font-medium text-ink-soft mb-1">Category (type or choose)</label>
+								<input id="milestone-category" type="text" bind:value={milestoneCategory} list="milestone-cat-list" class="w-full px-3 py-2 border border-line rounded-md" placeholder="vitamin, tummy time, first smile…" />
+								<datalist id="milestone-cat-list">
+									<option value="motor" />
+									<option value="cognitive" />
+									<option value="social" />
+									<option value="communication" />
+									<option value="firsts" />
+									<option value="vitamin" />
+									<option value="medication" />
+									<option value="tummy time" />
+									<option value="bath" />
+									<option value="other" />
+								</datalist>
 							</div>
 							<button type="submit" class="w-full bg-primary text-on-primary py-2 px-4 rounded-md hover:bg-primary">{activeTab === 'firsts' ? 'Save First' : 'Save Milestone'}</button>
 						</form>
@@ -2176,6 +2232,19 @@
 							<div>
 								<label for="routine-description" class="block text-sm font-medium text-ink-soft mb-1">Description</label>
 								<input id="routine-description" type="text" bind:value={milestoneTitle} required class="w-full px-3 py-2 border border-line rounded-md" placeholder="Bath, vitamin, medication…" />
+							</div>
+							<div>
+								<label for="routine-category" class="block text-sm font-medium text-ink-soft mb-1">Category (e.g. vitamin, medication, bath)</label>
+								<input id="routine-category" type="text" bind:value={milestoneCategory} list="routine-cat-list" class="w-full px-3 py-2 border border-line rounded-md" placeholder="vitamin" />
+								<datalist id="routine-cat-list">
+									<option value="vitamin" />
+									<option value="medication" />
+									<option value="bath" />
+									<option value="tummy time" />
+									<option value="story time" />
+									<option value="walk" />
+									<option value="appointment" />
+								</datalist>
 							</div>
 							<div>
 								<label for="routine-time" class="block text-sm font-medium text-ink-soft mb-1">Date &amp; time</label>

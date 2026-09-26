@@ -7,7 +7,7 @@ const vaccinationRoutes = new Hono<AuthEnv>();
 
 // Zod schemas for validation
 const createVaccinationSchema = z.object({
-  babyId: z.number(),
+  memberId: z.number(),
   name: z.string().min(1),
   dateGiven: z.string().datetime().optional(),
   nextDueDate: z.string().datetime().optional(),
@@ -28,14 +28,14 @@ vaccinationRoutes.get('/', async (c) => {
   try {
     const userId = c.get('userId');
     const db = c.get('db');
-    const babyId = parseInt(c.req.query('babyId') || '0');
+    const memberId = parseInt(c.req.query('memberId') || '0');
     
-    if (!babyId) {
-      return c.json({ error: 'Baby ID is required' }, 400);
+    if (!memberId) {
+      return c.json({ error: 'Member ID is required' }, 400);
     }
     
     // Verify user has access to this baby
-    const babyCheck = await db.execute({
+    const memberCheck = await db.execute({
       sql: `
       SELECT b.id
       FROM babies b
@@ -43,11 +43,11 @@ vaccinationRoutes.get('/', async (c) => {
       JOIN user_households uh ON h.id = uh.household_id
       WHERE b.id = ? AND uh.user_id = ?
     `,
-      args: [babyId, userId]
+      args: [memberId, userId]
     });
     
-    if (babyCheck.rows.length === 0) {
-      return c.json({ error: 'Baby not found or access denied' }, 404);
+    if (memberCheck.rows.length === 0) {
+      return c.json({ error: 'Member not found or access denied' }, 404);
     }
     
     // Get vaccinations for the baby
@@ -58,7 +58,7 @@ vaccinationRoutes.get('/', async (c) => {
       WHERE baby_id = ?
       ORDER BY date_given DESC, next_due_date ASC
     `,
-      args: [babyId]
+      args: [memberId]
     });
     
     return c.json({ vaccinations: vaccinationsResult.rows });
@@ -102,12 +102,12 @@ vaccinationRoutes.get('/:id{[0-9]+}', async (c) => {
 // Create a new vaccination
 vaccinationRoutes.post('/', zValidator('json', createVaccinationSchema), async (c) => {
   try {
-    const { babyId, name, dateGiven, nextDueDate, administeredBy, notes } = c.req.valid('json');
+    const { memberId, name, dateGiven, nextDueDate, administeredBy, notes } = c.req.valid('json');
     const userId = c.get('userId');
     const db = c.get('db');
     
     // Verify user has access to this baby
-    const babyCheck = await db.execute({
+    const memberCheck = await db.execute({
       sql: `
       SELECT b.id
       FROM babies b
@@ -115,11 +115,11 @@ vaccinationRoutes.post('/', zValidator('json', createVaccinationSchema), async (
       JOIN user_households uh ON h.id = uh.household_id
       WHERE b.id = ? AND uh.user_id = ?
     `,
-      args: [babyId, userId]
+      args: [memberId, userId]
     });
     
-    if (babyCheck.rows.length === 0) {
-      return c.json({ error: 'Baby not found or access denied' }, 404);
+    if (memberCheck.rows.length === 0) {
+      return c.json({ error: 'Member not found or access denied' }, 404);
     }
     
     // Insert new vaccination
@@ -130,7 +130,7 @@ vaccinationRoutes.post('/', zValidator('json', createVaccinationSchema), async (
         ) VALUES (?, ?, ?, ?, ?, ?, ?)
       `,
       args: [
-        babyId, 
+        memberId, 
         name, 
         dateGiven || null, 
         nextDueDate || null, 
