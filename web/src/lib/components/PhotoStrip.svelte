@@ -74,7 +74,7 @@
 		{#each photos as p}
 			<div class="relative">
 				{#if urls[p.id]}
-					<img src={urls[p.id]} alt="photo" class="w-16 h-16 object-cover rounded-md" />
+				<img src={urls[p.id]} alt="Attachment" class="w-16 h-16 object-cover rounded-md" />
 					<button type="button" on:click={() => remove(p.id)} class="absolute -top-3 -right-3 w-11 h-11 flex items-center justify-center text-danger">
 						<span class="bg-danger-bg w-6 h-6 rounded-full flex items-center justify-center text-sm">✕</span>
 					</button>

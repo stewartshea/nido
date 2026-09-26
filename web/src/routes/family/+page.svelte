@@ -1934,8 +1934,8 @@
 							</div>
 							{#if feedMode === 'timer'}
 								<div class="mb-3">
-									<label class="block text-sm font-medium text-ink-soft mb-1">Type</label>
-									<select bind:value={feedType} class="w-full px-3 py-2 border border-line rounded-md">
+									<label for="feed-type-primary" class="block text-sm font-medium text-ink-soft mb-1">Type</label>
+									<select id="feed-type-primary" bind:value={feedType} class="w-full px-3 py-2 border border-line rounded-md">
 										<option value="breast">Breast</option>
 										<option value="formula">Formula</option>
 										<option value="solid">Solid</option>
@@ -1944,7 +1944,7 @@
 
 								{#if feedType === 'breast'}
 									<div class="flex items-center justify-between mb-2">
-										<label class="block text-sm font-medium text-ink-soft">Breast</label>
+										<div class="block text-sm font-medium text-ink-soft">Breast</div>
 										{#if lastBreastSide}
 											<span class="text-xs text-ink-soft">last: {#if lastBreastSide === 'left'}<ArrowLeft class="w-3 h-3 inline mr-1" /> left{:else}right <ArrowRight class="w-3 h-3 inline ml-1" />{/if}</span>
 										{/if}
@@ -1981,8 +1981,8 @@
 									</div>
 								{:else}
 									<div class="mb-3">
-										<label class="block text-sm font-medium text-ink-soft mb-1">Amount ({feedType === 'formula' ? 'oz' : 'servings'})</label>
-										<input type="number" step="0.1" bind:value={feedAmount} class="w-full px-3 py-2 border border-line rounded-md" placeholder="4.5" />
+										<label for="feed-timer-amount" class="block text-sm font-medium text-ink-soft mb-1">Amount ({feedType === 'formula' ? 'oz' : 'servings'})</label>
+										<input id="feed-timer-amount" type="number" step="0.1" bind:value={feedAmount} class="w-full px-3 py-2 border border-line rounded-md" placeholder="4.5" />
 									</div>
 									<button type="button" on:click={saveFeedTimer} class="w-full bg-primary text-on-primary py-3 px-4 rounded-md hover:bg-primary text-lg font-display font-semibold">Save Feed</button>
 								{/if}
@@ -1990,16 +1990,16 @@
 								<form on:submit={saveManualFeed} class="space-y-3">
 									<div class="flex gap-2 items-center">
 										<div class="flex-1">
-											<label class="block text-sm font-medium text-ink-soft mb-1">Date &amp; time (start)</label>
-											<input type="datetime-local" bind:value={manualStart} class="w-full px-3 py-2 border border-line rounded-md" />
+											<label for="manual-feed-start" class="block text-sm font-medium text-ink-soft mb-1">Date &amp; time (start)</label>
+											<input id="manual-feed-start" type="datetime-local" bind:value={manualStart} class="w-full px-3 py-2 border border-line rounded-md" />
 										</div>
 										<div class="pt-5">
 											<button type="button" on:click={repeatLastFeed} title="Repeat last selection" class="px-3 py-2 bg-surface2 text-ink-soft rounded-md hover:bg-line-soft"><RotateCcw class="w-4 h-4 inline mr-1" /> Repeat last</button>
 										</div>
 									</div>
 									<div>
-										<label class="block text-sm font-medium text-ink-soft mb-1">Type</label>
-										<select bind:value={manualType} class="w-full px-3 py-2 border border-line rounded-md">
+										<label for="manual-feed-type" class="block text-sm font-medium text-ink-soft mb-1">Type</label>
+										<select id="manual-feed-type" bind:value={manualType} class="w-full px-3 py-2 border border-line rounded-md">
 											<option value="breast">Breast</option>
 											<option value="formula">Formula</option>
 											<option value="bottle">Bottle</option>
@@ -2009,9 +2009,9 @@
 									</div>
 									{#if manualType === 'formula'}
 										<div>
-											<label class="block text-sm font-medium text-ink-soft mb-1">Formula</label>
+											<label for="manual-feed-formula" class="block text-sm font-medium text-ink-soft mb-1">Formula</label>
 											<div class="flex gap-2">
-												<select bind:value={manualFormulaId} class="flex-1 px-3 py-2 border border-line rounded-md">
+												<select id="manual-feed-formula" bind:value={manualFormulaId} class="flex-1 px-3 py-2 border border-line rounded-md">
 													<option value="">—</option>
 													{#each formulas as f}
 														<option value={f.id}>{f.name}{f.brand ? ` (${f.brand})` : ''}</option>
@@ -2031,7 +2031,7 @@
 									{#if manualType === 'breast'}
 										<div>
 											<div class="flex items-center justify-between mb-1">
-												<label class="block text-sm font-medium text-ink-soft">Breast</label>
+												<div class="block text-sm font-medium text-ink-soft">Breast</div>
 												{#if lastBreastSide}
 											<span class="text-xs text-ink-soft">last: {#if lastBreastSide === 'left'}<ArrowLeft class="w-3 h-3 inline mr-1" /> left{:else}right <ArrowRight class="w-3 h-3 inline ml-1" />{/if}</span>
 												{/if}
@@ -2052,19 +2052,19 @@
 									{/if}
 									{#if manualType !== 'breast'}
 										<div>
-											<label class="block text-sm font-medium text-ink-soft mb-1">Amount ({manualType === 'formula' || manualType === 'bottle' || manualType === 'pump' ? 'oz' : 'servings'})</label>
-											<input type="number" step="0.1" bind:value={manualAmount} class="w-full px-3 py-2 border border-line rounded-md" placeholder="4.5" />
+											<label for="manual-feed-amount" class="block text-sm font-medium text-ink-soft mb-1">Amount ({manualType === 'formula' || manualType === 'bottle' || manualType === 'pump' ? 'oz' : 'servings'})</label>
+											<input id="manual-feed-amount" type="number" step="0.1" bind:value={manualAmount} class="w-full px-3 py-2 border border-line rounded-md" placeholder="4.5" />
 										</div>
 									{/if}
 									{#if manualType !== 'breast'}
 										<div>
-											<label class="block text-sm font-medium text-ink-soft mb-1">End time (optional)</label>
-											<input type="datetime-local" bind:value={manualEnd} class="w-full px-3 py-2 border border-line rounded-md" />
+											<label for="manual-feed-end" class="block text-sm font-medium text-ink-soft mb-1">End time (optional)</label>
+											<input id="manual-feed-end" type="datetime-local" bind:value={manualEnd} class="w-full px-3 py-2 border border-line rounded-md" />
 										</div>
 									{/if}
 									<div>
-										<label class="block text-sm font-medium text-ink-soft mb-1">Notes</label>
-										<input type="text" bind:value={manualNotes} class="w-full px-3 py-2 border border-line rounded-md" />
+										<label for="manual-feed-notes" class="block text-sm font-medium text-ink-soft mb-1">Notes</label>
+										<input id="manual-feed-notes" type="text" bind:value={manualNotes} class="w-full px-3 py-2 border border-line rounded-md" />
 									</div>
 									<button type="submit" class="w-full bg-primary text-on-primary py-2 px-4 rounded-md hover:bg-primary">Save Feed</button>
 								</form>
@@ -2127,8 +2127,8 @@
 							</div>
 							{#if feedMode === 'timer'}
 								<div class="mb-3">
-									<label class="block text-sm font-medium text-ink-soft mb-1">Type</label>
-									<select bind:value={feedType} class="w-full px-3 py-2 border border-line rounded-md">
+									<label for="feed-type-secondary" class="block text-sm font-medium text-ink-soft mb-1">Type</label>
+									<select id="feed-type-secondary" bind:value={feedType} class="w-full px-3 py-2 border border-line rounded-md">
 										<option value="breast">Breast</option>
 										<option value="formula">Formula</option>
 										<option value="solid">Solid</option>
@@ -2137,7 +2137,7 @@
 
 								{#if feedType === 'breast'}
 									<div class="flex items-center justify-between mb-2">
-										<label class="block text-sm font-medium text-ink-soft">Breast</label>
+										<div class="block text-sm font-medium text-ink-soft">Breast</div>
 										{#if lastBreastSide}
 											<span class="text-xs text-ink-soft">last: {#if lastBreastSide === 'left'}<ArrowLeft class="w-3 h-3 inline mr-1" /> left{:else}right <ArrowRight class="w-3 h-3 inline ml-1" />{/if}</span>
 										{/if}
@@ -2174,8 +2174,8 @@
 									</div>
 								{:else}
 									<div class="mb-3">
-										<label class="block text-sm font-medium text-ink-soft mb-1">Amount ({feedType === 'formula' ? 'oz' : 'servings'})</label>
-										<input type="number" step="0.1" bind:value={feedAmount} class="w-full px-3 py-2 border border-line rounded-md" placeholder="4.5" />
+										<label for="feed-timer-amount" class="block text-sm font-medium text-ink-soft mb-1">Amount ({feedType === 'formula' ? 'oz' : 'servings'})</label>
+										<input id="feed-timer-amount" type="number" step="0.1" bind:value={feedAmount} class="w-full px-3 py-2 border border-line rounded-md" placeholder="4.5" />
 									</div>
 									<button type="button" on:click={saveFeedTimer} class="w-full bg-primary text-on-primary py-3 px-4 rounded-md hover:bg-primary text-lg font-display font-semibold">Save Feed</button>
 								{/if}
@@ -2183,16 +2183,16 @@
 								<form on:submit={saveManualFeed} class="space-y-3">
 									<div class="flex gap-2 items-center">
 										<div class="flex-1">
-											<label class="block text-sm font-medium text-ink-soft mb-1">Date &amp; time (start)</label>
-											<input type="datetime-local" bind:value={manualStart} class="w-full px-3 py-2 border border-line rounded-md" />
+											<label for="manual-feed-start" class="block text-sm font-medium text-ink-soft mb-1">Date &amp; time (start)</label>
+											<input id="manual-feed-start" type="datetime-local" bind:value={manualStart} class="w-full px-3 py-2 border border-line rounded-md" />
 										</div>
 										<div class="pt-5">
 											<button type="button" on:click={repeatLastFeed} title="Repeat last selection" class="px-3 py-2 bg-surface2 text-ink-soft rounded-md hover:bg-line-soft"><RotateCcw class="w-4 h-4 inline mr-1" /> Repeat last</button>
 										</div>
 									</div>
 									<div>
-										<label class="block text-sm font-medium text-ink-soft mb-1">Type</label>
-										<select bind:value={manualType} class="w-full px-3 py-2 border border-line rounded-md">
+										<label for="manual-feed-type" class="block text-sm font-medium text-ink-soft mb-1">Type</label>
+										<select id="manual-feed-type" bind:value={manualType} class="w-full px-3 py-2 border border-line rounded-md">
 											<option value="breast">Breast</option>
 											<option value="formula">Formula</option>
 											<option value="bottle">Bottle</option>
@@ -2202,9 +2202,9 @@
 									</div>
 									{#if manualType === 'formula'}
 										<div>
-											<label class="block text-sm font-medium text-ink-soft mb-1">Formula</label>
+											<label for="manual-feed-formula" class="block text-sm font-medium text-ink-soft mb-1">Formula</label>
 											<div class="flex gap-2">
-												<select bind:value={manualFormulaId} class="flex-1 px-3 py-2 border border-line rounded-md">
+												<select id="manual-feed-formula" bind:value={manualFormulaId} class="flex-1 px-3 py-2 border border-line rounded-md">
 													<option value="">—</option>
 													{#each formulas as f}
 														<option value={f.id}>{f.name}{f.brand ? ` (${f.brand})` : ''}</option>
@@ -2224,7 +2224,7 @@
 									{#if manualType === 'breast'}
 										<div>
 											<div class="flex items-center justify-between mb-1">
-												<label class="block text-sm font-medium text-ink-soft">Breast</label>
+												<div class="block text-sm font-medium text-ink-soft">Breast</div>
 												{#if lastBreastSide}
 											<span class="text-xs text-ink-soft">last: {#if lastBreastSide === 'left'}<ArrowLeft class="w-3 h-3 inline mr-1" /> left{:else}right <ArrowRight class="w-3 h-3 inline ml-1" />{/if}</span>
 												{/if}
@@ -2245,19 +2245,19 @@
 									{/if}
 									{#if manualType !== 'breast'}
 										<div>
-											<label class="block text-sm font-medium text-ink-soft mb-1">Amount ({manualType === 'formula' || manualType === 'bottle' || manualType === 'pump' ? 'oz' : 'servings'})</label>
-											<input type="number" step="0.1" bind:value={manualAmount} class="w-full px-3 py-2 border border-line rounded-md" placeholder="4.5" />
+											<label for="manual-feed-amount" class="block text-sm font-medium text-ink-soft mb-1">Amount ({manualType === 'formula' || manualType === 'bottle' || manualType === 'pump' ? 'oz' : 'servings'})</label>
+											<input id="manual-feed-amount" type="number" step="0.1" bind:value={manualAmount} class="w-full px-3 py-2 border border-line rounded-md" placeholder="4.5" />
 										</div>
 									{/if}
 									{#if manualType !== 'breast'}
 										<div>
-											<label class="block text-sm font-medium text-ink-soft mb-1">End time (optional)</label>
-											<input type="datetime-local" bind:value={manualEnd} class="w-full px-3 py-2 border border-line rounded-md" />
+											<label for="manual-feed-end" class="block text-sm font-medium text-ink-soft mb-1">End time (optional)</label>
+											<input id="manual-feed-end" type="datetime-local" bind:value={manualEnd} class="w-full px-3 py-2 border border-line rounded-md" />
 										</div>
 									{/if}
 									<div>
-										<label class="block text-sm font-medium text-ink-soft mb-1">Notes</label>
-										<input type="text" bind:value={manualNotes} class="w-full px-3 py-2 border border-line rounded-md" />
+										<label for="manual-feed-notes" class="block text-sm font-medium text-ink-soft mb-1">Notes</label>
+										<input id="manual-feed-notes" type="text" bind:value={manualNotes} class="w-full px-3 py-2 border border-line rounded-md" />
 									</div>
 									<button type="submit" class="w-full bg-primary text-on-primary py-2 px-4 rounded-md hover:bg-primary">Save Feed</button>
 								</form>
@@ -2272,7 +2272,7 @@
 							<h3 class="text-xl font-display font-semibold mb-4">Log Diaper</h3>
 							<form on:submit={saveDiaperManual} class="space-y-4">
 								<div>
-									<label class="block text-sm font-medium text-ink-soft mb-2">Type</label>
+									<div class="block text-sm font-medium text-ink-soft mb-2">Type</div>
 									<div class="grid grid-cols-4 gap-3">
 										<button type="button" on:click={() => (diaperType = 'wet')} class="{diaperType === 'wet' ? 'bg-primary text-on-primary border-primary' : 'bg-surface text-ink-soft border-line-soft hover:border-line'} border rounded-lg py-4 flex flex-col items-center gap-1 text-sm font-semibold transition-colors">
 											<Droplet class="w-6 h-6 mb-1" aria-hidden="true" /> Wet
@@ -2288,12 +2288,12 @@
 
 								<div class="grid grid-cols-2 gap-3">
 									<div>
-										<label class="block text-sm font-medium text-ink-soft mb-1">Date &amp; time</label>
-										<input type="datetime-local" bind:value={diaperTime} class="w-full px-3 py-2 border border-line rounded-md" />
+										<label for="diaper-time" class="block text-sm font-medium text-ink-soft mb-1">Date &amp; time</label>
+										<input id="diaper-time" type="datetime-local" bind:value={diaperTime} class="w-full px-3 py-2 border border-line rounded-md" />
 									</div>
 									<div>
-										<label class="block text-sm font-medium text-ink-soft mb-1">Consistency</label>
-										<select bind:value={diaperConsistency} class="w-full px-3 py-2 border border-line rounded-md">
+										<label for="diaper-consistency" class="block text-sm font-medium text-ink-soft mb-1">Consistency</label>
+										<select id="diaper-consistency" bind:value={diaperConsistency} class="w-full px-3 py-2 border border-line rounded-md">
 											<option value="">—</option>
 											{#each currentCategoryOptions('diapers', 'consistency') as opt}
 												<option value={opt}>{opt}</option>
@@ -2304,8 +2304,8 @@
 
 								<div class="grid grid-cols-2 gap-3">
 									<div>
-										<label class="block text-sm font-medium text-ink-soft mb-1">Color (optional)</label>
-										<select bind:value={diaperColor} class="w-full px-3 py-2 border border-line rounded-md">
+										<label for="diaper-color" class="block text-sm font-medium text-ink-soft mb-1">Color (optional)</label>
+										<select id="diaper-color" bind:value={diaperColor} class="w-full px-3 py-2 border border-line rounded-md">
 											<option value="">—</option>
 											{#each currentCategoryOptions('diapers', 'color') as opt}
 												<option value={opt}>{opt}</option>
@@ -2313,8 +2313,8 @@
 										</select>
 									</div>
 									<div>
-										<label class="block text-sm font-medium text-ink-soft mb-1">Notes (optional)</label>
-										<input type="text" bind:value={diaperNotes} class="w-full px-3 py-2 border border-line rounded-md" placeholder="rash, etc." />
+										<label for="diaper-notes" class="block text-sm font-medium text-ink-soft mb-1">Notes (optional)</label>
+										<input id="diaper-notes" type="text" bind:value={diaperNotes} class="w-full px-3 py-2 border border-line rounded-md" placeholder="rash, etc." />
 									</div>
 								</div>
 
@@ -2344,8 +2344,8 @@
 									</div>
 								{/if}
 								<div class="mb-3">
-									<label class="block text-sm font-medium text-ink-soft mb-1">Location</label>
-									<select bind:value={sleepLocation} class="w-full px-3 py-2 border border-line rounded-md">
+									<label for="sleep-location" class="block text-sm font-medium text-ink-soft mb-1">Location</label>
+									<select id="sleep-location" bind:value={sleepLocation} class="w-full px-3 py-2 border border-line rounded-md">
 										<option value="crib">Crib</option>
 										<option value="bassinet">Bassinet</option>
 										<option value="stroller">Stroller</option>
@@ -2354,8 +2354,8 @@
 									</select>
 								</div>
 								<div class="mb-3">
-									<label class="block text-sm font-medium text-ink-soft mb-1">Notes (optional)</label>
-									<input type="text" bind:value={sleepNotes} class="w-full px-3 py-2 border border-line rounded-md" />
+									<label for="sleep-notes" class="block text-sm font-medium text-ink-soft mb-1">Notes (optional)</label>
+									<input id="sleep-notes" type="text" bind:value={sleepNotes} class="w-full px-3 py-2 border border-line rounded-md" />
 								</div>
 								{#if sleepStartedAt}
 									<div class="flex gap-4">
@@ -2368,8 +2368,8 @@
 							{:else}
 								<form on:submit={saveManualSleep} class="space-y-3">
 									<div>
-										<label class="block text-sm font-medium text-ink-soft mb-1">Start date &amp; time</label>
-										<input type="datetime-local" bind:value={sleepTime} class="w-full px-3 py-2 border border-line rounded-md" />
+										<label for="sleep-start" class="block text-sm font-medium text-ink-soft mb-1">Start date &amp; time</label>
+										<input id="sleep-start" type="datetime-local" bind:value={sleepTime} class="w-full px-3 py-2 border border-line rounded-md" />
 									</div>
 									<button type="submit" class="w-full bg-primary text-on-primary py-2 px-4 rounded-md hover:bg-primary">Save Sleep</button>
 								</form>
@@ -2384,27 +2384,27 @@
 							<h3 class="text-xl font-display font-semibold mb-4">New Measurement</h3>
 							<form on:submit={saveManualGrowth}>
 								<div class="mb-3">
-									<label class="block text-sm font-medium text-ink-soft mb-1">Date &amp; time</label>
-									<input type="datetime-local" bind:value={growthTime} class="w-full px-3 py-2 border border-line rounded-md" />
+									<label for="growth-time-inline" class="block text-sm font-medium text-ink-soft mb-1">Date &amp; time</label>
+									<input id="growth-time-inline" type="datetime-local" bind:value={growthTime} class="w-full px-3 py-2 border border-line rounded-md" />
 								</div>
 								<div class="mb-3">
-									<label class="block text-sm font-medium text-ink-soft mb-1">Units</label>
-									<select bind:value={growthUnit} class="w-full px-3 py-2 border border-line rounded-md">
+									<label for="growth-unit-inline" class="block text-sm font-medium text-ink-soft mb-1">Units</label>
+									<select id="growth-unit-inline" bind:value={growthUnit} class="w-full px-3 py-2 border border-line rounded-md">
 										<option value="metric">Metric (kg / cm)</option>
 										<option value="imperial">Imperial (lbs / inches)</option>
 									</select>
 								</div>
 								<div class="mb-3">
-									<label class="block text-sm font-medium text-ink-soft mb-1">Weight ({growthUnit === 'metric' ? 'kg' : 'lbs'})</label>
-									<input type="number" step="0.1" bind:value={growthWeight} class="w-full px-3 py-2 border border-line rounded-md" placeholder="7.2" />
+									<label for="growth-weight-inline" class="block text-sm font-medium text-ink-soft mb-1">Weight ({growthUnit === 'metric' ? 'kg' : 'lbs'})</label>
+									<input id="growth-weight-inline" type="number" step="0.1" bind:value={growthWeight} class="w-full px-3 py-2 border border-line rounded-md" placeholder="7.2" />
 								</div>
 								<div class="mb-3">
-									<label class="block text-sm font-medium text-ink-soft mb-1">Length ({growthUnit === 'metric' ? 'cm' : 'inches'})</label>
-									<input type="number" step="0.1" bind:value={growthHeight} class="w-full px-3 py-2 border border-line rounded-md" placeholder="64.1" />
+									<label for="growth-length-inline" class="block text-sm font-medium text-ink-soft mb-1">Length ({growthUnit === 'metric' ? 'cm' : 'inches'})</label>
+									<input id="growth-length-inline" type="number" step="0.1" bind:value={growthHeight} class="w-full px-3 py-2 border border-line rounded-md" placeholder="64.1" />
 								</div>
 								<div class="mb-3">
-									<label class="block text-sm font-medium text-ink-soft mb-1">Head Circumference ({growthUnit === 'metric' ? 'cm' : 'inches'})</label>
-									<input type="number" step="0.1" bind:value={growthHead} class="w-full px-3 py-2 border border-line rounded-md" placeholder="40.2" />
+									<label for="growth-head-inline" class="block text-sm font-medium text-ink-soft mb-1">Head Circumference ({growthUnit === 'metric' ? 'cm' : 'inches'})</label>
+									<input id="growth-head-inline" type="number" step="0.1" bind:value={growthHead} class="w-full px-3 py-2 border border-line rounded-md" placeholder="40.2" />
 								</div>
 								<button type="submit" class="w-full bg-primary text-on-primary py-2 px-4 rounded-md hover:bg-primary">Save Measurement</button>
 							</form>
@@ -2418,12 +2418,12 @@
 						<h3 class="text-xl font-display font-semibold mb-4">Log a pump session</h3>
 						<form on:submit={saveManualFeed} class="space-y-3">
 							<div>
-								<label class="block text-sm font-medium text-ink-soft mb-1">Date &amp; time</label>
-								<input type="datetime-local" bind:value={manualStart} class="w-full px-3 py-2 border border-line rounded-md" />
+								<label for="pump-time-inline" class="block text-sm font-medium text-ink-soft mb-1">Date &amp; time</label>
+								<input id="pump-time-inline" type="datetime-local" bind:value={manualStart} class="w-full px-3 py-2 border border-line rounded-md" />
 							</div>
 							<div>
-								<label class="block text-sm font-medium text-ink-soft mb-1">Volume (oz)</label>
-								<input type="number" step="0.1" bind:value={manualAmount} class="w-full px-3 py-2 border border-line rounded-md" placeholder="4.0" />
+								<label for="pump-volume-inline" class="block text-sm font-medium text-ink-soft mb-1">Volume (oz)</label>
+								<input id="pump-volume-inline" type="number" step="0.1" bind:value={manualAmount} class="w-full px-3 py-2 border border-line rounded-md" placeholder="4.0" />
 							</div>
 							<button type="submit" class="w-full bg-primary text-on-primary py-2 px-4 rounded-md hover:bg-primary">Save Pump</button>
 						</form>
@@ -2437,16 +2437,16 @@
 						<h3 class="text-xl font-display font-semibold mb-4">{activeTab === 'firsts' ? 'Log a First' : 'Log a Milestone'}</h3>
 						<form on:submit={saveManualMilestone} class="space-y-3">
 							<div>
-								<label class="block text-sm font-medium text-ink-soft mb-1">Name</label>
-								<input type="text" bind:value={milestoneTitle} required class="w-full px-3 py-2 border border-line rounded-md" placeholder="First smile, rolled over…" />
+								<label for="milestone-name-inline" class="block text-sm font-medium text-ink-soft mb-1">Name</label>
+								<input id="milestone-name-inline" type="text" bind:value={milestoneTitle} required class="w-full px-3 py-2 border border-line rounded-md" placeholder="First smile, rolled over…" />
 							</div>
 							<div>
-								<label class="block text-sm font-medium text-ink-soft mb-1">Date &amp; time</label>
-								<input type="datetime-local" bind:value={milestoneTime} class="w-full px-3 py-2 border border-line rounded-md" />
+								<label for="milestone-time-inline" class="block text-sm font-medium text-ink-soft mb-1">Date &amp; time</label>
+								<input id="milestone-time-inline" type="datetime-local" bind:value={milestoneTime} class="w-full px-3 py-2 border border-line rounded-md" />
 							</div>
 							<div>
-								<label class="block text-sm font-medium text-ink-soft mb-1">Category</label>
-								<select bind:value={milestoneCategory} class="w-full px-3 py-2 border border-line rounded-md">
+								<label for="milestone-category-inline" class="block text-sm font-medium text-ink-soft mb-1">Category</label>
+								<select id="milestone-category-inline" bind:value={milestoneCategory} class="w-full px-3 py-2 border border-line rounded-md">
 									<option value="motor">Motor</option>
 									<option value="cognitive">Cognitive</option>
 									<option value="social">Social</option>
@@ -2467,16 +2467,16 @@
 						<h3 class="text-xl font-display font-semibold mb-4">Log a Vaccine</h3>
 						<form on:submit={saveManualVaccine} class="space-y-3">
 							<div>
-								<label class="block text-sm font-medium text-ink-soft mb-1">Vaccine name</label>
-								<input type="text" bind:value={vaccineName} required class="w-full px-3 py-2 border border-line rounded-md" placeholder="Hepatitis B, DTaP…" />
+								<label for="vaccine-name-inline" class="block text-sm font-medium text-ink-soft mb-1">Vaccine name</label>
+								<input id="vaccine-name-inline" type="text" bind:value={vaccineName} required class="w-full px-3 py-2 border border-line rounded-md" placeholder="Hepatitis B, DTaP…" />
 							</div>
 							<div>
-								<label class="block text-sm font-medium text-ink-soft mb-1">Date &amp; time</label>
-								<input type="datetime-local" bind:value={vaccineTime} class="w-full px-3 py-2 border border-line rounded-md" />
+								<label for="vaccine-time-inline" class="block text-sm font-medium text-ink-soft mb-1">Date &amp; time</label>
+								<input id="vaccine-time-inline" type="datetime-local" bind:value={vaccineTime} class="w-full px-3 py-2 border border-line rounded-md" />
 							</div>
 							<div>
-								<label class="block text-sm font-medium text-ink-soft mb-1">Notes (optional)</label>
-								<input type="text" bind:value={vaccineNotes} class="w-full px-3 py-2 border border-line rounded-md" />
+								<label for="vaccine-notes-inline" class="block text-sm font-medium text-ink-soft mb-1">Notes (optional)</label>
+								<input id="vaccine-notes-inline" type="text" bind:value={vaccineNotes} class="w-full px-3 py-2 border border-line rounded-md" />
 							</div>
 							<button type="submit" class="w-full bg-primary text-on-primary py-2 px-4 rounded-md hover:bg-primary">Save Vaccine</button>
 						</form>
@@ -2490,12 +2490,12 @@
 						<h3 class="text-xl font-display font-semibold mb-4">Log {CATEGORIES.find((c) => c.id === activeTab)?.label}</h3>
 						<form on:submit={saveManualMilestone} class="space-y-3">
 							<div>
-								<label class="block text-sm font-medium text-ink-soft mb-1">Description</label>
-								<input type="text" bind:value={milestoneTitle} required class="w-full px-3 py-2 border border-line rounded-md" placeholder="Bath, vitamin, medication…" />
+								<label for="routine-description-inline" class="block text-sm font-medium text-ink-soft mb-1">Description</label>
+								<input id="routine-description-inline" type="text" bind:value={milestoneTitle} required class="w-full px-3 py-2 border border-line rounded-md" placeholder="Bath, vitamin, medication…" />
 							</div>
 							<div>
-								<label class="block text-sm font-medium text-ink-soft mb-1">Date &amp; time</label>
-								<input type="datetime-local" bind:value={milestoneTime} class="w-full px-3 py-2 border border-line rounded-md" />
+								<label for="routine-time-inline" class="block text-sm font-medium text-ink-soft mb-1">Date &amp; time</label>
+								<input id="routine-time-inline" type="datetime-local" bind:value={milestoneTime} class="w-full px-3 py-2 border border-line rounded-md" />
 							</div>
 							<button type="submit" class="w-full bg-primary text-on-primary py-2 px-4 rounded-md hover:bg-primary">Save</button>
 						</form>
@@ -2509,7 +2509,7 @@
 						<h3 class="text-xl font-display font-semibold mb-4">Log Mood</h3>
 						<form on:submit={saveMood} class="space-y-3">
 							<div class="mb-3">
-								<label class="block text-sm font-medium text-ink-soft mb-1">Mood</label>
+								<div class="block text-sm font-medium text-ink-soft mb-1">Mood</div>
 								<div class="flex flex-wrap gap-2">
 									{#each currentCategoryOptions('moods', 'mood') as opt}
 										<button type="button" on:click={() => (moodMood = opt)} class="{moodMood === opt ? 'bg-accent border-accent text-ink' : 'bg-surface2 text-ink-soft border-line-soft'} px-3 py-2 rounded-full border text-sm">{opt}</button>
@@ -2517,12 +2517,12 @@
 								</div>
 							</div>
 							<div>
-								<label class="block text-sm font-medium text-ink-soft mb-1">Date &amp; time</label>
-								<input type="datetime-local" bind:value={moodTime} class="w-full px-3 py-2 border border-line rounded-md" />
+								<label for="mood-time-inline" class="block text-sm font-medium text-ink-soft mb-1">Date &amp; time</label>
+								<input id="mood-time-inline" type="datetime-local" bind:value={moodTime} class="w-full px-3 py-2 border border-line rounded-md" />
 							</div>
 							<div>
-								<label class="block text-sm font-medium text-ink-soft mb-1">Notes</label>
-								<input type="text" bind:value={moodNotes} class="w-full px-3 py-2 border border-line rounded-md" />
+								<label for="mood-notes-inline" class="block text-sm font-medium text-ink-soft mb-1">Notes</label>
+								<input id="mood-notes-inline" type="text" bind:value={moodNotes} class="w-full px-3 py-2 border border-line rounded-md" />
 							</div>
 							<button type="submit" class="w-full bg-primary text-on-primary py-2 px-4 rounded-md hover:bg-primary">Save Mood</button>
 						</form>
@@ -2536,16 +2536,16 @@
 						<h3 class="text-xl font-display font-semibold mb-4">New Journal Entry</h3>
 						<form on:submit={saveJournal} class="space-y-3">
 							<div>
-								<label class="block text-sm font-medium text-ink-soft mb-1">Title</label>
-								<input type="text" bind:value={journalTitle} class="w-full px-3 py-2 border border-line rounded-md" placeholder="First walk, doctor visit…" />
+								<label for="journal-title-inline" class="block text-sm font-medium text-ink-soft mb-1">Title</label>
+								<input id="journal-title-inline" type="text" bind:value={journalTitle} class="w-full px-3 py-2 border border-line rounded-md" placeholder="First walk, doctor visit…" />
 							</div>
 							<div>
-								<label class="block text-sm font-medium text-ink-soft mb-1">Note</label>
-								<textarea bind:value={journalBody} rows="4" class="w-full px-3 py-2 border border-line rounded-md" placeholder="What happened today…"></textarea>
+								<label for="journal-body-inline" class="block text-sm font-medium text-ink-soft mb-1">Note</label>
+								<textarea id="journal-body-inline" bind:value={journalBody} rows="4" class="w-full px-3 py-2 border border-line rounded-md" placeholder="What happened today…"></textarea>
 							</div>
 							<div>
-								<label class="block text-sm font-medium text-ink-soft mb-1">Date &amp; time</label>
-								<input type="datetime-local" bind:value={journalTime} class="w-full px-3 py-2 border border-line rounded-md" />
+								<label for="journal-time-inline" class="block text-sm font-medium text-ink-soft mb-1">Date &amp; time</label>
+								<input id="journal-time-inline" type="datetime-local" bind:value={journalTime} class="w-full px-3 py-2 border border-line rounded-md" />
 							</div>
 							<button type="submit" class="w-full bg-primary text-on-primary py-2 px-4 rounded-md hover:bg-primary">Save Entry</button>
 						</form>
@@ -2555,16 +2555,17 @@
 {/if}
 {/if}
 		{#if editingRecord}
-			<div class="fixed inset-0 z-50 flex items-center justify-center bg-ink/40 p-4" role="dialog" aria-modal="true" on:click={(e) => { if (e.target === e.currentTarget) editingRecord = null; }}>
-				<div class="bg-surface rounded-lg shadow-card p-4 md:p-6 w-full max-w-md">
+			<div class="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true">
+				<button type="button" class="absolute inset-0 bg-ink/40" aria-label="Close dialog" on:click={() => (editingRecord = null)}></button>
+				<div class="relative bg-surface rounded-lg shadow-card p-4 md:p-6 w-full max-w-md">
 					<h3 class="text-xl font-display font-semibold mb-4">Edit record</h3>
 					<div class="mb-3">
-						<label class="block text-sm font-medium text-ink-soft mb-1">When</label>
-						<input type="datetime-local" bind:value={editTime} class="w-full px-3 py-2 border border-line rounded-md" />
+					<label for="edit-record-time" class="block text-sm font-medium text-ink-soft mb-1">When</label>
+					<input id="edit-record-time" type="datetime-local" bind:value={editTime} class="w-full px-3 py-2 border border-line rounded-md" />
 					</div>
 					<div class="mb-4">
-						<label class="block text-sm font-medium text-ink-soft mb-1">Notes</label>
-						<textarea bind:value={editNote} rows="3" class="w-full px-3 py-2 border border-line rounded-md" placeholder="Optional notes"></textarea>
+					<label for="edit-record-note" class="block text-sm font-medium text-ink-soft mb-1">Notes</label>
+					<textarea id="edit-record-note" bind:value={editNote} rows="3" class="w-full px-3 py-2 border border-line rounded-md" placeholder="Optional notes"></textarea>
 					</div>
 					<div class="flex justify-end gap-2">
 						<button type="button" on:click={() => (editingRecord = null)} class="px-4 py-2 bg-surface2 text-ink-soft rounded-md">Cancel</button>
@@ -2575,8 +2576,9 @@
 		{/if}
 
 		{#if editingMember}
-			<div class="fixed inset-0 z-50 flex items-center justify-center bg-ink/40 p-4" role="dialog" aria-modal="true" on:click={(e) => { if (e.target === e.currentTarget) editingMember = null; }}>
-				<div class="bg-surface rounded-lg shadow-card p-4 md:p-6 w-full max-w-md">
+			<div class="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true">
+				<button type="button" class="absolute inset-0 bg-ink/40" aria-label="Close dialog" on:click={() => (editingMember = null)}></button>
+				<div class="relative bg-surface rounded-lg shadow-card p-4 md:p-6 w-full max-w-md">
 					<h3 class="text-xl font-display font-semibold mb-4">Edit family member</h3>
 					<div class="flex items-center gap-3 mb-4">
 						<div class="w-16 h-16 rounded-full bg-accent text-on-accent flex items-center justify-center font-display text-2xl overflow-hidden">
@@ -2591,17 +2593,17 @@
 					</div>
 					<form on:submit={saveEditMember} class="space-y-3">
 						<div>
-							<label class="block text-sm font-medium text-ink-soft mb-1">Name</label>
-							<input type="text" bind:value={editMemberName} class="w-full px-3 py-2 border border-line rounded-md" />
+						<label for="edit-member-name" class="block text-sm font-medium text-ink-soft mb-1">Name</label>
+						<input id="edit-member-name" type="text" bind:value={editMemberName} class="w-full px-3 py-2 border border-line rounded-md" />
 						</div>
 						<div class="grid grid-cols-2 gap-3">
 							<div>
-								<label class="block text-sm font-medium text-ink-soft mb-1">Birth Date</label>
-								<input type="date" bind:value={editMemberBirthDate} class="w-full px-3 py-2 border border-line rounded-md" />
+							<label for="edit-member-birth" class="block text-sm font-medium text-ink-soft mb-1">Birth Date</label>
+							<input id="edit-member-birth" type="date" bind:value={editMemberBirthDate} class="w-full px-3 py-2 border border-line rounded-md" />
 							</div>
 							<div>
-								<label class="block text-sm font-medium text-ink-soft mb-1">Sex</label>
-								<select bind:value={editMemberGender} class="w-full px-3 py-2 border border-line rounded-md">
+							<label for="edit-member-sex" class="block text-sm font-medium text-ink-soft mb-1">Sex</label>
+							<select id="edit-member-sex" bind:value={editMemberGender} class="w-full px-3 py-2 border border-line rounded-md">
 									<option value="female">Female</option>
 									<option value="male">Male</option>
 									<option value="other">Other</option>
@@ -2609,9 +2611,9 @@
 							</div>
 						</div>
 						<div>
-							<label class="block text-sm font-medium text-ink-soft mb-1">Email (for invites)</label>
-							<div class="flex gap-2">
-								<input type="email" bind:value={editMemberEmail} class="flex-1 px-3 py-2 border border-line rounded-md" placeholder="person@email.com" />
+						<label for="edit-member-email" class="block text-sm font-medium text-ink-soft mb-1">Email (for invites)</label>
+						<div class="flex gap-2">
+							<input id="edit-member-email" type="email" bind:value={editMemberEmail} class="flex-1 px-3 py-2 border border-line rounded-md" placeholder="person@email.com" />
 								<button type="button" on:click={() => inviteMemberEmail(editMemberEmail)} class="px-3 py-2 bg-surface2 text-ink-soft rounded-md hover:text-ink"><Mail class="w-4 h-4 inline mr-1" /> Invite</button>
 							</div>
 						</div>
@@ -2639,8 +2641,8 @@
 							</div>
 							{#if feedMode === 'timer'}
 								<div class="mb-3">
-									<label class="block text-sm font-medium text-ink-soft mb-1">Type</label>
-									<select bind:value={feedType} class="w-full px-3 py-2 border border-line rounded-md">
+									<label for="sheet-feed-type" class="block text-sm font-medium text-ink-soft mb-1">Type</label>
+									<select id="sheet-feed-type" bind:value={feedType} class="w-full px-3 py-2 border border-line rounded-md">
 										<option value="breast">Breast</option>
 										<option value="formula">Formula</option>
 										<option value="solid">Solid</option>
@@ -2649,7 +2651,7 @@
 
 								{#if feedType === 'breast'}
 									<div class="flex items-center justify-between mb-2">
-										<label class="block text-sm font-medium text-ink-soft">Breast</label>
+										<div class="block text-sm font-medium text-ink-soft">Breast</div>
 										{#if lastBreastSide}
 											<span class="text-xs text-ink-soft">last: {#if lastBreastSide === 'left'}<ArrowLeft class="w-3 h-3 inline mr-1" /> left{:else}right <ArrowRight class="w-3 h-3 inline ml-1" />{/if}</span>
 										{/if}
@@ -2686,8 +2688,8 @@
 									</div>
 								{:else}
 									<div class="mb-3">
-										<label class="block text-sm font-medium text-ink-soft mb-1">Amount ({feedType === 'formula' ? 'oz' : 'servings'})</label>
-										<input type="number" step="0.1" bind:value={feedAmount} class="w-full px-3 py-2 border border-line rounded-md" placeholder="4.5" />
+										<label for="sheet-feed-amount" class="block text-sm font-medium text-ink-soft mb-1">Amount ({feedType === 'formula' ? 'oz' : 'servings'})</label>
+										<input id="sheet-feed-amount" type="number" step="0.1" bind:value={feedAmount} class="w-full px-3 py-2 border border-line rounded-md" placeholder="4.5" />
 									</div>
 									<button type="button" on:click={saveFeedTimer} class="w-full bg-primary text-on-primary py-3 px-4 rounded-md hover:bg-primary text-lg font-display font-semibold">Save Feed</button>
 								{/if}
@@ -2695,16 +2697,16 @@
 								<form on:submit={saveManualFeed} class="space-y-3">
 									<div class="flex gap-2 items-center">
 										<div class="flex-1">
-											<label class="block text-sm font-medium text-ink-soft mb-1">Date &amp; time (start)</label>
-											<input type="datetime-local" bind:value={manualStart} class="w-full px-3 py-2 border border-line rounded-md" />
+											<label for="sheet-manual-start" class="block text-sm font-medium text-ink-soft mb-1">Date &amp; time (start)</label>
+											<input id="sheet-manual-start" type="datetime-local" bind:value={manualStart} class="w-full px-3 py-2 border border-line rounded-md" />
 										</div>
 										<div class="pt-5">
 											<button type="button" on:click={repeatLastFeed} title="Repeat last selection" class="px-3 py-2 bg-surface2 text-ink-soft rounded-md hover:bg-line-soft"><RotateCcw class="w-4 h-4 inline mr-1" /> Repeat last</button>
 										</div>
 									</div>
 									<div>
-										<label class="block text-sm font-medium text-ink-soft mb-1">Type</label>
-										<select bind:value={manualType} class="w-full px-3 py-2 border border-line rounded-md">
+									<label for="sheet-manual-type" class="block text-sm font-medium text-ink-soft mb-1">Type</label>
+									<select id="sheet-manual-type" bind:value={manualType} class="w-full px-3 py-2 border border-line rounded-md">
 											<option value="breast">Breast</option>
 											<option value="formula">Formula</option>
 											<option value="bottle">Bottle</option>
@@ -2714,9 +2716,9 @@
 									</div>
 									{#if manualType === 'formula'}
 										<div>
-											<label class="block text-sm font-medium text-ink-soft mb-1">Formula</label>
+											<label for="sheet-manual-formula" class="block text-sm font-medium text-ink-soft mb-1">Formula</label>
 											<div class="flex gap-2">
-												<select bind:value={manualFormulaId} class="flex-1 px-3 py-2 border border-line rounded-md">
+												<select id="sheet-manual-formula" bind:value={manualFormulaId} class="flex-1 px-3 py-2 border border-line rounded-md">
 													<option value="">—</option>
 													{#each formulas as f}
 														<option value={f.id}>{f.name}{f.brand ? ` (${f.brand})` : ''}</option>
@@ -2736,7 +2738,7 @@
 									{#if manualType === 'breast'}
 										<div>
 											<div class="flex items-center justify-between mb-1">
-												<label class="block text-sm font-medium text-ink-soft">Breast</label>
+												<div class="block text-sm font-medium text-ink-soft">Breast</div>
 												{#if lastBreastSide}
 											<span class="text-xs text-ink-soft">last: {#if lastBreastSide === 'left'}<ArrowLeft class="w-3 h-3 inline mr-1" /> left{:else}right <ArrowRight class="w-3 h-3 inline ml-1" />{/if}</span>
 												{/if}
@@ -2757,19 +2759,19 @@
 									{/if}
 									{#if manualType !== 'breast'}
 										<div>
-											<label class="block text-sm font-medium text-ink-soft mb-1">Amount ({manualType === 'formula' || manualType === 'bottle' || manualType === 'pump' ? 'oz' : 'servings'})</label>
-											<input type="number" step="0.1" bind:value={manualAmount} class="w-full px-3 py-2 border border-line rounded-md" placeholder="4.5" />
+											<label for="sheet-manual-amount" class="block text-sm font-medium text-ink-soft mb-1">Amount ({manualType === 'formula' || manualType === 'bottle' || manualType === 'pump' ? 'oz' : 'servings'})</label>
+											<input id="sheet-manual-amount" type="number" step="0.1" bind:value={manualAmount} class="w-full px-3 py-2 border border-line rounded-md" placeholder="4.5" />
 										</div>
 									{/if}
 									{#if manualType !== 'breast'}
 										<div>
-											<label class="block text-sm font-medium text-ink-soft mb-1">End time (optional)</label>
-											<input type="datetime-local" bind:value={manualEnd} class="w-full px-3 py-2 border border-line rounded-md" />
+											<label for="sheet-manual-end" class="block text-sm font-medium text-ink-soft mb-1">End time (optional)</label>
+											<input id="sheet-manual-end" type="datetime-local" bind:value={manualEnd} class="w-full px-3 py-2 border border-line rounded-md" />
 										</div>
 									{/if}
 									<div>
-										<label class="block text-sm font-medium text-ink-soft mb-1">Notes</label>
-										<input type="text" bind:value={manualNotes} class="w-full px-3 py-2 border border-line rounded-md" />
+										<label for="sheet-manual-notes" class="block text-sm font-medium text-ink-soft mb-1">Notes</label>
+										<input id="sheet-manual-notes" type="text" bind:value={manualNotes} class="w-full px-3 py-2 border border-line rounded-md" />
 									</div>
 									<button type="submit" class="w-full bg-primary text-on-primary py-2 px-4 rounded-md hover:bg-primary">Save Feed</button>
 								</form>
@@ -2782,7 +2784,7 @@
 							<h3 class="text-xl font-display font-semibold mb-4">Log Diaper</h3>
 							<form on:submit={saveDiaperManual} class="space-y-4">
 								<div>
-									<label class="block text-sm font-medium text-ink-soft mb-2">Type</label>
+									<div class="block text-sm font-medium text-ink-soft mb-2">Type</div>
 									<div class="grid grid-cols-4 gap-3">
 										<button type="button" on:click={() => (diaperType = 'wet')} class="{diaperType === 'wet' ? 'bg-primary text-on-primary border-primary' : 'bg-surface text-ink-soft border-line-soft hover:border-line'} border rounded-lg py-4 flex flex-col items-center gap-1 text-sm font-semibold transition-colors">
 											<Droplet class="w-6 h-6 mb-1" aria-hidden="true" /> Wet
@@ -2798,12 +2800,12 @@
 
 								<div class="grid grid-cols-2 gap-3">
 									<div>
-										<label class="block text-sm font-medium text-ink-soft mb-1">Date &amp; time</label>
-										<input type="datetime-local" bind:value={diaperTime} class="w-full px-3 py-2 border border-line rounded-md" />
+										<label for="diaper-time" class="block text-sm font-medium text-ink-soft mb-1">Date &amp; time</label>
+										<input id="diaper-time" type="datetime-local" bind:value={diaperTime} class="w-full px-3 py-2 border border-line rounded-md" />
 									</div>
 									<div>
-										<label class="block text-sm font-medium text-ink-soft mb-1">Consistency</label>
-										<select bind:value={diaperConsistency} class="w-full px-3 py-2 border border-line rounded-md">
+										<label for="diaper-consistency" class="block text-sm font-medium text-ink-soft mb-1">Consistency</label>
+										<select id="diaper-consistency" bind:value={diaperConsistency} class="w-full px-3 py-2 border border-line rounded-md">
 											<option value="">—</option>
 											{#each currentCategoryOptions('diapers', 'consistency') as opt}
 												<option value={opt}>{opt}</option>
@@ -2814,8 +2816,8 @@
 
 								<div class="grid grid-cols-2 gap-3">
 									<div>
-										<label class="block text-sm font-medium text-ink-soft mb-1">Color (optional)</label>
-										<select bind:value={diaperColor} class="w-full px-3 py-2 border border-line rounded-md">
+										<label for="diaper-color" class="block text-sm font-medium text-ink-soft mb-1">Color (optional)</label>
+										<select id="diaper-color" bind:value={diaperColor} class="w-full px-3 py-2 border border-line rounded-md">
 											<option value="">—</option>
 											{#each currentCategoryOptions('diapers', 'color') as opt}
 												<option value={opt}>{opt}</option>
@@ -2823,8 +2825,8 @@
 										</select>
 									</div>
 									<div>
-										<label class="block text-sm font-medium text-ink-soft mb-1">Notes (optional)</label>
-										<input type="text" bind:value={diaperNotes} class="w-full px-3 py-2 border border-line rounded-md" placeholder="rash, etc." />
+										<label for="diaper-notes" class="block text-sm font-medium text-ink-soft mb-1">Notes (optional)</label>
+										<input id="diaper-notes" type="text" bind:value={diaperNotes} class="w-full px-3 py-2 border border-line rounded-md" placeholder="rash, etc." />
 									</div>
 								</div>
 
@@ -2852,8 +2854,8 @@
 									</div>
 								{/if}
 								<div class="mb-3">
-									<label class="block text-sm font-medium text-ink-soft mb-1">Location</label>
-									<select bind:value={sleepLocation} class="w-full px-3 py-2 border border-line rounded-md">
+									<label for="sleep-location" class="block text-sm font-medium text-ink-soft mb-1">Location</label>
+									<select id="sleep-location" bind:value={sleepLocation} class="w-full px-3 py-2 border border-line rounded-md">
 										<option value="crib">Crib</option>
 										<option value="bassinet">Bassinet</option>
 										<option value="stroller">Stroller</option>
@@ -2862,8 +2864,8 @@
 									</select>
 								</div>
 								<div class="mb-3">
-									<label class="block text-sm font-medium text-ink-soft mb-1">Notes (optional)</label>
-									<input type="text" bind:value={sleepNotes} class="w-full px-3 py-2 border border-line rounded-md" />
+									<label for="sleep-notes" class="block text-sm font-medium text-ink-soft mb-1">Notes (optional)</label>
+									<input id="sleep-notes" type="text" bind:value={sleepNotes} class="w-full px-3 py-2 border border-line rounded-md" />
 								</div>
 								{#if sleepStartedAt}
 									<div class="flex gap-4">
@@ -2876,8 +2878,8 @@
 							{:else}
 								<form on:submit={saveManualSleep} class="space-y-3">
 									<div>
-										<label class="block text-sm font-medium text-ink-soft mb-1">Start date &amp; time</label>
-										<input type="datetime-local" bind:value={sleepTime} class="w-full px-3 py-2 border border-line rounded-md" />
+										<label for="sleep-start" class="block text-sm font-medium text-ink-soft mb-1">Start date &amp; time</label>
+										<input id="sleep-start" type="datetime-local" bind:value={sleepTime} class="w-full px-3 py-2 border border-line rounded-md" />
 									</div>
 									<button type="submit" class="w-full bg-primary text-on-primary py-2 px-4 rounded-md hover:bg-primary">Save Sleep</button>
 								</form>
@@ -2890,27 +2892,27 @@
 							<h3 class="text-xl font-display font-semibold mb-4">New Measurement</h3>
 							<form on:submit={saveManualGrowth}>
 								<div class="mb-3">
-									<label class="block text-sm font-medium text-ink-soft mb-1">Date &amp; time</label>
-									<input type="datetime-local" bind:value={growthTime} class="w-full px-3 py-2 border border-line rounded-md" />
+									<label for="growth-time" class="block text-sm font-medium text-ink-soft mb-1">Date &amp; time</label>
+									<input id="growth-time" type="datetime-local" bind:value={growthTime} class="w-full px-3 py-2 border border-line rounded-md" />
 								</div>
 								<div class="mb-3">
-									<label class="block text-sm font-medium text-ink-soft mb-1">Units</label>
-									<select bind:value={growthUnit} class="w-full px-3 py-2 border border-line rounded-md">
+									<label for="growth-unit" class="block text-sm font-medium text-ink-soft mb-1">Units</label>
+									<select id="growth-unit" bind:value={growthUnit} class="w-full px-3 py-2 border border-line rounded-md">
 										<option value="metric">Metric (kg / cm)</option>
 										<option value="imperial">Imperial (lbs / inches)</option>
 									</select>
 								</div>
 								<div class="mb-3">
-									<label class="block text-sm font-medium text-ink-soft mb-1">Weight ({growthUnit === 'metric' ? 'kg' : 'lbs'})</label>
-									<input type="number" step="0.1" bind:value={growthWeight} class="w-full px-3 py-2 border border-line rounded-md" placeholder="7.2" />
+									<label for="growth-weight" class="block text-sm font-medium text-ink-soft mb-1">Weight ({growthUnit === 'metric' ? 'kg' : 'lbs'})</label>
+									<input id="growth-weight" type="number" step="0.1" bind:value={growthWeight} class="w-full px-3 py-2 border border-line rounded-md" placeholder="7.2" />
 								</div>
 								<div class="mb-3">
-									<label class="block text-sm font-medium text-ink-soft mb-1">Length ({growthUnit === 'metric' ? 'cm' : 'inches'})</label>
-									<input type="number" step="0.1" bind:value={growthHeight} class="w-full px-3 py-2 border border-line rounded-md" placeholder="64.1" />
+									<label for="growth-height" class="block text-sm font-medium text-ink-soft mb-1">Length ({growthUnit === 'metric' ? 'cm' : 'inches'})</label>
+									<input id="growth-height" type="number" step="0.1" bind:value={growthHeight} class="w-full px-3 py-2 border border-line rounded-md" placeholder="64.1" />
 								</div>
 								<div class="mb-3">
-									<label class="block text-sm font-medium text-ink-soft mb-1">Head Circumference ({growthUnit === 'metric' ? 'cm' : 'inches'})</label>
-									<input type="number" step="0.1" bind:value={growthHead} class="w-full px-3 py-2 border border-line rounded-md" placeholder="40.2" />
+									<label for="growth-head" class="block text-sm font-medium text-ink-soft mb-1">Head Circumference ({growthUnit === 'metric' ? 'cm' : 'inches'})</label>
+									<input id="growth-head" type="number" step="0.1" bind:value={growthHead} class="w-full px-3 py-2 border border-line rounded-md" placeholder="40.2" />
 								</div>
 								<button type="submit" class="w-full bg-primary text-on-primary py-2 px-4 rounded-md hover:bg-primary">Save Measurement</button>
 							</form>
@@ -2922,12 +2924,12 @@
 						<h3 class="text-xl font-display font-semibold mb-4">Log a pump session</h3>
 						<form on:submit={saveManualFeed} class="space-y-3">
 							<div>
-								<label class="block text-sm font-medium text-ink-soft mb-1">Date &amp; time</label>
-								<input type="datetime-local" bind:value={manualStart} class="w-full px-3 py-2 border border-line rounded-md" />
+							<label for="pump-time" class="block text-sm font-medium text-ink-soft mb-1">Date &amp; time</label>
+							<input id="pump-time" type="datetime-local" bind:value={manualStart} class="w-full px-3 py-2 border border-line rounded-md" />
 							</div>
 							<div>
-								<label class="block text-sm font-medium text-ink-soft mb-1">Volume (oz)</label>
-								<input type="number" step="0.1" bind:value={manualAmount} class="w-full px-3 py-2 border border-line rounded-md" placeholder="4.0" />
+							<label for="pump-volume" class="block text-sm font-medium text-ink-soft mb-1">Volume (oz)</label>
+							<input id="pump-volume" type="number" step="0.1" bind:value={manualAmount} class="w-full px-3 py-2 border border-line rounded-md" placeholder="4.0" />
 							</div>
 							<button type="submit" class="w-full bg-primary text-on-primary py-2 px-4 rounded-md hover:bg-primary">Save Pump</button>
 						</form>
@@ -2939,16 +2941,16 @@
 						<h3 class="text-xl font-display font-semibold mb-4">{activeTab === 'firsts' ? 'Log a First' : 'Log a Milestone'}</h3>
 						<form on:submit={saveManualMilestone} class="space-y-3">
 							<div>
-								<label class="block text-sm font-medium text-ink-soft mb-1">Name</label>
-								<input type="text" bind:value={milestoneTitle} required class="w-full px-3 py-2 border border-line rounded-md" placeholder="First smile, rolled over…" />
+								<label for="milestone-name" class="block text-sm font-medium text-ink-soft mb-1">Name</label>
+								<input id="milestone-name" type="text" bind:value={milestoneTitle} required class="w-full px-3 py-2 border border-line rounded-md" placeholder="First smile, rolled over…" />
 							</div>
 							<div>
-								<label class="block text-sm font-medium text-ink-soft mb-1">Date &amp; time</label>
-								<input type="datetime-local" bind:value={milestoneTime} class="w-full px-3 py-2 border border-line rounded-md" />
+								<label for="milestone-time" class="block text-sm font-medium text-ink-soft mb-1">Date &amp; time</label>
+								<input id="milestone-time" type="datetime-local" bind:value={milestoneTime} class="w-full px-3 py-2 border border-line rounded-md" />
 							</div>
 							<div>
-								<label class="block text-sm font-medium text-ink-soft mb-1">Category</label>
-								<select bind:value={milestoneCategory} class="w-full px-3 py-2 border border-line rounded-md">
+								<label for="milestone-category" class="block text-sm font-medium text-ink-soft mb-1">Category</label>
+								<select id="milestone-category" bind:value={milestoneCategory} class="w-full px-3 py-2 border border-line rounded-md">
 									<option value="motor">Motor</option>
 									<option value="cognitive">Cognitive</option>
 									<option value="social">Social</option>
@@ -2967,16 +2969,16 @@
 						<h3 class="text-xl font-display font-semibold mb-4">Log a Vaccine</h3>
 						<form on:submit={saveManualVaccine} class="space-y-3">
 							<div>
-								<label class="block text-sm font-medium text-ink-soft mb-1">Vaccine name</label>
-								<input type="text" bind:value={vaccineName} required class="w-full px-3 py-2 border border-line rounded-md" placeholder="Hepatitis B, DTaP…" />
+								<label for="vaccine-name" class="block text-sm font-medium text-ink-soft mb-1">Vaccine name</label>
+								<input id="vaccine-name" type="text" bind:value={vaccineName} required class="w-full px-3 py-2 border border-line rounded-md" placeholder="Hepatitis B, DTaP…" />
 							</div>
 							<div>
-								<label class="block text-sm font-medium text-ink-soft mb-1">Date &amp; time</label>
-								<input type="datetime-local" bind:value={vaccineTime} class="w-full px-3 py-2 border border-line rounded-md" />
+								<label for="vaccine-time" class="block text-sm font-medium text-ink-soft mb-1">Date &amp; time</label>
+								<input id="vaccine-time" type="datetime-local" bind:value={vaccineTime} class="w-full px-3 py-2 border border-line rounded-md" />
 							</div>
 							<div>
-								<label class="block text-sm font-medium text-ink-soft mb-1">Notes (optional)</label>
-								<input type="text" bind:value={vaccineNotes} class="w-full px-3 py-2 border border-line rounded-md" />
+								<label for="vaccine-notes" class="block text-sm font-medium text-ink-soft mb-1">Notes (optional)</label>
+								<input id="vaccine-notes" type="text" bind:value={vaccineNotes} class="w-full px-3 py-2 border border-line rounded-md" />
 							</div>
 							<button type="submit" class="w-full bg-primary text-on-primary py-2 px-4 rounded-md hover:bg-primary">Save Vaccine</button>
 						</form>
@@ -2988,12 +2990,12 @@
 						<h3 class="text-xl font-display font-semibold mb-4">Log {CATEGORIES.find((c) => c.id === activeTab)?.label}</h3>
 						<form on:submit={saveManualMilestone} class="space-y-3">
 							<div>
-								<label class="block text-sm font-medium text-ink-soft mb-1">Description</label>
-								<input type="text" bind:value={milestoneTitle} required class="w-full px-3 py-2 border border-line rounded-md" placeholder="Bath, vitamin, medication…" />
+								<label for="routine-description" class="block text-sm font-medium text-ink-soft mb-1">Description</label>
+								<input id="routine-description" type="text" bind:value={milestoneTitle} required class="w-full px-3 py-2 border border-line rounded-md" placeholder="Bath, vitamin, medication…" />
 							</div>
 							<div>
-								<label class="block text-sm font-medium text-ink-soft mb-1">Date &amp; time</label>
-								<input type="datetime-local" bind:value={milestoneTime} class="w-full px-3 py-2 border border-line rounded-md" />
+								<label for="routine-time" class="block text-sm font-medium text-ink-soft mb-1">Date &amp; time</label>
+								<input id="routine-time" type="datetime-local" bind:value={milestoneTime} class="w-full px-3 py-2 border border-line rounded-md" />
 							</div>
 							<button type="submit" class="w-full bg-primary text-on-primary py-2 px-4 rounded-md hover:bg-primary">Save</button>
 						</form>
@@ -3005,7 +3007,7 @@
 						<h3 class="text-xl font-display font-semibold mb-4">Log Mood</h3>
 						<form on:submit={saveMood} class="space-y-3">
 							<div class="mb-3">
-								<label class="block text-sm font-medium text-ink-soft mb-1">Mood</label>
+								<div class="block text-sm font-medium text-ink-soft mb-1">Mood</div>
 								<div class="flex flex-wrap gap-2">
 									{#each currentCategoryOptions('moods', 'mood') as opt}
 										<button type="button" on:click={() => (moodMood = opt)} class="{moodMood === opt ? 'bg-accent border-accent text-ink' : 'bg-surface2 text-ink-soft border-line-soft'} px-3 py-2 rounded-full border text-sm">{opt}</button>
@@ -3013,12 +3015,12 @@
 								</div>
 							</div>
 							<div>
-								<label class="block text-sm font-medium text-ink-soft mb-1">Date &amp; time</label>
-								<input type="datetime-local" bind:value={moodTime} class="w-full px-3 py-2 border border-line rounded-md" />
+								<label for="mood-time" class="block text-sm font-medium text-ink-soft mb-1">Date &amp; time</label>
+								<input id="mood-time" type="datetime-local" bind:value={moodTime} class="w-full px-3 py-2 border border-line rounded-md" />
 							</div>
 							<div>
-								<label class="block text-sm font-medium text-ink-soft mb-1">Notes</label>
-								<input type="text" bind:value={moodNotes} class="w-full px-3 py-2 border border-line rounded-md" />
+								<label for="mood-notes" class="block text-sm font-medium text-ink-soft mb-1">Notes</label>
+								<input id="mood-notes" type="text" bind:value={moodNotes} class="w-full px-3 py-2 border border-line rounded-md" />
 							</div>
 							<button type="submit" class="w-full bg-primary text-on-primary py-2 px-4 rounded-md hover:bg-primary">Save Mood</button>
 						</form>
@@ -3030,16 +3032,16 @@
 						<h3 class="text-xl font-display font-semibold mb-4">New Journal Entry</h3>
 						<form on:submit={saveJournal} class="space-y-3">
 							<div>
-								<label class="block text-sm font-medium text-ink-soft mb-1">Title</label>
-								<input type="text" bind:value={journalTitle} class="w-full px-3 py-2 border border-line rounded-md" placeholder="First walk, doctor visit…" />
+								<label for="journal-title" class="block text-sm font-medium text-ink-soft mb-1">Title</label>
+								<input id="journal-title" type="text" bind:value={journalTitle} class="w-full px-3 py-2 border border-line rounded-md" placeholder="First walk, doctor visit…" />
 							</div>
 							<div>
-								<label class="block text-sm font-medium text-ink-soft mb-1">Note</label>
-								<textarea bind:value={journalBody} rows="4" class="w-full px-3 py-2 border border-line rounded-md" placeholder="What happened today…"></textarea>
+								<label for="journal-body" class="block text-sm font-medium text-ink-soft mb-1">Note</label>
+								<textarea id="journal-body" bind:value={journalBody} rows="4" class="w-full px-3 py-2 border border-line rounded-md" placeholder="What happened today…"></textarea>
 							</div>
 							<div>
-								<label class="block text-sm font-medium text-ink-soft mb-1">Date &amp; time</label>
-								<input type="datetime-local" bind:value={journalTime} class="w-full px-3 py-2 border border-line rounded-md" />
+								<label for="journal-time" class="block text-sm font-medium text-ink-soft mb-1">Date &amp; time</label>
+								<input id="journal-time" type="datetime-local" bind:value={journalTime} class="w-full px-3 py-2 border border-line rounded-md" />
 							</div>
 							<button type="submit" class="w-full bg-primary text-on-primary py-2 px-4 rounded-md hover:bg-primary">Save Entry</button>
 						</form>

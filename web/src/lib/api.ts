@@ -119,12 +119,12 @@ export const babyAPI = {
 // Family API functions — family-first model
 export const familiesAPI = {
   list: () => api.get('/families'),
-  create: (data: { name: string; member?: { type: string; name: string; birthDate?: string; gender?: string } }) =>
+  create: (data: { name: string; member?: { type: string; name: string; birthDate?: string; gender?: string; email?: string } }) =>
     api.post('/families', data),
   members: (familyId: string) => api.get(`/families/${familyId}/members`),
-  addMember: (familyId: string, data: { type?: string; name: string; birthDate?: string; gender?: string }) =>
+  addMember: (familyId: string, data: { type?: string; name: string; birthDate?: string; gender?: string; email?: string; categories?: string[] }) =>
     api.post(`/families/${familyId}/members`, data),
-  updateMember: (familyId: string, memberId: number, data: { type?: string; categories?: string[] }) =>
+  updateMember: (familyId: string, memberId: number, data: { type?: string; name?: string; birthDate?: string | null; gender?: string | null; email?: string | null; categories?: string[] }) =>
     api.put(`/families/${familyId}/members/${memberId}`, data),
   removeMember: (familyId: string, memberId: number) =>
     api.delete(`/families/${familyId}/members/${memberId}`),

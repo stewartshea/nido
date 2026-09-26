@@ -174,6 +174,7 @@
 	let familyName = '';
 	let memberType = 'child';
 	let newMemberName = '';
+	let newMemberEmail = '';
 	let newBabyBirthDate = '';
 	let newBabyGender = 'female';
 	let creatingBaby = false;
@@ -673,9 +674,11 @@
 				name: newMemberName.trim(),
 				birthDate: newBabyBirthDate ? new Date(newBabyBirthDate).toISOString() : undefined,
 				gender: newBabyGender,
+				email: newMemberEmail.trim() || undefined,
 			});
 			notice = `${res.data.member.name} added to the family.`;
 			newMemberName = '';
+			newMemberEmail = '';
 			newBabyBirthDate = '';
 			await loadFamilies();
 		} catch (err: any) {
@@ -1917,7 +1920,7 @@
 									</div>
 									<div class="mb-2">
 										<label for="member-email-x" class="block text-sm font-medium text-ink-soft mb-1">Email (optional)</label>
-										<input id="member-email-x" type="email" bind:value={editMemberEmail} class="w-full px-3 py-2 border border-line rounded-md" placeholder="adult@email.com" />
+										<input id="member-email-x" type="email" bind:value={newMemberEmail} class="w-full px-3 py-2 border border-line rounded-md" placeholder="adult@email.com" />
 									</div>
 									<div class="grid grid-cols-2 gap-3 mb-2">
 										<div>
@@ -1938,6 +1941,52 @@
 									</button>
 								</form>
 							</div>
+							{#if editingMember}
+								<div class="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
+									<div class="w-full max-w-lg bg-surface border border-line-soft rounded-lg shadow-card p-4 md:p-6">
+										<div class="flex items-center justify-between mb-4">
+											<h3 class="text-lg font-display font-semibold">Edit member</h3>
+											<button type="button" class="text-ink-soft hover:text-ink" on:click={closeEditMember}>Close</button>
+										</div>
+										<form on:submit={saveEditMember} class="space-y-3">
+											<div>
+												<label for="edit-member-name" class="block text-sm font-medium text-ink-soft mb-1">Name</label>
+												<input id="edit-member-name" bind:value={editMemberName} required class="w-full px-3 py-2 border border-line rounded-md" />
+											</div>
+											<div class="grid grid-cols-2 gap-3">
+												<div>
+													<label for="edit-member-birth" class="block text-sm font-medium text-ink-soft mb-1">Birth Date</label>
+													<input id="edit-member-birth" type="date" bind:value={editMemberBirthDate} class="w-full px-3 py-2 border border-line rounded-md" />
+												</div>
+												<div>
+													<label for="edit-member-gender" class="block text-sm font-medium text-ink-soft mb-1">Sex</label>
+													<select id="edit-member-gender" bind:value={editMemberGender} class="w-full px-3 py-2 border border-line rounded-md">
+														<option value="">Not set</option>
+														<option value="female">Female</option>
+														<option value="male">Male</option>
+														<option value="other">Other</option>
+													</select>
+												</div>
+											</div>
+											<div>
+												<label for="edit-member-email" class="block text-sm font-medium text-ink-soft mb-1">Email</label>
+												<input id="edit-member-email" type="email" bind:value={editMemberEmail} class="w-full px-3 py-2 border border-line rounded-md" placeholder="optional@email.com" />
+											</div>
+											<div>
+												<label for="edit-member-avatar" class="block text-sm font-medium text-ink-soft mb-1">Photo</label>
+												<input id="edit-member-avatar" type="file" accept="image/*" class="w-full text-sm" on:change={onMemberAvatarSelected} />
+											</div>
+											<div class="flex items-center justify-between pt-2">
+												<button type="button" class="text-danger-text underline text-sm" on:click={deleteEditMember}>Delete member</button>
+												<div class="flex items-center gap-2">
+													<button type="button" class="px-3 py-2 text-sm border border-line rounded-md" on:click={closeEditMember}>Cancel</button>
+													<button type="submit" class="px-3 py-2 text-sm bg-primary text-on-primary rounded-md">Save</button>
+												</div>
+											</div>
+										</form>
+									</div>
+								</div>
+							{/if}
 							{:else if settingsTab === 'import'}
 							<div class="bg-surface rounded-lg shadow-card p-4 md:p-6 border border-line-soft">
 								<h3 class="text-lg font-display font-semibold mb-2">Import data</h3>
@@ -2070,24 +2119,24 @@
 										<h4 class="font-display font-semibold text-sm mb-2">SMTP</h4>
 										<div class="grid grid-cols-2 gap-3">
 											<div>
-												<label class="block text-sm font-medium text-ink-soft mb-1">Host</label>
-												<input type="text" bind:value={smtpHost} placeholder="smtp.example.com" class="w-full px-3 py-2 border border-line rounded-md bg-surface text-ink" />
+												<label for="smtp-host" class="block text-sm font-medium text-ink-soft mb-1">Host</label>
+												<input id="smtp-host" type="text" bind:value={smtpHost} placeholder="smtp.example.com" class="w-full px-3 py-2 border border-line rounded-md bg-surface text-ink" />
 											</div>
 											<div>
-												<label class="block text-sm font-medium text-ink-soft mb-1">Port</label>
-												<input type="number" bind:value={smtpPort} placeholder="587" class="w-full px-3 py-2 border border-line rounded-md bg-surface text-ink" />
+												<label for="smtp-port" class="block text-sm font-medium text-ink-soft mb-1">Port</label>
+												<input id="smtp-port" type="number" bind:value={smtpPort} placeholder="587" class="w-full px-3 py-2 border border-line rounded-md bg-surface text-ink" />
 											</div>
 											<div>
-												<label class="block text-sm font-medium text-ink-soft mb-1">Username</label>
-												<input type="text" bind:value={smtpUser} placeholder="user@example.com" class="w-full px-3 py-2 border border-line rounded-md bg-surface text-ink" />
+												<label for="smtp-user" class="block text-sm font-medium text-ink-soft mb-1">Username</label>
+												<input id="smtp-user" type="text" bind:value={smtpUser} placeholder="user@example.com" class="w-full px-3 py-2 border border-line rounded-md bg-surface text-ink" />
 											</div>
 											<div>
-												<label class="block text-sm font-medium text-ink-soft mb-1">Password</label>
-												<input type="password" bind:value={smtpPass} placeholder="••••••" class="w-full px-3 py-2 border border-line rounded-md bg-surface text-ink" />
+												<label for="smtp-pass" class="block text-sm font-medium text-ink-soft mb-1">Password</label>
+												<input id="smtp-pass" type="password" bind:value={smtpPass} placeholder="••••••" class="w-full px-3 py-2 border border-line rounded-md bg-surface text-ink" />
 											</div>
 											<div class="col-span-2">
-												<label class="block text-sm font-medium text-ink-soft mb-1">From address</label>
-												<input type="email" bind:value={smtpFrom} placeholder="Nido <nido@example.com>" class="w-full px-3 py-2 border border-line rounded-md bg-surface text-ink" />
+												<label for="smtp-from" class="block text-sm font-medium text-ink-soft mb-1">From address</label>
+												<input id="smtp-from" type="email" bind:value={smtpFrom} placeholder="Nido <nido@example.com>" class="w-full px-3 py-2 border border-line rounded-md bg-surface text-ink" />
 											</div>
 										</div>
 									</div>
