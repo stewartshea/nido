@@ -10,6 +10,7 @@ RUN npm install
 
 # Copy source code
 COPY src ./src
+COPY static ./static
 COPY vite.config.js .
 COPY svelte.config.js .
 COPY postcss.config.js .
