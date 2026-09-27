@@ -1408,6 +1408,13 @@
 					amount: manualAmount ? Number(manualAmount) : undefined,
 				});
 			}
+			localStorage.setItem('nido.lastFeed', JSON.stringify({
+				type: manualType,
+				side: manualType === 'breast' || manualType === 'combo' ? side : undefined,
+				bottleSource: manualType === 'combo' ? manualBottleSource : undefined,
+				formulaId: manualType === 'combo' && manualBottleSource === 'formula' ? manualFormulaId : null,
+				amount: manualAmount,
+			}));
 			manualType = null;
 			manualBottleSource = 'breastmilk';
 			manualFormulaId = null;
@@ -2079,7 +2086,7 @@
 													<select bind:value={manualFormulaId} class="flex-1 px-3 py-2 border border-line rounded-md">
 														<option value="">—</option>
 														{#each formulas as f}
-															<option value={f.id}>{f.name}{f.brand ? ` (${f.brand})` : ''}</option>
+															<option value={f.id}>{f.brand} {f.name}</option>
 														{/each}
 													</select>
 													<button type="button" on:click={() => (showAddFormula = !showAddFormula)} class="px-3 py-2 bg-surface2 text-ink-soft rounded-md"><Plus class="w-4 h-4" /></button>
@@ -2143,7 +2150,7 @@
 												<select id="manual-feed-formula" bind:value={manualFormulaId} class="flex-1 px-3 py-2 border border-line rounded-md">
 													<option value="">—</option>
 													{#each formulas as f}
-													<option value={f.id}>{f.name}{f.brand ? ` (${f.brand})` : ''} · {f.formulaType || 'standard'}</option>
+													<option value={f.id}>{f.brand} {f.name} · {f.formulaType || 'standard'}</option>
 													{/each}
 												</select>
 												<button type="button" on:click={() => (showAddFormula = !showAddFormula)} class="px-3 py-2 bg-surface2 text-ink-soft rounded-md"><Plus class="w-4 h-4" /></button>
@@ -2311,7 +2318,7 @@
 													<select bind:value={manualFormulaId} class="flex-1 px-3 py-2 border border-line rounded-md">
 														<option value="">—</option>
 														{#each formulas as f}
-															<option value={f.id}>{f.name}{f.brand ? ` (${f.brand})` : ''}</option>
+															<option value={f.id}>{f.brand} {f.name}</option>
 														{/each}
 													</select>
 													<button type="button" on:click={() => (showAddFormula = !showAddFormula)} class="px-3 py-2 bg-surface2 text-ink-soft rounded-md"><Plus class="w-4 h-4" /></button>
@@ -2375,7 +2382,7 @@
 												<select id="manual-feed-formula" bind:value={manualFormulaId} class="flex-1 px-3 py-2 border border-line rounded-md">
 													<option value="">—</option>
 													{#each formulas as f}
-													<option value={f.id}>{f.name}{f.brand ? ` (${f.brand})` : ''} · {f.formulaType || 'standard'}</option>
+													<option value={f.id}>{f.brand} {f.name} · {f.formulaType || 'standard'}</option>
 													{/each}
 												</select>
 												<button type="button" on:click={() => (showAddFormula = !showAddFormula)} class="px-3 py-2 bg-surface2 text-ink-soft rounded-md"><Plus class="w-4 h-4" /></button>
@@ -2880,7 +2887,7 @@
 													<select bind:value={manualFormulaId} class="flex-1 px-3 py-2 border border-line rounded-md">
 														<option value="">—</option>
 														{#each formulas as f}
-															<option value={f.id}>{f.name}{f.brand ? ` (${f.brand})` : ''}</option>
+															<option value={f.id}>{f.brand} {f.name}</option>
 														{/each}
 													</select>
 													<button type="button" on:click={() => (showAddFormula = !showAddFormula)} class="px-3 py-2 bg-surface2 text-ink-soft rounded-md"><Plus class="w-4 h-4" /></button>
@@ -2944,7 +2951,7 @@
 												<select id="sheet-manual-formula" bind:value={manualFormulaId} class="flex-1 px-3 py-2 border border-line rounded-md">
 													<option value="">—</option>
 													{#each formulas as f}
-													<option value={f.id}>{f.name}{f.brand ? ` (${f.brand})` : ''} · {f.formulaType || 'standard'}</option>
+													<option value={f.id}>{f.brand} {f.name} · {f.formulaType || 'standard'}</option>
 													{/each}
 												</select>
 												<button type="button" on:click={() => (showAddFormula = !showAddFormula)} class="px-3 py-2 bg-surface2 text-ink-soft rounded-md"><Plus class="w-4 h-4" /></button>
