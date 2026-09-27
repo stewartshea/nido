@@ -10,7 +10,7 @@
 			if (token && !tokenExpired()) {
 				goto('/dashboard');
 			} else {
-				goto('/login');
+				goto('/login' + window.location.search);
 			}
 		}
 	});
