@@ -87,11 +87,12 @@
 				</div>
 			{/if}
 
-			{#if !isAuthed}
-				<p class="text-sm text-ink-soft mb-4">
-					Sign in with the email address this invitation was sent to, then come back here to accept.
+{#if !isAuthed}
+				<p class="text-sm text-ink-oft mb-4">
+					You need an account to accept this invitation. This invitation was sent to your email address.
 				</p>
-				<a href="/login?next={encodeURIComponent(returnTo)}" class="block w-full min-h-[44px] text-center bg-primary text-on-primary py-2 px-4 rounded-xl font-semibold">Sign in to accept</a>
+				<a href="/login?register=1&amp;next={encodeURIComponent(returnTo)}" class="block w-full min-h-[44px] text-center bg-primary text-on-primary py-2 px-4 rounded-xl font-semibold mb-3">Create an account</a>
+				<a href="/login?next={encodeURIComponent(returnTo)}" class="block w-full min-h-[44px] text-center bg-surface2 text-ink-soft py-2 px-4 rounded-xl font-semibold border border-line-soft">I already have an account</a>
 			{:else}
 				<button type="button" on:click={accept} disabled={submitting} class="w-full min-h-[44px] bg-primary text-on-primary py-2 px-4 rounded-xl hover:bg-primary disabled:opacity-50 font-semibold">
 					{submitting ? 'Joining…' : 'Accept invitation'}

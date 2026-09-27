@@ -144,6 +144,9 @@
 				notice = 'Enter a new password to complete your password reset.';
 				if (window.history.replaceState) window.history.replaceState(null, '', window.location.pathname);
 			}
+			if (params.get('register') === '1') {
+				view = 'register';
+			}
 			const token = localStorage.getItem('token');
 			if (token && !tokenExpired()) {
 				goto(nextPath());
