@@ -60,7 +60,7 @@ formulaRoutes.get('/', async (c) => {
 	await seedFormulaCatalog(db, householdId);
 
 	const res = await db.execute({
-		sql: 'SELECT id, name, brand, formula_type, created_at FROM formulas WHERE family_id = ? ORDER BY name',
+		sql: 'SELECT id, name, brand, formula_type, created_at FROM formulas WHERE family_id = ? ORDER BY COALESCE(brand, \'\'), name',
 		args: [householdId],
 	});
 	console.log('[formulas] returned %d formulas for householdId=%d', res.rows.length, householdId);
