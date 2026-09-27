@@ -62,6 +62,7 @@ build/
 .omo
 # Local SQLite data (persisted via compose ./data bind mount)
 data/
+!/api/src/data/
 
 # QA harness output (Playwright MCP + OpenChamber screenshots)
 .playwright-mcp/
