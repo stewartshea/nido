@@ -1,13 +1,22 @@
 # 巣 Nido
 
-A self-hosted newborn and infant tracker. Log feeds, diapers, sleep, growth,
-milestones and vaccinations; share them with the other caregivers in your
-family; keep the data on your own hardware.
+A free, open source tracker for the things you care for and keep. It starts as
+an infant tracker — feeds, diapers, sleep, growth, milestones and vaccinations,
+shared with the other caregivers in your family — and grows from there to cover
+home maintenance and care.
+
+Run it yourself with Docker — that is the way it is designed, and it is free
+forever with no account — or use the hosted version at
+[my.nido-app.ca](https://my.nido-app.ca), which is also free and runs in Canada.
+Both are the same Apache-2.0 codebase with the same features; there are no paid
+tiers either way.
 
 <!-- prettier-ignore -->
 > **On the name.** *Nido* means "nest" in Spanish and Italian. 巣 (*su*) is the
 > Japanese kanji for "nest" and doubles as the project's mark. The two are a
-> deliberate pairing, not a translation of each other.
+> deliberate pairing, not a translation of each other. A nest is something you
+> build, keep, and look after — which is the point, and the reason the project
+> grows the way it does.
 
 ## Features
 

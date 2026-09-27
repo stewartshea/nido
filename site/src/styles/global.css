@@ -1,0 +1,256 @@
+/* Self-hosted brand fonts. Same families the Nido client uses, so the docs and
+   the app read as one product. Self-hosted rather than fetched from a CDN:
+   Nido is a privacy-first tool and its docs should not phone a third party. */
+@import '@fontsource/inter/400.css';
+@import '@fontsource/inter/500.css';
+@import '@fontsource/inter/600.css';
+@import '@fontsource/inter/700.css';
+@import '@fontsource/lora/400.css';
+@import '@fontsource/lora/500.css';
+@import '@fontsource/lora/600.css';
+@import '@fontsource/lora/700.css';
+
+/*
+ * Nido brand tokens, lifted verbatim from the client's `forest` palette
+ * (`web/src/app.css`) so the docs never drift from the app.
+ *
+ *   ink      #2B2622   brass    #CFAD5E
+ *   page     #F7F5F0   forest   #1E2A1D
+ *   surface  #FFFFFF   link     #3A6B42
+ *
+ * Starlight wants a full neutral ramp, so the ramp below is the two brand
+ * neutrals interpolated and warmed — the greys lean green/cream rather than
+ * the default blue-grey, which is what makes a Starlight site look generic.
+ *
+ * Contrast is deliberate, not incidental:
+ *   - `#CFAD5E` on the cream page is ~1.9:1 and is therefore used ONLY in
+ *     dark mode, where it measures ~7.9:1. Light mode gets `#3A6B42` for
+ *     links (5.7:1) because a brass link on cream is unreadable.
+ *   - The brass stays visible in light mode as an underline/rule accent, which
+ *     is what the client uses it for.
+ */
+
+:root {
+	--nido-ink: #2b2622;
+	--nido-ink-soft: #3f4d3e;
+	--nido-page: #f7f5f0;
+	--nido-surface: #ffffff;
+	--nido-forest: #1e2a1d;
+	--nido-forest-hover: #182117;
+	--nido-brass: #cfad5e;
+	--nido-brass-soft: #f3e9cf;
+	--nido-line: #9aab97;
+	--nido-line-soft: #d7dfd2;
+	--nido-link: #3a6b42;
+	--nido-link-hover: #2b5433;
+	--nido-alert: #b4543a; /* terracotta: irreversible-action callouts */
+
+	--nido-card: var(--nido-surface);
+	--nido-card-shadow: 0 1px 2px rgb(43 38 34 / 0.05), 0 4px 16px rgb(43 38 34 / 0.06);
+	--nido-card-radius: 0.75rem;
+
+	/* Starlight font slots. Two families only, matching the client: Lora for
+	   display headings, Inter for body and UI. */
+	--sl-font: 'Inter', ui-sans-serif, system-ui, sans-serif;
+	--sl-font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+	--sl-content-width: 52rem;
+	--sl-line-height: 1.7;
+}
+
+/* ---------------------------------------------------------------- dark --- */
+
+:root,
+[data-theme='dark'] {
+	color-scheme: dark;
+
+	--sl-color-white: #181e18; /* page */
+	--sl-color-black: #f7f5f0; /* text on a filled accent */
+	--sl-color-gray-1: #e6e4df; /* body text */
+	--sl-color-gray-2: #c6c3bb;
+	--sl-color-gray-3: #9a9a90;
+	--sl-color-gray-4: #6e7568;
+	--sl-color-gray-5: #3c443a;
+	--sl-color-gray-6: #232b23; /* nav + sidebar */
+
+	--sl-color-accent-high: #cfad5e; /* brass: 7.9:1 on the dark page */
+	--sl-color-accent: #cfad5e;
+	--sl-color-accent-low: #1e2a1d; /* forest: text on brass fills */
+
+	--nido-card: #1e261e;
+	--nido-card-shadow: 0 1px 2px rgb(0 0 0 / 0.3), 0 4px 16px rgb(0 0 0 / 0.25);
+	--nido-link: #cfad5e;
+	--nido-link-hover: #e0c47f;
+	--nido-brass-soft: rgb(207 173 94 / 0.14);
+	--nido-alert: #e08b6f; /* lifted for the forest page: 5.1:1 on #181e18 */
+}
+
+/* --------------------------------------------------------------- light --- */
+
+[data-theme='light'] {
+	color-scheme: light;
+
+	/* These two names are literal inverses, not roles: `white` is the page
+	   background, and `black` is the surface that inverts against it — code
+	   blocks, primary buttons, high-contrast text. Tinting `black` cream put
+	   white text on a beige code block, so light mode takes the brand ink for
+	   the inverted surface and the brand cream for the page. Text on an
+	   inverted surface is therefore `white`, i.e. cream, not #fff. */
+	--sl-color-white: #f7f5f0; /* page = brand cream */
+	--sl-color-black: #2b2622; /* ink: inverted surfaces (code, primary buttons) */
+	--sl-color-gray-1: #2b2622; /* headings = brand ink */
+	--sl-color-gray-2: #4f4a42; /* body text */
+	--sl-color-gray-3: #6e6a5f;
+	--sl-color-gray-4: #a5ad9c;
+	--sl-color-gray-5: #d7dfd2;
+	--sl-color-gray-6: #efede6; /* nav + sidebar */
+
+	--sl-color-accent-high: #3a6b42; /* forest: 5.7:1 on cream */
+	--sl-color-accent: #2f5f38;
+	--sl-color-accent-low: #f3e9cf; /* brass-soft: fills behind dark text */
+
+	--nido-card: #ffffff;
+	--nido-link: #3a6b42;
+	--nido-link-hover: #2b5433;
+}
+
+/* --------------------------------------------------------- brand type --- */
+
+:root {
+	--sl-font-display: 'Lora', Georgia, serif;
+}
+
+/* Display face for every title. `.card .title` belongs in this heading rule
+   because Starlight renders a Card's title as a `<p>` — a heading-only rule
+   left card titles on the body face, so the landing page's two card styles set
+   their titles in different typefaces. */
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+.sl-markdown-content h1,
+.sl-markdown-content h2,
+.sl-markdown-content h3,
+.card .title {
+	font-family: var(--sl-font-display);
+	font-weight: 600;
+	letter-spacing: -0.01em;
+}
+
+/* The hero is the one place a very large serif earns its keep. */
+.site-title,
+.sidebar-title {
+	font-family: var(--sl-font-display);
+	font-weight: 600;
+}
+
+/* Brass hairline under the H1, mirroring the client's card language. */
+.sl-markdown-content > h1:first-child {
+	position: relative;
+	padding-bottom: 0.5rem;
+}
+
+.sl-markdown-content > h1:first-child::after {
+	content: '';
+	position: absolute;
+	inset-inline-start: 0;
+	bottom: 0;
+	width: 3.5rem;
+	height: 2px;
+	background: var(--nido-brass);
+	border-radius: 2px;
+}
+
+/* ------------------------------------------------------------- pieces --- */
+
+/* Blockquote / aside: warm, not blue. */
+.sl-markdown-content blockquote {
+	border-inline-start: 3px solid var(--nido-brass);
+	background: var(--nido-brass-soft);
+	color: var(--sl-color-gray-1);
+}
+
+/* Inline code sits on a warm surface with a forest ink, matching the client. */
+.sl-markdown-content :not(pre) > code {
+	background: var(--sl-color-gray-6);
+	color: var(--sl-color-accent-high);
+	border: 1px solid var(--sl-color-gray-5);
+}
+
+/* Tables: a hairline grid instead of Starlight's heavy zebra. */
+.sl-markdown-content table {
+	border: 1px solid var(--sl-color-gray-5);
+}
+
+.sl-markdown-content th {
+	background: var(--sl-color-gray-6);
+}
+
+/* Cards used by both the docs and the marketing pages. */
+.nido-card {
+	background: var(--nido-card);
+	border: 1px solid var(--sl-color-gray-5);
+	border-radius: var(--nido-card-radius);
+	box-shadow: var(--nido-card-shadow);
+	padding: 1.1rem 1.35rem;
+}
+
+/* Brass top rule marks the sections that answer a direct question. */
+.nido-card--edge {
+	border-top: 2px solid var(--nido-brass);
+}
+
+/* Terracotta left rule marks the actions that cannot be undone. */
+.nido-card--alert {
+	border-inline-start: 3px solid var(--nido-alert);
+}
+
+/* Side-by-side comparison of the two ways to run Nido. `auto-fit` with a
+   minmax floor collapses it to a single column on its own once the columns
+   would be too narrow to read, so there is no breakpoint to keep in sync. */
+.nido-options {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr));
+	gap: 1rem;
+	margin: 1.5rem 0;
+}
+
+.nido-option {
+	display: flex;
+	flex-direction: column;
+	background: var(--nido-card);
+	border: 1px solid var(--sl-color-gray-5);
+	border-top: 2px solid var(--nido-brass);
+	border-radius: var(--nido-card-radius);
+	box-shadow: var(--nido-card-shadow);
+	padding: 1.1rem 1.35rem;
+}
+
+.nido-option h3 {
+	margin-top: 0;
+	font-size: 1.15rem;
+}
+
+/* Pins each card's link to the bottom so the two CTAs line up. */
+.nido-option > p:last-child {
+	margin-top: auto;
+	margin-bottom: 0;
+	padding-top: 0.75rem;
+}
+
+/* Keyboard focus must stay obvious against the cream page. */
+:where(a, button, input, summary):focus-visible {
+	outline: 2px solid var(--sl-color-accent-high);
+	outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	*,
+	*::before,
+	*::after {
+		animation-duration: 0.01ms !important;
+		transition-duration: 0.01ms !important;
+	}
+}
