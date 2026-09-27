@@ -72,7 +72,7 @@ image: ghcr.io/<owner>/<repo>/api:latest
   origin** (e.g. `https://nido.example.com`) so verification / password-reset
   links email the real site, not `localhost`.
 - **API URL for the web client**: the client calls the API **same-origin**
-  (`/api/v1`); the web container's Vite dev server proxies `/api` to the API via
+  (`/api/v1`); the web server proxies `/api` to the API via
   `API_PROXY_TARGET` in `web-deployment.yaml`. Behind the Ingress, `/api`
   routes straight to the api Service, so public traffic never hits the proxy.
   - single pod → `API_PROXY_TARGET=http://localhost:3000` (shared loopback).
@@ -83,11 +83,6 @@ image: ghcr.io/<owner>/<repo>/api:latest
   default) are already set on the api container. Keep the format `json` here —
   that is what makes the lines parseable by `kubectl logs` pipelines and log
   shippers. See [Reading the logs](#reading-the-logs) below.
-- **Web allowed hosts**: the web container runs a Vite dev server that rejects
-  unknown `Host` headers. In `multi-pod`, set `ALLOWED_HOSTS` in
-  `web-deployment.yaml` to the hostname browsers use (the Ingress host, e.g.
-  `nido.example.com`). In `single-pod`, loopback-only access means
-  `localhost` is fine (bare IPs are always allowed).
 
 ## Reading the logs
 The API writes to **stdout** only, so the container runtime collects it — no

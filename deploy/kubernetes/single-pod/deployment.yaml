@@ -81,16 +81,10 @@ spec:
           ports:
             - containerPort: 3001
           env:
-            # The web and api containers share this pod's loopback, so the
-            # Vite dev server proxies the browser's /api requests to the api
-            # container same-origin (no CORS, no Ingress /api path needed).
+            # The web and api containers share this pod's loopback; the web
+            # server proxies browser /api calls here (src/hooks.server.ts).
             - name: API_PROXY_TARGET
               value: "http://localhost:3000"
-            # Comma-separated extra Host headers the Vite dev server must
-            # accept (e.g. a public domain fronting it through a reverse
-            # proxy). "localhost" and bare IPs are always allowed.
-            - name: ALLOWED_HOSTS
-              value: "localhost"
           readinessProbe:
             httpGet:
               path: /

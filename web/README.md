@@ -15,11 +15,11 @@ npm install
 
 ### Environment Variables
 The web client calls the API **same-origin** by default (`/api/v1`); the Vite
-dev server proxies `/api` to the API service (`API_PROXY_TARGET`). Optional
+web server proxies `/api` to the API service (`API_PROXY_TARGET`). Optional
 `.env` overrides:
 ```env
 PUBLIC_API_URL="http://localhost:3000/api/v1"  # explicit API origin the browser uses (default: same-origin /api/v1)
-API_PROXY_TARGET="http://localhost:3000"       # where the dev server forwards /api (compose: http://api:3000)
+API_PROXY_TARGET="http://localhost:3000"       # where the web server forwards /api (compose: http://api:3000)
 ```
 
 ### Running Locally

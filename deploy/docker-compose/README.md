@@ -24,7 +24,7 @@ docker compose up -d --build
 
 - **api** — Hono API; binds `3000`. Persists the SQLite database and photos
   on the `nido-data` named volume mounted at `/data`.
-- **web** — SvelteKit client; binds `3001`. The Vite dev server proxies `/api`
+- **web** — SvelteKit client; binds `3001`. The web server proxies `/api`
   to the api service via the `API_PROXY_TARGET` you set in `.env`.
 
 The Dockerfiles are built from the repo root (`api/Dockerfile`, `web/Dockerfile`),
@@ -33,14 +33,11 @@ so this compose files points `build.context` at the corresponding subfolder.
 ## Notes
 
 - `JWT_SECRET` must be changed from the placeholder in production.
-- `API_PROXY_TARGET` is where the web's Vite dev server forwards `/api`
+- `API_PROXY_TARGET` is where the web server forwards `/api`
   requests (compose default `http://api:3000`; behind a split reverse proxy,
   set it to the proxied API hostname).
 - The browser calls the API same-origin (`/api/v1`) — no CORS involved. To point
   the browser at an explicit API origin instead, set `PUBLIC_API_URL`.
-- `ALLOWED_HOSTS` is the comma-separated list of hostnames the web service's
-  Vite server will accept (e.g. `nido.example.com` behind a reverse proxy).
-  `localhost` and IPs are always allowed, so the default is safe for local use.
 - Back up the `nido-data` volume with the backup CLI rather than a plain
   `tar`/`cp`: the databases are WAL-mode, so a file copy can capture a torn
   database or silently drop the newest writes. The API image snaps each one

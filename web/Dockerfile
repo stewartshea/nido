@@ -20,8 +20,12 @@ COPY tsconfig.json .
 # Build the application
 RUN npm run build
 
-# Expose port
+ENV PORT=3001
+ENV HOST=0.0.0.0
+ENV PROTOCOL_HEADER=x-forwarded-proto
+ENV HOST_HEADER=x-forwarded-host
+
 EXPOSE 3001
 
-# Run the vite dev server so the mounted source directory executes directly (dev workflow)
-CMD ["npm", "run", "dev", "--", "--host"]
+# /api/* is proxied to API_PROXY_TARGET by src/hooks.server.ts.
+CMD ["node", "build"]

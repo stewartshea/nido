@@ -103,11 +103,7 @@ per-platform scheduler examples.
   `db/<familyId>.db` and `photos/` (default `/data`)
 - `JWT_SECRET`: Secret for JWT authentication (required in the deploy compose)
 - `PUBLIC_API_URL`: optional explicit API origin for the browser (defaults to same-origin `/api/v1`)
-- `API_PROXY_TARGET`: where the web Vite dev server forwards `/api` (compose: `http://api:3000`, single-pod k8s: `http://localhost:3000`)
-- `ALLOWED_HOSTS`: comma-separated hostnames the web Vite dev server accepts
-  requests for — add your public domain (e.g. `nido.example.com`) when
-  fronting it with a reverse proxy. Defaults to `localhost` (bare IPs are
-  always allowed)
+- `API_PROXY_TARGET`: where the web server forwards `/api` (compose: `http://api:3000`, single-pod k8s: `http://localhost:3000`)
 - `PHOTO_DIR`: Photo storage directory (deploy compose, defaults to `/data/photos`)
 - `LOG_LEVEL`: API log verbosity — `debug`, `info` (default), `warn`, `error`,
   `silent`

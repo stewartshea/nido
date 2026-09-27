@@ -75,8 +75,7 @@ the data volume.
 | `SIGNUP_ENABLED` | no | Set to enable open registration |
 | `PUBLIC_URL` | no | Origin used in verification/reset emails |
 | `PHOTO_DIR` | no | Photo storage. Default `/data/photos` |
-| `ALLOWED_HOSTS` | no | Hostnames the web server answers to. Default `localhost` |
-| `API_PROXY_TARGET` | no | Where the web dev server forwards `/api` |
+| `API_PROXY_TARGET` | no | Where the web server forwards `/api` |
 | `LOG_LEVEL` | no | API log verbosity: `debug`, `info` (default), `warn`, `error`, `silent` |
 | `LOG_FORMAT` | no | API log format: `json` or `pretty`. Defaults to `json` when stdout is a pipe, `pretty` on a terminal |
 

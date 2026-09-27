@@ -32,7 +32,7 @@ kubectl -n nido port-forward svc/nido 3000:3000
 - `service.yaml` — exposes both `web` (:80 → 3001) and `api` (:3000).
 
 ## Notes
-- The web dev server proxies the browser's `/api` requests to the API at
+- The web server proxies the browser's `/api` requests to the API at
   `http://localhost:3000` (`API_PROXY_TARGET`) — this works only because both
   containers share the pod loopback. If you later split them out (see
   `../multi-pod`), set `API_PROXY_TARGET` to the api Service URL instead.

@@ -24,10 +24,9 @@ services:
     ports:
       - "3001:3001"
     environment:
-      # In Docker Compose the web and api are separate containers, so the
-      # Vite proxy (/api) must target the api service, not localhost.
+      # Separate containers, so the web server proxies browser /api calls to
+      # the api service rather than localhost.
       - API_PROXY_TARGET=${API_PROXY_TARGET:-http://api:3000}
-      - ALLOWED_HOSTS=${ALLOWED_HOSTS:-localhost}
     depends_on:
       - api
     restart: unless-stopped
