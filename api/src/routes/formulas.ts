@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 import { type AuthEnv } from '../auth';
+import { log } from '../logger';
 import { DEFAULT_FORMULA_CATALOG } from '../data/formula-catalog';
 import { NAMESPACE_HOUSEHOLD_ID } from '../db-core';
 
@@ -22,14 +23,13 @@ async function familyRole(db: any, userId: string, familyId: number) {
 
 async function seedFormulaCatalog(db: any, familyId: number) {
 	try {
-		const existing = await db.execute({
-			sql: 'SELECT name, COALESCE(brand, \'\') AS brand FROM formulas WHERE family_id = ?',
+		const countRow = await db.execute({
+			sql: 'SELECT COUNT(*) as cnt FROM formulas WHERE family_id = ?',
 			args: [familyId],
 		});
+		if (Number(countRow.rows[0]?.cnt ?? 0) > 0) return;
 
-		const keys = new Set(
-			existing.rows.map((r: any) => `${String(r?.name || '').trim().toLowerCase()}::${String(r?.brand || '').trim().toLowerCase()}`),
-		);
+		const keys = new Set<string>();
 
 		for (const formula of DEFAULT_FORMULA_CATALOG) {
 			const key = `${formula.name.trim().toLowerCase()}::${formula.brand.trim().toLowerCase()}`;
@@ -41,7 +41,7 @@ async function seedFormulaCatalog(db: any, familyId: number) {
 			keys.add(key);
 		}
 	} catch (err) {
-		console.error('seedFormulaCatalog failed:', err);
+		log.error('seed formula catalog failed', { event: 'formula_seed_failed', householdId: familyId, err });
 	}
 }
 
@@ -53,7 +53,11 @@ formulaRoutes.get('/', async (c) => {
 
 	const role = await familyRole(db, userId, householdId);
 	if (!role) {
-		console.error('[formulas] familyRole returned null — userId=%s householdId=%d', userId, householdId);
+		c.get('log').warn('user is not a member of this family', {
+			event: 'family_membership_missing',
+			userId,
+			householdId,
+		});
 		return c.json({ error: 'Not a member of this family' }, 403);
 	}
 
@@ -63,7 +67,11 @@ formulaRoutes.get('/', async (c) => {
 		sql: 'SELECT id, name, brand, formula_type, created_at FROM formulas WHERE family_id = ? ORDER BY COALESCE(brand, \'\'), name',
 		args: [householdId],
 	});
-	console.log('[formulas] returned %d formulas for householdId=%d', res.rows.length, householdId);
+	c.get('log').debug('formula catalog listed', {
+		event: 'formula_catalog_listed',
+		householdId,
+		count: res.rows.length,
+	});
 	return c.json({
 		formulas: res.rows.map((r) => ({
 			id: Number(r?.id),
