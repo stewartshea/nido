@@ -10,7 +10,9 @@ import { funding, isLive } from '../../site.config';
 		<strong>Every feature of Nido is free, and always will be.</strong>
 		Sponsorship buys maintainer time — releases, security work, answering
 		issues. It does not unlock anything, and no feature is ever gated behind
-		it. <a href="../self-host/">Self-hosting is free and requires no account.</a>
+		it. That is true whether you [self-host](../self-host/) or use
+		the [hosted version](../hosted/), and it is true whether you
+		ever sponsor anything or not.
 	</p>
 </div>
 
@@ -22,20 +24,21 @@ import { funding, isLive } from '../../site.config';
 		title: 'GitHub Sponsors',
 		role: 'primary, recurring',
 		blurb:
-			'Sits alongside the GitHub billing you already use, so supporting it costs no extra account. It also handles cross-border tax withholding and reporting that a solo maintainer would otherwise own.',
-	},
-	{
-		key: 'liberapay',
-		title: 'Liberapay',
-		role: 'secondary, recurring, non-profit operated',
-		blurb: 'An alternative to depending on a single vendor.',
+			'Cheapest and least friction: no platform fee on a personal account, and it sits alongside the GitHub billing you already use, so supporting costs no extra account. It also handles cross-border tax withholding and reporting that a solo maintainer would otherwise own.',
 	},
 	{
 		key: 'buyMeACoffee',
 		title: 'Buy Me a Coffee',
-		role: 'one-time tip',
+		role: 'secondary, one-time',
 		blurb:
-			'For giving once without creating a GitHub account. One-time by design, which is why it is last and never the default.',
+			'For giving once without creating a GitHub account, and for people who would rather not take on a recurring commitment to a project they are not using day to day. Charges 5% plus processing, and asks for nothing in return.',
+	},
+	{
+		key: 'liberapay',
+		title: 'Liberapay',
+		role: 'tertiary, recurring, non-profit operated',
+		blurb:
+			'The only option that takes no cut at all, which is why it is worth listing. Weak discoverability is what keeps it out of the primary slots.',
 	},
 ].map(({ key, title, role, blurb }) => {
 	const live = isLive(key);
@@ -72,19 +75,23 @@ support the project. `npm run build` passes either way.
 
 ## Why not Patreon
 
-Short version: it is a membership platform, and this is not a membership.
+Three reasons, in order of how much they matter.
 
-- **Nido has nothing to ship members.** Patreon tiers exist because there is
-  stuff behind them — early builds, private channels, badges, discounts. Here
-  there is exactly one thing, the software, and it is already free. A tier would
-  be a label on a donation.
-- **It would be a dependency the project could not shed.** A hosted service in
-  the path of a self-hosted tool is a single point of failure, and possibly a
-  reason for the project to disappear. GitHub Sponsors has the same
-  dependency, but it is the one the audience already has an account with.
-- **It adds an account to a project whose premise is having none.** Nido has no
-  third-party accounts and no social login. A recurring-membership subscription
-  for a self-hosted app undercuts the argument it is making.
+- **It is the most expensive option.** Patreon charges a 10% platform fee on
+  new creator pages, and payment processing on top of that, where GitHub
+  Sponsors charges no platform fee at all. For supporters giving small amounts,
+  most of which goes to the platform rather than the project.
+- **It is a membership platform, and this is not a membership.** Patreon tiers
+  exist because there is stuff behind them — early builds, private channels,
+  badges, discounts. Here there is exactly one thing, the software, and it is
+  already free. A tier would be a label on a donation.
+- **A recurring membership creates an obligation to keep recurring.** Someone
+  paying monthly reasonably expects the relationship to continue, which is a
+  commitment a solo maintainer of a free project should not be making.
+
+Buy Me a Coffee covers the same need — giving once, with no strings — for a
+fraction of the fee, and is the recommended alternative. The full comparison,
+including the current numbers, is on the [funding page](./project/funding/).
 
 ## What sponsorship pays for
 

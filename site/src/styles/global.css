@@ -90,10 +90,16 @@
 [data-theme='light'] {
 	color-scheme: light;
 
-	--sl-color-white: #ffffff; /* surface */
-	--sl-color-black: #f7f5f0; /* page */
-	--sl-color-gray-1: #2b2622; /* body text = brand ink */
-	--sl-color-gray-2: #4f4a42;
+	/* These two names are literal inverses, not roles: `white` is the page
+	   background, and `black` is the surface that inverts against it — code
+	   blocks, primary buttons, high-contrast text. Tinting `black` cream put
+	   white text on a beige code block, so light mode takes the brand ink for
+	   the inverted surface and the brand cream for the page. Text on an
+	   inverted surface is therefore `white`, i.e. cream, not #fff. */
+	--sl-color-white: #f7f5f0; /* page = brand cream */
+	--sl-color-black: #2b2622; /* ink: inverted surfaces (code, primary buttons) */
+	--sl-color-gray-1: #2b2622; /* headings = brand ink */
+	--sl-color-gray-2: #4f4a42; /* body text */
 	--sl-color-gray-3: #6e6a5f;
 	--sl-color-gray-4: #a5ad9c;
 	--sl-color-gray-5: #d7dfd2;
@@ -114,6 +120,10 @@
 	--sl-font-display: 'Lora', Georgia, serif;
 }
 
+/* Display face for every title. `.card .title` belongs in this heading rule
+   because Starlight renders a Card's title as a `<p>` — a heading-only rule
+   left card titles on the body face, so the landing page's two card styles set
+   their titles in different typefaces. */
 h1,
 h2,
 h3,
@@ -122,7 +132,8 @@ h5,
 h6,
 .sl-markdown-content h1,
 .sl-markdown-content h2,
-.sl-markdown-content h3 {
+.sl-markdown-content h3,
+.card .title {
 	font-family: var(--sl-font-display);
 	font-weight: 600;
 	letter-spacing: -0.01em;
@@ -163,7 +174,7 @@ h6,
 
 /* Inline code sits on a warm surface with a forest ink, matching the client. */
 .sl-markdown-content :not(pre) > code {
-	background: var(--sl-color-black);
+	background: var(--sl-color-gray-6);
 	color: var(--sl-color-accent-high);
 	border: 1px solid var(--sl-color-gray-5);
 }
@@ -174,7 +185,7 @@ h6,
 }
 
 .sl-markdown-content th {
-	background: var(--sl-color-black);
+	background: var(--sl-color-gray-6);
 }
 
 /* Cards used by both the docs and the marketing pages. */
@@ -194,6 +205,39 @@ h6,
 /* Terracotta left rule marks the actions that cannot be undone. */
 .nido-card--alert {
 	border-inline-start: 3px solid var(--nido-alert);
+}
+
+/* Side-by-side comparison of the two ways to run Nido. `auto-fit` with a
+   minmax floor collapses it to a single column on its own once the columns
+   would be too narrow to read, so there is no breakpoint to keep in sync. */
+.nido-options {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr));
+	gap: 1rem;
+	margin: 1.5rem 0;
+}
+
+.nido-option {
+	display: flex;
+	flex-direction: column;
+	background: var(--nido-card);
+	border: 1px solid var(--sl-color-gray-5);
+	border-top: 2px solid var(--nido-brass);
+	border-radius: var(--nido-card-radius);
+	box-shadow: var(--nido-card-shadow);
+	padding: 1.1rem 1.35rem;
+}
+
+.nido-option h3 {
+	margin-top: 0;
+	font-size: 1.15rem;
+}
+
+/* Pins each card's link to the bottom so the two CTAs line up. */
+.nido-option > p:last-child {
+	margin-top: auto;
+	margin-bottom: 0;
+	padding-top: 0.75rem;
 }
 
 /* Keyboard focus must stay obvious against the cream page. */

@@ -1,13 +1,17 @@
 ---
 title: Self-hosting Nido
-description: Run Nido on your own hardware. Free forever, no account, no telemetry, no hosted version to migrate to.
+description: Run Nido on your own hardware. Free forever, no account, no telemetry — and the version that keeps working when everything else goes away.
 ---
+
+import { withBase } from '../../site.config';
 
 <div class="nido-card nido-card--edge" style="margin:0 0 1.75rem">
 	<p style="margin:0">
-		<strong>Nido is free and always will be.</strong> There is no paid tier, no
-		feature is locked, and self-hosting is the only supported way to run it.
-		If you can run Docker, you can run Nido.
+		<strong>Nido is free and always will be.</strong> There is no paid tier and
+		no feature is locked, whether you self-host or use the
+		<a href={withBase('hosted/')}>hosted version</a>. This page is about running
+		it yourself, which is the better option when you can — and it is not
+		difficult. If you can run Docker, you can run Nido.
 	</p>
 </div>
 
@@ -18,10 +22,13 @@ description: Run Nido on your own hardware. Free forever, no account, no telemet
 - **No account to create.** No sign-up, no email verification loop, no company
   holding a copy of your baby's records.
 - **No telemetry.** Not opt-in, not anonymized — there is none to enable.
-- **No hosted version to outgrow.** There is no service to migrate away from, so
-  no migration. Your data stays where you put it.
+- **No service to outgrow.** Nothing to migrate away from and nothing that can
+  expire, because the only thing it depends on is hardware you already own.
 - **Photos under your control.** Stored in a directory on your disk, not in
   someone's object store.
+- **The master key is yours.** The single most important thing in a Nido
+  install is a value only you hold, and you can back it up independently of
+  anything else. The [hosted version](./hosted/) cannot offer that.
 
 ## What you take on
 
@@ -45,8 +52,8 @@ cd nido
 docker compose up -d
 ```
 
-Then open <http://localhost:3001>. The API health check is on
-<http://localhost:3000/health>.
+Then open [http://localhost:3001](http://localhost:3001). The API health check
+is on [http://localhost:3000/health](http://localhost:3000/health).
 
 `init-env.sh` generates `NIDO_MASTER_KEY` and `JWT_SECRET` with
 `openssl rand -hex 32`, writes a `.env` at mode `0600`, and **refuses to
@@ -105,9 +112,11 @@ Traefik and nginx configs — and one of them is a footgun to avoid.
 
 ## The honest short answer
 
-Nido is free because it runs on your hardware. There is no revenue model
-attached to your data, because your data never leaves the machine you installed
-it on.
+Nido is free because there is nothing to charge for. The software is
+[Apache-2.0](https://github.com/stewartshea/nido), your data never leaves the
+machine you installed it on, and there is no revenue model attached to it. That
+holds for the [hosted version](./hosted/) too — it is free, it has no paid
+tiers, and it runs the same code.
 
 If it saves you time, the project accepts
 [sponsorship](./project/funding/) — which buys maintainer time and nothing else.
@@ -119,7 +128,9 @@ No feature is behind it, and none ever will be.
 		The whole application is
 		<a href="https://github.com/stewartshea/nido" rel="noopener">Apache-2.0</a> and
 		about two containers. The tenant model is one encrypted SQLite file per
-		family, explained in [Architecture](./reference/architecture/), and what is
-		and isn't encrypted is in [Security model](./reference/security/).
+		family, explained in
+		<a href={withBase('reference/architecture/')}>Architecture</a>, and what is
+		and isn't encrypted is in
+		<a href={withBase('reference/security/')}>Security model</a>.
 	</p>
 </div>

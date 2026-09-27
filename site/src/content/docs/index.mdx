@@ -1,77 +1,119 @@
 ---
-title: Nido documentation
-description: Install, configure, secure and back up Nido — the self-hosted newborn and infant tracker.
+title: Nido
+description: Nido is a free, open source tracker for the things you care for and keep. It starts as an infant tracker and grows into a home maintenance and care tracker. Run it on your own hardware, or use the free hosted version in Canada.
 template: splash
 hero:
-  tagline: Feeds, diapers, sleep, growth, milestones and vaccinations. On your own hardware, free forever.
+  tagline: A nest for the things you care for and keep. It starts with your baby, and grows to cover the whole home.
   actions:
     - text: Install Nido
       link: ./getting-started/installation/
       icon: right-arrow
-    - text: Back up & restore
-      link: ./guides/backup-and-restore/
+    - text: Use the hosted version
+      link: https://my.nido-app.ca
       variant: minimal
 ---
 
 import { Card, CardGrid } from '@astrojs/starlight/components';
 
-Nido is a newborn and infant tracker you run yourself. There is no hosted
-version to sign up for, no telemetry, and no account that lives anywhere except
-your own disk.
+*Nido* means "nest" — something you build, keep, and look after. Nido is a free,
+open source tracker for the things that need looking after, and it starts with
+the smallest and most relentless of them: a new baby.
 
-<CardGrid stagger>
-	<Card title="Installation" icon="rocket" href="./getting-started/installation/">
-		From `git clone` to a running stack in about a minute.
-	</Card>
-	<Card title="First run" icon="rocket" href="./getting-started/first-run/">
-		Generate the master key, register the first account, invite a caregiver.
-	</Card>
-	<Card title="Configuration" icon="setting" href="./reference/configuration/">
-		Every environment variable, when it is required, and what breaks without it.
-	</Card>
-	<Card title="Backup & restore" icon="seti:file-backup" href="./guides/backup-and-restore/">
-		Back up the data volume *and* the master key. This is the page that matters
-		most.
-	</Card>
-	<Card title="Security model" icon="shield" href="./reference/security/">
-		What is encrypted, what is not, and the things worth knowing before you
-		deploy.
-	</Card>
-	<Card title="Architecture" icon="seti:database" href="./reference/architecture/">
-		Two containers, one encrypted SQLite file per family, and why the file is
-		the tenant boundary.
-	</Card>
-</CardGrid>
+Everything is yours to read, yours to run, and yours to keep. There is no paid
+version, no account to create, and nothing leaves your home unless you ask it
+to.
 
-## What Nido records
+## What Nido does
+
+A feed at 3am and two caregivers who both need to know what happened last. A
+sleeper one of them is still awake for. The growth chart the paediatrician asks
+about. All of it in one place, free, on hardware you control.
 
 | Area | What you get |
 | --- | --- |
 | **Feeding** | Breast and formula timers, side and session tracking, amounts |
 | **Diapers** | Wet, soiled, dry and combinations |
-| **Sleep** | Start/stop with live duration |
+| **Sleep** | Start and stop, with live duration |
 | **Growth** | Weight, height and head circumference against WHO and CDC percentiles |
-| **Milestones & vaccinations** | Logging plus a schedule |
-| **Photos** | Per-member avatars and uploads (MIME-validated) |
-| **Journal & mood** | Free-form notes per day |
-| **Shared access** | Invite caregivers, with owner / admin / member roles |
-| **Reminders** | Inactivity and interval nudges |
-| **Export / restore** | Move a family's whole dataset as JSON |
-| **Offline queue** | Writes made without a connection are queued and replayed |
-| **Themes** | 7 palettes × light and dark, plus a custom theme editor |
+| **Milestones & vaccinations** | Logging, plus a schedule of what is due |
+| **Photos** | Per-member avatars and photo uploads |
+| **Journal & mood** | Free-form notes for each day |
+| **Shared access** | Invite other caregivers, with a role for what each one can do |
+| **Reminders** | Nudges for stretches and intervals worth noticing |
+| **Your data** | Export everything as JSON, any time, and move it back in |
+| **Works offline** | Entries made without a connection wait, then send themselves |
+| **Looks like yours** | Seven palettes in light and dark, plus a custom theme |
 
-## The short version
+## What comes next
 
-```bash
-git clone https://github.com/stewartshea/nido.git
-cd nido
-./scripts/init-env.sh   # writes .env with freshly generated secrets
-docker compose up -d
-```
+<div class="nido-card nido-card--edge">
+	<p>
+		A baby grows up, and the list of things needing care gets longer rather than
+		shorter. Nido is being built to cover all of it — the same shared records,
+		the same reminders, the same ownership, pointed at a whole home instead of
+		one small person.
+	</p>
+</div>
 
-Web client on [http://localhost:3001](http://localhost:3001), API health on
-[http://localhost:3000/health](http://localhost:3000/health).
+The next tracker is **home maintenance and care**: the filter that needs
+changing, the water heater that needs flushing, the smoke alarms that need
+testing, the warranty that expires in March. Nido will keep these the way it
+keeps a feeding — with history, with reminders, and shared between the people
+who live with them.
 
-> **Read this before your first backup:** `NIDO_MASTER_KEY` is unrecoverable.
-> Every family's database is keyed from it. Lose it and the data is gone, with
-> no error to warn you first — see [Security model → the master key](./reference/security/#the-master-key).
+It is being built in the open, alongside the infant tracker. If that is the part
+you care about, it is written down in [the roadmap](./project/roadmap/).
+
+## Two ways to run it
+
+Both are the same software with the same features, and neither has a paid tier.
+Pick whichever fits your household.
+
+<div class="nido-options">
+	<div class="nido-option">
+		<h3>Run it yourself</h3>
+		<p>
+			<strong>Free, on your own hardware.</strong> Your records stay on a disk
+			you control. There is no account to create, nothing is uploaded, and no
+			one else is involved. This is the way Nido is built, and the one the
+			documentation assumes.
+		</p>
+		<p>[How self-hosting works →](./self-host/)</p>
+	</div>
+	<div class="nido-option">
+		<h3>Use the hosted version</h3>
+		<p>
+			<strong>Free, hosted in Canada.</strong> For anyone who would rather not
+			run a server, keep one patched, or remember a backup. The same software,
+			with an optional way to support the project if it is useful to you.
+		</p>
+		<p>[About the hosted version →](./hosted/)</p>
+	</div>
+</div>
+
+## Start here
+
+<CardGrid stagger>
+	<Card title="Installation" icon="rocket" href="./getting-started/installation/">
+		From an empty folder to a working Nido.
+	</Card>
+	<Card title="First run" icon="rocket" href="./getting-started/first-run/">
+		Set up your family, invite a caregiver, and start logging.
+	</Card>
+	<Card title="Backup & restore" icon="seti:file-backup" href="./guides/backup-and-restore/">
+		Keep a copy that you can actually get back.
+	</Card>
+	<Card title="Security model" icon="shield" href="./reference/security/">
+		What is encrypted, what is not, and what that means for you.
+	</Card>
+</CardGrid>
+
+## Help it keep going
+
+Nido is maintained in one person's evenings. There is no company behind it, so
+the two things that actually help are small ones:
+
+- **[Contribute](./project/contributing/)** — a bug report with a reproduction,
+  an answer to someone else's issue, or a note about your own setup.
+- **[Sponsor the project](./support/)** — optional, unlocks nothing, and buys
+  maintainer time: releases, security work, and answers.

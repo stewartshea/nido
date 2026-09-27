@@ -5,7 +5,7 @@ import sitemap from '@astrojs/sitemap';
 import mdx from '@astrojs/mdx';
 import { satteri } from '@astrojs/markdown-satteri';
 
-import { REPO } from './src/site.config.ts';
+import { REPO, SITE_BASE } from './src/site.config.ts';
 import { baseRelativeLinks } from './src/satteri-base-links.mjs';
 
 /**
@@ -13,33 +13,40 @@ import { baseRelativeLinks } from './src/satteri-base-links.mjs';
  * **project** site at `nido.stewartshea.github.io` and every asset needs the
  * `/nido` prefix. Override `SITE_BASE` (and `SITE_URL`) to publish the same
  * build as a user site at `stewartshea.github.io` or from a custom domain
- * without touching this file.
+ * without touching this file. `SITE_BASE` itself is defined in
+ * `src/site.config.ts` so page content can build base-prefixed URLs from the
+ * same single source.
  */
-const BASE = process.env.SITE_BASE ?? '/nido';
 const ORIGIN =
-	process.env.SITE_URL ?? `https://${REPO.split('/')[0]}.github.io${BASE === '/' ? '' : BASE}`;
+	process.env.SITE_URL ?? `https://${REPO.split('/')[0]}.github.io${SITE_BASE === '/' ? '' : SITE_BASE}`;
 
 export default defineConfig({
 	site: ORIGIN,
-	base: BASE,
+	base: SITE_BASE,
 	trailingSlash: 'ignore',
 	markdown: {
-		processor: satteri({ hastPlugins: [baseRelativeLinks(BASE)] }),
+		processor: satteri({ hastPlugins: [baseRelativeLinks(SITE_BASE)] }),
 	},
 	integrations: [
 		starlight({
 			title: 'Nido',
 			description:
-				'A self-hosted newborn and infant tracker. Feeds, diapers, sleep, growth, milestones and vaccinations — on your own hardware, free forever.',
+				'A free, open source tracker for the things you care for and keep — starting with your baby, and growing to cover the whole home. Run it on your own hardware, or use the free hosted version.',
 			logo: {
-				src: './src/assets/crest.svg',
+				light: './src/assets/crest.svg',
+				dark: './src/assets/crest-dark.svg',
+				alt: 'Nido nest mark',
 			},
 			customCss: ['./src/styles/global.css'],
 			social: [
 				{ icon: 'github', label: 'GitHub', href: `https://github.com/${REPO}` },
 			],
+			// Starlight appends the entry path relative to the *project root*
+			// (`src/content/docs/<slug>`), not relative to the docs collection, so
+			// `baseUrl` has to stop at `site/`. Ending it at `src/content/docs/`
+			// duplicates that segment in every page's "Edit page" link.
 			editLink: {
-				baseUrl: `https://github.com/${REPO}/edit/main/site/src/content/docs/`,
+				baseUrl: `https://github.com/${REPO}/edit/main/site/`,
 			},
 			sidebar: [
 				{
@@ -47,6 +54,7 @@ export default defineConfig({
 					items: [
 						{ label: 'Overview', slug: 'index' },
 						{ label: 'Self-hosting', slug: 'self-host' },
+						{ label: 'Hosted version', slug: 'hosted' },
 						{ label: 'Installation', slug: 'getting-started/installation' },
 						{ label: 'First run', slug: 'getting-started/first-run' },
 					],
