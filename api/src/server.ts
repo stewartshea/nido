@@ -1,11 +1,14 @@
 import { Hono } from 'hono';
 import { serve } from '@hono/node-server';
 import { cors } from 'hono/cors';
-import { logger } from 'hono/logger';
 import { secureHeaders } from 'hono/secure-headers';
 
 import { requireAuth, jwtSecret, PUBLIC_AUTH_PATHS, type AuthEnv } from './auth';
 import { getMasterKeyHex } from './db-core';
+import { closeAllClients, ensureRegistry } from './db-namespaces';
+import { log } from './logger';
+import { onError, onNotFound, requestLogger } from './request-log';
+import { installProcessHandlers, installSignalHandlers, logBoot } from './lifecycle';
 
 import { authRoutes } from './routes/auth';
 import { userRoutes } from './routes/user';
@@ -29,10 +32,14 @@ import { bootstrapAdmin } from './authz';
 
 const app = new Hono<AuthEnv>();
 
-// Middleware
-app.use(logger());
+// Middleware. requestLogger() runs first so every downstream handler — including
+// requireAuth's 401s and the terminal error handler — has a correlation id.
+app.use('*', requestLogger());
 app.use(cors());
 app.use(secureHeaders());
+
+app.onError(onError);
+app.notFound(onNotFound);
 
 // Auth guard: every /api/v1 request needs a valid Bearer JWT, except the
 // public auth endpoints (register, login, verify-email, forgot/reset password).
@@ -93,10 +100,27 @@ if (process.env.NODE_ENV !== 'test') {
   getMasterKeyHex();
   jwtSecret();
 
-  serve({ fetch: app.fetch, port }, (info) => {
-    console.log(`Nido API listening on http://localhost:${info.port}`);
-  });
+  installProcessHandlers();
 
-  // Designate the single platform admin after the DB is ready.
-  bootstrapAdmin();
+  // The registry is opened before the listener is bound, so a pod with an
+  // unwritable data volume exits instead of accepting traffic that 500s.
+  void (async () => {
+    try {
+      await ensureRegistry();
+      await bootstrapAdmin();
+    } catch (error) {
+      log.error('registry database could not be opened — exiting', {
+        event: 'boot_failed',
+        dataDir: process.env.NIDO_DATA_DIR ?? './data',
+        err: error,
+      });
+      process.exit(1);
+    }
+
+    const server = serve({ fetch: app.fetch, port }, (info) => {
+      logBoot({ port: info.port, dataDir: process.env.NIDO_DATA_DIR ?? './data' });
+    });
+
+    installSignalHandlers({ server, onShutdown: closeAllClients });
+  })();
 }

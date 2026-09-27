@@ -18,6 +18,10 @@ services:
       - SIGNUP_ENABLED=${SIGNUP_ENABLED:-}
       - PUBLIC_URL=${PUBLIC_URL:-http://localhost:3001}
       - PHOTO_DIR=${PHOTO_DIR:-/data/photos}
+      # Log verbosity: debug | info | warn | error | silent. Unset means info.
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      # Unset lets the API pick json (piped) or pretty (TTY) for itself.
+      - LOG_FORMAT=${LOG_FORMAT:-}
     volumes:
       - nido-data:/data
     restart: unless-stopped

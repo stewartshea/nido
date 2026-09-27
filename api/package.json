@@ -9,7 +9,9 @@
     "start": "node dist/server.js",
     "lint": "eslint src --ext ts",
     "test": "vitest",
-    "db:init": "tsx scripts/init-db.ts"
+    "db:init": "tsx scripts/init-db.ts",
+    "db:backup": "node dist/backup-cli.js backup",
+    "db:restore": "node dist/backup-cli.js restore"
   },
   "keywords": [
     "nido",

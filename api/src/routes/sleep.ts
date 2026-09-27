@@ -76,7 +76,7 @@ sleepRoutes.get('/', async (c) => {
     
     return c.json({ sleep: sleepRecords });
   } catch (error) {
-    console.error('Get sleep records error:', error);
+    c.get('log').error('get sleep records failed', { err: error });
     return c.json({ error: 'Failed to fetch sleep records' }, 500);
   }
 });
@@ -117,7 +117,7 @@ sleepRoutes.get('/:id{[0-9]+}', async (c) => {
     
     return c.json({ sleep: sleepRecord });
   } catch (error) {
-    console.error('Get sleep record error:', error);
+    c.get('log').error('get sleep record failed', { err: error });
     return c.json({ error: 'Failed to fetch sleep record' }, 500);
   }
 });
@@ -196,7 +196,7 @@ sleepRoutes.post('/', zValidator('json', createSleepSchema), async (c) => {
       sleep: sleepRecord 
     });
   } catch (error) {
-    console.error('Create sleep record error:', error);
+    c.get('log').error('create sleep record failed', { err: error });
     return c.json({ error: 'Failed to create sleep record' }, 500);
   }
 });
@@ -312,7 +312,7 @@ sleepRoutes.put('/:id{[0-9]+}', zValidator('json', updateSleepSchema), async (c)
       sleep: sleepRecord 
     });
   } catch (error) {
-    console.error('Update sleep record error:', error);
+    c.get('log').error('update sleep record failed', { err: error });
     return c.json({ error: 'Failed to update sleep record' }, 500);
   }
 });
@@ -349,7 +349,7 @@ sleepRoutes.delete('/:id{[0-9]+}', async (c) => {
     
     return c.json({ message: 'Sleep record deleted successfully' });
   } catch (error) {
-    console.error('Delete sleep record error:', error);
+    c.get('log').error('delete sleep record failed', { err: error });
     return c.json({ error: 'Failed to delete sleep record' }, 500);
   }
 });

@@ -67,7 +67,7 @@ diaperRoutes.get('/', async (c) => {
     
     return c.json({ diapers: diapersSorted });
   } catch (error) {
-    console.error('Get diapers error:', error);
+    c.get('log').error('get diapers failed', { err: error });
     return c.json({ error: 'Failed to fetch diapers' }, 500);
   }
 });
@@ -98,7 +98,7 @@ diaperRoutes.get('/:id{[0-9]+}', async (c) => {
     
     return c.json({ diaper: diaperResult.rows[0] });
   } catch (error) {
-    console.error('Get diaper error:', error);
+    c.get('log').error('get diaper failed', { err: error });
     return c.json({ error: 'Failed to fetch diaper' }, 500);
   }
 });
@@ -159,7 +159,7 @@ diaperRoutes.post('/', zValidator('json', createDiaperSchema), async (c) => {
       diaper: diaperResult.rows[0] 
     });
   } catch (error) {
-    console.error('Create diaper error:', error);
+    c.get('log').error('create diaper failed', { err: error });
     return c.json({ error: 'Failed to record diaper' }, 500);
   }
 });
@@ -246,7 +246,7 @@ diaperRoutes.put('/:id{[0-9]+}', zValidator('json', updateDiaperSchema), async (
       diaper: updatedDiaperResult.rows[0] 
     });
   } catch (error) {
-    console.error('Update diaper error:', error);
+    c.get('log').error('update diaper failed', { err: error });
     return c.json({ error: 'Failed to update diaper' }, 500);
   }
 });
@@ -283,7 +283,7 @@ diaperRoutes.delete('/:id{[0-9]+}', async (c) => {
     
     return c.json({ message: 'Diaper deleted successfully' });
   } catch (error) {
-    console.error('Delete diaper error:', error);
+    c.get('log').error('delete diaper failed', { err: error });
     return c.json({ error: 'Failed to delete diaper' }, 500);
   }
 });

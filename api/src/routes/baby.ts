@@ -62,7 +62,7 @@ babyRoutes.get('/', async (c) => {
     
     return c.json({ babies: babiesResult.rows });
   } catch (error) {
-    console.error('Get babies error:', error);
+    c.get('log').error('get babies failed', { err: error });
     return c.json({ error: 'Failed to fetch babies' }, 500);
   }
 });
@@ -92,7 +92,7 @@ babyRoutes.get('/:id{[0-9]+}', async (c) => {
     
     return c.json({ baby: babyResult.rows[0] });
   } catch (error) {
-    console.error('Get baby error:', error);
+    c.get('log').error('get baby failed', { err: error });
     return c.json({ error: 'Failed to fetch baby' }, 500);
   }
 });
@@ -140,7 +140,7 @@ babyRoutes.post('/', zValidator('json', createBabySchema), async (c) => {
       baby: babyResult.rows[0] 
     });
   } catch (error) {
-    console.error('Create baby error:', error);
+    c.get('log').error('create baby failed', { err: error });
     return c.json({ error: 'Failed to create baby' }, 500);
   }
 });
@@ -219,7 +219,7 @@ babyRoutes.put('/:id{[0-9]+}', zValidator('json', updateBabySchema), async (c) =
       baby: updatedBabyResult.rows[0] 
     });
   } catch (error) {
-    console.error('Update baby error:', error);
+    c.get('log').error('update baby failed', { err: error });
     return c.json({ error: 'Failed to update baby' }, 500);
   }
 });

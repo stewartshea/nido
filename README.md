@@ -77,6 +77,35 @@ the data volume.
 | `PHOTO_DIR` | no | Photo storage. Default `/data/photos` |
 | `ALLOWED_HOSTS` | no | Hostnames the web server answers to. Default `localhost` |
 | `API_PROXY_TARGET` | no | Where the web dev server forwards `/api` |
+| `LOG_LEVEL` | no | API log verbosity: `debug`, `info` (default), `warn`, `error`, `silent` |
+| `LOG_FORMAT` | no | API log format: `json` or `pretty`. Defaults to `json` when stdout is a pipe, `pretty` on a terminal |
+
+## Logging
+
+The API writes structured logs to **stdout** — one JSON object per line in a
+container, so `docker compose logs -f api` and `kubectl logs -p nido-api` both
+work without a log file or a sidecar:
+
+```bash
+docker compose logs -f api
+kubectl logs -f -l app=nido-api | jq 'select(.level == "error")'
+```
+
+Each request produces one `http_request` line carrying its `requestId`, method,
+path, status and duration. Every other line from that request carries the same
+`requestId`, so one failed call can be traced end to end:
+
+```bash
+kubectl logs -l app=nido-api | jq 'select(.requestId == "abc-123")'
+```
+
+Send your own correlation id by adding an `X-Request-Id` header; the API echoes
+it back in the response and in the error body, so a support ticket can name the
+exact request that failed.
+
+Field names that look like credentials (`password`, `token`, `secret`, `key`,
+`authorization`, …) are replaced with `[redacted]` before anything is written,
+so a log line cannot leak `NIDO_MASTER_KEY` or a password hash.
 
 ## Development
 

@@ -1,4 +1,5 @@
 import { ensureRegistry } from './db-namespaces';
+import { log } from './logger';
 
 export async function isPlatformAdmin(userId: string | number | null | undefined): Promise<boolean> {
 	if (userId === null || userId === undefined) return false;
@@ -46,7 +47,8 @@ export async function ensurePlatformAdmin(): Promise<void> {
 export async function bootstrapAdmin(): Promise<void> {
 	try {
 		await ensurePlatformAdmin();
+		log.info('platform admin bootstrap complete', { event: 'platform_admin_bootstrapped' });
 	} catch (e) {
-		console.error('Failed to designate platform admin:', e);
+		log.error('failed to designate platform admin', { event: 'platform_admin_bootstrap_failed', err: e });
 	}
 }

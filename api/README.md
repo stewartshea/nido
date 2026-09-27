@@ -24,7 +24,41 @@ NIDO_MASTER_KEY=""
 # Where registry.db, db/<familyId>.db and photos/ live
 NIDO_DATA_DIR="./data"
 JWT_SECRET="your-super-secret-jwt-key"
+# Log verbosity: debug | info | warn | error | silent (default info).
+# `debug` is very noisy and meant for chasing a single request.
+LOG_LEVEL=info
+# json | pretty. Unset lets the API pick: json when stdout is a pipe (a
+# container), pretty when it is a terminal.
+# LOG_FORMAT=
 ```
+
+### Logging
+
+Logs go to **stdout** — one JSON object per line under a container, pretty text
+on a terminal. Nothing is written to a log file, and nothing is written to
+stderr, so a container runtime captures everything in order.
+
+```bash
+LOG_LEVEL=debug LOG_FORMAT=pretty npm run dev
+```
+
+Each request emits one `http_request` line with `requestId`, method, path,
+status and duration. Every other line from that request repeats the same
+`requestId`, including handler errors and auth rejections:
+
+```bash
+LOG_LEVEL=debug npm run dev | grep '"requestId":"abc-123"'
+```
+
+Two behaviours worth knowing:
+
+- **Redaction is automatic.** A field whose name looks like a credential
+  (`password`, `token`, `secret`, `key`, `authorization`, `hash`, …) is written
+  as `[redacted]`. This is enforced in the logger, so a new call site cannot
+  forget it.
+- **Errors do not reach the client.** A 500 returns only
+  `{ error, requestId }`. The message and stack stay in the log, correlated by
+  that `requestId`.
 
 ### Running Locally
 ```bash

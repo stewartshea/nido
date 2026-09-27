@@ -19,5 +19,8 @@ RUN npm run build
 # Expose port
 EXPOSE 3000
 
+# Reported in every log line, and keeps runtime behaviour off dev defaults.
+ENV NODE_ENV=production
+
 # Serve the compiled server (production mode — no tsx watch, no dev-process connection leaks)
 CMD ["npm", "start"]

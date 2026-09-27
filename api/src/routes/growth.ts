@@ -226,7 +226,7 @@ growthRoutes.get('/', async (c) => {
     
     return c.json({ growth: growthWithComparisons });
   } catch (error) {
-    console.error('Get growth records error:', error);
+    c.get('log').error('get growth records failed', { err: error });
     return c.json({ error: 'Failed to fetch growth records' }, 500);
   }
 });
@@ -302,7 +302,7 @@ growthRoutes.get('/:id{[0-9]+}', async (c) => {
     
     return c.json({ growth: growthRecord });
   } catch (error) {
-    console.error('Get growth record error:', error);
+    c.get('log').error('get growth record failed', { err: error });
     return c.json({ error: 'Failed to fetch growth record' }, 500);
   }
 });
@@ -429,7 +429,7 @@ growthRoutes.post('/', zValidator('json', createGrowthSchema), async (c) => {
       growth: growthRecord 
     });
   } catch (error) {
-    console.error('Create growth record error:', error);
+    c.get('log').error('create growth record failed', { err: error });
     return c.json({ error: 'Failed to create growth record' }, 500);
   }
 });
@@ -600,7 +600,7 @@ growthRoutes.put('/:id{[0-9]+}', zValidator('json', updateGrowthSchema), async (
       growth: growthRecord 
     });
   } catch (error) {
-    console.error('Update growth record error:', error);
+    c.get('log').error('update growth record failed', { err: error });
     return c.json({ error: 'Failed to update growth record' }, 500);
   }
 });
@@ -637,7 +637,7 @@ growthRoutes.delete('/:id{[0-9]+}', async (c) => {
     
     return c.json({ message: 'Growth record deleted successfully' });
   } catch (error) {
-    console.error('Delete growth record error:', error);
+    c.get('log').error('delete growth record failed', { err: error });
     return c.json({ error: 'Failed to delete growth record' }, 500);
   }
 });
@@ -692,7 +692,7 @@ growthRoutes.get('/:id{[0-9]+}/chart-data', async (c) => {
     
     return c.json(chartData);
   } catch (error) {
-    console.error('Get growth chart data error:', error);
+    c.get('log').error('get growth chart data failed', { err: error });
     return c.json({ error: 'Failed to fetch growth chart data' }, 500);
   }
 });

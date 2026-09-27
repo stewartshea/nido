@@ -6,6 +6,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { randomFillSync } from 'node:crypto';
+import { log } from './logger';
 import {
   NAMESPACE_HOUSEHOLD_ID,
   SqliteFacade,
@@ -420,6 +421,7 @@ export async function ensureRegistry(): Promise<SqliteFacade> {
   runMigrations(client.raw, REGISTRY_MIGRATIONS);
   await client.execute({ sql: 'INSERT OR IGNORE INTO app_settings (id) VALUES (1)' });
   registryClient = client;
+  log.info('registry database ready', { event: 'db_registry_open', dataDir: dir });
   return client;
 }
 
@@ -462,10 +464,56 @@ export function getFamilyClient(familyId: string): SqliteFacade {
     if (oldest !== undefined) {
       familyClients.get(oldest)?.close();
       familyClients.delete(oldest);
+      log.debug('family database evicted from cache', {
+        event: 'db_family_evict',
+        familyId: oldest,
+        cacheSize: familyClients.size,
+      });
     }
   }
   familyClients.set(familyId, client);
+  log.debug('family database opened', {
+    event: 'db_family_open',
+    familyId,
+    cacheSize: familyClients.size,
+  });
   return client;
+}
+
+/**
+ * Close every cached handle. Called on SIGTERM: an open SQLCipher connection
+ * holds a WAL file, and leaving one behind on every pod restart is how a
+ * long-lived deployment accumulates `-wal`/`-shm` files that never checkpoint.
+ */
+export function closeAllClients(): void {
+  for (const [familyId, client] of familyClients) {
+    try {
+      client.close();
+    } catch (error) {
+      log.warn('failed to close family database', {
+        event: 'db_family_close_failed',
+        familyId,
+        err: error,
+      });
+    }
+  }
+  const evicted = familyClients.size;
+  familyClients.clear();
+
+  if (registryClient) {
+    try {
+      registryClient.close();
+    } catch (error) {
+      log.warn('failed to close registry database', {
+        event: 'db_registry_close_failed',
+        err: error,
+      });
+    }
+    registryClient = null;
+    log.info('registry database closed', { event: 'db_registry_close' });
+  }
+
+  log.info('database handles closed', { event: 'db_close_all', familyCount: evicted });
 }
 
 // ---------------------------------------------------------------------------
@@ -516,6 +564,7 @@ export async function provisionFamily(familyId: string, name: string): Promise<S
     args: [familyId, name, code, 'active'],
   });
 
+  log.info('family namespace provisioned', { event: 'db_family_provision', familyId });
   return client;
 }
 
@@ -537,4 +586,5 @@ export async function removeFamily(familyId: string): Promise<void> {
   const registry = await ensureRegistry();
   await registry.execute({ sql: 'DELETE FROM user_routing WHERE family_id = ?', args: [familyId] });
   await registry.execute({ sql: 'DELETE FROM families WHERE family_id = ?', args: [familyId] });
+  log.info('family namespace removed', { event: 'db_family_remove', familyId });
 }

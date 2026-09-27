@@ -63,7 +63,7 @@ vaccinationRoutes.get('/', async (c) => {
     
     return c.json({ vaccinations: vaccinationsResult.rows });
   } catch (error) {
-    console.error('Get vaccinations error:', error);
+    c.get('log').error('get vaccinations failed', { err: error });
     return c.json({ error: 'Failed to fetch vaccinations' }, 500);
   }
 });
@@ -94,7 +94,7 @@ vaccinationRoutes.get('/:id{[0-9]+}', async (c) => {
     
     return c.json({ vaccination: vaccinationResult.rows[0] });
   } catch (error) {
-    console.error('Get vaccination error:', error);
+    c.get('log').error('get vaccination failed', { err: error });
     return c.json({ error: 'Failed to fetch vaccination' }, 500);
   }
 });
@@ -155,7 +155,7 @@ vaccinationRoutes.post('/', zValidator('json', createVaccinationSchema), async (
       vaccination: vaccinationResult.rows[0] 
     });
   } catch (error) {
-    console.error('Create vaccination error:', error);
+    c.get('log').error('create vaccination failed', { err: error });
     return c.json({ error: 'Failed to record vaccination' }, 500);
   }
 });
@@ -242,7 +242,7 @@ vaccinationRoutes.put('/:id{[0-9]+}', zValidator('json', updateVaccinationSchema
       vaccination: updatedVaccinationResult.rows[0] 
     });
   } catch (error) {
-    console.error('Update vaccination error:', error);
+    c.get('log').error('update vaccination failed', { err: error });
     return c.json({ error: 'Failed to update vaccination' }, 500);
   }
 });
@@ -279,7 +279,7 @@ vaccinationRoutes.delete('/:id{[0-9]+}', async (c) => {
     
     return c.json({ message: 'Vaccination deleted successfully' });
   } catch (error) {
-    console.error('Delete vaccination error:', error);
+    c.get('log').error('delete vaccination failed', { err: error });
     return c.json({ error: 'Failed to delete vaccination' }, 500);
   }
 });
@@ -341,7 +341,7 @@ vaccinationRoutes.get('/schedule', async (c) => {
     
     return c.json({ schedule: vaccinationSchedule });
   } catch (error) {
-    console.error('Get vaccination schedule error:', error);
+    c.get('log').error('get vaccination schedule failed', { err: error });
     return c.json({ error: 'Failed to fetch vaccination schedule' }, 500);
   }
 });

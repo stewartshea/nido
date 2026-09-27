@@ -79,11 +79,58 @@ image: ghcr.io/<owner>/<repo>/api:latest
   - multi pod → `API_PROXY_TARGET=http://nido-api:3000` (api Service).
   Only set `PUBLIC_API_URL` on the web container when the API is served from a
   different origin than the web app.
+- **Logging**: `LOG_LEVEL` (`info` by default) and `LOG_FORMAT` (`json` by
+  default) are already set on the api container. Keep the format `json` here —
+  that is what makes the lines parseable by `kubectl logs` pipelines and log
+  shippers. See [Reading the logs](#reading-the-logs) below.
 - **Web allowed hosts**: the web container runs a Vite dev server that rejects
   unknown `Host` headers. In `multi-pod`, set `ALLOWED_HOSTS` in
   `web-deployment.yaml` to the hostname browsers use (the Ingress host, e.g.
   `nido.example.com`). In `single-pod`, loopback-only access means
   `localhost` is fine (bare IPs are always allowed).
+
+## Reading the logs
+The API writes to **stdout** only, so the container runtime collects it — no
+log file, no volume, no sidecar needed:
+
+```bash
+kubectl logs -l app=nido-api -f
+# errors across all pods
+kubectl logs -l app=nido-api --prefix | grep '"level":"error"'
+# one request, end to end
+kubectl logs -l app=nido-api --prefix | grep '"requestId":"abc-123"'
+```
+
+Because `kubectl logs` without a pod name can hit any replica, add `--prefix`
+when reading multiple pods — that is what tells you which one a line came from.
+
+One line per request carries `requestId`, method, path, status and duration.
+Errors, auth rejections and shutdown events share that `requestId`, and the
+same id is returned to the browser as `X-Request-Id`, so a user screenshot of
+a 500 maps straight to its log lines. Send an inbound `X-Request-Id` to pin
+your own id.
+
+Because the format is one JSON object per line, ad-hoc filtering is a `jq`
+away:
+
+```bash
+# slowest 10 requests
+kubectl logs -l app=nido-api | jq -r 'select(.event=="http_request") | "\(.durationMs)ms \(.method) \(.path)"' | sort -rn | head
+# anything that errored
+kubectl logs -l app=nido-api | jq -c 'select(.level=="error")'
+```
+
+`debug` is available for chasing one request and is deliberately noisy — set it
+per-pod rather than as a standing default:
+
+```bash
+kubectl set env deployment/nido-api LOG_LEVEL=debug
+```
+
+Field names that look like credentials are written as `[redacted]`, so a log
+line cannot contain `NIDO_MASTER_KEY`, `JWT_SECRET` or a password hash. That
+makes logs safe to ship, but the redaction is a name-based heuristic — treat
+them as sensitive anyway rather than pasting them into a public issue.
 
 ## Storage
 The `nido-data` PVC is `ReadWriteOnce` (single node). For multi-node, pick a
@@ -91,6 +138,78 @@ The `nido-data` PVC is `ReadWriteOnce` (single node). For multi-node, pick a
 regularly (`kubectl cp`, CSI snapshot, etc.).
 
 ## Backups
-Use the in-app **Account Settings → Backup** tab to download an all-data JSON
-backup and restore it there. For disaster recovery also back up the
-`nido-data` volume (database + uploaded photos).
+Two layers, because they protect against different losses:
+
+1. **In-app export** (Account Settings → Backup): a JSON of the current
+   family's records. Good for moving data between installs; not a server
+   backup.
+2. **Volume backup — `nido-backup` CronJob** ([`backup-cronjob.yaml`](backup-cronjob.yaml)):
+   snapshots every encrypted database plus the `photos/` directory into a
+   gzipped tar on a **separate `nido-backups` PVC**, keeps the newest 14, and
+   verifies each restored database before writing it back.
+
+### Why not `kubectl cp` the volume?
+The databases are WAL-mode SQLCipher files. Recent commits live in a `-wal`
+sidecar until a checkpoint, so a file-level copy can grab a torn database or
+silently drop the newest writes. The CronJob instead runs
+`VACUUM INTO` per database — SQLite's online snapshot — which includes WAL
+content and keeps the same encryption, then runs `integrity_check` on every
+restored file before the archive is accepted.
+
+### The CronJob needs a controller
+`backup-cronjob.yaml` uses `apiVersion: batch/v1` (`kind: CronJob`). That
+control plane exists in Portainer and Kubernetes 1.28+ batch APIs; on a plain
+`kubectl` cluster, apply it where a CronJob controller is available, or run
+the same image from a host cron:
+
+```bash
+# Docker / host cron — same snapshot semantics, no controller required
+docker run --rm -it \
+  -e NIDO_MASTER_KEY=$(kubectl -n nido get secret nido -o jsonpath='{.NIDO_MASTER_KEY}') \
+  -e NIDO_DATA_DIR=/data -e PHOTO_DIR=/data/photos \
+  -e NIDO_BACKUP_DIR=/backups \
+  -v nido-data:/data -v nido-backups:/backups \
+  nido/api:latest node dist/backup-cli.js backup --keep 14
+```
+
+The volume is currently `ReadWriteOnce` (one writer). The CronJob mounts it
+read-only while the API pod keeps read-write, so no worker is kicked off the
+hang; if your storage class can only do `ReadWriteOnce` single-attach, run the
+backup job on the same node as the API via `nodePlacement`.
+
+### Enabling it
+Create the backup PVC and the CronJob, then trigger a run immediately to seed
+the first archive:
+
+```bash
+kubectl apply -n nido -f backup-pvc.yaml
+kubectl apply -n nido -f backup-cronjob.yaml
+# seed the first archive now
+kubectl create job nido-backup-manual --from=cronjob/nido-backup -n nido
+```
+
+### Restore
+Point `NIDO_DATA_DIR` at an empty directory and run the restore command from
+the archive (the CLI decrypts if the passphrase was set, verifies every
+database, and only then swaps it into place):
+
+```bash
+docker run --rm -it \
+  -e NIDO_MASTER_KEY=... -e NIDO_DATA_DIR=/data-restore \
+  -v "$(pwd)/archive.tar.gz":/archive.tar.gz \
+  nido/api:latest node dist/backup-cli.js restore --archive /archive.tar.gz
+```
+
+Stop the API first, and back up the current live volume before overwriting.
+
+### Encryption and shipping off-cluster
+The databases are already encrypted, but `photos/` are not. Set
+`NIDO_BACKUP_PASSPHRASE` in the `nido` secret to AES-256-GCM-encrypt the whole
+archive so it is safe to `rclone sync` / S3 / Backblaze off-cluster. Treat
+unencrypted archives as private.
+
+### A CronJob on the same cluster is not disaster recovery
+If the node (or cluster) dies, a second PVC on that node can die with it. The
+CronJob protects against **logical** loss — accidental deletes, bad updates,
+one bad migration. For real DR, ship the encrypted archive off-cluster on a
+schedule (`rclone`, `aws s3 sync`, etc.).

@@ -125,7 +125,7 @@ healthRoutes.get('/summary/:memberId{[0-9]+}', async (c) => {
     
     return c.json({ summary: healthSummary });
   } catch (error) {
-    console.error('Get health summary error:', error);
+    c.get('log').error('get health summary failed', { err: error });
     return c.json({ error: 'Failed to fetch health summary' }, 500);
   }
 });
@@ -213,7 +213,7 @@ healthRoutes.get('/insights/:memberId{[0-9]+}', async (c) => {
     
     return c.json({ insights });
   } catch (error) {
-    console.error('Get health insights error:', error);
+    c.get('log').error('get health insights failed', { err: error });
     return c.json({ error: 'Failed to fetch health insights' }, 500);
   }
 });

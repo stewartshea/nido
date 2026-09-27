@@ -1,0 +1,77 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: nido-backup
+  namespace: nido
+  labels:
+    app: nido-backup
+spec:
+  # Runs at 03:17 every night. Adjust to your off-peak window.
+  schedule: "17 3 * * *"
+  # Never stack two runs on top of each other (a long run simply skips until
+  # the next window rather than piling up).
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 14
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: backup
+              # The API image ships dist/backup-cli.js; the cron entrypoint
+              # overrides the normal `npm start` CMD.
+              image: nido/api:latest
+              imagePullPolicy: IfNotPresent
+              command:
+                - node
+                - dist/backup-cli.js
+                - backup
+                - --dest
+                - /backups
+                - --keep
+                - "14"
+              env:
+                - name: NIDO_DATA_DIR
+                  value: "/data"
+                - name: PHOTO_DIR
+                  value: "/data/photos"
+                - name: NIDO_MASTER_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: nido
+                      key: NIDO_MASTER_KEY
+                # Optional: AES-256-GCM at-rest encryption for the archive.
+                # Set this in the same `nido` secret if you ship backups
+                # off-cluster. The API never reads it; only restore uses it.
+                - name: NIDO_BACKUP_PASSPHRASE
+                  valueFrom:
+                    secretKeyRef:
+                      name: nido
+                      key: NIDO_BACKUP_PASSPHRASE
+              volumeMounts:
+                # Source: the live data volume. Read-only here because the API
+                # pod already holds nido-data read-write (ReadWriteOnce).
+                - name: data
+                  mountPath: /data
+                  readOnly: true
+                # Destination: a *separate* PVC so a problem with the live
+                # volume cannot take the backups with it.
+                - name: backups
+                  mountPath: /backups
+              resources:
+                requests:
+                  cpu: 100m
+                  memory: 128Mi
+                limits:
+                  cpu: 500m
+                  memory: 512Mi
+          volumes:
+            - name: data
+              persistentVolumeClaim:
+                claimName: nido-data
+            - name: backups
+              persistentVolumeClaim:
+                claimName: nido-backups

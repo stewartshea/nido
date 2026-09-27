@@ -64,6 +64,37 @@ docker compose build web
   - Named volume: `docker compose down -v`
   - Bind mount: move/delete `./data` while the container is stopped
 
+## Backups
+The API image doubles as a backup tool — it ships `dist/backup-cli.js`, which
+snapshots every encrypted database plus `photos/` into one gzipped tar.
+
+```bash
+# daily at 03:17 via systemd/cron on the host
+NIDO_MASTER_KEY=... NIDO_DATA_DIR=/data PHOTO_DIR=/data/photos \
+NIDO_BACKUP_DIR=/backups NIDO_BACKUP_PASSPHRASE=... \
+docker run --rm -v nido-data:/data -v nido-backups:/backups \
+  nido/api:latest node dist/backup-cli.js backup --keep 14
+```
+
+Two important properties:
+
+- **Consistent despite WAL.** A file-level `cp` of these SQLite databases is
+  unsafe: recent commits live in a `-wal` sidecar until a checkpoint. The CLI
+  uses `VACUUM INTO` per database, which snapshots a transactionally consistent
+  view (WAL included) and keeps the file encrypted, then runs
+  `integrity_check` on each snapshot before the archive is finalised.
+- **Photos are plaintext in the archive unless encrypted.** Databases are
+  already SQLCipher-encrypted, but uploaded photos are not. Set
+  `NIDO_BACKUP_PASSPHRASE` to AES-256-GCM-encrypt the whole tar, which is what
+  you want before shipping it off-box.
+
+Restore (`node dist/backup-cli.js restore --archive FILE`) decrypts if needed,
+verifies every database, and only replaces the data directory after every
+check passes. Stop the API first and keep the current volume as a fallback.
+
+See `deploy/docker-compose/README.md` and `deploy/kubernetes/README.md` for
+per-platform scheduler examples.
+
 ## Environment Variables
 - `NIDO_MASTER_KEY`: hex secret that keys every per-family database
   (required in the deploy compose). `openssl rand -hex 32`. **Losing it means
@@ -78,6 +109,34 @@ docker compose build web
   fronting it with a reverse proxy. Defaults to `localhost` (bare IPs are
   always allowed)
 - `PHOTO_DIR`: Photo storage directory (deploy compose, defaults to `/data/photos`)
+- `LOG_LEVEL`: API log verbosity — `debug`, `info` (default), `warn`, `error`,
+  `silent`
+- `LOG_FORMAT`: API log format — `json` or `pretty`. Unset lets the API choose,
+  which resolves to `json` in a container (piped stdout) and `pretty` on a
+  terminal
+
+## Reading the logs
+The API logs to **stdout** only — no log files, no stderr split — so the
+container runtime captures everything in order and `docker compose logs` is the
+whole story:
+
+```bash
+docker compose logs -f api
+# errors only
+docker compose logs api | grep '"level":"error"'
+# everything belonging to one request
+docker compose logs api | grep '"requestId":"abc-123"'
+```
+
+Each request logs one `http_request` line with `requestId`, method, path,
+status and duration. Handler errors, auth rejections and boot failures log
+against the same `requestId`, which is also returned to the client as
+`X-Request-Id` and included in 500 bodies — so a user-reported failure maps
+back to exact log lines. Send an inbound `X-Request-Id` header to choose your
+own id.
+
+Field names that look like credentials are written as `[redacted]`, so no log
+line can contain `NIDO_MASTER_KEY`, `JWT_SECRET` or a password hash.
 
 ## Build Hygiene
 A root `.dockerignore` excludes `data/`, `**/*.db*`, `node_modules/`, `.git/`,

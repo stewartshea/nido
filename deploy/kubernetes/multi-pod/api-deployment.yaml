@@ -50,6 +50,14 @@ spec:
             # origin, e.g. https://nido.example.com, not localhost.
             - name: PUBLIC_URL
               value: "http://localhost:3001"
+            # Log verbosity: debug | info | warn | error | silent.
+            # `debug` is very noisy — use it to chase one request, not day to day.
+            - name: LOG_LEVEL
+              value: "info"
+            # Keep json here: `kubectl logs` and log shippers parse one object
+            # per line. `pretty` is for reading a local terminal.
+            - name: LOG_FORMAT
+              value: "json"
           volumeMounts:
             - name: data
               mountPath: /data

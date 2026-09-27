@@ -81,7 +81,7 @@ if (memberCheck.rows.length === 0) {
     
     return c.json({ feedings });
   } catch (error) {
-    console.error('Get feedings error:', error);
+    c.get('log').error('get feedings failed', { err: error });
     return c.json({ error: 'Failed to fetch feedings' }, 500);
   }
 });
@@ -122,7 +122,7 @@ feedingRoutes.get('/:id{[0-9]+}', async (c) => {
     
     return c.json({ feeding });
   } catch (error) {
-    console.error('Get feeding error:', error);
+    c.get('log').error('get feeding failed', { err: error });
     return c.json({ error: 'Failed to fetch feeding' }, 500);
   }
 });
@@ -194,7 +194,7 @@ feedingRoutes.post('/', zValidator('json', createFeedingSchema), async (c) => {
       feeding: feedingResult.rows[0] 
     });
   } catch (error) {
-    console.error('Create feeding error:', error);
+    c.get('log').error('create feeding failed', { err: error });
     return c.json({ error: 'Failed to create feeding' }, 500);
   }
 });
@@ -325,7 +325,7 @@ feedingRoutes.put('/:id{[0-9]+}', zValidator('json', updateFeedingSchema), async
       feeding 
     });
   } catch (error) {
-    console.error('Update feeding error:', error);
+    c.get('log').error('update feeding failed', { err: error });
     return c.json({ error: 'Failed to update feeding' }, 500);
   }
 });
@@ -362,7 +362,7 @@ feedingRoutes.delete('/:id{[0-9]+}', async (c) => {
     
     return c.json({ message: 'Feeding deleted successfully' });
   } catch (error) {
-    console.error('Delete feeding error:', error);
+    c.get('log').error('delete feeding failed', { err: error });
     return c.json({ error: 'Failed to delete feeding' }, 500);
   }
 });

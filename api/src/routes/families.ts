@@ -802,7 +802,7 @@ async function handleCreateInvitation(c: Context<AuthEnv>) {
 	try {
 		await sendMail(settings, normalized, renderFamilyInviteEmail({ inviterName, familyName, url: inviteUrl }));
 	} catch (mailErr) {
-		console.error('Family invitation email failed to send:', mailErr);
+		c.get('log').error('family invitation email not sent', { event: 'email_family_invite_failed', inviteId, err: mailErr });
 		// The row is deliberately not rolled back: the pending link must survive so
 		// it can be resent or shared manually, and 502 stops the UI claiming it went out.
 		return c.json({

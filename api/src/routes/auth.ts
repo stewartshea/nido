@@ -13,9 +13,9 @@ import {
 } from '../db-namespaces';
 import { getAppSettings, sendMail, baseUrl, effectiveSignup } from '../mail';
 import { renderVerifyEmail, renderPasswordResetEmail } from '../mail-templates';
-import { jwtSecret } from '../auth';
+import { jwtSecret, type AuthEnv } from '../auth';
 
-const authRoutes = new Hono();
+const authRoutes = new Hono<AuthEnv>();
 
 function newToken(): string {
 	return randomBytes(32).toString('hex');
@@ -120,7 +120,7 @@ authRoutes.post('/register', zValidator('json', registerSchema), async (c) => {
         await sendMail(settings, email, renderVerifyEmail({ firstName, url: `${baseUrl()}/?verify=${verificationToken}` }));
       } catch (mailErr) {
         // SMTP may be misconfigured; do not block registration, but surface the state.
-        console.error('Verification email failed to send:', mailErr);
+        c.get('log').error('verification email not sent', { event: 'email_verification_failed', err: mailErr });
       }
       return c.json({
         message: 'User registered — check your email to verify your account',
@@ -148,7 +148,7 @@ authRoutes.post('/register', zValidator('json', registerSchema), async (c) => {
       }
     });
   } catch (error) {
-    console.error('Registration error:', error);
+    c.get('log').error('registration failed', { err: error });
     return c.json({ error: 'Registration failed' }, 500);
   }
 });
@@ -210,7 +210,7 @@ authRoutes.post('/forgot-password', zValidator('json', forgotSchema), async (c) 
   try {
     await sendMail(settings, email, renderPasswordResetEmail({ firstName, url: `${baseUrl()}/?reset=${token}` }));
   } catch (mailErr) {
-    console.error('Reset email failed to send:', mailErr);
+    c.get('log').error('password reset email not sent', { event: 'email_password_reset_failed', err: mailErr });
     return c.json({ error: 'SMTP is not configured — reset emails cannot be sent' }, 500);
   }
   return c.json({ message: 'If that email exists, a reset link has been sent' });
@@ -290,7 +290,7 @@ authRoutes.post('/login', zValidator('json', loginSchema), async (c) => {
       }
     });
   } catch (error) {
-    console.error('Login error:', error);
+    c.get('log').error('login failed', { err: error });
     return c.json({ error: 'Login failed' }, 500);
   }
 });

@@ -41,7 +41,20 @@ so this compose files points `build.context` at the corresponding subfolder.
 - `ALLOWED_HOSTS` is the comma-separated list of hostnames the web service's
   Vite server will accept (e.g. `nido.example.com` behind a reverse proxy).
   `localhost` and IPs are always allowed, so the default is safe for local use.
-- Back up the `nido-data` volume (e.g. `docker run --rm -v nido-data:/data -v "$PWD":/backup alpine tar czf /backup/nido-data.tgz -C /data .`).
+- Back up the `nido-data` volume with the backup CLI rather than a plain
+  `tar`/`cp`: the databases are WAL-mode, so a file copy can capture a torn
+  database or silently drop the newest writes. The API image snaps each one
+  consistently and verifies it:
+  ```bash
+  # on a schedule (systemd timer / host cron), daily at 03:17
+  NIDO_BACKUP_PASSPHRASE="optional-archive-password" docker run --rm \
+    -e NIDO_MASTER_KEY="$(grep NIDO_MASTER_KEY .env | cut -d= -f2)" \
+    -v nido-data:/data -v nido-backups:/backups \
+    nido/api:latest node dist/backup-cli.js backup --keep 14
+  ```
+  Restore: `node dist/backup-cli.js restore --archive /path/to/archive.tar.gz`
+  (stop the API first). See `Docker.md` → Backups for the full story, including
+  why `NIDO_BACKUP_PASSPHRASE` matters before shipping archives off-host.
 - To self-host behind a reverse proxy (Caddy/traefik/nginx), point it at the
   `web` service on `3001` and the `api` service on `3000`.
 

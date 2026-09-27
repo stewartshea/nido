@@ -65,7 +65,7 @@ milestoneRoutes.get('/', async (c) => {
     
     return c.json({ milestones: milestonesSorted });
   } catch (error) {
-    console.error('Get milestones error:', error);
+    c.get('log').error('get milestones failed', { err: error });
     return c.json({ error: 'Failed to fetch milestones' }, 500);
   }
 });
@@ -96,7 +96,7 @@ milestoneRoutes.get('/:id{[0-9]+}', async (c) => {
     
     return c.json({ milestone: milestoneResult.rows[0] });
   } catch (error) {
-    console.error('Get milestone error:', error);
+    c.get('log').error('get milestone failed', { err: error });
     return c.json({ error: 'Failed to fetch milestone' }, 500);
   }
 });
@@ -159,7 +159,7 @@ milestoneRoutes.post('/', zValidator('json', createMilestoneSchema), async (c) =
       milestone: milestoneResult.rows[0] 
     });
   } catch (error) {
-    console.error('Create milestone error:', error);
+    c.get('log').error('create milestone failed', { err: error });
     return c.json({ error: 'Failed to record milestone' }, 500);
   }
 });
@@ -246,7 +246,7 @@ milestoneRoutes.put('/:id{[0-9]+}', zValidator('json', updateMilestoneSchema), a
       milestone: updatedMilestoneResult.rows[0] 
     });
   } catch (error) {
-    console.error('Update milestone error:', error);
+    c.get('log').error('update milestone failed', { err: error });
     return c.json({ error: 'Failed to update milestone' }, 500);
   }
 });
@@ -283,7 +283,7 @@ milestoneRoutes.delete('/:id{[0-9]+}', async (c) => {
     
     return c.json({ message: 'Milestone deleted successfully' });
   } catch (error) {
-    console.error('Delete milestone error:', error);
+    c.get('log').error('delete milestone failed', { err: error });
     return c.json({ error: 'Failed to delete milestone' }, 500);
   }
 });
@@ -310,7 +310,7 @@ milestoneRoutes.get('/categories', async (c) => {
     }));
     return c.json({ categories });
   } catch (error) {
-    console.error('Get categories error:', error);
+    c.get('log').error('get categories failed', { err: error });
     return c.json({ error: 'Failed to fetch milestone categories' }, 500);
   }
 });
@@ -352,7 +352,7 @@ milestoneRoutes.get('/trends', async (c) => {
     const total = trends.reduce((s, t) => s + t.count, 0);
     return c.json({ trends, total, days, memberId, since });
   } catch (error) {
-    console.error('Get trends error:', error);
+    c.get('log').error('get trends failed', { err: error });
     return c.json({ error: 'Failed to fetch trends' }, 500);
   }
 });

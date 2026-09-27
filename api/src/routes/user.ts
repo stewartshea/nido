@@ -55,7 +55,7 @@ userRoutes.get('/me', async (c) => {
 
     return c.json({ user: { ...user, is_platform_admin: admin ? 1 : 0 }, families });
   } catch (error) {
-    console.error('Get user error:', error);
+    c.get('log').error('get user failed', { err: error });
     return c.json({ error: 'Failed to fetch user' }, 500);
   }
 });
@@ -125,7 +125,7 @@ userRoutes.put('/me', zValidator('json', updateUserSchema), async (c) => {
     const user = userResult.rows[0];
     return c.json({ message: 'Profile updated successfully', user });
   } catch (error) {
-    console.error('Update user error:', error);
+    c.get('log').error('update user failed', { err: error });
     return c.json({ error: 'Failed to update user' }, 500);
   }
 });

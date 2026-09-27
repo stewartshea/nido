@@ -13,6 +13,7 @@
 import Database from 'better-sqlite3-multiple-ciphers';
 import { hkdfSync } from 'node:crypto';
 import dotenv from 'dotenv';
+import { log } from './logger';
 
 dotenv.config();
 
@@ -203,6 +204,7 @@ export function openDb(
     raw.pragma('journal_mode = WAL');
   }
   raw.pragma('busy_timeout = 5000');
+  log.debug('database opened', { event: 'db_open', dbPath, encrypted: Boolean(hexKey) });
   return new SqliteFacade(raw);
 }
 
@@ -222,7 +224,9 @@ export interface Migration {
  */
 export function runMigrations(raw: RawDatabase, migrations: readonly Migration[]): void {
   const row = raw.prepare('PRAGMA user_version').get() as { user_version?: number } | undefined;
-  let current = row?.user_version ?? 0;
+  const from = row?.user_version ?? 0;
+  let current = from;
+  let applied = 0;
   for (const m of migrations) {
     if (m.version <= current) continue;
     raw.exec('BEGIN');
@@ -232,8 +236,24 @@ export function runMigrations(raw: RawDatabase, migrations: readonly Migration[]
       raw.exec('COMMIT');
     } catch (error) {
       raw.exec('ROLLBACK');
+      log.error('migration failed and was rolled back', {
+        event: 'db_migration_failed',
+        version: m.version,
+        name: m.name,
+        from,
+        err: error,
+      });
       throw error;
     }
     current = m.version;
+    applied += 1;
+  }
+  if (applied > 0) {
+    log.info('schema migrations applied', {
+      event: 'db_migrate',
+      from,
+      to: current,
+      applied,
+    });
   }
 }
