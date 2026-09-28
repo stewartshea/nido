@@ -244,7 +244,7 @@ h6,
 
 /* ------------------------------------------------------ landing page --- */
 
-/* Compacted so the screenshots land above the fold, not a full screen of title. */
+/* Compacted so the feature list and its phones sit high on the page. */
 .hero {
 	padding-block: 2rem 0.75rem;
 }
@@ -265,18 +265,32 @@ h6,
 	font-size: 0.95rem;
 }
 
-/* Scroll-snap track with plain anchor-link dots: no JavaScript, and it swipes
-   on touch. */
-.nido-carousel {
-	margin: 0 0 1.5rem;
+/* The feature list beside a small phone carousel: one app screen at a time on
+   the right, the list on the left. */
+.nido-split {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) auto;
+	gap: 2rem 2.5rem;
+	align-items: center;
+	margin: 1.5rem 0 0.5rem;
 }
 
-.nido-carousel__track {
+.nido-split .nido-features {
+	grid-template-columns: 1fr;
+	margin: 0;
+}
+
+.nido-phones {
+	width: 14rem;
+}
+
+/* Scroll-snap track with plain anchor-link dots: no JavaScript, and it swipes
+   on touch. */
+.nido-phones__track {
 	display: flex;
-	align-items: flex-start;
 	gap: 1rem;
 	margin: 0;
-	padding: 0 0 1.25rem;
+	padding: 0;
 	list-style: none;
 	overflow-x: auto;
 	overscroll-behavior-x: contain;
@@ -285,53 +299,33 @@ h6,
 	scrollbar-width: none;
 }
 
-.nido-carousel__track::-webkit-scrollbar {
+.nido-phones__track::-webkit-scrollbar {
 	display: none;
 }
 
-.nido-carousel__slide {
-	display: flex;
+.nido-phones__track li {
 	flex: 0 0 100%;
-	flex-direction: column;
-	align-items: center;
-	gap: 0.75rem;
 	scroll-snap-align: center;
 }
 
-/* A uniform wide "window" crop: the tall captures are anchored to the top so
-   every slide reads as the same shape, and the phone shot keeps its own. */
-.nido-carousel__slide img {
+.nido-phones__track img {
+	display: block;
 	width: 100%;
-	max-width: 100%;
-	height: 26rem;
-	object-fit: cover;
-	object-position: top center;
+	height: auto;
 	background: var(--nido-card);
 	border: 1px solid var(--sl-color-gray-5);
-	border-radius: var(--nido-card-radius);
+	border-radius: 1.5rem;
 	box-shadow: var(--nido-card-shadow);
 }
 
-.nido-carousel__slide--portrait img {
-	width: auto;
-	object-fit: contain;
-}
-
-.nido-carousel__caption {
-	max-width: 38rem;
-	margin: 0;
-	color: var(--sl-color-gray-3);
-	font-size: 0.92rem;
-	text-align: center;
-}
-
-.nido-carousel__dots {
+.nido-phones__dots {
 	display: flex;
 	justify-content: center;
-	gap: 0.65rem;
+	gap: 0.6rem;
+	margin-top: 0.75rem;
 }
 
-.nido-carousel__dots a {
+.nido-phones__dots a {
 	width: 0.6rem;
 	height: 0.6rem;
 	background: var(--sl-color-gray-5);
@@ -339,8 +333,8 @@ h6,
 	transition: background-color 150ms ease;
 }
 
-.nido-carousel__dots a:hover,
-.nido-carousel__dots a:focus-visible {
+.nido-phones__dots a:hover,
+.nido-phones__dots a:focus-visible {
 	background: var(--nido-link);
 }
 
@@ -371,9 +365,14 @@ h6,
 	line-height: 1.5;
 }
 
-@media (max-width: 40rem) {
-	.nido-carousel__slide img {
-		height: 15rem;
+@media (max-width: 50rem) {
+	.nido-split {
+		grid-template-columns: 1fr;
+	}
+
+	.nido-phones {
+		width: 12rem;
+		margin-inline: auto;
 	}
 }
 

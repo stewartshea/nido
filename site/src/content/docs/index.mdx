@@ -1,9 +1,9 @@
 ---
 title: Nido
-description: Nido is a free, open source tracker for the things you care for and keep. It starts as an infant tracker and grows into a home maintenance and care tracker. Self-host it, or use My Nido — hosted in Canada, free.
+description: Nido means nest. It's a calm, private place to manage your nest — starting with a baby, and growing to cover the whole home. Self-host it, or use My Nido, hosted in Canada.
 template: splash
 hero:
-  tagline: A nest for the things you care for and keep. It starts with your baby, and grows to cover the whole home.
+  tagline: Nido means nest — a quiet, private place to manage yours. It starts with a baby, and grows to cover the whole home.
   actions:
     - text: Install Nido
       link: ./getting-started/installation/
@@ -17,60 +17,41 @@ hero:
       variant: minimal
 ---
 
-import familyLight from '../../assets/screenshots/family-light-desktop.jpg';
-import familyDark from '../../assets/screenshots/family-dark-desktop.jpg';
-import familyMobile from '../../assets/screenshots/family-mobile.jpg';
-import homeSection from '../../assets/screenshots/home-section.jpg';
+import phoneToday from '../../assets/screenshots/phone-today.jpg';
+import phoneDashboard from '../../assets/screenshots/phone-dashboard.jpg';
+import phoneHome from '../../assets/screenshots/phone-home.jpg';
 
 <p class="nido-toplink"><a href="./getting-started/installation/">Documentation →</a></p>
 
-<div class="nido-carousel">
-	<ul class="nido-carousel__track">
-		<li class="nido-carousel__slide" id="shot-today">
-			<img src={familyLight.src} width="1440" height="1150" alt="The Nido family page: today's feeds, diapers and sleep for a baby named Wren, with quick reports for the last 24 hours and 30 days" />
-			<p class="nido-carousel__caption">
-				Today at a glance — feeds, diapers and sleep, with the reports the
-				paediatrician asks about.
-			</p>
-		</li>
-		<li class="nido-carousel__slide nido-carousel__slide--portrait" id="shot-mobile">
-			<img src={familyMobile.src} width="780" height="1688" alt="Nido on a phone: the same today view with large tap targets and bottom navigation" loading="lazy" decoding="async" />
-			<p class="nido-carousel__caption">
-				Built for the phone at 3am — one thumb, one hand, one eye open. And it
-				works offline when the nursery Wi-Fi doesn't.
-			</p>
-		</li>
-		<li class="nido-carousel__slide" id="shot-home">
-			<img src={homeSection.src} width="1440" height="1150" alt="The Home section of Nido: property assets, maintenance schedules, and manuals and routines" loading="lazy" decoding="async" />
-			<p class="nido-carousel__caption">
-				Home comes next — property, seasonal maintenance, manuals and
-				routines, kept the same way.
-			</p>
-		</li>
-		<li class="nido-carousel__slide" id="shot-dark">
-			<img src={familyDark.src} width="1440" height="1150" alt="Nido in dark mode: the same family page in the forest dark palette" loading="lazy" decoding="async" />
-			<p class="nido-carousel__caption">
-				Seven palettes in light and dark, so it looks like yours.
-			</p>
-		</li>
-	</ul>
-	<nav class="nido-carousel__dots" aria-label="Screenshots">
-		<a href="#shot-today" aria-label="Today at a glance"></a>
-		<a href="#shot-mobile" aria-label="On your phone"></a>
-		<a href="#shot-home" aria-label="Home"></a>
-		<a href="#shot-dark" aria-label="Dark mode"></a>
-	</nav>
-</div>
-
 ## What Nido does
 
-<div class="nido-features">
-	<div><strong>Feeding</strong><span>Breast, bottle and combo, with timers and amounts</span></div>
-	<div><strong>Sleep</strong><span>Start and stop, with live duration</span></div>
-	<div><strong>Diapers</strong><span>Wet, soiled, dry and combinations</span></div>
-	<div><strong>Growth</strong><span>Weight, height and head against WHO and CDC curves</span></div>
-	<div><strong>Shared</strong><span>Invite caregivers, with a role for each one</span></div>
-	<div><strong>Yours</strong><span>Export everything, any time. Works offline</span></div>
+<div class="nido-split">
+	<div class="nido-features">
+		<div><strong>Feeding</strong><span>Breast, bottle and combo, with timers and amounts</span></div>
+		<div><strong>Sleep</strong><span>Start and stop, with live duration</span></div>
+		<div><strong>Diapers</strong><span>Wet, soiled, dry and combinations</span></div>
+		<div><strong>Growth</strong><span>Weight, height and head against WHO and CDC curves</span></div>
+		<div><strong>Shared</strong><span>Invite caregivers, with a role for each one</span></div>
+		<div><strong>Yours</strong><span>Export everything, any time. Works offline</span></div>
+	</div>
+	<div class="nido-phones">
+		<ul class="nido-phones__track">
+			<li id="phone-today">
+				<img src={phoneToday.src} width="390" height="844" alt="Nido on a phone: today's feeds, diapers and sleep for a baby named Wren" />
+			</li>
+			<li id="phone-dashboard">
+				<img src={phoneDashboard.src} width="390" height="844" alt="Nido on a phone: quick actions to log a feed, a diaper or sleep" loading="lazy" decoding="async" />
+			</li>
+			<li id="phone-home">
+				<img src={phoneHome.src} width="390" height="844" alt="Nido on a phone: the Home section, for property, maintenance and manuals" loading="lazy" decoding="async" />
+			</li>
+		</ul>
+		<nav class="nido-phones__dots" aria-label="App screenshots">
+			<a href="#phone-today" aria-label="Today for Wren"></a>
+			<a href="#phone-dashboard" aria-label="Quick actions"></a>
+			<a href="#phone-home" aria-label="Home"></a>
+		</nav>
+	</div>
 </div>
 
 Plus milestones, vaccinations, photos, a daily journal, and reminders.
