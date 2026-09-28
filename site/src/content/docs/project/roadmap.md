@@ -42,7 +42,6 @@ down.
 
 | Not doing | Why |
 | --- | --- |
-| **Feature paywalls** | Sponsorship buys maintainer time — releases, security work, answering issues. It does not unlock features. See [Funding](../project/funding/). |
 | **Telemetry or analytics** | Not even opt-in. A baby tracker that reports home is a surveillance tool. |
 | **Third-party accounts or social login** | More external dependencies, and more ways for a child's data to reach a server that is not yours. [My Nido](../my-nido/) asks for an email and a password and nothing else. |
 | **HIPAA compliance as a marketing claim** | Nido is a record-keeping and charting tool, not a medical device. It does not diagnose. Use [WHO and CDC curves](../reference/architecture/#growth-tracking) to have a conversation with a paediatrician, not instead of one. |
