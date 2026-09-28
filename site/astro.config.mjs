@@ -46,6 +46,11 @@ export default defineConfig({
 			customCss: ['./src/styles/global.css'],
 			social: [
 				{ icon: 'github', label: 'GitHub', href: `https://github.com/${REPO}` },
+				{
+					icon: 'heart',
+					label: 'Sponsor on Ko-fi',
+					href: 'https://ko-fi.com/sheastewart0494',
+				},
 			],
 			// Starlight appends the entry path relative to the *project root*
 			// (`src/content/docs/<slug>`), not relative to the docs collection, so
@@ -55,6 +60,11 @@ export default defineConfig({
 				baseUrl: `https://github.com/${REPO}/edit/main/site/`,
 			},
 			sidebar: [
+				{
+					label: 'Sponsor on Ko-fi',
+					link: 'https://ko-fi.com/sheastewart0494',
+					attrs: { target: '_blank', rel: 'noopener' },
+				},
 				{
 					label: 'Start here',
 					items: [
@@ -91,11 +101,6 @@ export default defineConfig({
 						{ label: 'Contributing', slug: 'project/contributing' },
 						{ label: 'Funding', slug: 'project/funding' },
 						{ label: 'Support Nido', slug: 'support' },
-						{
-							label: 'Sponsor on Ko-fi',
-							link: 'https://ko-fi.com/sheastewart0494',
-							attrs: { target: '_blank', rel: 'noopener' },
-						},
 					],
 				},
 			],
