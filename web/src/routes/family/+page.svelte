@@ -330,37 +330,21 @@
 	// API counts whole lists, so there is no server-side total for a slice.
 	const SLICED_TABS = new Set(['pumping', 'milestones', 'firsts', 'routines', 'medical']);
 
-	function listTotalForTab(): number | null {
-		const key = TAB_LIST[activeTab];
-		if (!key) return null;
-		return listTotals[key] ?? null;
-	}
-
-	function isSlicedTab(): boolean {
-		return SLICED_TABS.has(activeTab);
-	}
-
-	function loadedCount(): number {
-		return recordsForTab().length;
-	}
-
+	// These are derived reactively rather than called from the markup: Svelte
+	// cannot see through a function call, so naming the list variables here is
+	// what registers them as dependencies. As plain functions the table kept
+	// rendering the rows and counts it had on first paint, and appending a page
+	// of history changed the data without repainting it.
+	$: lists = ({ feedings, diapers, sleeps, growths, milestones, vaccinations, moods, journalEntries } as Record<string, any[]>);
+	$: tabKey = TAB_LIST[activeTab] ?? '';
+	$: tabRecords = selectRecords(activeTab, lists);
 	// Rows pulled from the backing list and classified into this tab. A slice has
 	// no server-side total, so this is the honest denominator to show next to it.
-	function scannedCount(): number {
-		const key = TAB_LIST[activeTab];
-		if (!key) return 0;
-		return currentLists()[key].length;
-	}
-
+	$: tabScannedCount = lists[tabKey]?.length ?? 0;
+	$: tabTotal = listTotals[tabKey] ?? null;
 	// Asked of the backing list, not the slice, so Load older stays available
 	// on sliced tabs after their own rows are exhausted.
-	function moreOnServerForTab(): boolean {
-		const key = TAB_LIST[activeTab];
-		if (!key) return false;
-		const total = listTotals[key];
-		if (total == null) return false;
-		return currentLists()[key].length < total;
-	}
+	$: tabHasMoreOnServer = tabTotal != null && tabScannedCount < tabTotal;
 
 	async function loadMoreForTab() {
 		if (!selectedMemberId || loadingMore) return;
@@ -547,18 +531,18 @@
 		}
 	}
 
-	function recordsForTab(): any[] {
-		switch (activeTab) {
-			case 'feeds': return feedings;
-			case 'diapers': return diapers;
-			case 'sleep': return sleeps;
-			case 'growth': return growths;
+	function selectRecords(tab: string, lists: Record<string, any[]>): any[] {
+		switch (tab) {
+			case 'feeds': return lists.feedings;
+			case 'diapers': return lists.diapers;
+			case 'sleep': return lists.sleeps;
+			case 'growth': return lists.growths;
 			case 'milestones': case 'firsts': case 'routines': case 'medical':
-				return milestones.filter((m) => milestoneCategory(m) === activeTab);
-			case 'vaccines': return vaccinations;
-			case 'moods': return moods;
-			case 'journal': return journalEntries;
-			case 'pumping': return feedings.filter((f) => f.type === 'pump');
+				return lists.milestones.filter((m) => milestoneCategory(m) === tab);
+			case 'vaccines': return lists.vaccinations;
+			case 'moods': return lists.moods;
+			case 'journal': return lists.journalEntries;
+			case 'pumping': return lists.feedings.filter((f) => f.type === 'pump');
 			default: return [];
 		}
 	}
@@ -2383,12 +2367,12 @@
 					<div class="flex items-center justify-between mb-3">
 						<h3 class="font-display font-semibold">{CATEGORIES.find((c) => c.id === activeTab)?.label} — table view</h3>
 						<span class="text-xs text-ink-soft">
-							{#if isSlicedTab()}
-								{loadedCount()} record(s) matching · {scannedCount()} scanned
-							{:else if (listTotalForTab() ?? 0) > loadedCount()}
-								Showing {loadedCount()} of {listTotalForTab()}
+							{#if SLICED_TABS.has(activeTab)}
+								{tabRecords.length} record(s) matching · {tabScannedCount} scanned
+							{:else if (tabTotal != null && tabTotal > tabRecords.length)}
+								Showing {tabRecords.length} of {tabTotal}
 							{:else}
-								{loadedCount()} record(s)
+								{tabRecords.length} record(s)
 							{/if}
 						</span>
 					</div>
@@ -2404,7 +2388,7 @@
 								</tr>
 							</thead>
 							<tbody>
-								{#each recordsForTab() as r}
+								{#each tabRecords as r}
 									<tr class="border-b border-line-soft">
 										<td class="py-2 px-2 whitespace-nowrap">{formatTime(r.start_time || r.change_time || r.measurement_date || r.achieved_date || r.date_given)}</td>
 										<td class="py-2 px-2">
@@ -2428,7 +2412,7 @@
 							</tbody>
 						</table>
 					</div>
-					{#if moreOnServerForTab()}
+					{#if tabHasMoreOnServer}
 						<div class="flex justify-center pt-4">
 							<button
 								type="button"
