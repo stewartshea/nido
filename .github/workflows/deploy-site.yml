@@ -46,6 +46,12 @@ jobs:
 
       - name: Build
         working-directory: site
+        env:
+          # The site is published from its own domain, so it is served at the
+          # root and every asset URL is root-relative. The /nido base is for a
+          # github.io project URL, which now only 301s here.
+          SITE_BASE: /
+          SITE_URL: https://www.nido-app.ca
         run: npm run build
 
       - name: Upload Pages artifact
