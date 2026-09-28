@@ -408,6 +408,17 @@ export const FAMILY_MIGRATIONS: Migration[] = [
       CREATE INDEX IF NOT EXISTS idx_family_members_legacy ON family_members(legacy_baby_id);
     `,
   },
+  {
+    version: 5,
+    name: 'restore-trackable-for-members-with-profiles',
+    sql: `
+      UPDATE family_members
+      SET trackable = 1
+      WHERE trackable = 0
+        AND (legacy_baby_id IS NOT NULL
+             OR EXISTS (SELECT 1 FROM babies b WHERE b.id = family_members.id AND b.household_id = family_members.household_id));
+    `,
+  },
 ];
 
 // ---------------------------------------------------------------------------

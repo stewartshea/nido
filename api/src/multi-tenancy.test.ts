@@ -454,3 +454,28 @@ describe('member profile resolution', () => {
 		expect(created.status).toBe(200);
 	});
 });
+
+describe('legacy member profiles', () => {
+	it('resolves a member whose profile id equals its member id and legacy_baby_id is NULL', async () => {
+		const owner = await register('legacy-owner@example.com');
+		const db = getFamilyClient(owner.familyId);
+
+		const m = await db.execute({
+			sql: `INSERT INTO family_members (household_id, legacy_baby_id, trackable, name, member_type) VALUES (1, NULL, 1, 'Legacy', 'child')`,
+			args: [],
+		});
+		const memberId = Number(m.lastInsertRowid);
+		await db.execute({
+			sql: `INSERT INTO babies (id, household_id, name, type) VALUES (?, 1, 'Legacy', 'child')`,
+			args: [memberId],
+		});
+		await db.execute({
+			sql: `INSERT INTO feedings (baby_id, start_time, type) VALUES (?, ?, 'breast')`,
+			args: [memberId, new Date().toISOString()],
+		});
+
+		const list = await getJson(owner.token, `/api/v1/feedings?memberId=${memberId}`);
+		expect(list.status).toBe(200);
+		expect((list.body.feedings ?? []).length).toBe(1);
+	});
+});
