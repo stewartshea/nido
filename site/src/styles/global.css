@@ -64,8 +64,13 @@
 [data-theme='dark'] {
 	color-scheme: dark;
 
-	--sl-color-white: #181e18; /* page */
-	--sl-color-black: #f7f5f0; /* text on a filled accent */
+	/* Starlight names these from the dark theme's perspective: `black` is the
+	   page background (--sl-color-bg aliases it), `white` is the anti-page used
+	   for inverted surfaces and text on dark fills. Swapping them renders a
+	   cream page with dark-theme text — exactly the bug this comment exists to
+	   prevent regressing. */
+	--sl-color-black: #181e18; /* page */
+	--sl-color-white: #f7f5f0; /* anti-page: text on dark fills, light surfaces */
 	--sl-color-gray-1: #e6e4df; /* body text */
 	--sl-color-gray-2: #c6c3bb;
 	--sl-color-gray-3: #9a9a90;
@@ -90,14 +95,8 @@
 [data-theme='light'] {
 	color-scheme: light;
 
-	/* These two names are literal inverses, not roles: `white` is the page
-	   background, and `black` is the surface that inverts against it — code
-	   blocks, primary buttons, high-contrast text. Tinting `black` cream put
-	   white text on a beige code block, so light mode takes the brand ink for
-	   the inverted surface and the brand cream for the page. Text on an
-	   inverted surface is therefore `white`, i.e. cream, not #fff. */
-	--sl-color-white: #f7f5f0; /* page = brand cream */
-	--sl-color-black: #2b2622; /* ink: inverted surfaces (code, primary buttons) */
+	--sl-color-black: #f7f5f0; /* page = brand cream */
+	--sl-color-white: #2b2622; /* anti-page = brand ink: code, filled buttons */
 	--sl-color-gray-1: #2b2622; /* headings = brand ink */
 	--sl-color-gray-2: #4f4a42; /* body text */
 	--sl-color-gray-3: #6e6a5f;
@@ -238,6 +237,96 @@ h6,
 	margin-top: auto;
 	margin-bottom: 0;
 	padding-top: 0.75rem;
+}
+
+.nido-option-tag {
+	font-family: var(--sl-font);
+	font-size: 0.72rem;
+	font-weight: 600;
+	letter-spacing: 0.04em;
+	text-transform: uppercase;
+	color: var(--nido-link);
+	border: 1px solid currentColor;
+	border-radius: 999px;
+	padding: 0.15rem 0.55rem;
+	margin-left: 0.5rem;
+	vertical-align: middle;
+	white-space: nowrap;
+}
+
+/* ------------------------------------------------------ landing page --- */
+
+/* Bottom-aligned so the desktop and phone shots read as one composition. */
+.nido-showcase {
+	display: grid;
+	grid-template-columns: 2fr 1fr;
+	gap: 1rem;
+	align-items: end;
+	margin: 2rem 0 0.75rem;
+}
+
+.nido-shot {
+	margin: 0;
+	background: var(--nido-card);
+	border: 1px solid var(--sl-color-gray-5);
+	border-radius: var(--nido-card-radius);
+	box-shadow: var(--nido-card-shadow);
+	overflow: hidden;
+}
+
+.nido-shot img {
+	display: block;
+	width: 100%;
+	height: auto;
+}
+
+.nido-shot--wide {
+	margin: 1.5rem 0;
+}
+
+.nido-caption {
+	max-width: 42rem;
+	color: var(--sl-color-gray-3);
+	font-size: 0.95rem;
+}
+
+/* Compact feature list: brass-topped rows instead of another wall of cards. */
+.nido-features {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+	gap: 0.5rem 1.5rem;
+	margin: 1.25rem 0;
+}
+
+.nido-features > div {
+	display: flex;
+	flex-direction: column;
+	gap: 0.15rem;
+	padding: 0.75rem 0;
+	border-top: 2px solid var(--nido-brass);
+}
+
+.nido-features strong {
+	font-family: var(--sl-font-display);
+	font-size: 1.05rem;
+	font-weight: 600;
+}
+
+.nido-features span {
+	color: var(--sl-color-gray-2);
+	font-size: 0.92rem;
+	line-height: 1.5;
+}
+
+@media (max-width: 40rem) {
+	.nido-showcase {
+		grid-template-columns: 1fr;
+	}
+
+	.nido-shot--mobile {
+		max-width: 16rem;
+		margin-inline: auto;
+	}
 }
 
 /* Keyboard focus must stay obvious against the cream page. */
