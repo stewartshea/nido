@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, onDestroy } from 'svelte';
 	import { browser } from '$app/environment';
 	import { goto } from '$app/navigation';
 	import { authAPI, userAPI, babyAPI, familiesAPI, feedingAPI, diaperAPI, sleepAPI, growthAPI, healthAPI, importsAPI, photosAPI, formulasAPI, familyAdminAPI, accountAPI, milestoneAPI, vaccinationAPI, settingsAPI, moodAPI, journalAPI, tokenExpired, remindersAPI } from '$lib/api';
@@ -9,6 +9,8 @@
 	import ToggleSwitch from '$lib/components/ToggleSwitch.svelte';
 	import LogSheet from '$lib/components/LogSheet.svelte';
 	import Avatar from '$lib/components/Avatar.svelte';
+	import RecordEditModal from '$lib/components/RecordEditModal.svelte';
+	import { loadListsCache, saveListsCache } from '$lib/cache';
 		import { CATEGORIES } from '$lib/shared';
 	import { Milk, Baby, Moon, TrendingUp, Calendar, Star, Trophy, Stethoscope, Syringe, Smile, Book, Users, Home, Trash2, Mail, Timer, PenLine, ArrowLeft, ArrowRight, Pause, Play, RotateCcw, Plus, Camera, Droplet, AlertCircle, Activity, ChevronDown, Settings, Check, Infinity, Heart } from 'lucide-svelte';
 
@@ -381,6 +383,17 @@
 
 	async function refreshLists() {
 		if (!selectedMemberId) return;
+		const cached = loadListsCache(selectedMemberId);
+		if (cached) {
+			feedings = cached.feedings;
+			diapers = cached.diapers;
+			sleeps = cached.sleeps;
+			growths = cached.growths;
+			milestones = cached.milestones;
+			vaccinations = cached.vaccinations;
+			moods = cached.moods;
+			journalEntries = cached.journalEntries;
+		}
 		try {
 			const [f, d, s, g, m, v, mo, j] = await Promise.all([
 				feedingAPI.getAll(selectedMemberId),
@@ -400,8 +413,16 @@
 			vaccinations = v.data.vaccinations;
 			moods = mo.data.moods ?? [];
 			journalEntries = j.data.entries ?? [];
+			saveListsCache(selectedMemberId, {
+				feedings, diapers, sleeps, growths,
+				milestones, vaccinations, moods, journalEntries,
+			});
 		} catch (e: any) {
-			error = e.response?.data?.error || 'Failed to load tracking data.';
+			if (!cached) {
+				error = e.response?.data?.error || 'Failed to load tracking data.';
+			} else {
+				notice = 'Showing cached activities — will refresh when connected.';
+			}
 			console.error(e);
 		}
 	}
@@ -421,6 +442,21 @@
 		}
 	}
 
+	function kindForTab(): string {
+		switch (activeTab) {
+			case 'feeds': return 'feeding';
+			case 'diapers': return 'diaper';
+			case 'sleep': return 'sleep';
+			case 'growth': return 'growth';
+			case 'milestones': case 'firsts': case 'routines': case 'medical': return 'milestone';
+			case 'vaccines': return 'vaccine';
+			case 'moods': return 'mood';
+			case 'journal': return 'journal';
+			case 'pumping': return 'pumping';
+			default: return 'feeding';
+		}
+	}
+
 	async function deleteRecord(type: string, id: number) {
 		if (!confirm('Delete this record?')) return;
 		try {
@@ -430,6 +466,8 @@
 			else if (type === 'growth') await growthAPI.delete(id);
 			else if (type === 'milestone') await milestoneAPI.delete(id);
 			else if (type === 'vaccine') await vaccinationAPI.delete(id);
+			else if (type === 'mood') await moodAPI.delete(id);
+			else if (type === 'journal') await journalAPI.delete(id);
 			notice = 'Record deleted.';
 			await refreshLists();
 			await refreshSummary();
@@ -438,38 +476,24 @@
 		}
 	}
 
-	// Edit modal state
+	// Edit modal state — the shared RecordEditModal owns the fields.
 	let editingRecord: any = null;
 	let editType = '';
-	let editTime = '';
-	let editNote = '';
+	let editOpen = false;
 
 	function openEdit(type: string, record: any) {
 		editType = type;
 		editingRecord = record;
-		editTime = toLocalInput(record.start_time || record.change_time || record.measurement_date || record.achieved_date || record.date_given);
-		editNote = record.notes || '';
+		editOpen = true;
 		error = '';
 	}
 
 	async function saveEdit() {
-		if (!editingRecord) return;
-		const id = Number(editingRecord.id);
-		const time = editTime ? new Date(editTime).toISOString() : undefined;
-		try {
-			if (editType === 'feeding' || editType === 'pumping') await feedingAPI.update(id, { startTime: time, notes: editNote || undefined });
-			else if (editType === 'diaper') await diaperAPI.update(id, { changeTime: time, notes: editNote || undefined });
-			else if (editType === 'sleep') await sleepAPI.update(id, { startTime: time, notes: editNote || undefined });
-			else if (editType === 'growth') await growthAPI.update(id, { measurementDate: time, notes: editNote || undefined });
-			else if (editType === 'milestone') await milestoneAPI.update(id, { achievedDate: time });
-			else if (editType === 'vaccine') await vaccinationAPI.update(id, { dateGiven: time, notes: editNote || undefined });
-			editingRecord = null;
-			notice = 'Record updated.';
-			await refreshLists();
-			await refreshSummary();
-		} catch (err: any) {
-			error = err.response?.data?.error || 'Failed to update record.';
-		}
+		editOpen = false;
+		editingRecord = null;
+		notice = 'Record updated.';
+		await refreshLists();
+		await refreshSummary();
 	}
 
 	async function loadFamilies() {
@@ -1312,12 +1336,9 @@
 			rightStartedAt = s.rightStartedAt ? Number(s.rightStartedAt) : null;
 			sleepElapsed = Number(s.sleepElapsed || 0);
 			sleepStartedAt = s.sleepStartedAt ? Number(s.sleepStartedAt) : null;
-			// Auto-pause a timer whose wall-clock is unreasonably stale (e.g. the
-			// device was asleep over an hour) so it does not accumulate forever.
-			const now = Date.now();
-			if (leftStartedAt && now - leftStartedAt > 60 * 60 * 1000) leftStartedAt = null;
-			if (rightStartedAt && now - rightStartedAt > 60 * 60 * 1000) rightStartedAt = null;
-			if (sleepStartedAt && now - sleepStartedAt > 60 * 60 * 1000) sleepStartedAt = null;
+			// Timers intentionally survive app switches and device sleep: elapsed
+			// time is derived from wall-clock timestamps, so a long nap never
+			// silently stops a running timer.
 		} catch {}
 		if (leftStartedAt || rightStartedAt || sleepStartedAt) startTimerLoop();
 	}
@@ -1643,6 +1664,29 @@
 				await flushOutbox();
 				window.setInterval(() => flushOutbox(), 60 * 1000);
 			}
+			document.addEventListener('visibilitychange', resyncTimers);
+			window.addEventListener('pageshow', resyncTimers);
+			window.addEventListener('focus', resyncTimers);
+			window.addEventListener('pagehide', persistTimerState);
+		}
+	});
+
+	function resyncTimers() {
+		if (document.visibilityState === 'hidden') {
+			persistTimerState();
+			return;
+		}
+		timerNow = Date.now();
+		if (leftStartedAt || rightStartedAt || sleepStartedAt) startTimerLoop();
+	}
+
+	onDestroy(() => {
+		if (browser) {
+			document.removeEventListener('visibilitychange', resyncTimers);
+			window.removeEventListener('pageshow', resyncTimers);
+			window.removeEventListener('focus', resyncTimers);
+			window.removeEventListener('pagehide', persistTimerState);
+			stopTimerLoop();
 		}
 	});
 </script>
@@ -2225,6 +2269,7 @@
 								<tr class="text-left text-ink-soft border-b border-line-soft">
 									<th class="py-2 px-2">When</th>
 									<th class="py-2 px-2">Details</th>
+									<th class="py-2 px-2">By</th>
 									<th class="py-2 px-2">Notes</th>
 									<th class="py-2 px-2 text-right">Actions</th>
 								</tr>
@@ -2242,11 +2287,12 @@
 											{:else if activeTab === 'vaccines'}{r.name}
 											{/if}
 										</td>
+										<td class="py-2 px-2 whitespace-nowrap">{r.created_by_name || r.createdByName || '—'}</td>
 										<td class="py-2 px-2 text-ink-soft">{r.notes || ''}</td>
 										<td class="py-2 px-2 text-right whitespace-nowrap">
-											<button type="button" on:click={() => openEdit(activeTab === 'vaccines' ? 'vaccine' : activeTab === 'milestones' || activeTab === 'firsts' || activeTab === 'routines' || activeTab === 'medical' ? 'milestone' : activeTab === 'pumping' ? 'pumping' : activeTab === 'diapers' ? 'diaper' : activeTab === 'sleep' ? 'sleep' : activeTab === 'growth' ? 'growth' : 'feeding', r)} class="text-accent hover:underline">Edit</button>
+											<button type="button" on:click={() => openEdit(kindForTab(), r)} class="text-accent hover:underline">Edit</button>
 											<span class="text-ink-soft mx-1">·</span>
-											<button type="button" on:click={() => deleteRecord(activeTab === 'vaccines' ? 'vaccine' : activeTab === 'milestones' || activeTab === 'firsts' || activeTab === 'routines' || activeTab === 'medical' ? 'milestone' : activeTab === 'pumping' ? 'pumping' : activeTab === 'diapers' ? 'diaper' : activeTab === 'sleep' ? 'sleep' : activeTab === 'growth' ? 'growth' : 'feeding', Number(r.id))} class="text-danger-text hover:underline">Delete</button>
+											<button type="button" on:click={() => deleteRecord(kindForTab(), Number(r.id))} class="text-danger-text hover:underline">Delete</button>
 										</td>
 									</tr>
 								{/each}
@@ -2752,26 +2798,7 @@
 {/if}
 {/if}
 {/if}
-		{#if editingRecord}
-			<div class="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true">
-				<button type="button" class="absolute inset-0 bg-ink/40" aria-label="Close dialog" on:click={() => (editingRecord = null)}></button>
-				<div class="relative bg-surface rounded-lg shadow-card p-4 md:p-6 w-full max-w-md">
-					<h3 class="text-xl font-display font-semibold mb-4">Edit record</h3>
-					<div class="mb-3">
-					<label for="edit-record-time" class="block text-sm font-medium text-ink-soft mb-1">When</label>
-					<input id="edit-record-time" type="datetime-local" bind:value={editTime} class="w-full px-3 py-2 border border-line rounded-md" />
-					</div>
-					<div class="mb-4">
-					<label for="edit-record-note" class="block text-sm font-medium text-ink-soft mb-1">Notes</label>
-					<textarea id="edit-record-note" bind:value={editNote} rows="3" class="w-full px-3 py-2 border border-line rounded-md" placeholder="Optional notes"></textarea>
-					</div>
-					<div class="flex justify-end gap-2">
-						<button type="button" on:click={() => (editingRecord = null)} class="px-4 py-2 bg-surface2 text-ink-soft rounded-md">Cancel</button>
-						<button type="button" on:click={saveEdit} class="px-4 py-2 bg-primary text-on-primary rounded-md">Save</button>
-					</div>
-				</div>
-			</div>
-		{/if}
+		<RecordEditModal bind:open={editOpen} kind={editType} record={editingRecord} on:saved={saveEdit} />
 
 		{#if editingMember}
 			<div class="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true">

@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, onDestroy } from 'svelte';
 	import { browser } from '$app/environment';
 	import { goto } from '$app/navigation';
 	import { authAPI, userAPI, babyAPI, familiesAPI, feedingAPI, diaperAPI, sleepAPI, growthAPI, healthAPI, importsAPI, photosAPI, formulasAPI, familyAdminAPI, accountAPI, milestoneAPI, vaccinationAPI, settingsAPI, moodAPI, journalAPI, tokenExpired, remindersAPI } from '$lib/api';
@@ -9,10 +9,12 @@
 	import ToggleSwitch from '$lib/components/ToggleSwitch.svelte';
 	import LogSheet from '$lib/components/LogSheet.svelte';
 	import Avatar from '$lib/components/Avatar.svelte';
+	import ActivityHistory from '$lib/components/ActivityHistory.svelte';
+	import { loadListsCache, saveListsCache } from '$lib/cache';
 	import { Milk, Baby, Moon, TrendingUp, Calendar, Star, Trophy, Stethoscope, Syringe, Smile, Book, Users, Home, Trash2, Mail, Timer, PenLine, ArrowLeft, ArrowRight, Pause, Play, RotateCcw, Plus, Camera, Droplet, AlertCircle, Activity, ChevronDown, Settings, Check, Infinity, Heart } from 'lucide-svelte';
 
 
-	import { CATEGORIES, loadQuickLinks as loadSharedQuickLinks } from '$lib/shared';
+	import { CATEGORIES, loadQuickLinks as loadSharedQuickLinks, saveQuickLinks as saveSharedQuickLinks } from '$lib/shared';
 
 	const FORMULA_TYPES = [
 		'standard',
@@ -90,9 +92,7 @@
 
 	function saveQuickLinks(next: string[]) {
 		quickLinks = next;
-		try {
-			localStorage.setItem(quickLinksKey($authStore.user?.id ?? null), JSON.stringify(next));
-		} catch {}
+		saveSharedQuickLinks($authStore.user?.id ?? null, next);
 	}
 
 	function toggleQuickLink(catId: string) {
@@ -101,6 +101,24 @@
 			: [...quickLinks, catId];
 		saveQuickLinks(next);
 		notice = 'Mobile quick links updated.';
+	}
+
+	// "Other" picker: every category the quick pills do not already cover, so
+	// no log target is ever more than one tap from the dashboard.
+	let otherOpen = false;
+
+	function quickCategories() {
+		return CATEGORIES.filter((c) => quickLinks.includes(c.id));
+	}
+
+	function otherCategories() {
+		return CATEGORIES.filter((c) => !quickLinks.includes(c.id));
+	}
+
+	function openLog(catId: string) {
+		activeTab = catId;
+		otherOpen = false;
+		sheetOpen = true;
 	}
 
 	async function completeReset(event: SubmitEvent) {
@@ -387,6 +405,19 @@
 
 	async function refreshLists() {
 		if (!selectedMemberId) return;
+		// Paint instantly from the local cache so history survives reloads,
+		// expired sessions, and offline use; the network response replaces it.
+		const cached = loadListsCache(selectedMemberId);
+		if (cached) {
+			feedings = cached.feedings;
+			diapers = cached.diapers;
+			sleeps = cached.sleeps;
+			growths = cached.growths;
+			milestones = cached.milestones;
+			vaccinations = cached.vaccinations;
+			moods = cached.moods;
+			journalEntries = cached.journalEntries;
+		}
 		try {
 			const [f, d, s, g, m, v, mo, j] = await Promise.all([
 				feedingAPI.getAll(selectedMemberId),
@@ -406,8 +437,16 @@
 			vaccinations = v.data.vaccinations;
 			moods = mo.data.moods ?? [];
 			journalEntries = j.data.entries ?? [];
+			saveListsCache(selectedMemberId, {
+				feedings, diapers, sleeps, growths,
+				milestones, vaccinations, moods, journalEntries,
+			});
 		} catch (e: any) {
-			error = e.response?.data?.error || 'Failed to load tracking data.';
+			if (!cached) {
+				error = e.response?.data?.error || 'Failed to load tracking data.';
+			} else {
+				notice = 'Showing cached activities — will refresh when connected.';
+			}
 			console.error(e);
 		}
 	}
@@ -1321,12 +1360,9 @@
 			rightStartedAt = s.rightStartedAt ? Number(s.rightStartedAt) : null;
 			sleepElapsed = Number(s.sleepElapsed || 0);
 			sleepStartedAt = s.sleepStartedAt ? Number(s.sleepStartedAt) : null;
-			// Auto-pause a timer whose wall-clock is unreasonably stale (e.g. the
-			// device was asleep over an hour) so it does not accumulate forever.
-			const now = Date.now();
-			if (leftStartedAt && now - leftStartedAt > 60 * 60 * 1000) leftStartedAt = null;
-			if (rightStartedAt && now - rightStartedAt > 60 * 60 * 1000) rightStartedAt = null;
-			if (sleepStartedAt && now - sleepStartedAt > 60 * 60 * 1000) sleepStartedAt = null;
+			// Timers intentionally survive app switches and device sleep: elapsed
+			// time is derived from wall-clock timestamps, so nothing accumulates
+			// wrongly and a long nap never silently stops a running timer.
 		} catch {}
 		if (leftStartedAt || rightStartedAt || sleepStartedAt) startTimerLoop();
 	}
@@ -1651,6 +1687,32 @@
 				await flushOutbox();
 				window.setInterval(() => flushOutbox(), 60 * 1000);
 			}
+			// Keep timers truthful across app switches: mobile browsers throttle
+			// or freeze intervals in the background, so re-sync the clock when the
+			// app comes back and persist state right before it goes away.
+			document.addEventListener('visibilitychange', resyncTimers);
+			window.addEventListener('pageshow', resyncTimers);
+			window.addEventListener('focus', resyncTimers);
+			window.addEventListener('pagehide', persistTimerState);
+		}
+	});
+
+	function resyncTimers() {
+		if (document.visibilityState === 'hidden') {
+			persistTimerState();
+			return;
+		}
+		timerNow = Date.now();
+		if (leftStartedAt || rightStartedAt || sleepStartedAt) startTimerLoop();
+	}
+
+	onDestroy(() => {
+		if (browser) {
+			document.removeEventListener('visibilitychange', resyncTimers);
+			window.removeEventListener('pageshow', resyncTimers);
+			window.removeEventListener('focus', resyncTimers);
+			window.removeEventListener('pagehide', persistTimerState);
+			stopTimerLoop();
 		}
 	});
 </script>
@@ -1705,89 +1767,99 @@
 												<p class="text-sm text-ink-soft">Born {baby.birth_date.slice(0, 10)}</p>
 											</div>
 										</div>
-										<button type="button" on:click={() => { goto('/family'); selectMember(baby.id); familyView = 'detail'; activeTab = 'feeds'; }} class="px-4 py-2 bg-surface2 text-ink-soft hover:text-ink rounded-md text-sm font-semibold">
-											Log Activity
+										<button type="button" on:click={() => { selectMember(baby.id); document.getElementById('activities')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }} class="px-4 py-2 bg-surface2 text-ink-soft hover:text-ink rounded-md text-sm font-semibold">
+											Activities &rarr;
 										</button>
 									</div>
 								{/each}
 							</div>
 
 							<div class="mb-6">
-								<h3 class="text-lg font-display font-semibold mb-3">Quick Actions</h3>
-								<div class="flex overflow-x-auto no-scrollbar gap-3 pb-2">
-									{#each CATEGORIES.filter(c => quickLinks.includes(c.id)) as cat}
-										<button type="button" on:click={() => { activeTab = cat.id; sheetOpen = true; }} class="flex-shrink-0 w-24 h-24 bg-surface rounded-xl shadow-sm border border-line-soft flex flex-col items-center justify-center gap-2 hover:border-accent transition-colors">
-											<div class="w-10 h-10 rounded-full bg-surface2 text-ink flex items-center justify-center">
-												<svelte:component this={cat.icon} class="w-5 h-5" />
-											</div>
-											<span class="text-xs font-semibold text-ink">{cat.label}</span>
+								<div class="flex items-center justify-between mb-3">
+									<h3 class="text-lg font-display font-semibold">Quick Actions</h3>
+									<button type="button" on:click={() => openLog(quickCategories()[0]?.id || 'feeds')} class="flex items-center gap-1.5 h-9 px-3 rounded-full bg-primary text-on-primary text-sm font-semibold hover:opacity-90">
+										<Plus class="w-4 h-4" aria-hidden="true" /> Log activity
+									</button>
+								</div>
+								<div class="grid grid-cols-3 sm:grid-cols-4 gap-2.5">
+									{#each quickCategories() as cat}
+										<button type="button" on:click={() => openLog(cat.id)} class="min-h-[5.5rem] px-2 py-3 bg-surface rounded-xl shadow-sm border border-line-soft flex flex-col items-center justify-center gap-1.5 hover:border-accent hover:bg-accent-soft/30 active:scale-95 transition">
+											<svelte:component this={cat.icon} class="w-5 h-5 text-accent" />
+											<span class="text-xs font-semibold text-ink text-center leading-tight">{cat.label}</span>
 										</button>
 									{/each}
+									<button type="button" on:click={() => (otherOpen = !otherOpen)} aria-expanded={otherOpen} class="min-h-[5.5rem] px-2 py-3 bg-surface rounded-xl shadow-sm border border-dashed border-line-soft flex flex-col items-center justify-center gap-1.5 hover:border-accent active:scale-95 transition">
+										{#if otherOpen}
+											<ChevronDown class="w-5 h-5 text-accent" />
+										{:else}
+											<Plus class="w-5 h-5 text-accent" />
+										{/if}
+										<span class="text-xs font-semibold text-ink text-center leading-tight">Other</span>
+									</button>
 								</div>
+
+								{#if otherOpen}
+									<div class="mt-2.5 bg-surface rounded-xl shadow-card border border-line-soft p-3">
+										<div class="grid grid-cols-3 sm:grid-cols-4 gap-2">
+											{#each otherCategories() as cat}
+												<button type="button" on:click={() => openLog(cat.id)} class="min-h-[4.5rem] px-2 py-3 rounded-lg bg-surface2 flex flex-col items-center justify-center gap-1.5 hover:bg-accent-soft active:scale-95 transition">
+													<svelte:component this={cat.icon} class="w-4 h-4 text-ink-soft" />
+													<span class="text-xs font-semibold text-ink-soft text-center leading-tight">{cat.label}</span>
+												</button>
+											{/each}
+										</div>
+									</div>
+								{/if}
 							</div>
 
 							{#if summary}
 								<h3 class="text-lg font-display font-semibold mb-3">Today for {babies.find(b => b.id === selectedMemberId)?.name || 'Selected'}</h3>
 								<div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
-<div class="bg-surface rounded-lg shadow-card p-4 border-l-4 border-line">
-									<div class="flex items-center gap-2 mb-1">
-										<Baby class="w-5 h-5 text-ink-soft" aria-hidden="true" />
-										<p class="text-xs text-ink-soft uppercase font-semibold tracking-wider">Age</p>
+									<div class="bg-surface rounded-lg shadow-card p-4 border-l-4 border-line">
+										<div class="flex items-center gap-2 mb-1">
+											<Baby class="w-5 h-5 text-ink-soft" aria-hidden="true" />
+											<p class="text-xs text-ink-soft uppercase font-semibold tracking-wider">Age</p>
+										</div>
+										<p class="text-2xl font-display font-semibold text-ink">{summary.baby.ageInWeeks} <span class="text-sm text-ink-soft font-sans font-normal">weeks</span></p>
 									</div>
-									<p class="text-2xl font-display font-semibold text-ink">{summary.baby.ageInWeeks} <span class="text-sm text-ink-soft font-sans font-normal">weeks</span></p>
-								</div>
-									<div class="bg-surface rounded-lg shadow-card p-4 border-l-4 border-primary">
+									<button type="button" on:click={() => openLog('feeds')} class="text-left bg-surface rounded-lg shadow-card p-4 border-l-4 border-primary hover:shadow-card focus:outline-none focus-visible:ring-2 focus-visible:ring-accent active:scale-[0.98] transition">
 										<div class="flex items-center gap-2 mb-1">
 											<span class="shrink-0" aria-hidden="true"><Milk class="w-5 h-5" /></span>
 											<p class="text-xs text-ink-soft uppercase font-semibold tracking-wider">Last Feed</p>
 										</div>
 										<p class="text-2xl font-display font-semibold text-ink">{summary.latestFeeding ? formatTime(summary.latestFeeding.end_time || summary.latestFeeding.start_time).split(', ')[1] || formatTime(summary.latestFeeding.end_time || summary.latestFeeding.start_time) : '—'}</p>
 										<p class="text-sm text-ink-soft mt-1">{summary.latestFeeding?.type || 'no feed recorded'}</p>
-									</div>
-									<div class="bg-surface rounded-lg shadow-card p-4 border-l-4 border-accent">
+									</button>
+									<button type="button" on:click={() => openLog('diapers')} class="text-left bg-surface rounded-lg shadow-card p-4 border-l-4 border-accent hover:shadow-card focus:outline-none focus-visible:ring-2 focus-visible:ring-accent active:scale-[0.98] transition">
 										<div class="flex items-center gap-2 mb-1">
 											<span class="shrink-0" aria-hidden="true"><Baby class="w-5 h-5" /></span>
 											<p class="text-xs text-ink-soft uppercase font-semibold tracking-wider">Last Diaper</p>
 										</div>
 										<p class="text-2xl font-display font-semibold text-ink">{summary.latestDiaper ? formatTime(summary.latestDiaper.change_time).split(', ')[1] || formatTime(summary.latestDiaper.change_time) : '—'}</p>
 										<p class="text-sm text-ink-soft mt-1">{summary.latestDiaper?.type || 'no change recorded'}</p>
-									</div>
-									<div class="bg-surface rounded-lg shadow-card p-4 border-l-4 border-ink">
+									</button>
+									<button type="button" on:click={() => openLog('sleep')} class="text-left bg-surface rounded-lg shadow-card p-4 border-l-4 border-ink hover:shadow-card focus:outline-none focus-visible:ring-2 focus-visible:ring-accent active:scale-[0.98] transition">
 										<div class="flex items-center gap-2 mb-1">
 											<span class="shrink-0" aria-hidden="true"><Moon class="w-5 h-5" /></span>
 											<p class="text-xs text-ink-soft uppercase font-semibold tracking-wider">Last Sleep</p>
 										</div>
 										<p class="text-2xl font-display font-semibold text-ink">{summary.latestSleep ? formatTime(summary.latestSleep.start_time).split(', ')[1] || formatTime(summary.latestSleep.start_time) : '—'}</p>
 										<p class="text-sm text-ink-soft mt-1">{summary.latestSleep?.duration ? formatElapsed(summary.latestSleep.duration) : 'no sleep recorded'}</p>
-									</div>
+									</button>
 								</div>
 							{/if}
 
-							<div class="bg-surface2 rounded-lg shadow-card p-5 border border-line-soft">
-								<h3 class="text-lg font-display font-semibold mb-4">Recent Activity</h3>
-								<ul class="divide-y divide-line-soft">
-									{#each [...feedings, ...diapers, ...sleeps].sort((a, b) => new Date(b.start_time || b.change_time).getTime() - new Date(a.start_time || a.change_time).getTime()).slice(0, 5) as item}
-										<li class="py-3 flex justify-between items-center">
-											<div class="flex items-center gap-3">
-												<span class="text-2xl" aria-hidden="true">
-													{#if item.amount !== undefined}<Milk class="w-4 h-4 inline" />{:else if item.consistency !== undefined}<Baby class="w-4 h-4 inline" />{:else}<Moon class="w-4 h-4 inline" />{/if}
-												</span>
-												<div>
-													<p class="font-semibold text-ink text-sm">
-														{#if item.amount !== undefined}Feed ({item.type}){:else if item.consistency !== undefined}Diaper ({item.type}){:else}Sleep{/if}
-													</p>
-													<p class="text-xs text-ink-soft">{formatTime(item.start_time || item.change_time)}</p>
-												</div>
-											</div>
-											<span class="text-sm font-medium text-ink-soft">
-												{#if item.amount}{item.amount}oz{:else if item.duration}{formatElapsed(item.duration)}{/if}
-											</span>
-										</li>
-									{/each}
-									{#if [...feedings, ...diapers, ...sleeps].length === 0}
-										<li class="py-3 text-ink-soft text-sm">No recent activity.</li>
-									{/if}
-								</ul>
+							<div class="bg-surface rounded-lg shadow-card p-5 border border-line-soft" id="activities">
+								<div class="flex items-center justify-between mb-4">
+									<h3 class="text-lg font-display font-semibold">Activities</h3>
+									<button type="button" on:click={() => openLog(quickCategories()[0]?.id || 'feeds')} class="text-sm font-semibold text-primary hover:underline">Log activity +</button>
+								</div>
+								<ActivityHistory
+									{feedings} {diapers} {sleeps} {growths}
+									{milestones} {vaccinations} {moods} {journalEntries}
+									{activeCategories}
+									on:refresh={async () => { await refreshLists(); await refreshSummary(); }}
+								/>
 							</div>
 						{/if}
 					</section>

@@ -419,6 +419,20 @@ export const FAMILY_MIGRATIONS: Migration[] = [
              OR EXISTS (SELECT 1 FROM babies b WHERE b.id = family_members.id AND b.household_id = family_members.household_id));
     `,
   },
+  {
+    version: 6,
+    name: 'records-created-by',
+    sql: `
+      ALTER TABLE feedings ADD COLUMN created_by TEXT;
+      ALTER TABLE diapers ADD COLUMN created_by TEXT;
+      ALTER TABLE sleep ADD COLUMN created_by TEXT;
+      ALTER TABLE growth ADD COLUMN created_by TEXT;
+      ALTER TABLE milestones ADD COLUMN created_by TEXT;
+      ALTER TABLE vaccinations ADD COLUMN created_by TEXT;
+      ALTER TABLE moods ADD COLUMN created_by TEXT;
+      ALTER TABLE journal_entries ADD COLUMN created_by TEXT;
+    `,
+  },
 ];
 
 // ---------------------------------------------------------------------------

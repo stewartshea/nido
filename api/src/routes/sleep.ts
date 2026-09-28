@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 import type { SleepRow } from '../db-types';
-import { resolveTrackableMember } from '../member-scope';
+import { resolveTrackableMember, attachCreatedBy } from '../member-scope';
 import { type AuthEnv } from '../auth';
 
 const sleepRoutes = new Hono<AuthEnv>();
@@ -43,7 +43,7 @@ sleepRoutes.get('/', async (c) => {
     // Get sleep records for the baby
     const sleepResult = await db.execute({
       sql: `
-      SELECT id, baby_id, start_time, end_time, duration, location, notes, created_at
+      SELECT id, baby_id, start_time, end_time, duration, location, notes, created_at, created_by
       FROM sleep
       WHERE baby_id = ?
       LIMIT 100
@@ -65,6 +65,7 @@ sleepRoutes.get('/', async (c) => {
       .sort((a, b) => (b.start_time ?? '').localeCompare(a.start_time ?? ''))
       .slice(0, 100);
     
+    await attachCreatedBy(db, sleepRecords);
     return c.json({ sleep: sleepRecords });
   } catch (error) {
     c.get('log').error('get sleep records failed', { err: error });
@@ -82,7 +83,7 @@ sleepRoutes.get('/:id{[0-9]+}', async (c) => {
     // Verify user has access to this sleep record
     const sleepResult = await db.execute({
       sql: `
-      SELECT s.id, s.baby_id, s.start_time, s.end_time, s.duration, s.location, s.notes, s.created_at
+      SELECT s.id, s.baby_id, s.start_time, s.end_time, s.duration, s.location, s.notes, s.created_at, s.created_by
       FROM sleep s
       JOIN babies b ON s.baby_id = b.id
       JOIN households h ON b.household_id = h.id
@@ -138,24 +139,25 @@ sleepRoutes.post('/', zValidator('json', createSleepSchema), async (c) => {
     const result = await db.execute({
       sql: `
         INSERT INTO sleep (
-          baby_id, start_time, end_time, duration, location, notes, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+          baby_id, start_time, end_time, duration, location, notes, created_at, created_by
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       `,
       args: [
-        memberId, 
+        babyId, 
         startTime, 
         endTime || null, 
         duration, 
         location || null, 
         notes || null, 
-        new Date().toISOString()
+        new Date().toISOString(),
+        userId
       ]
     });
     
     // Return the created sleep record
     const sleepResult = await db.execute({
       sql: `
-      SELECT id, baby_id, start_time, end_time, duration, location, notes, created_at
+      SELECT id, baby_id, start_time, end_time, duration, location, notes, created_at, created_by
       FROM sleep
       WHERE id = ?
     `,
@@ -271,7 +273,7 @@ sleepRoutes.put('/:id{[0-9]+}', zValidator('json', updateSleepSchema), async (c)
     // Return updated sleep record
     const updatedSleepResult = await db.execute({
       sql: `
-      SELECT id, baby_id, start_time, end_time, duration, location, notes, created_at
+      SELECT id, baby_id, start_time, end_time, duration, location, notes, created_at, created_by
       FROM sleep
       WHERE id = ?
     `,

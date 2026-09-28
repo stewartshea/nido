@@ -1,0 +1,6 @@
+# Nido is a private family tracker. Every page sits behind sign-in and
+# contains personal data, so nothing here should be indexed.
+# Documentation: https://www.nido-app.ca
+
+User-agent: *
+Disallow: /

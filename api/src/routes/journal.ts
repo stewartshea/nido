@@ -3,7 +3,7 @@ import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 import { type AuthEnv } from '../auth';
 import type { JournalEntryRow } from '../db-types';
-import { resolveTrackableMember } from '../member-scope';
+import { resolveTrackableMember, attachCreatedBy } from '../member-scope';
 
 const journalRoutes = new Hono<AuthEnv>();
 
@@ -44,11 +44,13 @@ journalRoutes.get('/', async (c) => {
   if (!babyId) return c.json({ error: 'Access denied' }, 403);
 
   const res = await db.execute({
-    sql: `SELECT id, baby_id, title, body, entry_date, created_at FROM journal_entries WHERE baby_id = ? ORDER BY COALESCE(entry_date, created_at) DESC`,
+    sql: `SELECT id, baby_id, title, body, entry_date, created_at, created_by FROM journal_entries WHERE baby_id = ? ORDER BY COALESCE(entry_date, created_at) DESC`,
     args: [babyId],
   });
+  await attachCreatedBy(db, res.rows as any[]);
   return c.json({ entries: res.rows.map((r) => ({
     id: Number(r?.id), memberId: Number(r?.baby_id), title: r?.title, body: r?.body, entryDate: r?.entry_date, createdAt: r?.created_at,
+    createdBy: r?.created_by ?? null, createdByName: (r as any)?.created_by_name ?? null,
   })) });
 });
 
@@ -61,8 +63,8 @@ journalRoutes.post('/', zValidator('json', createJournalSchema), async (c) => {
 
   const now = new Date().toISOString();
   const ins = await db.execute({
-    sql: `INSERT INTO journal_entries (baby_id, title, body, entry_date, created_at) VALUES (?, ?, ?, ?, ?)`,
-    args: [babyId, title || null, body || null, entryDate || now, now],
+    sql: `INSERT INTO journal_entries (baby_id, title, body, entry_date, created_at, created_by) VALUES (?, ?, ?, ?, ?, ?)`,
+    args: [babyId, title || null, body || null, entryDate || now, now, userId],
   });
   return c.json({ message: 'Journal entry saved', entry: { id: Number(ins.lastInsertRowid), memberId: babyId, title, body, entryDate: entryDate || now } }, 201);
 });

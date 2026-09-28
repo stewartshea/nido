@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
-import { resolveTrackableMember } from '../member-scope';
+import { resolveTrackableMember, attachCreatedBy } from '../member-scope';
 import { type AuthEnv } from '../auth';
 import type { BabyRow, GrowthRow, GrowthWithBabyRow } from '../db-types';
 
@@ -157,7 +157,7 @@ growthRoutes.get('/', async (c) => {
     // Get growth records for the baby
     const growthResult = await db.execute({
       sql: `
-      SELECT id, baby_id, measurement_date, weight, height, head_circumference, bmi, unit_system, notes, created_at
+      SELECT id, baby_id, measurement_date, weight, height, head_circumference, bmi, unit_system, notes, created_at, created_by
       FROM growth
       WHERE baby_id = ?
       LIMIT 100
@@ -215,6 +215,7 @@ growthRoutes.get('/', async (c) => {
       .sort((a, b) => (b.measurement_date ?? '').localeCompare(a.measurement_date ?? ''))
       .slice(0, 100);
     
+    await attachCreatedBy(db, growthWithComparisons);
     return c.json({ growth: growthWithComparisons });
   } catch (error) {
     c.get('log').error('get growth records failed', { err: error });
@@ -232,7 +233,7 @@ growthRoutes.get('/:id{[0-9]+}', async (c) => {
     // Verify user has access to this growth record
     const growthResult = await db.execute({
       sql: `
-      SELECT g.id, g.baby_id, g.measurement_date, g.weight, g.height, g.head_circumference, g.bmi, g.unit_system, g.notes, g.created_at,
+      SELECT g.id, g.baby_id, g.measurement_date, g.weight, g.height, g.head_circumference, g.bmi, g.unit_system, g.notes, g.created_at, g.created_by,
              b.birth_date, b.gender
       FROM growth g
       JOIN babies b ON g.baby_id = b.id
@@ -335,11 +336,11 @@ growthRoutes.post('/', zValidator('json', createGrowthSchema), async (c) => {
     const result = await db.execute({
       sql: `
         INSERT INTO growth (
-          baby_id, measurement_date, weight, height, head_circumference, bmi, unit_system, notes, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          baby_id, measurement_date, weight, height, head_circumference, bmi, unit_system, notes, created_at, created_by
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
       args: [
-        memberId, 
+        babyId, 
         measurementDate, 
         weight || null, 
         height || null, 
@@ -347,14 +348,15 @@ growthRoutes.post('/', zValidator('json', createGrowthSchema), async (c) => {
         calculatedBmi || null, 
         unitSystem, 
         notes || null, 
-        new Date().toISOString()
+        new Date().toISOString(),
+        userId
       ]
     });
     
     // Return the created growth record with WHO/CDC comparisons
     const growthResult = await db.execute({
       sql: `
-      SELECT id, baby_id, measurement_date, weight, height, head_circumference, bmi, unit_system, notes, created_at
+      SELECT id, baby_id, measurement_date, weight, height, head_circumference, bmi, unit_system, notes, created_at, created_by
       FROM growth
       WHERE id = ?
     `,
@@ -426,7 +428,7 @@ growthRoutes.put('/:id{[0-9]+}', zValidator('json', updateGrowthSchema), async (
     // Verify user has access to this growth record
     const growthCheck = await db.execute({
       sql: `
-      SELECT g.id, g.baby_id, g.measurement_date, g.weight, g.height, g.head_circumference, g.bmi, g.unit_system,
+      SELECT g.id, g.baby_id, g.measurement_date, g.weight, g.height, g.head_circumference, g.bmi, g.unit_system, g.created_by,
              b.birth_date, b.gender
       FROM growth g
       JOIN babies b ON g.baby_id = b.id
@@ -525,7 +527,7 @@ growthRoutes.put('/:id{[0-9]+}', zValidator('json', updateGrowthSchema), async (
     // Return updated growth record with WHO/CDC comparisons
     const updatedGrowthResult = await db.execute({
       sql: `
-      SELECT id, baby_id, measurement_date, weight, height, head_circumference, bmi, unit_system, notes, created_at
+      SELECT id, baby_id, measurement_date, weight, height, head_circumference, bmi, unit_system, notes, created_at, created_by
       FROM growth
       WHERE id = ?
     `,

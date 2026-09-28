@@ -11,18 +11,18 @@
 </script>
 
 <nav class="fixed bottom-0 left-0 right-0 z-40 bg-surface border-t border-line-soft pb-safe md:hidden">
-	<div class="flex items-center justify-around h-20 px-2">
+	<div class="grid grid-cols-4 h-20 px-1">
 		{#each navItems as item}
 			{@const isActive = $page.url.pathname.startsWith(item.href)}
 			<a
 				href={item.href}
-				class="flex flex-col items-center justify-center w-full h-full min-w-[48px] min-h-[48px] gap-1 text-ink"
+				class="flex flex-col items-center justify-center gap-1 h-full text-ink"
 				aria-current={isActive ? 'page' : undefined}
 			>
-				<div class="flex items-center justify-center w-16 h-8 rounded-full transition-colors {isActive ? 'bg-accent-soft text-accent' : 'text-ink-soft'}">
-					<svelte:component this={item.icon} size={24} strokeWidth={isActive ? 2.5 : 2} />
-				</div>
-				<span class="text-[12px] font-medium {isActive ? 'text-ink' : 'text-ink-soft'}">{item.label}</span>
+				<span class="flex items-center justify-center w-11 h-11 rounded-full transition-colors {isActive ? 'bg-accent text-on-accent' : 'text-ink-soft'}">
+					<svelte:component this={item.icon} size={22} strokeWidth={isActive ? 2.4 : 2} />
+				</span>
+				<span class="text-[11px] font-medium leading-none {isActive ? 'text-ink' : 'text-ink-soft'}">{item.label}</span>
 			</a>
 		{/each}
 	</div>

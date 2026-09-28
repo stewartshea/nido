@@ -325,7 +325,7 @@ async function handleCreateFamily(c: Context<AuthEnv>) {
 // only has to re-point that column — no multi-family support is introduced, and
 // a family gains members by accumulating separate accounts.
 	function signFamilyToken(userId: string, email: string, familyId: string, role: string): string {
-		return jwt.sign({ userId, email, familyId, role }, jwtSecret(), { expiresIn: '24h' });
+		return jwt.sign({ userId, email, familyId, role }, jwtSecret(), { expiresIn: '30d' });
 	}
 
 	async function handleJoinFamily(c: Context<AuthEnv>) {
@@ -1006,14 +1006,14 @@ async function handleExportFamily(c: Context<AuthEnv>) {
 	if (trackedIds.length > 0) {
 		const ids = trackedIds.join(',');
 		for (const table of EXPORT_TABLES) {
-			const cols = table === 'milestones' ? 'id, baby_id, title, description, achieved_date, category, created_at'
-				: table === 'growth' ? 'id, baby_id, measurement_date, weight, height, head_circumference, unit_system, notes, created_at'
-				: table === 'sleep' ? 'id, baby_id, start_time, end_time, duration, location, notes, created_at'
-				: table === 'diapers' ? 'id, baby_id, change_time, type, color, consistency, notes, created_at'
-				: table === 'vaccinations' ? 'id, baby_id, name, date_given, next_due_date, administered_by, notes, created_at'
-				: table === 'moods' ? 'id, baby_id, mood, recorded_at, notes, created_at'
-				: table === 'journal_entries' ? 'id, baby_id, title, body, entry_date, created_at'
-				: 'id, baby_id, start_time, end_time, duration, amount, type, side, formula_id, notes, created_at';
+			const cols = table === 'milestones' ? 'id, baby_id, title, description, achieved_date, category, created_at, created_by'
+				: table === 'growth' ? 'id, baby_id, measurement_date, weight, height, head_circumference, unit_system, notes, created_at, created_by'
+				: table === 'sleep' ? 'id, baby_id, start_time, end_time, duration, location, notes, created_at, created_by'
+				: table === 'diapers' ? 'id, baby_id, change_time, type, color, consistency, notes, created_at, created_by'
+				: table === 'vaccinations' ? 'id, baby_id, name, date_given, next_due_date, administered_by, notes, created_at, created_by'
+				: table === 'moods' ? 'id, baby_id, mood, recorded_at, notes, created_at, created_by'
+				: table === 'journal_entries' ? 'id, baby_id, title, body, entry_date, created_at, created_by'
+				: 'id, baby_id, start_time, end_time, duration, amount, type, side, formula_id, notes, created_at, created_by';
 			const rows = await db.execute({ sql: `SELECT ${cols} FROM ${table} WHERE baby_id IN (${ids})`, args: [] });
 			exportData.records[table] = rows.rows;
 		}
@@ -1126,22 +1126,22 @@ async function handleRestoreFamily(c: Context<AuthEnv>) {
 			try {
 				if (table === 'feedings') {
 					const mappedFormulaId = rec.formula_id == null ? null : (formulaIdMap[Number(rec.formula_id)] ?? null);
-					await db.execute({ sql: `INSERT INTO feedings (baby_id, start_time, end_time, duration, amount, type, side, formula_id, notes, created_at)
-					                        VALUES (?,?,?,?,?,?,?,?,?,?)`, args: [babyId, rec.start_time, rec.end_time, rec.duration, rec.amount, rec.type, rec.side, mappedFormulaId, rec.notes, rec.created_at ?? isoNow()] });
+					await db.execute({ sql: `INSERT INTO feedings (baby_id, start_time, end_time, duration, amount, type, side, formula_id, notes, created_at, created_by)
+					                        VALUES (?,?,?,?,?,?,?,?,?,?,?)`, args: [babyId, rec.start_time, rec.end_time, rec.duration, rec.amount, rec.type, rec.side, mappedFormulaId, rec.notes, rec.created_at ?? isoNow(), rec.created_by ?? userId] });
 				} else if (table === 'diapers') {
-					await db.execute({ sql: `INSERT INTO diapers (baby_id, change_time, type, color, consistency, notes, created_at) VALUES (?,?,?,?,?,?,?)`, args: [babyId, rec.change_time, rec.type, rec.color, rec.consistency, rec.notes, rec.created_at ?? isoNow()] });
+					await db.execute({ sql: `INSERT INTO diapers (baby_id, change_time, type, color, consistency, notes, created_at, created_by) VALUES (?,?,?,?,?,?,?,?)`, args: [babyId, rec.change_time, rec.type, rec.color, rec.consistency, rec.notes, rec.created_at ?? isoNow(), rec.created_by ?? userId] });
 				} else if (table === 'sleep') {
-					await db.execute({ sql: `INSERT INTO sleep (baby_id, start_time, end_time, duration, location, notes, created_at) VALUES (?,?,?,?,?,?,?)`, args: [babyId, rec.start_time, rec.end_time, rec.duration, rec.location, rec.notes, rec.created_at ?? isoNow()] });
+					await db.execute({ sql: `INSERT INTO sleep (baby_id, start_time, end_time, duration, location, notes, created_at, created_by) VALUES (?,?,?,?,?,?,?,?)`, args: [babyId, rec.start_time, rec.end_time, rec.duration, rec.location, rec.notes, rec.created_at ?? isoNow(), rec.created_by ?? userId] });
 				} else if (table === 'growth') {
-					await db.execute({ sql: `INSERT INTO growth (baby_id, measurement_date, weight, height, head_circumference, unit_system, notes, created_at) VALUES (?,?,?,?,?,?,?,?)`, args: [babyId, rec.measurement_date, rec.weight, rec.height, rec.head_circumference, rec.unit_system, rec.notes, rec.created_at ?? isoNow()] });
+					await db.execute({ sql: `INSERT INTO growth (baby_id, measurement_date, weight, height, head_circumference, unit_system, notes, created_at, created_by) VALUES (?,?,?,?,?,?,?,?,?)`, args: [babyId, rec.measurement_date, rec.weight, rec.height, rec.head_circumference, rec.unit_system, rec.notes, rec.created_at ?? isoNow(), rec.created_by ?? userId] });
 				} else if (table === 'milestones') {
-					await db.execute({ sql: `INSERT INTO milestones (baby_id, title, description, achieved_date, category, created_at) VALUES (?,?,?,?,?,?)`, args: [babyId, rec.title, rec.description, rec.achieved_date, rec.category, rec.created_at ?? isoNow()] });
+					await db.execute({ sql: `INSERT INTO milestones (baby_id, title, description, achieved_date, category, created_at, created_by) VALUES (?,?,?,?,?,?,?)`, args: [babyId, rec.title, rec.description, rec.achieved_date, rec.category, rec.created_at ?? isoNow(), rec.created_by ?? userId] });
 				} else if (table === 'vaccinations') {
-					await db.execute({ sql: `INSERT INTO vaccinations (baby_id, name, date_given, next_due_date, administered_by, notes, created_at) VALUES (?,?,?,?,?,?,?)`, args: [babyId, rec.name, rec.date_given, rec.next_due_date ?? rec.nextDueDate, rec.administered_by, rec.notes, rec.created_at ?? isoNow()] });
+					await db.execute({ sql: `INSERT INTO vaccinations (baby_id, name, date_given, next_due_date, administered_by, notes, created_at, created_by) VALUES (?,?,?,?,?,?,?,?)`, args: [babyId, rec.name, rec.date_given, rec.next_due_date ?? rec.nextDueDate, rec.administered_by, rec.notes, rec.created_at ?? isoNow(), rec.created_by ?? userId] });
 				} else if (table === 'moods') {
-					await db.execute({ sql: `INSERT INTO moods (baby_id, mood, recorded_at, notes, created_at) VALUES (?,?,?,?,?)`, args: [babyId, rec.mood, rec.recorded_at ?? rec.recordedAt ?? isoNow(), rec.notes, rec.created_at ?? isoNow()] });
+					await db.execute({ sql: `INSERT INTO moods (baby_id, mood, recorded_at, notes, created_at, created_by) VALUES (?,?,?,?,?,?)`, args: [babyId, rec.mood, rec.recorded_at ?? rec.recordedAt ?? isoNow(), rec.notes, rec.created_at ?? isoNow(), rec.created_by ?? userId] });
 				} else if (table === 'journal_entries') {
-					await db.execute({ sql: `INSERT INTO journal_entries (baby_id, title, body, entry_date, created_at) VALUES (?,?,?,?,?)`, args: [babyId, rec.title, rec.body, rec.entry_date ?? rec.entryDate ?? isoNow(), rec.created_at ?? isoNow()] });
+					await db.execute({ sql: `INSERT INTO journal_entries (baby_id, title, body, entry_date, created_at, created_by) VALUES (?,?,?,?,?,?)`, args: [babyId, rec.title, rec.body, rec.entry_date ?? rec.entryDate ?? isoNow(), rec.created_at ?? isoNow(), rec.created_by ?? userId] });
 				}
 				count++;
 			} catch (e) {

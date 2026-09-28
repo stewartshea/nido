@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
-import { resolveTrackableMember } from '../member-scope';
+import { resolveTrackableMember, attachCreatedBy } from '../member-scope';
 import { type AuthEnv } from '../auth';
 
 const vaccinationRoutes = new Hono<AuthEnv>();
@@ -44,7 +44,7 @@ vaccinationRoutes.get('/', async (c) => {
     // Get vaccinations for the baby
     const vaccinationsResult = await db.execute({
       sql: `
-      SELECT id, baby_id, name, date_given, next_due_date, administered_by, notes, created_at
+      SELECT id, baby_id, name, date_given, next_due_date, administered_by, notes, created_at, created_by
       FROM vaccinations
       WHERE baby_id = ?
       ORDER BY date_given DESC, next_due_date ASC
@@ -52,6 +52,7 @@ vaccinationRoutes.get('/', async (c) => {
       args: [babyId]
     });
     
+    await attachCreatedBy(db, vaccinationsResult.rows as any[]);
     return c.json({ vaccinations: vaccinationsResult.rows });
   } catch (error) {
     c.get('log').error('get vaccinations failed', { err: error });
@@ -69,7 +70,7 @@ vaccinationRoutes.get('/:id{[0-9]+}', async (c) => {
     // Verify user has access to this vaccination
     const vaccinationResult = await db.execute({
       sql: `
-      SELECT v.id, v.baby_id, v.name, v.date_given, v.next_due_date, v.administered_by, v.notes, v.created_at
+      SELECT v.id, v.baby_id, v.name, v.date_given, v.next_due_date, v.administered_by, v.notes, v.created_at, v.created_by
       FROM vaccinations v
       JOIN babies b ON v.baby_id = b.id
       JOIN households h ON b.household_id = h.id
@@ -107,24 +108,25 @@ vaccinationRoutes.post('/', zValidator('json', createVaccinationSchema), async (
     const result = await db.execute({
       sql: `
         INSERT INTO vaccinations (
-          baby_id, name, date_given, next_due_date, administered_by, notes, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+          baby_id, name, date_given, next_due_date, administered_by, notes, created_at, created_by
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       `,
       args: [
-        memberId, 
+        babyId, 
         name, 
         dateGiven || null, 
         nextDueDate || null, 
         administeredBy || null, 
         notes || null, 
-        new Date().toISOString()
+        new Date().toISOString(),
+        userId
       ]
     });
     
     // Return the created vaccination
     const vaccinationResult = await db.execute({
       sql: `
-      SELECT id, baby_id, name, date_given, next_due_date, administered_by, notes, created_at
+      SELECT id, baby_id, name, date_given, next_due_date, administered_by, notes, created_at, created_by
       FROM vaccinations
       WHERE id = ?
     `,
@@ -211,7 +213,7 @@ vaccinationRoutes.put('/:id{[0-9]+}', zValidator('json', updateVaccinationSchema
     // Return updated vaccination
     const updatedVaccinationResult = await db.execute({
       sql: `
-      SELECT id, baby_id, name, date_given, next_due_date, administered_by, notes, created_at
+      SELECT id, baby_id, name, date_given, next_due_date, administered_by, notes, created_at, created_by
       FROM vaccinations
       WHERE id = ?
     `,

@@ -37,3 +37,28 @@ export async function resolveTrackableMember(
 	if (!row) return null;
 	return { memberId: Number(row.member_id), babyId: Number(row.baby_id) };
 }
+
+// Records store the UUID of the user who logged them (`created_by`); the
+// family DB's users table holds the display name. One lookup per response
+// decorates every row with `created_by_name`.
+export async function attachCreatedBy(
+	db: SqliteFacade,
+	rows: any[],
+): Promise<void> {
+	const ids = [...new Set(
+		rows.map((r) => (r?.created_by ? String(r.created_by) : null)).filter((v): v is string => !!v),
+	)];
+	if (ids.length === 0) return;
+	const res = await db.execute({
+		sql: `SELECT id, first_name, last_name FROM users WHERE id IN (${ids.map(() => '?').join(', ')})`,
+		args: ids,
+	});
+	const names = new Map<string, string>();
+	for (const u of res.rows) {
+		const name = `${u?.first_name ?? ''} ${u?.last_name ?? ''}`.trim();
+		names.set(String(u?.id), name || 'Unknown');
+	}
+	for (const r of rows) {
+		if (r && r.created_by) r.created_by_name = names.get(String(r.created_by)) ?? 'Unknown';
+	}
+}

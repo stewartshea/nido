@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 import type { FeedingRow } from '../db-types';
-import { resolveTrackableMember } from '../member-scope';
+import { resolveTrackableMember, attachCreatedBy } from '../member-scope';
 import { type AuthEnv } from '../auth';
 
 const feedingRoutes = new Hono<AuthEnv>();
@@ -48,7 +48,7 @@ feedingRoutes.get('/', async (c) => {
     // Get feedings for the baby
     const feedingsResult = await db.execute({
       sql: `
-      SELECT id, baby_id, start_time, end_time, duration, amount, type, side, formula_id, notes, created_at
+      SELECT id, baby_id, start_time, end_time, duration, amount, type, side, formula_id, notes, created_at, created_by
       FROM feedings
       WHERE baby_id = ?
       LIMIT 100
@@ -70,6 +70,7 @@ feedingRoutes.get('/', async (c) => {
       .sort((a, b) => (b.start_time ?? '').localeCompare(a.start_time ?? ''))
       .slice(0, 100);
     
+    await attachCreatedBy(db, feedings);
     return c.json({ feedings });
   } catch (error) {
     c.get('log').error('get feedings failed', { err: error });
@@ -87,7 +88,7 @@ feedingRoutes.get('/:id{[0-9]+}', async (c) => {
     // Verify user has access to this feeding
     const feedingResult = await db.execute({
       sql: `
-      SELECT f.id, f.baby_id, f.start_time, f.end_time, f.duration, f.amount, f.type, f.side, f.formula_id, f.notes, f.created_at
+      SELECT f.id, f.baby_id, f.start_time, f.end_time, f.duration, f.amount, f.type, f.side, f.formula_id, f.notes, f.created_at, f.created_by
       FROM feedings f
       JOIN babies b ON f.baby_id = b.id
       JOIN households h ON b.household_id = h.id
@@ -142,8 +143,8 @@ feedingRoutes.post('/', zValidator('json', createFeedingSchema), async (c) => {
     const result = await db.execute({
       sql: `
         INSERT INTO feedings (
-          baby_id, start_time, end_time, duration, amount, type, side, formula_id, notes, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          baby_id, start_time, end_time, duration, amount, type, side, formula_id, notes, created_at, created_by
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
       args: [
         scope.babyId, 
@@ -155,14 +156,15 @@ feedingRoutes.post('/', zValidator('json', createFeedingSchema), async (c) => {
         side || null, 
         formulaId || null, 
         notes || null, 
-        new Date().toISOString()
+        new Date().toISOString(),
+        userId
       ]
     });
     
     // Return the created feeding
     const feedingResult = await db.execute({
       sql: `
-      SELECT id, baby_id, start_time, end_time, duration, amount, type, side, formula_id, notes, created_at
+      SELECT id, baby_id, start_time, end_time, duration, amount, type, side, formula_id, notes, created_at, created_by
       FROM feedings
       WHERE id = ?
     `,
@@ -283,7 +285,7 @@ feedingRoutes.put('/:id{[0-9]+}', zValidator('json', updateFeedingSchema), async
     // Return updated feeding
     const updatedFeedingResult = await db.execute({
       sql: `
-      SELECT id, baby_id, start_time, end_time, duration, amount, type, side, formula_id, notes, created_at
+      SELECT id, baby_id, start_time, end_time, duration, amount, type, side, formula_id, notes, created_at, created_by
       FROM feedings
       WHERE id = ?
     `,

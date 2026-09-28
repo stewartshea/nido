@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
-import { resolveTrackableMember } from '../member-scope';
+import { resolveTrackableMember, attachCreatedBy } from '../member-scope';
 import { type AuthEnv } from '../auth';
 
 const diaperRoutes = new Hono<AuthEnv>();
@@ -44,7 +44,7 @@ diaperRoutes.get('/', async (c) => {
     // Get diapers for the baby
     const diapersResult = await db.execute({
       sql: `
-      SELECT id, baby_id, change_time, type, color, consistency, notes, created_at
+      SELECT id, baby_id, change_time, type, color, consistency, notes, created_at, created_by
       FROM diapers
       WHERE baby_id = ?
       LIMIT 100
@@ -56,6 +56,7 @@ diaperRoutes.get('/', async (c) => {
       .sort((a, b) => String(b.change_time ?? '').localeCompare(String(a.change_time ?? '')))
       .slice(0, 100);
     
+    await attachCreatedBy(db, diapersSorted);
     return c.json({ diapers: diapersSorted });
   } catch (error) {
     c.get('log').error('get diapers failed', { err: error });
@@ -73,7 +74,7 @@ diaperRoutes.get('/:id{[0-9]+}', async (c) => {
     // Verify user has access to this diaper
     const diaperResult = await db.execute({
       sql: `
-      SELECT d.id, d.baby_id, d.change_time, d.type, d.color, d.consistency, d.notes, d.created_at
+      SELECT d.id, d.baby_id, d.change_time, d.type, d.color, d.consistency, d.notes, d.created_at, d.created_by
       FROM diapers d
       JOIN babies b ON d.baby_id = b.id
       JOIN households h ON b.household_id = h.id
@@ -111,24 +112,25 @@ diaperRoutes.post('/', zValidator('json', createDiaperSchema), async (c) => {
     const result = await db.execute({
       sql: `
         INSERT INTO diapers (
-          baby_id, change_time, type, color, consistency, notes, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+          baby_id, change_time, type, color, consistency, notes, created_at, created_by
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       `,
       args: [
-        memberId, 
+        babyId, 
         changeTime, 
         type, 
         color || null, 
         consistency || null, 
         notes || null, 
-        new Date().toISOString()
+        new Date().toISOString(),
+        userId
       ]
     });
     
     // Return the created diaper
     const diaperResult = await db.execute({
       sql: `
-      SELECT id, baby_id, change_time, type, color, consistency, notes, created_at
+      SELECT id, baby_id, change_time, type, color, consistency, notes, created_at, created_by
       FROM diapers
       WHERE id = ?
     `,
@@ -215,7 +217,7 @@ diaperRoutes.put('/:id{[0-9]+}', zValidator('json', updateDiaperSchema), async (
     // Return updated diaper
     const updatedDiaperResult = await db.execute({
       sql: `
-      SELECT id, baby_id, change_time, type, color, consistency, notes, created_at
+      SELECT id, baby_id, change_time, type, color, consistency, notes, created_at, created_by
       FROM diapers
       WHERE id = ?
     `,

@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
-import { resolveTrackableMember } from '../member-scope';
+import { resolveTrackableMember, attachCreatedBy } from '../member-scope';
 import { type AuthEnv } from '../auth';
 
 const milestoneRoutes = new Hono<AuthEnv>();
@@ -44,7 +44,7 @@ milestoneRoutes.get('/', async (c) => {
     // Get milestones for the baby
     const milestonesResult = await db.execute({
       sql: `
-      SELECT id, baby_id, title, description, achieved_date, category, tags, created_at
+      SELECT id, baby_id, title, description, achieved_date, category, tags, created_at, created_by
       FROM milestones
       WHERE baby_id = ?
     `,
@@ -54,6 +54,7 @@ milestoneRoutes.get('/', async (c) => {
     const milestonesSorted = [...milestonesResult.rows]
       .sort((a, b) => String(b.achieved_date ?? '').localeCompare(String(a.achieved_date ?? '')));
     
+    await attachCreatedBy(db, milestonesSorted);
     return c.json({ milestones: milestonesSorted });
   } catch (error) {
     c.get('log').error('get milestones failed', { err: error });
@@ -71,7 +72,7 @@ milestoneRoutes.get('/:id{[0-9]+}', async (c) => {
     // Verify user has access to this milestone
     const milestoneResult = await db.execute({
       sql: `
-      SELECT m.id, m.baby_id, m.title, m.description, m.achieved_date, m.category, m.created_at
+      SELECT m.id, m.baby_id, m.title, m.description, m.achieved_date, m.category, m.created_at, m.created_by
       FROM milestones m
       JOIN babies b ON m.baby_id = b.id
       JOIN households h ON b.household_id = h.id
@@ -111,24 +112,25 @@ milestoneRoutes.post('/', zValidator('json', createMilestoneSchema), async (c) =
     const result = await db.execute({
       sql: `
         INSERT INTO milestones (
-          baby_id, title, description, achieved_date, category, tags, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+          baby_id, title, description, achieved_date, category, tags, created_at, created_by
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       `,
       args: [
-        memberId, 
+        babyId, 
         title, 
         description || null, 
         achievedDate, 
         category || null,
         tagsJson,
-        new Date().toISOString()
+        new Date().toISOString(),
+        userId
       ]
     });
     
     // Return the created milestone
     const milestoneResult = await db.execute({
       sql: `
-      SELECT id, baby_id, title, description, achieved_date, category, created_at
+      SELECT id, baby_id, title, description, achieved_date, category, created_at, created_by
       FROM milestones
       WHERE id = ?
     `,
@@ -215,7 +217,7 @@ milestoneRoutes.put('/:id{[0-9]+}', zValidator('json', updateMilestoneSchema), a
     // Return updated milestone
     const updatedMilestoneResult = await db.execute({
       sql: `
-      SELECT id, baby_id, title, description, achieved_date, category, created_at
+      SELECT id, baby_id, title, description, achieved_date, category, created_at, created_by
       FROM milestones
       WHERE id = ?
     `,

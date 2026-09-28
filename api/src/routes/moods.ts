@@ -3,7 +3,7 @@ import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 import { type AuthEnv } from '../auth';
 import type { MoodRow } from '../db-types';
-import { resolveTrackableMember } from '../member-scope';
+import { resolveTrackableMember, attachCreatedBy } from '../member-scope';
 
 const moodRoutes = new Hono<AuthEnv>();
 
@@ -44,11 +44,13 @@ moodRoutes.get('/', async (c) => {
   if (!babyId) return c.json({ error: 'Access denied' }, 403);
 
   const res = await db.execute({
-    sql: `SELECT id, baby_id, mood, recorded_at, notes, created_at FROM moods WHERE baby_id = ? ORDER BY recorded_at DESC`,
+    sql: `SELECT id, baby_id, mood, recorded_at, notes, created_at, created_by FROM moods WHERE baby_id = ? ORDER BY recorded_at DESC`,
     args: [babyId],
   });
+  await attachCreatedBy(db, res.rows as any[]);
   return c.json({ moods: res.rows.map((r) => ({
     id: Number(r?.id), memberId: Number(r?.baby_id), mood: r?.mood, recordedAt: r?.recorded_at, notes: r?.notes, createdAt: r?.created_at,
+    createdBy: r?.created_by ?? null, createdByName: (r as any)?.created_by_name ?? null,
   })) });
 });
 
@@ -61,8 +63,8 @@ moodRoutes.post('/', zValidator('json', createMoodSchema), async (c) => {
 
   const now = new Date().toISOString();
   const ins = await db.execute({
-    sql: `INSERT INTO moods (baby_id, mood, recorded_at, notes, created_at) VALUES (?, ?, ?, ?, ?)`,
-    args: [babyId, mood, recordedAt || now, notes || null, now],
+    sql: `INSERT INTO moods (baby_id, mood, recorded_at, notes, created_at, created_by) VALUES (?, ?, ?, ?, ?, ?)`,
+    args: [babyId, mood, recordedAt || now, notes || null, now, userId],
   });
   return c.json({ message: 'Mood recorded', mood: { id: Number(ins.lastInsertRowid), memberId: babyId, mood, recordedAt: recordedAt || now, notes } }, 201);
 });

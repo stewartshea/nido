@@ -87,5 +87,6 @@
 
 	<footer class="mt-8 md:mt-16 border-t border-line bg-primary py-4 md:py-6 text-center text-sm text-accent mb-20 md:mb-0">
 		<span class="text-accent font-display">Nido</span> · tending to the home
+		<a href="https://www.nido-app.ca" target="_blank" rel="noopener noreferrer" class="ml-3 underline hover:opacity-80">Docs</a>
 	</footer>
 {/if}

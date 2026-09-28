@@ -136,7 +136,7 @@ authRoutes.post('/register', zValidator('json', registerSchema), async (c) => {
     const token = jwt.sign(
       { userId, email, familyId, role: 'owner' },
       jwtSecret(),
-      { expiresIn: '24h' }
+      { expiresIn: '30d' }
     );
 
     return c.json({
@@ -278,7 +278,7 @@ authRoutes.post('/login', zValidator('json', loginSchema), async (c) => {
     const token = jwt.sign(
       { userId: user.id, email: user.email, familyId: route.family_id, role: route.role },
       jwtSecret(),
-      { expiresIn: '24h' }
+      { expiresIn: '30d' }
     );
 
     return c.json({

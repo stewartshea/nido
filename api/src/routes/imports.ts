@@ -148,17 +148,17 @@ const now = isoNow();
 		const durationMs = f.durationSeconds ? Math.round(f.durationSeconds * 1000) : null;
 		const end = durationMs ? new Date(new Date(f.startTime).getTime() + durationMs).toISOString() : null;
 		await insert(
-			`INSERT INTO feedings (baby_id, start_time, end_time, duration, amount, type, side, notes, created_at)
-			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			[babyId, f.startTime, end, durationMs, opt(f.amount), f.type, opt(f.side), opt(f.notes), now],
+			`INSERT INTO feedings (baby_id, start_time, end_time, duration, amount, type, side, notes, created_at, created_by)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			[babyId, f.startTime, end, durationMs, opt(f.amount), f.type, opt(f.side), opt(f.notes), now, userId],
 			'feedings', f.activityKey,
 		);
 	}
 	for (const d of diapers) {
 		await insert(
-			`INSERT INTO diapers (baby_id, change_time, type, color, consistency, notes, created_at)
-			 VALUES (?, ?, ?, ?, ?, ?, ?)`,
-			[babyId, d.changeTime, d.type, opt(d.color), opt(d.consistency), opt(d.notes), now],
+			`INSERT INTO diapers (baby_id, change_time, type, color, consistency, notes, created_at, created_by)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+			[babyId, d.changeTime, d.type, opt(d.color), opt(d.consistency), opt(d.notes), now, userId],
 			'diapers', d.activityKey,
 		);
 	}
@@ -166,25 +166,25 @@ const now = isoNow();
 		const durationMs = s.durationSeconds ? Math.round(s.durationSeconds * 1000) : null;
 		const end = durationMs ? new Date(new Date(s.startTime).getTime() + durationMs).toISOString() : null;
 		await insert(
-			`INSERT INTO sleep (baby_id, start_time, end_time, duration, location, notes, created_at)
-			 VALUES (?, ?, ?, ?, ?, ?, ?)`,
-			[babyId, s.startTime, end, durationMs, null, opt(s.notes), now],
+			`INSERT INTO sleep (baby_id, start_time, end_time, duration, location, notes, created_at, created_by)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+			[babyId, s.startTime, end, durationMs, null, opt(s.notes), now, userId],
 			'sleep', s.activityKey,
 		);
 	}
 	for (const g of growths) {
 		await insert(
-			`INSERT INTO growth (baby_id, measurement_date, weight, height, head_circumference, unit_system, notes, created_at)
-			 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-			[babyId, g.measurementDate, opt(g.weight), opt(g.height), opt(g.headCircumference), g.unitSystem, opt(g.notes), now],
+			`INSERT INTO growth (baby_id, measurement_date, weight, height, head_circumference, unit_system, notes, created_at, created_by)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			[babyId, g.measurementDate, opt(g.weight), opt(g.height), opt(g.headCircumference), g.unitSystem, opt(g.notes), now, userId],
 			'growth', g.activityKey,
 		);
 	}
 	for (const m of milestones) {
 		await insert(
-			`INSERT INTO milestones (baby_id, title, description, achieved_date, category, created_at)
-			 VALUES (?, ?, ?, ?, ?, ?)`,
-			[babyId, m.title, null, m.achievedDate, m.category, now],
+			`INSERT INTO milestones (baby_id, title, description, achieved_date, category, created_at, created_by)
+			 VALUES (?, ?, ?, ?, ?, ?, ?)`,
+			[babyId, m.title, null, m.achievedDate, m.category, now, userId],
 			'milestones', m.activityKey,
 		);
 	}

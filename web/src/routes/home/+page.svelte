@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, onDestroy } from 'svelte';
 	import { browser } from '$app/environment';
 	import { goto } from '$app/navigation';
 	import { authAPI, userAPI, babyAPI, familiesAPI, feedingAPI, diaperAPI, sleepAPI, growthAPI, healthAPI, importsAPI, photosAPI, formulasAPI, familyAdminAPI, accountAPI, milestoneAPI, vaccinationAPI, settingsAPI, moodAPI, journalAPI, tokenExpired, remindersAPI } from '$lib/api';
@@ -278,6 +278,7 @@
 	$: rightBreastTotal = breastFeedings.filter((f) => f.side === 'right').reduce((s, f) => s + (f.duration || 0), 0);
 
 	let timerTick: any = null;
+	let timerNow = 0;
 
 	function avg(a: number[]): number | null {
 		if (a.length === 0) return null;
@@ -336,11 +337,10 @@
 
 	function startTimerLoop() {
 		stopTimerLoop();
+		timerNow = Date.now();
 		timerTick = window.setInterval(() => {
-			const now = Date.now();
-			if (leftStartedAt) leftElapsed = now - leftStartedAt;
-			if (rightStartedAt) rightElapsed = now - rightStartedAt;
-			if (sleepStartedAt) sleepElapsed = now - sleepStartedAt;
+			timerNow = Date.now();
+			if (sleepStartedAt) sleepElapsed = timerNow - sleepStartedAt;
 		}, 1000);
 	}
 
@@ -1183,8 +1183,8 @@
 	}
 
 	// Live per-side elapsed (ms) = frozen total + live running time.
-	$: leftTotalMs = leftElapsed + (leftStartedAt ? Date.now() - leftStartedAt : 0);
-	$: rightTotalMs = rightElapsed + (rightStartedAt ? Date.now() - rightStartedAt : 0);
+	$: leftTotalMs = leftElapsed + (leftStartedAt ? timerNow - leftStartedAt : 0);
+	$: rightTotalMs = rightElapsed + (rightStartedAt ? timerNow - rightStartedAt : 0);
 	$: feedTotalMs = leftTotalMs + rightTotalMs;
 	$: anyBreastRunning = !!(leftStartedAt || rightStartedAt);
 
@@ -1222,12 +1222,9 @@
 			rightStartedAt = s.rightStartedAt ? Number(s.rightStartedAt) : null;
 			sleepElapsed = Number(s.sleepElapsed || 0);
 			sleepStartedAt = s.sleepStartedAt ? Number(s.sleepStartedAt) : null;
-			// Auto-pause a timer whose wall-clock is unreasonably stale (e.g. the
-			// device was asleep over an hour) so it does not accumulate forever.
-			const now = Date.now();
-			if (leftStartedAt && now - leftStartedAt > 60 * 60 * 1000) leftStartedAt = null;
-			if (rightStartedAt && now - rightStartedAt > 60 * 60 * 1000) rightStartedAt = null;
-			if (sleepStartedAt && now - sleepStartedAt > 60 * 60 * 1000) sleepStartedAt = null;
+			// Timers intentionally survive app switches and device sleep: elapsed
+			// time is derived from wall-clock timestamps, so a long nap never
+			// silently stops a running timer.
 		} catch {}
 		if (leftStartedAt || rightStartedAt || sleepStartedAt) startTimerLoop();
 	}
@@ -1531,6 +1528,29 @@
 				await flushOutbox();
 				window.setInterval(() => flushOutbox(), 60 * 1000);
 			}
+			document.addEventListener('visibilitychange', resyncTimers);
+			window.addEventListener('pageshow', resyncTimers);
+			window.addEventListener('focus', resyncTimers);
+			window.addEventListener('pagehide', persistTimerState);
+		}
+	});
+
+	function resyncTimers() {
+		if (document.visibilityState === 'hidden') {
+			persistTimerState();
+			return;
+		}
+		timerNow = Date.now();
+		if (leftStartedAt || rightStartedAt || sleepStartedAt) startTimerLoop();
+	}
+
+	onDestroy(() => {
+		if (browser) {
+			document.removeEventListener('visibilitychange', resyncTimers);
+			window.removeEventListener('pageshow', resyncTimers);
+			window.removeEventListener('focus', resyncTimers);
+			window.removeEventListener('pagehide', persistTimerState);
+			stopTimerLoop();
 		}
 	});
 </script>

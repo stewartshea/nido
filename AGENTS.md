@@ -114,8 +114,8 @@
   offline-capable mutations rather than inventing a new queue — and prefer
   extracting it to `$lib/shared.ts` the next time one of these files is
   touched, since it's already duplicated 4x.
-- **Auth tokens**: JWTs are signed with a 24h expiry
-  (`jwt.sign(..., { expiresIn: '24h' })` in `api/src/routes/auth.ts`) and
+- **Auth tokens**: JWTs are signed with a 30-day expiry
+  (`jwt.sign(..., { expiresIn: '30d' })` in `api/src/routes/auth.ts`) and
   carry `userId`/`email`/`familyId`/`role`. Never mint a token without an
   expiry, and never trust a `familyId` from anywhere except a verified JWT.
 - **Bulk data escape hatch**: `GET /families/:id/export` and `POST
