@@ -99,7 +99,6 @@ export default defineConfig({
 					items: [
 						{ label: 'Roadmap', slug: 'project/roadmap' },
 						{ label: 'Contributing', slug: 'project/contributing' },
-						{ label: 'Funding', slug: 'project/funding' },
 						{ label: 'Support Nido', slug: 'support' },
 					],
 				},
