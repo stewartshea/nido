@@ -1703,7 +1703,7 @@
 												<p class="text-sm text-ink-soft">Born {baby.birth_date.slice(0, 10)}</p>
 											</div>
 										</div>
-										<button type="button" on:click={() => { goto('/family'); selectBaby(baby.id); familyView = 'detail'; activeTab = 'feeds'; }} class="px-4 py-2 bg-surface2 text-ink-soft hover:text-ink rounded-md text-sm font-semibold">
+										<button type="button" on:click={() => { goto('/family'); selectMember(baby.id); familyView = 'detail'; activeTab = 'feeds'; }} class="px-4 py-2 bg-surface2 text-ink-soft hover:text-ink rounded-md text-sm font-semibold">
 											Log Activity
 										</button>
 									</div>

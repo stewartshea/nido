@@ -100,6 +100,23 @@ function toNumber(v: string | undefined): number | undefined {
 	return Number.isNaN(n) ? undefined : n;
 }
 
+const ML_PER_FLOZ = 29.5735295625;
+const LB_PER_KG = 2.2046226218;
+const CM_PER_IN = 2.54;
+
+// Nido stores volumes in fluid ounces; Narababy mixes FLOZ and ML per row.
+function toOz(value: number | undefined, unit: string | undefined): number | undefined {
+	if (value === undefined) return undefined;
+	const u = (unit ?? '').trim().toUpperCase();
+	if (u === 'ML') return value / ML_PER_FLOZ;
+	return value;
+}
+
+function sumDefined(...vals: Array<number | undefined>): number | undefined {
+	const present = vals.filter((v): v is number => v !== undefined);
+	return present.length ? present.reduce((s, v) => s + v, 0) : undefined;
+}
+
 export function parseNarababyCsv(text: string): NarababyImport {
 	const lines = parseCsvLines(text);
 	if (lines.length === 0) {
@@ -182,29 +199,31 @@ export function parseNarababyCsv(text: string): NarababyImport {
 				break;
 			}
 			case 'Bottle Feed': {
-				const total = r['[Bottle Feed] Volume'];
-				const breastMilk = r['[Bottle Feed] Breast Milk Volume'];
-				const formulaV = r['[Bottle Feed] Formula Volume'];
-				const v = toNumber(total || breastMilk || formulaV);
+				const total = toOz(toNumber(r['[Bottle Feed] Volume']), r['[Bottle Feed] Volume Unit']);
+				const breastMilk = toOz(toNumber(r['[Bottle Feed] Breast Milk Volume']), r['[Bottle Feed] Breast Milk Volume Unit']);
+				const formula = toOz(toNumber(r['[Bottle Feed] Formula Volume']), r['[Bottle Feed] Formula Volume Unit']);
+				const combined = sumDefined(breastMilk, formula);
 				const bottleType = (r['[Bottle Feed] Type'] ?? '').trim();
 				result.feedings.push({
 					activityKey,
-					type: bottleType === 'Breast Milk' ? 'bottle' : 'formula',
+					type: /formula/i.test(bottleType) ? 'formula' : 'bottle',
 					startTime: start,
-					amount: v,
+					amount: total ?? combined,
 					notes: [r['Note']?.trim(), r['[Bottle Feed] Formula Name']?.trim()].filter(Boolean).join(' · ') || undefined,
 				});
 				break;
 			}
 			case 'Pump': {
-				const v = toNumber(r['[Pump] Total Volume'] ?? r['[Pump] Left Volume'] ?? r['[Pump] Right Volume']);
+				const total = toOz(toNumber(r['[Pump] Total Volume']), r['[Pump] Total Volume Unit']);
+				const left = toOz(toNumber(r['[Pump] Left Volume']), r['[Pump] Left Volume Unit']);
+				const right = toOz(toNumber(r['[Pump] Right Volume']), r['[Pump] Right Volume Unit']);
 				const dur = toNumber(r['[Pump] Duration (Seconds)']);
 				result.feedings.push({
 					activityKey,
 					type: 'pump',
 					startTime: start,
 					durationSeconds: dur,
-					amount: v,
+					amount: total ?? sumDefined(left, right),
 					notes: r['Note']?.trim() || undefined,
 				});
 				break;
@@ -231,16 +250,30 @@ export function parseNarababyCsv(text: string): NarababyImport {
 				break;
 			}
 			case 'Growth': {
-				const wUnit = (r['[Growth] Weight Unit'] ?? '').trim();
-				const hUnit = (r['[Growth] Height Unit'] ?? '').trim();
-				const unit = hUnit === 'IN' || wUnit === 'LB' ? 'imperial' : 'metric';
+				const wUnit = (r['[Growth] Weight Unit'] ?? '').trim().toUpperCase();
+				const hUnit = (r['[Growth] Height Unit'] ?? '').trim().toUpperCase();
+				const headUnit = (r['[Growth] Head Size Unit'] ?? '').trim().toUpperCase();
+				const weight = toNumber(r['[Growth] Weight']);
+				const height = toNumber(r['[Growth] Height']);
+				const head = toNumber(r['[Growth] Head Size']);
+
+				// A single growth row can mix units (weight in KG, height in IN), so
+				// every measure is converted into the row's chosen system.
+				const metric = wUnit === 'KG' || hUnit === 'CM' || headUnit === 'CM';
+				const weightOut = weight === undefined ? undefined
+					: metric ? (wUnit === 'LB' ? weight / LB_PER_KG : weight) : (wUnit === 'KG' ? weight * LB_PER_KG : weight);
+				const heightOut = height === undefined ? undefined
+					: metric ? (hUnit === 'IN' ? height * CM_PER_IN : height) : (hUnit === 'CM' ? height / CM_PER_IN : height);
+				const headOut = head === undefined ? undefined
+					: metric ? (headUnit === 'IN' ? head * CM_PER_IN : head) : (headUnit === 'CM' ? head / CM_PER_IN : head);
+
 				result.growths.push({
 					activityKey,
 					measurementDate: start,
-					weight: toNumber(r['[Growth] Weight']),
-					height: toNumber(r['[Growth] Height']),
-					headCircumference: toNumber(r['[Growth] Head Size']),
-					unitSystem: unit,
+					weight: weightOut,
+					height: heightOut,
+					headCircumference: headOut,
+					unitSystem: metric ? 'metric' : 'imperial',
 					notes: r['Note']?.trim() || undefined,
 				});
 				break;

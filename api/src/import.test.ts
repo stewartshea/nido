@@ -155,10 +155,63 @@ describe('parseNarababyCsv', () => {
 		const parsed = parseNarababyCsv(csv);
 		expect(parsed.growths).toHaveLength(1);
 		const g = parsed.growths[0];
-		expect(g.weight).toBe(4.309);
-		expect(g.height).toBe(21.06);
-		expect(g.headCircumference).toBe(13.78);
-		expect(g.unitSystem).toBe('imperial'); // height in inches drives imperial
+		expect(g.weight).toBeCloseTo(4.309, 5);
+		expect(g.height).toBeCloseTo(21.06 * 2.54, 4);
+		expect(g.headCircumference).toBeCloseTo(13.78 * 2.54, 4);
+		expect(g.unitSystem).toBe('metric'); // a KG weight drives metric; inches convert to cm
+	});
+
+	it('converts bottle volumes from ML and sums mixed feeds to ounces', () => {
+		const ml = parseNarababyCsv([
+			SAMPLE_HEADER,
+			row({
+				Type: 'Bottle Feed', 'Profile Name': 'Audrey', 'Start Date/time (Epoch)': '1789822343000',
+				'[Bottle Feed] Type': 'Breast Milk',
+				'[Bottle Feed] Breast Milk Volume': '75', '[Bottle Feed] Breast Milk Volume Unit': 'ML',
+				_activityKey: 't-bottle-ml',
+			}),
+		].join('\n'));
+		expect(ml.feedings[0].type).toBe('bottle');
+		expect(ml.feedings[0].amount).toBeCloseTo(75 / 29.5735295625, 4);
+
+		const mixed = parseNarababyCsv([
+			SAMPLE_HEADER,
+			row({
+				Type: 'Bottle Feed', 'Profile Name': 'Audrey', 'Start Date/time (Epoch)': '1789822343000',
+				'[Bottle Feed] Type': 'Breast Milk Formula',
+				'[Bottle Feed] Breast Milk Volume': '3', '[Bottle Feed] Breast Milk Volume Unit': 'FLOZ',
+				'[Bottle Feed] Formula Volume': '2', '[Bottle Feed] Formula Volume Unit': 'FLOZ',
+				_activityKey: 't-bottle-mixed',
+			}),
+		].join('\n'));
+		expect(mixed.feedings[0].type).toBe('formula');
+		expect(mixed.feedings[0].amount).toBeCloseTo(5, 5);
+	});
+
+	it('converts and sums pump volumes to ounces', () => {
+		const totalMl = parseNarababyCsv([
+			SAMPLE_HEADER,
+			row({
+				Type: 'Pump', 'Start Date/time (Epoch)': '1789822343000',
+				'[Pump] Duration (Seconds)': '1652',
+				'[Pump] Total Volume': '50', '[Pump] Total Volume Unit': 'ML',
+				_activityKey: 't-pump-ml',
+			}),
+		].join('\n'));
+		expect(totalMl.feedings[0].type).toBe('pump');
+		expect(totalMl.feedings[0].amount).toBeCloseTo(50 / 29.5735295625, 4);
+
+		const sides = parseNarababyCsv([
+			SAMPLE_HEADER,
+			row({
+				Type: 'Pump', 'Start Date/time (Epoch)': '1789822343000',
+				'[Pump] Duration (Seconds)': '1200',
+				'[Pump] Left Volume': '1', '[Pump] Left Volume Unit': 'FLOZ',
+				'[Pump] Right Volume': '1.25', '[Pump] Right Volume Unit': 'FLOZ',
+				_activityKey: 't-pump-sides',
+			}),
+		].join('\n'));
+		expect(sides.feedings[0].amount).toBeCloseTo(2.25, 5);
 	});
 
 	it('maps routine rows to milestones', () => {

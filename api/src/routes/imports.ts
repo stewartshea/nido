@@ -146,11 +146,12 @@ const now = isoNow();
 	};
 
 	for (const f of feedings) {
-		const end = f.durationSeconds ? new Date(new Date(f.startTime).getTime() + f.durationSeconds * 1000).toISOString() : null;
+		const durationMs = f.durationSeconds ? Math.round(f.durationSeconds * 1000) : null;
+		const end = durationMs ? new Date(new Date(f.startTime).getTime() + durationMs).toISOString() : null;
 		await insert(
 			`INSERT INTO feedings (baby_id, start_time, end_time, duration, amount, type, side, notes, created_at)
 			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			[babyId, f.startTime, end, opt(f.durationSeconds), opt(f.amount), f.type, opt(f.side), opt(f.notes), now],
+			[babyId, f.startTime, end, durationMs, opt(f.amount), f.type, opt(f.side), opt(f.notes), now],
 			'feedings', f.activityKey,
 		);
 	}
@@ -163,11 +164,12 @@ const now = isoNow();
 		);
 	}
 	for (const s of sleeps) {
-		const end = s.durationSeconds ? new Date(new Date(s.startTime).getTime() + s.durationSeconds * 1000).toISOString() : null;
+		const durationMs = s.durationSeconds ? Math.round(s.durationSeconds * 1000) : null;
+		const end = durationMs ? new Date(new Date(s.startTime).getTime() + durationMs).toISOString() : null;
 		await insert(
 			`INSERT INTO sleep (baby_id, start_time, end_time, duration, location, notes, created_at)
 			 VALUES (?, ?, ?, ?, ?, ?, ?)`,
-			[babyId, s.startTime, end, opt(s.durationSeconds), null, opt(s.notes), now],
+			[babyId, s.startTime, end, durationMs, null, opt(s.notes), now],
 			'sleep', s.activityKey,
 		);
 	}

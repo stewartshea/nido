@@ -1778,7 +1778,7 @@
 							<div class="flex-1 overflow-x-auto no-scrollbar">
 								<div class="flex gap-2">
 									{#each babies as baby}
-										<button type="button" on:click={() => selectBaby(Number(baby.id))} class="{selectedMemberId === Number(baby.id) ? 'bg-accent text-on-accent border-accent' : 'bg-surface2 text-ink-soft border-line-soft'} h-11 px-4 rounded-full text-sm border flex items-center gap-2 whitespace-nowrap font-semibold transition-colors">
+										<button type="button" on:click={() => selectMember(Number(baby.id))} class="{selectedMemberId === Number(baby.id) ? 'bg-accent text-on-accent border-accent' : 'bg-surface2 text-ink-soft border-line-soft'} h-11 px-4 rounded-full text-sm border flex items-center gap-2 whitespace-nowrap font-semibold transition-colors">
 											<Avatar familyId={activeFamilyId} memberId={baby.id} avatar={baby.avatar} alt={baby.name} class="w-5 h-5 rounded-full object-cover">
 												<Baby class="w-4 h-4" />
 											</Avatar>
@@ -1849,7 +1849,7 @@
 									<button type="button" on:click={() => inviteMemberEmail(baby.email)} title="Re-send invite" class="px-2 py-2 text-xs text-accent hover:underline"><Mail class="w-4 h-4 inline mr-1" /> Invite</button>
 								{/if}
 								<button type="button" on:click={() => openEditMember(baby)} class="px-3 py-2 text-xs bg-surface2 text-ink-soft hover:text-ink rounded-md">Edit</button>
-								<button type="button" on:click={() => { selectBaby(baby.id); familyView = 'detail'; activeTab = 'feeds'; }} class="px-4 py-2 bg-surface2 text-ink-soft hover:text-ink rounded-md text-sm font-semibold">
+								<button type="button" on:click={() => { selectMember(baby.id); familyView = 'detail'; activeTab = 'feeds'; }} class="px-4 py-2 bg-surface2 text-ink-soft hover:text-ink rounded-md text-sm font-semibold">
 									Log Activity
 								</button>
 							</div>
