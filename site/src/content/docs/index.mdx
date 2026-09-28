@@ -17,51 +17,50 @@ hero:
       variant: minimal
 ---
 
-import { Card, CardGrid } from '@astrojs/starlight/components';
 import familyLight from '../../assets/screenshots/family-light-desktop.jpg';
 import familyDark from '../../assets/screenshots/family-dark-desktop.jpg';
 import familyMobile from '../../assets/screenshots/family-mobile.jpg';
 import homeSection from '../../assets/screenshots/home-section.jpg';
 
-## Docs
+<p class="nido-toplink"><a href="./getting-started/installation/">Documentation →</a></p>
 
-Everything for running it yourself — install, configure, back it up, and
-understand what it protects.
-
-<CardGrid>
-	<Card title="Installation" icon="rocket" href="./getting-started/installation/">
-		From an empty folder to a working Nido, in about five minutes.
-	</Card>
-	<Card title="First run" icon="rocket" href="./getting-started/first-run/">
-		Set up your family, invite a caregiver, and start logging.
-	</Card>
-	<Card title="Configuration" icon="setting" href="./reference/configuration/">
-		Every environment variable, what it does, and its default.
-	</Card>
-	<Card title="Backup & restore" icon="seti:file-backup" href="./guides/backup-and-restore/">
-		Keep a copy that you can actually get back.
-	</Card>
-	<Card title="Security model" icon="padlock" href="./reference/security/">
-		What is encrypted, what is not, and what that means for you.
-	</Card>
-	<Card title="Architecture" icon="puzzle" href="./reference/architecture/">
-		Containers, the tenant boundary, and where the data lives.
-	</Card>
-</CardGrid>
-
-<div class="nido-showcase">
-	<figure class="nido-shot nido-shot--desktop">
-		<img src={familyLight.src} width="1440" height="1150" alt="The Nido family page: today's feeds, diapers and sleep for a baby named Wren, with quick reports for the last 24 hours and 30 days" />
-	</figure>
-	<figure class="nido-shot nido-shot--mobile">
-		<img src={familyMobile.src} width="780" height="1688" alt="Nido on a phone: the same today view with large tap targets and bottom navigation" loading="lazy" decoding="async" />
-	</figure>
+<div class="nido-carousel">
+	<ul class="nido-carousel__track">
+		<li class="nido-carousel__slide" id="shot-today">
+			<img src={familyLight.src} width="1440" height="1150" alt="The Nido family page: today's feeds, diapers and sleep for a baby named Wren, with quick reports for the last 24 hours and 30 days" />
+			<p class="nido-carousel__caption">
+				Today at a glance — feeds, diapers and sleep, with the reports the
+				paediatrician asks about.
+			</p>
+		</li>
+		<li class="nido-carousel__slide nido-carousel__slide--portrait" id="shot-mobile">
+			<img src={familyMobile.src} width="780" height="1688" alt="Nido on a phone: the same today view with large tap targets and bottom navigation" loading="lazy" decoding="async" />
+			<p class="nido-carousel__caption">
+				Built for the phone at 3am — one thumb, one hand, one eye open. And it
+				works offline when the nursery Wi-Fi doesn't.
+			</p>
+		</li>
+		<li class="nido-carousel__slide" id="shot-home">
+			<img src={homeSection.src} width="1440" height="1150" alt="The Home section of Nido: property assets, maintenance schedules, and manuals and routines" loading="lazy" decoding="async" />
+			<p class="nido-carousel__caption">
+				Home comes next — property, seasonal maintenance, manuals and
+				routines, kept the same way.
+			</p>
+		</li>
+		<li class="nido-carousel__slide" id="shot-dark">
+			<img src={familyDark.src} width="1440" height="1150" alt="Nido in dark mode: the same family page in the forest dark palette" loading="lazy" decoding="async" />
+			<p class="nido-carousel__caption">
+				Seven palettes in light and dark, so it looks like yours.
+			</p>
+		</li>
+	</ul>
+	<nav class="nido-carousel__dots" aria-label="Screenshots">
+		<a href="#shot-today" aria-label="Today at a glance"></a>
+		<a href="#shot-mobile" aria-label="On your phone"></a>
+		<a href="#shot-home" aria-label="Home"></a>
+		<a href="#shot-dark" aria-label="Dark mode"></a>
+	</nav>
 </div>
-
-<p class="nido-caption">
-	Built for the phone at 3am — one thumb, one hand, one eye open. Every record
-	is a tap away, and it works offline when the nursery Wi-Fi doesn't.
-</p>
 
 ## What Nido does
 
@@ -74,17 +73,11 @@ understand what it protects.
 	<div><strong>Yours</strong><span>Export everything, any time. Works offline</span></div>
 </div>
 
-Plus milestones, vaccinations, photos, a daily journal, and reminders — in
-seven palettes, light and dark.
-
-<figure class="nido-shot nido-shot--wide">
-	<img src={familyDark.src} width="1440" height="1150" alt="Nido in dark mode: the same family page in the forest dark palette" loading="lazy" decoding="async" />
-</figure>
+Plus milestones, vaccinations, photos, a daily journal, and reminders.
 
 ## Two ways to run it
 
-Same software, same features. Pick whichever fits
-your household.
+Same software, same features. Pick whichever fits your household.
 
 <div class="nido-options">
 	<div class="nido-option">
@@ -111,20 +104,13 @@ your household.
 
 A baby grows up, and the list of things needing care gets longer. The next
 tracker is **home maintenance and care** — filters, warranties, seasonal
-upkeep — kept the same way Nido keeps a feeding, and already taking shape in
-the app.
-
-<figure class="nido-shot nido-shot--wide">
-	<img src={homeSection.src} width="1440" height="1250" alt="The Home section of Nido: property assets, maintenance schedules, and manuals and routines" loading="lazy" decoding="async" />
-</figure>
-
-It is being built in the open, alongside the infant tracker — see
-[the roadmap](./project/roadmap/).
+upkeep — already taking shape in the app. It is being built in the open,
+alongside the infant tracker; see [the roadmap](./project/roadmap/).
 
 ## Help it keep going
 
 Nido is maintained in one person's evenings. The two things that actually help
 are small ones: [contribute](./project/contributing/) a bug report or an
 answer, or [sponsor the project](./support/) — a monthly sponsorship, or
-[buy the maintainer a coffee](https://ko-fi.com/sheastewart0494). Optional,
-unlocks nothing, and buys maintainer time.
+[a one-time tip on Ko-fi](https://ko-fi.com/sheastewart0494). Optional, and it
+buys maintainer time.

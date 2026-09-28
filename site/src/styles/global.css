@@ -244,38 +244,104 @@ h6,
 
 /* ------------------------------------------------------ landing page --- */
 
-/* Bottom-aligned so the desktop and phone shots read as one composition. */
-.nido-showcase {
-	display: grid;
-	grid-template-columns: 2fr 1fr;
-	gap: 1rem;
-	align-items: end;
-	margin: 2rem 0 0.75rem;
+/* Compacted so the screenshots land above the fold, not a full screen of title. */
+.hero {
+	padding-block: 2rem 0.75rem;
 }
 
-.nido-shot {
+.hero h1 {
+	font-size: clamp(2.25rem, 6vw, 3.5rem);
+}
+
+.hero .tagline {
+	max-width: 44rem;
+	margin-inline: auto;
+	font-size: var(--sl-text-lg);
+}
+
+.nido-toplink {
+	margin: 0 0 1rem;
+	text-align: center;
+	font-size: 0.95rem;
+}
+
+/* Scroll-snap track with plain anchor-link dots: no JavaScript, and it swipes
+   on touch. */
+.nido-carousel {
+	margin: 0 0 1.5rem;
+}
+
+.nido-carousel__track {
+	display: flex;
+	align-items: flex-start;
+	gap: 1rem;
 	margin: 0;
+	padding: 0 0 1.25rem;
+	list-style: none;
+	overflow-x: auto;
+	overscroll-behavior-x: contain;
+	scroll-snap-type: x mandatory;
+	scroll-behavior: smooth;
+	scrollbar-width: none;
+}
+
+.nido-carousel__track::-webkit-scrollbar {
+	display: none;
+}
+
+.nido-carousel__slide {
+	display: flex;
+	flex: 0 0 100%;
+	flex-direction: column;
+	align-items: center;
+	gap: 0.75rem;
+	scroll-snap-align: center;
+}
+
+/* A uniform wide "window" crop: the tall captures are anchored to the top so
+   every slide reads as the same shape, and the phone shot keeps its own. */
+.nido-carousel__slide img {
+	width: 100%;
+	max-width: 100%;
+	height: 26rem;
+	object-fit: cover;
+	object-position: top center;
 	background: var(--nido-card);
 	border: 1px solid var(--sl-color-gray-5);
 	border-radius: var(--nido-card-radius);
 	box-shadow: var(--nido-card-shadow);
-	overflow: hidden;
 }
 
-.nido-shot img {
-	display: block;
-	width: 100%;
-	height: auto;
+.nido-carousel__slide--portrait img {
+	width: auto;
+	object-fit: contain;
 }
 
-.nido-shot--wide {
-	margin: 1.5rem 0;
-}
-
-.nido-caption {
-	max-width: 42rem;
+.nido-carousel__caption {
+	max-width: 38rem;
+	margin: 0;
 	color: var(--sl-color-gray-3);
-	font-size: 0.95rem;
+	font-size: 0.92rem;
+	text-align: center;
+}
+
+.nido-carousel__dots {
+	display: flex;
+	justify-content: center;
+	gap: 0.65rem;
+}
+
+.nido-carousel__dots a {
+	width: 0.6rem;
+	height: 0.6rem;
+	background: var(--sl-color-gray-5);
+	border-radius: 50%;
+	transition: background-color 150ms ease;
+}
+
+.nido-carousel__dots a:hover,
+.nido-carousel__dots a:focus-visible {
+	background: var(--nido-link);
 }
 
 /* Compact feature list: brass-topped rows instead of another wall of cards. */
@@ -306,13 +372,8 @@ h6,
 }
 
 @media (max-width: 40rem) {
-	.nido-showcase {
-		grid-template-columns: 1fr;
-	}
-
-	.nido-shot--mobile {
-		max-width: 16rem;
-		margin-inline: auto;
+	.nido-carousel__slide img {
+		height: 15rem;
 	}
 }
 
