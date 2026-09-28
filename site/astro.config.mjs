@@ -91,6 +91,11 @@ export default defineConfig({
 						{ label: 'Contributing', slug: 'project/contributing' },
 						{ label: 'Funding', slug: 'project/funding' },
 						{ label: 'Support Nido', slug: 'support' },
+						{
+							label: 'Sponsor on Ko-fi',
+							link: 'https://ko-fi.com/sheastewart0494',
+							attrs: { target: '_blank', rel: 'noopener' },
+						},
 					],
 				},
 			],

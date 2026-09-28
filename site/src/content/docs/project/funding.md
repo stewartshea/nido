@@ -5,16 +5,14 @@ description: How Nido is funded — and how sponsorship relates to the software.
 
 ## The rule
 
-**Every feature of Nido is free, and always will be.** Sponsorship buys
-maintainer time: releases, security work, answering issues, keeping up with
-dependency releases. It does not unlock anything, and no feature is ever gated
-behind it.
+**No feature is ever locked behind sponsorship.** Sponsorship buys maintainer
+time: releases, security work, answering issues, keeping up with dependency
+releases. It does not unlock anything.
 
 There is no "pro" build, no feature flag behind a paywall, and no telemetry —
-opt-in or otherwise. [My Nido](../my-nido/) is not a paid tier; it is free, and
-it runs the same code as a self-hosted install. If a change ever made a feature
-sponsorship-gated, that would be a different project, and it would be a
-different repository.
+opt-in or otherwise. [My Nido](../my-nido/) runs the same code as a self-hosted
+install. If a change ever made a feature sponsorship-gated, that would be a
+different project, and it would be a different repository.
 
 If you self-host Nido, that is the whole arrangement. Nothing expires, nothing
 phones home, and the [master key](../reference/security/#the-master-key) you

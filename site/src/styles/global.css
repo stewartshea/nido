@@ -1,14 +1,11 @@
-/* Self-hosted brand fonts. Same families the Nido client uses, so the docs and
-   the app read as one product. Self-hosted rather than fetched from a CDN:
-   Nido is a privacy-first tool and its docs should not phone a third party. */
+/* Self-hosted brand font. One family — Inter — for headings and body alike, so
+   every page reads as a single voice. Self-hosted rather than fetched from a
+   CDN: Nido is a privacy-first tool and its docs should not phone a third
+   party. */
 @import '@fontsource/inter/400.css';
 @import '@fontsource/inter/500.css';
 @import '@fontsource/inter/600.css';
 @import '@fontsource/inter/700.css';
-@import '@fontsource/lora/400.css';
-@import '@fontsource/lora/500.css';
-@import '@fontsource/lora/600.css';
-@import '@fontsource/lora/700.css';
 
 /*
  * Nido brand tokens, lifted verbatim from the client's `forest` palette
@@ -49,8 +46,7 @@
 	--nido-card-shadow: 0 1px 2px rgb(43 38 34 / 0.05), 0 4px 16px rgb(43 38 34 / 0.06);
 	--nido-card-radius: 0.75rem;
 
-	/* Starlight font slots. Two families only, matching the client: Lora for
-	   display headings, Inter for body and UI. */
+	/* Starlight font slot. One family: Inter, for headings and body alike. */
 	--sl-font: 'Inter', ui-sans-serif, system-ui, sans-serif;
 	--sl-font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 
@@ -115,14 +111,9 @@
 
 /* --------------------------------------------------------- brand type --- */
 
-:root {
-	--sl-font-display: 'Lora', Georgia, serif;
-}
-
-/* Display face for every title. `.card .title` belongs in this heading rule
-   because Starlight renders a Card's title as a `<p>` — a heading-only rule
-   left card titles on the body face, so the landing page's two card styles set
-   their titles in different typefaces. */
+/* Headings carry weight and tracking, not a second family. `.card .title` is in
+   the list because Starlight renders a Card's title as a `<p>`, which an
+   element-only rule would miss. */
 h1,
 h2,
 h3,
@@ -133,15 +124,12 @@ h6,
 .sl-markdown-content h2,
 .sl-markdown-content h3,
 .card .title {
-	font-family: var(--sl-font-display);
 	font-weight: 600;
-	letter-spacing: -0.01em;
+	letter-spacing: -0.02em;
 }
 
-/* The hero is the one place a very large serif earns its keep. */
 .site-title,
 .sidebar-title {
-	font-family: var(--sl-font-display);
 	font-weight: 600;
 }
 
@@ -307,7 +295,6 @@ h6,
 }
 
 .nido-features strong {
-	font-family: var(--sl-font-display);
 	font-size: 1.05rem;
 	font-weight: 600;
 }

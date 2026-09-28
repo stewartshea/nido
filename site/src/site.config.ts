@@ -20,8 +20,8 @@ export const IMAGES_URL = 'https://github.com/stewartshea/nido/pkgs/container/ni
 /**
  * The hosted option, for people who would rather not run Docker. It is the
  * same Apache-2.0 codebase as a self-hosted install — no feature is withheld
- * from either side — and it is free: there are no paid tiers, only an optional
- * way to support the project.
+ * from either side — and it is free to use, with an optional way to support
+ * the project.
  */
 export const HOSTED_URL = 'https://my.nido-app.ca';
 
