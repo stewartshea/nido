@@ -172,4 +172,37 @@ describe('list route paging', () => {
 		expect(res.status).toBe(404);
 		expect(res.body.total).toBeUndefined();
 	});
+
+	it('persists amount_unit on create and returns it on read', async () => {
+		const created = await postJson(token, `/api/v1/feedings`, {
+			memberId,
+			startTime: new Date(BASE_MS).toISOString(),
+			type: 'pump',
+			amount: 180,
+			amountUnit: 'ml',
+		});
+		expect(created.status).toBe(200);
+		const feedId = Number(created.body.feeding.id);
+		expect(created.body.feeding.amount_unit).toBe('ml');
+
+		const fetched = await getJson(token, `/api/v1/feedings?memberId=${memberId}&limit=200`);
+		expect(fetched.status).toBe(200);
+		const row = (fetched.body.feedings as any[]).find((r) => Number(r.id) === feedId);
+		expect(row?.amount_unit).toBe('ml');
+
+		const putRes = await app.fetch(
+			new Request(`http://localhost/api/v1/feedings/${feedId}`, {
+				method: 'PUT',
+				headers: {
+					'Content-Type': 'application/json',
+					Authorization: `Bearer ${token}`,
+				},
+				body: JSON.stringify({ amountUnit: 'oz', amount: 6 }),
+			}),
+		);
+		expect(putRes.status).toBe(200);
+		const putBody = (await putRes.json()) as Record<string, any>;
+		expect(putBody.feeding.amount_unit).toBe('oz');
+		expect(Number(putBody.feeding.amount)).toBe(6);
+	});
 });

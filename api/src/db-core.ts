@@ -204,6 +204,7 @@ export function openDb(
     raw.pragma('journal_mode = WAL');
   }
   raw.pragma('busy_timeout = 5000');
+  raw.pragma('foreign_keys = ON');
   log.debug('database opened', { event: 'db_open', dbPath, encrypted: Boolean(hexKey) });
   return new SqliteFacade(raw);
 }

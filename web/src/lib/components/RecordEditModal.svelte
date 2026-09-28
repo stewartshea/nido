@@ -23,6 +23,7 @@
 	let eType = '';
 	let eSide = '';
 	let eAmount: number | string = '';
+	let eAmountUnit: 'ml' | 'oz' = 'oz';
 	// Diapers
 	let eConsistency = '';
 	let eColor = '';
@@ -67,6 +68,7 @@
 		eType = String(field(r, 'type') ?? '');
 		eSide = String(field(r, 'side') ?? '');
 		eAmount = field(r, 'amount') ?? '';
+		eAmountUnit = String(field(r, 'amount_unit') ?? 'oz') === 'ml' ? 'ml' : 'oz';
 		eConsistency = String(field(r, 'consistency') ?? '');
 		eColor = String(field(r, 'color') ?? '');
 		eLocation = String(field(r, 'location') ?? '');
@@ -102,6 +104,7 @@
 					type: eType as any,
 					side: eSide ? (eSide as any) : undefined,
 					amount: eAmount === '' ? undefined : Number(eAmount),
+					amountUnit: kind === 'pumping' ? eAmountUnit : undefined,
 					notes: eNotes || undefined,
 				});
 			} else if (kind === 'diaper') {
@@ -214,8 +217,16 @@
 					{/if}
 					{#if eType !== 'breast' || kind === 'pumping'}
 						<div>
-							<label for="edit-record-amount" class="block text-sm font-medium text-ink-soft mb-1">Amount (oz)</label>
-							<input id="edit-record-amount" type="number" step="0.1" bind:value={eAmount} class="w-full px-3 py-2 border border-line rounded-md" />
+							<label for="edit-record-amount" class="block text-sm font-medium text-ink-soft mb-1">Amount {kind === 'pumping' ? `({eAmountUnit})` : '(oz)'}</label>
+							<div class="flex items-center gap-2">
+								<input id="edit-record-amount" type="number" step="0.1" bind:value={eAmount} class="flex-1 px-3 py-2 border border-line rounded-md" />
+								{#if kind === 'pumping'}
+									<div class="flex rounded-md border border-line-soft overflow-hidden">
+										<button type="button" on:click={() => (eAmountUnit = 'oz')} class="{eAmountUnit === 'oz' ? 'bg-primary text-on-primary' : 'bg-surface text-ink-soft'} h-9 px-3 text-sm font-semibold">oz</button>
+										<button type="button" on:click={() => (eAmountUnit = 'ml')} class="{eAmountUnit === 'ml' ? 'bg-primary text-on-primary' : 'bg-surface text-ink-soft'} h-9 px-3 text-sm font-semibold">ml</button>
+									</div>
+								{/if}
+							</div>
 						</div>
 					{/if}
 					<div>

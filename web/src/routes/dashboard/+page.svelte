@@ -250,6 +250,8 @@
 	let manualSide = 'left';
 	let manualFormulaId: number | null = null;
 	let manualAmount = '';
+	let manualAmountUnit: 'ml' | 'oz' = 'oz';
+	let manualMemberId: number | null = null;
 	let manualNotes = '';
 	// Diaper detail form
 	let diaperTime = '';
@@ -610,7 +612,7 @@
 			// Prefer the saved default family, else the first.
 			const savedFamily = localStorage.getItem('nido.familyId');
 			activeFamily = families.find((f) => f.familyId === savedFamily) ?? families[0];
-			activeFamilyId = activeFamily.familyId;
+				activeFamilyId = activeFamily?.familyId ?? null;
 
 			const membersRes = await familiesAPI.members(activeFamilyId);
 			const members = membersRes.data.members;
@@ -998,28 +1000,32 @@
 		manualSide = l.side === 'right' ? 'right' : 'left';
 		manualFormulaId = l.formulaId ?? null;
 		manualAmount = l.amount ?? '';
+		manualAmountUnit = l.amountUnit === 'ml' ? 'ml' : 'oz';
+		manualMemberId = null;
 		error = '';
 	}
 
 	async function saveManualFeed(event: SubmitEvent) {
 		event.preventDefault();
 		if (!selectedMemberId) return;
-		if (!manualType) {
+		const pumpsTab = activeTab === 'pumping';
+		if (!manualType && !pumpsTab) {
 			error = 'Choose Breast feed, Bottle feed, or Combo first.';
 			return;
 		}
+		const feedType = pumpsTab ? 'pump' : manualType as string;
 		if (!manualStart) manualStart = nowLocalISO();
-		const isBottleBased = manualType === 'bottle' || manualType === 'combo';
+		const isBottleBased = feedType === 'bottle' || feedType === 'combo';
 		if (isBottleBased && manualBottleSource === 'formula' && !manualFormulaId) {
 			error = 'Pick a formula for bottle feeding.';
 			return;
 		}
 		error = '';
 		const start = manualStart ? new Date(manualStart).toISOString() : new Date().toISOString();
-		const usesEndTime = manualType === 'pump' || manualType === 'solid';
+		const usesEndTime = feedType === 'pump' || feedType === 'solid';
 		const end = usesEndTime && manualEnd ? new Date(manualEnd).toISOString() : undefined;
 		try {
-			if (manualType === 'combo') {
+			if (feedType === 'combo') {
 				const bottleType = manualBottleSource === 'formula' ? 'formula' : 'bottle';
 				await feedingAPI.create({
 					memberId: selectedMemberId,
@@ -1032,23 +1038,25 @@
 					memberId: selectedMemberId,
 					startTime: start,
 					type: bottleType as any,
-					formulaId: bottleType === 'formula' ? manualFormulaId : undefined,
+					formulaId: bottleType === 'formula' ? (manualFormulaId ?? undefined) : undefined,
 					amount: manualAmount ? Number(manualAmount) : undefined,
 					notes: manualNotes || undefined,
 				});
-			} else {
-				const resolvedType = manualType === 'bottle' && manualBottleSource === 'formula' ? 'formula' : manualType;
-				await feedingAPI.create({
-					memberId: selectedMemberId,
-					startTime: start,
-					endTime: end,
-					type: resolvedType as any,
-					side: manualType === 'breast' ? (manualSide as any) : undefined,
-					formulaId: resolvedType === 'formula' ? manualFormulaId : undefined,
-					amount: manualAmount ? Number(manualAmount) : undefined,
-					notes: manualNotes || undefined,
-				});
-			}
+	} else {
+		const resolvedType = pumpsTab ? 'pump' : manualType === 'bottle' && manualBottleSource === 'formula' ? 'formula' : manualType;
+		const memberId = pumpsTab && manualMemberId !== null ? manualMemberId : selectedMemberId;
+		await feedingAPI.create({
+			memberId: memberId,
+			startTime: start,
+			endTime: end,
+			type: resolvedType as any,
+			side: manualType === 'breast' ? (manualSide as any) : undefined,
+			formulaId: resolvedType === 'formula' ? (manualFormulaId ?? undefined) : undefined,
+			amount: manualAmount ? Number(manualAmount) : undefined,
+			amountUnit: resolvedType === 'pump' ? manualAmountUnit : undefined,
+			notes: manualNotes || undefined,
+		});
+	}
 			// Remember for "repeat last"
 			localStorage.setItem('nido.lastFeed', JSON.stringify({
 				type: manualType,
@@ -1056,9 +1064,9 @@
 				bottleSource: isBottleBased ? manualBottleSource : undefined,
 				formulaId: isBottleBased && manualBottleSource === 'formula' ? manualFormulaId : null,
 				amount: manualAmount,
+				amountUnit: manualAmountUnit,
 			}));
-			manualStart = ''; manualEnd = ''; manualAmount = ''; manualNotes = '';
-			manualType = null;
+		manualStart = ''; manualEnd = ''; manualAmount = ''; manualMemberId = null; manualType = null;
 			manualBottleSource = 'breastmilk';
 			notice = 'Feed recorded.';
 			sheetOpen = false;
@@ -1257,8 +1265,8 @@
 		if (!activeFamilyId) return;
 		try {
 			const res = await familiesAPI.getSettings(activeFamilyId);
-			familySettings = res.data.settings;
-			const cats = familySettings.categories;
+			familySettings = res.data.settings ?? null;
+			const cats = familySettings?.categories;
 			if (cats && cats.length) {
 				activeCategories = cats;
 			}
@@ -1523,26 +1531,20 @@
 		stopTimerLoop();
 		leftElapsed = 0; rightElapsed = 0; feedElapsed = 0; feedStartedAt = null;
 		clearTimerState();
-		const payload = { memberId: selectedMemberId, startTime, endTime, type: 'breast', side: side as 'left' };
+		const payload = { memberId: selectedMemberId ?? 0, startTime, endTime, type: 'breast', side: side as 'left' };
 		try {
 			await feedingAPI.create(payload);
 			if (manualType === 'combo') {
 				const bottleType = manualBottleSource === 'formula' ? 'formula' : 'bottle';
 				await feedingAPI.create({
-					memberId: selectedMemberId,
+					memberId: selectedMemberId ?? 0,
 					startTime,
 					type: bottleType as any,
-					formulaId: bottleType === 'formula' ? manualFormulaId : undefined,
+					formulaId: bottleType === 'formula' ? (manualFormulaId ?? undefined) : undefined,
 					amount: manualAmount ? Number(manualAmount) : undefined,
+					notes: manualNotes || undefined,
 				});
 			}
-			localStorage.setItem('nido.lastFeed', JSON.stringify({
-				type: manualType,
-				side: manualType === 'breast' || manualType === 'combo' ? side : undefined,
-				bottleSource: manualType === 'combo' ? manualBottleSource : undefined,
-				formulaId: manualType === 'combo' && manualBottleSource === 'formula' ? manualFormulaId : null,
-				amount: manualAmount,
-			}));
 			manualType = null;
 			manualBottleSource = 'breastmilk';
 			manualFormulaId = null;
@@ -2172,12 +2174,22 @@
 											</div>
 										</div>
 									{/if}
-									{#if manualType && manualType !== 'breast'}
-										<div>
-											<label for="manual-feed-amount" class="block text-sm font-medium text-ink-soft mb-1">Amount (oz)</label>
+{#if manualType && manualType !== 'breast'}
+									<div>
+										<label for="manual-feed-amount" class="block text-sm font-medium text-ink-soft mb-1">Amount {manualType === 'pump' ? `({manualAmountUnit})` : '(oz)'}</label>
+										{#if manualType === 'pump'}
+											<div class="flex items-center gap-2">
+												<input id="manual-feed-amount" type="number" step="0.1" bind:value={manualAmount} class="flex-1 px-3 py-2 border border-line rounded-md" placeholder="4.0" />
+												<div class="flex rounded-md border border-line-soft overflow-hidden">
+													<button type="button" on:click={() => (manualAmountUnit = 'oz')} class="{manualAmountUnit === 'oz' ? 'bg-primary text-on-primary' : 'bg-surface text-ink-soft'} h-9 px-3 text-sm font-semibold">oz</button>
+													<button type="button" on:click={() => (manualAmountUnit = 'ml')} class="{manualAmountUnit === 'ml' ? 'bg-primary text-on-primary' : 'bg-surface text-ink-soft'} h-9 px-3 text-sm font-semibold">ml</button>
+												</div>
+											</div>
+										{:else}
 											<input id="manual-feed-amount" type="number" step="0.1" bind:value={manualAmount} class="w-full px-3 py-2 border border-line rounded-md" placeholder="4.5" />
-										</div>
-									{/if}
+										{/if}
+									</div>
+								{/if}
 									{#if manualType === 'pump' || manualType === 'solid'}
 										<div>
 											<label for="manual-feed-end" class="block text-sm font-medium text-ink-soft mb-1">End time (optional)</label>
@@ -2334,18 +2346,32 @@
 						
 
 	{:else if activeTab === 'pumping'}
-		<!-- PUMPING FORM -->
+						<!-- PUMPING FORM -->
 
 						<h3 class="text-xl font-display font-semibold mb-4">Log a pump session</h3>
 						<form on:submit={saveManualFeed} class="space-y-3">
 							<div>
+								<label for="pump-member" class="block text-sm font-medium text-ink-soft mb-1">Member</label>
+								<select id="pump-member" bind:value={manualMemberId} class="w-full px-3 py-2 border border-line rounded-md">
+									{#each babies as baby}
+										<option value={baby.id}>{baby.name}</option>
+									{/each}
+								</select>
+							</div>
+							<div>
 							<label for="pump-time" class="block text-sm font-medium text-ink-soft mb-1">Date &amp; time</label>
 							<input id="pump-time" type="datetime-local" bind:value={manualStart} class="w-full px-3 py-2 border border-line rounded-md" />
 							</div>
-							<div>
-							<label for="pump-volume" class="block text-sm font-medium text-ink-soft mb-1">Volume (oz)</label>
-							<input id="pump-volume" type="number" step="0.1" bind:value={manualAmount} class="w-full px-3 py-2 border border-line rounded-md" placeholder="4.0" />
+<div>
+							<label for="pump-volume" class="block text-sm font-medium text-ink-soft mb-1">Volume</label>
+							<div class="flex items-center gap-2">
+								<input id="pump-volume" type="number" step="0.1" bind:value={manualAmount} class="flex-1 px-3 py-2 border border-line rounded-md" placeholder="4.0" />
+								<div class="flex rounded-md border border-line-soft overflow-hidden">
+									<button type="button" on:click={() => (manualAmountUnit = 'oz')} class="{manualAmountUnit === 'oz' ? 'bg-primary text-on-primary' : 'bg-surface text-ink-soft'} h-9 px-3 text-sm font-semibold">oz</button>
+									<button type="button" on:click={() => (manualAmountUnit = 'ml')} class="{manualAmountUnit === 'ml' ? 'bg-primary text-on-primary' : 'bg-surface text-ink-soft'} h-9 px-3 text-sm font-semibold">ml</button>
+								</div>
 							</div>
+						</div>
 							<button type="submit" class="w-full bg-primary text-on-primary py-2 px-4 rounded-md hover:bg-primary">Save Pump</button>
 						</form>
 					

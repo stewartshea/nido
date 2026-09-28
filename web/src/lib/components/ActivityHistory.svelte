@@ -148,7 +148,7 @@
 			case 'pumping': {
 				const bits = [r.type];
 				if (r.side) bits.push(String(r.side));
-				if (r.amount) bits.push(`${r.amount}oz`);
+				if (r.amount) bits.push(`${r.amount}${r.amount_unit ?? 'oz'}`);
 				if (r.duration) bits.push(formatElapsed(Number(r.duration)));
 				return bits.filter(Boolean).join(' · ');
 			}

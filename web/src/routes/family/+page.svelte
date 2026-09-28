@@ -220,6 +220,7 @@
 	let manualSide = 'left';
 	let manualFormulaId: number | null = null;
 	let manualAmount = '';
+	let manualAmountUnit: 'ml' | 'oz' = 'oz';
 	let manualNotes = '';
 	// Diaper detail form
 	let diaperTime = '';
@@ -613,7 +614,7 @@
 			// Prefer the saved default family, else the first.
 			const savedFamily = localStorage.getItem('nido.familyId');
 			activeFamily = families.find((f) => f.familyId === savedFamily) ?? families[0];
-			activeFamilyId = activeFamily.familyId;
+			activeFamilyId = activeFamily?.familyId ?? null;
 
 			const membersRes = await familiesAPI.members(activeFamilyId);
 			const members = membersRes.data.members;
@@ -995,28 +996,31 @@
 		manualSide = l.side === 'right' ? 'right' : 'left';
 		manualFormulaId = l.formulaId ?? null;
 		manualAmount = l.amount ?? '';
+		manualAmountUnit = l.amountUnit === 'ml' ? 'ml' : 'oz';
 		error = '';
 	}
 
 	async function saveManualFeed(event: SubmitEvent) {
 		event.preventDefault();
 		if (!selectedMemberId) return;
-		if (!manualType) {
+		const pumpsTab = activeTab === 'pumping';
+		if (!manualType && !pumpsTab) {
 			error = 'Choose Breast feed, Bottle feed, or Combo first.';
 			return;
 		}
+		const feedType = pumpsTab ? 'pump' : manualType as string;
 		if (!manualStart) manualStart = nowLocalISO();
-		const isBottleBased = manualType === 'bottle' || manualType === 'combo';
+		const isBottleBased = feedType === 'bottle' || feedType === 'combo';
 		if (isBottleBased && manualBottleSource === 'formula' && !manualFormulaId) {
 			error = 'Pick a formula for bottle feeding.';
 			return;
 		}
 		error = '';
 		const start = manualStart ? new Date(manualStart).toISOString() : new Date().toISOString();
-		const usesEndTime = manualType === 'pump' || manualType === 'solid';
+		const usesEndTime = feedType === 'pump' || feedType === 'solid';
 		const end = usesEndTime && manualEnd ? new Date(manualEnd).toISOString() : undefined;
 		try {
-			if (manualType === 'combo') {
+			if (feedType === 'combo') {
 				const bottleType = manualBottleSource === 'formula' ? 'formula' : 'bottle';
 				await feedingAPI.create({
 					memberId: selectedMemberId,
@@ -1034,7 +1038,7 @@
 					notes: manualNotes || undefined,
 				});
 			} else {
-				const resolvedType = (manualType === 'bottle' && manualBottleSource === 'formula') ? 'formula' : manualType;
+				const resolvedType = pumpsTab ? 'pump' : (manualType === 'bottle' && manualBottleSource === 'formula') ? 'formula' : manualType;
 				await feedingAPI.create({
 					memberId: selectedMemberId,
 					startTime: start,
@@ -1043,6 +1047,7 @@
 					side: manualType === 'breast' ? (manualSide as any) : undefined,
 					formulaId: resolvedType === 'formula' ? manualFormulaId : undefined,
 					amount: manualAmount ? Number(manualAmount) : undefined,
+					amountUnit: resolvedType === 'pump' ? manualAmountUnit : undefined,
 					notes: manualNotes || undefined,
 				});
 			}
@@ -1053,6 +1058,7 @@
 				bottleSource: isBottleBased ? manualBottleSource : undefined,
 				formulaId: isBottleBased && manualBottleSource === 'formula' ? manualFormulaId : null,
 				amount: manualAmount,
+				amountUnit: manualAmountUnit,
 			}));
 			manualStart = ''; manualEnd = ''; manualAmount = ''; manualNotes = '';
 			manualType = null;
@@ -1542,6 +1548,7 @@
 				bottleSource: manualType === 'combo' ? manualBottleSource : undefined,
 				formulaId: manualType === 'combo' && manualBottleSource === 'formula' ? manualFormulaId : null,
 				amount: manualAmount,
+				amountUnit: manualAmountUnit,
 			}));
 			manualType = null;
 			manualBottleSource = 'breastmilk';
@@ -2115,7 +2122,7 @@
 											</div>
 										</div>
 										<span class="text-sm font-medium text-ink-soft">
-											{#if item.amount}{item.amount}oz{:else if item.duration}{formatElapsed(item.duration)}{/if}
+											{#if item.amount}{item.amount}{item.amount_unit ?? 'oz'}{:else if item.duration}{formatElapsed(item.duration)}{/if}
 										</span>
 									</li>
 								{/each}
@@ -2344,8 +2351,18 @@
 									{/if}
 									{#if manualType && manualType !== 'breast'}
 										<div>
-											<label for="manual-feed-amount" class="block text-sm font-medium text-ink-soft mb-1">Amount (oz)</label>
-											<input id="manual-feed-amount" type="number" step="0.1" bind:value={manualAmount} class="w-full px-3 py-2 border border-line rounded-md" placeholder="4.5" />
+											<label for="manual-feed-amount" class="block text-sm font-medium text-ink-soft mb-1">Amount {manualType === 'pump' ? `({manualAmountUnit})` : '(oz)'}</label>
+											{#if manualType === 'pump'}
+												<div class="flex items-center gap-2">
+													<input id="manual-feed-amount" type="number" step="0.1" bind:value={manualAmount} class="flex-1 px-3 py-2 border border-line rounded-md" placeholder="4.0" />
+													<div class="flex rounded-md border border-line-soft overflow-hidden">
+														<button type="button" on:click={() => (manualAmountUnit = 'oz')} class="{manualAmountUnit === 'oz' ? 'bg-primary text-on-primary' : 'bg-surface text-ink-soft'} h-9 px-3 text-sm font-semibold">oz</button>
+														<button type="button" on:click={() => (manualAmountUnit = 'ml')} class="{manualAmountUnit === 'ml' ? 'bg-primary text-on-primary' : 'bg-surface text-ink-soft'} h-9 px-3 text-sm font-semibold">ml</button>
+													</div>
+												</div>
+											{:else}
+												<input id="manual-feed-amount" type="number" step="0.1" bind:value={manualAmount} class="w-full px-3 py-2 border border-line rounded-md" placeholder="4.5" />
+											{/if}
 										</div>
 									{/if}
 									{#if manualType === 'pump' || manualType === 'solid'}
@@ -2392,7 +2409,7 @@
 									<tr class="border-b border-line-soft">
 										<td class="py-2 px-2 whitespace-nowrap">{formatTime(r.start_time || r.change_time || r.measurement_date || r.achieved_date || r.date_given)}</td>
 										<td class="py-2 px-2">
-											{#if activeTab === 'feeds' || activeTab === 'pumping'}{r.type}{r.amount ? ` · ${r.amount}oz` : ''}
+											{#if activeTab === 'feeds' || activeTab === 'pumping'}{r.type}{r.amount ? ` · ${r.amount}${r.amount_unit ?? 'oz'}` : ''}
 											{:else if activeTab === 'diapers'}{r.type}{r.consistency ? ` · ${r.consistency}` : ''}
 											{:else if activeTab === 'sleep'}{r.duration ? formatElapsed(r.duration) : ''}
 											{:else if activeTab === 'growth'}{r.weight ? `${r.weight}${r.unit_system === 'imperial' ? 'lb' : 'kg'}` : '—'}
@@ -2598,8 +2615,18 @@
 									{/if}
 									{#if manualType && manualType !== 'breast'}
 										<div>
-											<label for="manual-feed-amount" class="block text-sm font-medium text-ink-soft mb-1">Amount (oz)</label>
-											<input id="manual-feed-amount" type="number" step="0.1" bind:value={manualAmount} class="w-full px-3 py-2 border border-line rounded-md" placeholder="4.5" />
+											<label for="manual-feed-amount" class="block text-sm font-medium text-ink-soft mb-1">Amount {manualType === 'pump' ? `({manualAmountUnit})` : '(oz)'}</label>
+											{#if manualType === 'pump'}
+												<div class="flex items-center gap-2">
+													<input id="manual-feed-amount" type="number" step="0.1" bind:value={manualAmount} class="flex-1 px-3 py-2 border border-line rounded-md" placeholder="4.0" />
+													<div class="flex rounded-md border border-line-soft overflow-hidden">
+														<button type="button" on:click={() => (manualAmountUnit = 'oz')} class="{manualAmountUnit === 'oz' ? 'bg-primary text-on-primary' : 'bg-surface text-ink-soft'} h-9 px-3 text-sm font-semibold">oz</button>
+														<button type="button" on:click={() => (manualAmountUnit = 'ml')} class="{manualAmountUnit === 'ml' ? 'bg-primary text-on-primary' : 'bg-surface text-ink-soft'} h-9 px-3 text-sm font-semibold">ml</button>
+													</div>
+												</div>
+											{:else}
+												<input id="manual-feed-amount" type="number" step="0.1" bind:value={manualAmount} class="w-full px-3 py-2 border border-line rounded-md" placeholder="4.5" />
+											{/if}
 										</div>
 									{/if}
 									{#if manualType === 'pump' || manualType === 'solid'}
@@ -2775,8 +2802,14 @@
 								<input id="pump-time-inline" type="datetime-local" bind:value={manualStart} class="w-full px-3 py-2 border border-line rounded-md" />
 							</div>
 							<div>
-								<label for="pump-volume-inline" class="block text-sm font-medium text-ink-soft mb-1">Volume (oz)</label>
-								<input id="pump-volume-inline" type="number" step="0.1" bind:value={manualAmount} class="w-full px-3 py-2 border border-line rounded-md" placeholder="4.0" />
+								<label for="pump-volume-inline" class="block text-sm font-medium text-ink-soft mb-1">Volume</label>
+								<div class="flex items-center gap-2">
+									<input id="pump-volume-inline" type="number" step="0.1" bind:value={manualAmount} class="flex-1 px-3 py-2 border border-line rounded-md" placeholder="4.0" />
+									<div class="flex rounded-md border border-line-soft overflow-hidden">
+										<button type="button" on:click={() => (manualAmountUnit = 'oz')} class="{manualAmountUnit === 'oz' ? 'bg-primary text-on-primary' : 'bg-surface text-ink-soft'} h-9 px-3 text-sm font-semibold">oz</button>
+										<button type="button" on:click={() => (manualAmountUnit = 'ml')} class="{manualAmountUnit === 'ml' ? 'bg-primary text-on-primary' : 'bg-surface text-ink-soft'} h-9 px-3 text-sm font-semibold">ml</button>
+									</div>
+								</div>
 							</div>
 							<button type="submit" class="w-full bg-primary text-on-primary py-2 px-4 rounded-md hover:bg-primary">Save Pump</button>
 						</form>
@@ -3148,8 +3181,18 @@
 									{/if}
 									{#if manualType && manualType !== 'breast'}
 										<div>
-											<label for="sheet-manual-amount" class="block text-sm font-medium text-ink-soft mb-1">Amount (oz)</label>
-											<input id="sheet-manual-amount" type="number" step="0.1" bind:value={manualAmount} class="w-full px-3 py-2 border border-line rounded-md" placeholder="4.5" />
+											<label for="sheet-manual-amount" class="block text-sm font-medium text-ink-soft mb-1">Amount {manualType === 'pump' ? `({manualAmountUnit})` : '(oz)'}</label>
+											{#if manualType === 'pump'}
+												<div class="flex items-center gap-2">
+													<input id="sheet-manual-amount" type="number" step="0.1" bind:value={manualAmount} class="flex-1 px-3 py-2 border border-line rounded-md" placeholder="4.0" />
+													<div class="flex rounded-md border border-line-soft overflow-hidden">
+														<button type="button" on:click={() => (manualAmountUnit = 'oz')} class="{manualAmountUnit === 'oz' ? 'bg-primary text-on-primary' : 'bg-surface text-ink-soft'} h-9 px-3 text-sm font-semibold">oz</button>
+														<button type="button" on:click={() => (manualAmountUnit = 'ml')} class="{manualAmountUnit === 'ml' ? 'bg-primary text-on-primary' : 'bg-surface text-ink-soft'} h-9 px-3 text-sm font-semibold">ml</button>
+													</div>
+												</div>
+											{:else}
+												<input id="sheet-manual-amount" type="number" step="0.1" bind:value={manualAmount} class="w-full px-3 py-2 border border-line rounded-md" placeholder="4.5" />
+											{/if}
 										</div>
 									{/if}
 									{#if manualType === 'pump' || manualType === 'solid'}
@@ -3316,10 +3359,16 @@
 							<label for="pump-time" class="block text-sm font-medium text-ink-soft mb-1">Date &amp; time</label>
 							<input id="pump-time" type="datetime-local" bind:value={manualStart} class="w-full px-3 py-2 border border-line rounded-md" />
 							</div>
-							<div>
-							<label for="pump-volume" class="block text-sm font-medium text-ink-soft mb-1">Volume (oz)</label>
-							<input id="pump-volume" type="number" step="0.1" bind:value={manualAmount} class="w-full px-3 py-2 border border-line rounded-md" placeholder="4.0" />
+<div>
+							<label for="pump-volume" class="block text-sm font-medium text-ink-soft mb-1">Volume</label>
+							<div class="flex items-center gap-2">
+								<input id="pump-volume" type="number" step="0.1" bind:value={manualAmount} class="flex-1 px-3 py-2 border border-line rounded-md" placeholder="4.0" />
+								<div class="flex rounded-md border border-line-soft overflow-hidden">
+									<button type="button" on:click={() => (manualAmountUnit = 'oz')} class="{manualAmountUnit === 'oz' ? 'bg-primary text-on-primary' : 'bg-surface text-ink-soft'} h-9 px-3 text-sm font-semibold">oz</button>
+									<button type="button" on:click={() => (manualAmountUnit = 'ml')} class="{manualAmountUnit === 'ml' ? 'bg-primary text-on-primary' : 'bg-surface text-ink-soft'} h-9 px-3 text-sm font-semibold">ml</button>
+								</div>
 							</div>
+						</div>
 							<button type="submit" class="w-full bg-primary text-on-primary py-2 px-4 rounded-md hover:bg-primary">Save Pump</button>
 						</form>
 					

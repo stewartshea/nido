@@ -174,9 +174,9 @@ export const feedingAPI = {
   getPage: (memberId: number, opts?: PageOptions) =>
     api.get(`/feedings?memberId=${memberId}${pageQuery(opts)}`),
   getById: (id: number) => api.get(`/feedings/${id}`),
-  create: (feedingData: { memberId: number; startTime: string; endTime?: string; amount?: number; type: 'breast' | 'bottle' | 'formula' | 'pump' | 'solid'; side?: 'left' | 'right' | 'both'; formulaId?: number; notes?: string }) => 
+  create: (feedingData: { memberId: number; startTime: string; endTime?: string; amount?: number; amountUnit?: 'ml' | 'oz'; type: 'breast' | 'bottle' | 'formula' | 'pump' | 'solid'; side?: 'left' | 'right' | 'both'; formulaId?: number; notes?: string }) => 
     api.post('/feedings', feedingData),
-  update: (id: number, feedingData: Partial<{ startTime: string; endTime?: string; amount?: number; type: 'breast' | 'bottle' | 'formula' | 'pump' | 'solid'; side?: 'left' | 'right' | 'both'; formulaId?: number; notes?: string }>) => 
+  update: (id: number, feedingData: Partial<{ startTime: string; endTime?: string; amount?: number; amountUnit?: 'ml' | 'oz'; type: 'breast' | 'bottle' | 'formula' | 'pump' | 'solid'; side?: 'left' | 'right' | 'both'; formulaId?: number; notes?: string }>) => 
     api.put(`/feedings/${id}`, feedingData),
   delete: (id: number) => api.delete(`/feedings/${id}`),
 };
@@ -290,7 +290,7 @@ export const importsAPI = {
       headers: { 'Content-Type': undefined },
     });
   },
-  runs: (babyId?: number | null) => api.get(`/imports/runs${babyId ? `?memberId=${memberId}` : ''}`),
+  runs: (babyId?: number | null) => api.get(`/imports/runs${babyId ? `?memberId=${babyId}` : ''}`),
   undoRun: (runId: number) => api.post(`/imports/runs/${runId}/undo`),
   summary: () => api.get('/imports/summary'),
 };

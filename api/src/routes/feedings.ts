@@ -10,24 +10,26 @@ const feedingRoutes = new Hono<AuthEnv>();
 
 // Zod schemas for validation
 const createFeedingSchema = z.object({
-  memberId: z.number(),
-  startTime: z.string().datetime(),
-  endTime: z.string().datetime().optional(),
-  amount: z.number().positive().optional(),
-  type: z.enum(['breast', 'bottle', 'pump', 'formula', 'solid']),
-  side: z.enum(['left', 'right', 'both']).optional(),
-  formulaId: z.number().optional(),
-  notes: z.string().optional(),
+	memberId: z.number(),
+	startTime: z.string().datetime(),
+	endTime: z.string().datetime().optional(),
+	amount: z.number().positive().optional(),
+	amountUnit: z.enum(['ml', 'oz']).optional(),
+	type: z.enum(['breast', 'bottle', 'pump', 'formula', 'solid']),
+	side: z.enum(['left', 'right', 'both']).optional(),
+	formulaId: z.number().optional(),
+	notes: z.string().optional(),
 });
 
 const updateFeedingSchema = z.object({
-  startTime: z.string().datetime().optional(),
-  endTime: z.string().datetime().optional(),
-  amount: z.number().positive().optional(),
-  type: z.enum(['breast', 'bottle', 'pump', 'formula', 'solid']).optional(),
-  side: z.enum(['left', 'right', 'both']).optional(),
-  formulaId: z.number().optional(),
-  notes: z.string().optional(),
+	startTime: z.string().datetime().optional(),
+	endTime: z.string().datetime().optional(),
+	amount: z.number().positive().optional(),
+	amountUnit: z.enum(['ml', 'oz']).optional(),
+	type: z.enum(['breast', 'bottle', 'pump', 'formula', 'solid']).optional(),
+	side: z.enum(['left', 'right', 'both']).optional(),
+	formulaId: z.number().optional(),
+	notes: z.string().optional(),
 });
 
 // Get all feedings for a baby
@@ -50,7 +52,7 @@ feedingRoutes.get('/', async (c) => {
 
     const feedingsResult = await db.execute({
       sql: `
-      SELECT id, baby_id, start_time, end_time, duration, amount, type, side, formula_id, notes, created_at, created_by
+      SELECT id, baby_id, start_time, end_time, duration, amount, amount_unit, type, side, formula_id, notes, created_at, created_by
       FROM feedings
       WHERE baby_id = ?
       ORDER BY start_time DESC, id DESC
@@ -90,7 +92,7 @@ feedingRoutes.get('/:id{[0-9]+}', async (c) => {
     // Verify user has access to this feeding
     const feedingResult = await db.execute({
       sql: `
-      SELECT f.id, f.baby_id, f.start_time, f.end_time, f.duration, f.amount, f.type, f.side, f.formula_id, f.notes, f.created_at, f.created_by
+      SELECT f.id, f.baby_id, f.start_time, f.end_time, f.duration, f.amount, f.amount_unit, f.type, f.side, f.formula_id, f.notes, f.created_at, f.created_by
       FROM feedings f
       JOIN babies b ON f.baby_id = b.id
       JOIN households h ON b.household_id = h.id
@@ -124,7 +126,7 @@ feedingRoutes.get('/:id{[0-9]+}', async (c) => {
 // Create a new feeding
 feedingRoutes.post('/', zValidator('json', createFeedingSchema), async (c) => {
   try {
-    const { memberId, startTime, endTime, amount, type, side, formulaId, notes } = c.req.valid('json');
+    const { memberId, startTime, endTime, amount, amountUnit, type, side, formulaId, notes } = c.req.valid('json');
     const userId = c.get('userId');
     const db = c.get('db');
     
@@ -145,15 +147,16 @@ feedingRoutes.post('/', zValidator('json', createFeedingSchema), async (c) => {
     const result = await db.execute({
       sql: `
         INSERT INTO feedings (
-          baby_id, start_time, end_time, duration, amount, type, side, formula_id, notes, created_at, created_by
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          baby_id, start_time, end_time, duration, amount, amount_unit, type, side, formula_id, notes, created_at, created_by
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
       args: [
         scope.babyId, 
         startTime, 
         endTime || null, 
         duration, 
-        amount || null, 
+        amount || null,
+        amountUnit || 'oz',
         type, 
         side || null, 
         formulaId || null, 
@@ -166,7 +169,7 @@ feedingRoutes.post('/', zValidator('json', createFeedingSchema), async (c) => {
     // Return the created feeding
     const feedingResult = await db.execute({
       sql: `
-      SELECT id, baby_id, start_time, end_time, duration, amount, type, side, formula_id, notes, created_at, created_by
+      SELECT id, baby_id, start_time, end_time, duration, amount, amount_unit, type, side, formula_id, notes, created_at, created_by
       FROM feedings
       WHERE id = ?
     `,
@@ -187,7 +190,7 @@ feedingRoutes.post('/', zValidator('json', createFeedingSchema), async (c) => {
 feedingRoutes.put('/:id{[0-9]+}', zValidator('json', updateFeedingSchema), async (c) => {
   try {
     const feedingId = parseInt(c.req.param('id'));
-    const { startTime, endTime, amount, type, side, formulaId, notes } = c.req.valid('json');
+    const { startTime, endTime, amount, amountUnit, type, side, formulaId, notes } = c.req.valid('json');
     const userId = c.get('userId');
     const db = c.get('db');
     
@@ -251,6 +254,11 @@ feedingRoutes.put('/:id{[0-9]+}', zValidator('json', updateFeedingSchema), async
       params.push(amount);
     }
     
+    if (amountUnit !== undefined) {
+      updates.push('amount_unit = ?');
+      params.push(amountUnit);
+    }
+    
     if (type !== undefined) {
       updates.push('type = ?');
       params.push(type);
@@ -287,7 +295,7 @@ feedingRoutes.put('/:id{[0-9]+}', zValidator('json', updateFeedingSchema), async
     // Return updated feeding
     const updatedFeedingResult = await db.execute({
       sql: `
-      SELECT id, baby_id, start_time, end_time, duration, amount, type, side, formula_id, notes, created_at, created_by
+      SELECT id, baby_id, start_time, end_time, duration, amount, amount_unit, type, side, formula_id, notes, created_at, created_by
       FROM feedings
       WHERE id = ?
     `,

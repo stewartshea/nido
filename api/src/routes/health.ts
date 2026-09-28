@@ -152,7 +152,7 @@ healthRoutes.get('/insights/:memberId{[0-9]+}', async (c) => {
       sql: `
       SELECT 
         COUNT(*) as total_feedings,
-        AVG(CASE WHEN amount IS NOT NULL THEN amount ELSE 0 END) as avg_amount,
+        AVG(CASE WHEN amount IS NOT NULL THEN amount * CASE WHEN amount_unit = 'ml' THEN 0.033814 ELSE 1 END ELSE 0 END) as avg_amount,
         AVG(CASE WHEN duration IS NOT NULL THEN duration ELSE 0 END) as avg_duration,
         SUM(CASE WHEN type = 'breast' THEN 1 ELSE 0 END) as breast_feedings,
         SUM(CASE WHEN type = 'formula' THEN 1 ELSE 0 END) as formula_feedings,

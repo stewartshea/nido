@@ -702,25 +702,8 @@ async function handleDeleteMember(c: Context<AuthEnv>) {
 		try { await rm(join(AVATAR_DIR, String(avatar)), { force: true }); } catch { /* already gone */ }
 	}
 
-	const linkedAccounts = await db.execute({
-		sql: 'SELECT user_id FROM account_members WHERE member_id = ?',
-		args: [memberId],
-	});
-	const registry = await ensureRegistry();
-	for (const row of linkedAccounts.rows) {
-		const linkedUserId = String(row.user_id);
-		const routing = await registry.execute({
-			sql: 'SELECT role FROM user_routing WHERE user_id = ? LIMIT 1',
-			args: [linkedUserId],
-		});
-		if (String(routing.rows[0]?.role ?? '') === 'owner') continue;
-		await db.execute({ sql: 'DELETE FROM user_households WHERE user_id = ?', args: [linkedUserId] });
-		await db.execute({ sql: 'DELETE FROM users WHERE id = ?', args: [linkedUserId] });
-		await registry.execute({ sql: 'DELETE FROM user_routing WHERE user_id = ?', args: [linkedUserId] });
-	}
-
-	await db.execute({ sql: 'DELETE FROM account_members WHERE member_id = ?', args: [memberId] });
 	await db.execute({ sql: 'DELETE FROM member_homes WHERE member_id = ?', args: [memberId] });
+	await db.execute({ sql: 'DELETE FROM account_members WHERE member_id = ?', args: [memberId] });
 	await db.execute({ sql: 'DELETE FROM family_members WHERE id = ? AND household_id = ?', args: [memberId, NAMESPACE_HOUSEHOLD_ID] });
 	return c.json({ message: 'Member deleted' });
 }
@@ -1013,7 +996,7 @@ async function handleExportFamily(c: Context<AuthEnv>) {
 				: table === 'vaccinations' ? 'id, baby_id, name, date_given, next_due_date, administered_by, notes, created_at, created_by'
 				: table === 'moods' ? 'id, baby_id, mood, recorded_at, notes, created_at, created_by'
 				: table === 'journal_entries' ? 'id, baby_id, title, body, entry_date, created_at, created_by'
-				: 'id, baby_id, start_time, end_time, duration, amount, type, side, formula_id, notes, created_at, created_by';
+				: 'id, baby_id, start_time, end_time, duration, amount, amount_unit, type, side, formula_id, notes, created_at, created_by';
 			const rows = await db.execute({ sql: `SELECT ${cols} FROM ${table} WHERE baby_id IN (${ids})`, args: [] });
 			exportData.records[table] = rows.rows;
 		}
@@ -1126,8 +1109,8 @@ async function handleRestoreFamily(c: Context<AuthEnv>) {
 			try {
 				if (table === 'feedings') {
 					const mappedFormulaId = rec.formula_id == null ? null : (formulaIdMap[Number(rec.formula_id)] ?? null);
-					await db.execute({ sql: `INSERT INTO feedings (baby_id, start_time, end_time, duration, amount, type, side, formula_id, notes, created_at, created_by)
-					                        VALUES (?,?,?,?,?,?,?,?,?,?,?)`, args: [babyId, rec.start_time, rec.end_time, rec.duration, rec.amount, rec.type, rec.side, mappedFormulaId, rec.notes, rec.created_at ?? isoNow(), rec.created_by ?? userId] });
+await db.execute({ sql: `INSERT INTO feedings (baby_id, start_time, end_time, duration, amount, amount_unit, type, side, formula_id, notes, created_at, created_by)
+                                        VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`, args: [babyId, rec.start_time, rec.end_time, rec.duration, rec.amount, rec.amount_unit ?? 'oz', rec.type, rec.side, mappedFormulaId, rec.notes, rec.created_at ?? isoNow(), rec.created_by ?? userId] });
 				} else if (table === 'diapers') {
 					await db.execute({ sql: `INSERT INTO diapers (baby_id, change_time, type, color, consistency, notes, created_at, created_by) VALUES (?,?,?,?,?,?,?,?)`, args: [babyId, rec.change_time, rec.type, rec.color, rec.consistency, rec.notes, rec.created_at ?? isoNow(), rec.created_by ?? userId] });
 				} else if (table === 'sleep') {

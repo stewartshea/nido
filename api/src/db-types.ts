@@ -31,6 +31,7 @@ export interface FeedingRow {
   end_time: string | null;
   duration: number | null;
   amount: number | null;
+  amount_unit: string | null;
   type: string;
   side: string | null;
   formula_id?: number | null;
