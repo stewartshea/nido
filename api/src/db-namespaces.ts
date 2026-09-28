@@ -479,6 +479,9 @@ export function getFamilyClient(familyId: string): SqliteFacade {
     deriveKey(getMasterKeyHex(), familyId, 'nido:db'),
     { fileMustExist: true },
   );
+  // Migrations must run on every open: a family provisioned before a migration
+  // existed otherwise keeps a frozen schema. Gated by PRAGMA user_version.
+  runMigrations(client.raw, FAMILY_MIGRATIONS);
   if (familyClients.size >= 16) {
     const oldest = familyClients.keys().next().value;
     if (oldest !== undefined) {
