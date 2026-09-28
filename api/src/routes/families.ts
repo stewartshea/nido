@@ -702,9 +702,17 @@ async function handleDeleteMember(c: Context<AuthEnv>) {
 		try { await rm(join(AVATAR_DIR, String(avatar)), { force: true }); } catch { /* already gone */ }
 	}
 
-	await db.execute({ sql: 'DELETE FROM member_homes WHERE member_id = ?', args: [memberId] });
-	await db.execute({ sql: 'DELETE FROM account_members WHERE member_id = ?', args: [memberId] });
-	await db.execute({ sql: 'DELETE FROM family_members WHERE id = ? AND household_id = ?', args: [memberId, NAMESPACE_HOUSEHOLD_ID] });
+	await db.execute({ sql: 'PRAGMA foreign_keys = ON' });
+	await db.execute({ sql: 'BEGIN IMMEDIATE' });
+	try {
+		await db.execute({ sql: 'DELETE FROM member_homes WHERE member_id = ?', args: [memberId] });
+		await db.execute({ sql: 'DELETE FROM account_members WHERE member_id = ?', args: [memberId] });
+		await db.execute({ sql: 'DELETE FROM family_members WHERE id = ? AND household_id = ?', args: [memberId, NAMESPACE_HOUSEHOLD_ID] });
+		await db.execute({ sql: 'COMMIT' });
+	} catch (err: any) {
+		await db.execute({ sql: 'ROLLBACK' });
+		throw err;
+	}
 	return c.json({ message: 'Member deleted' });
 }
 
