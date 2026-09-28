@@ -29,11 +29,15 @@ async function getJson(token: string, path: string) {
 	return { status: res.status, body: (await res.json()) as Record<string, any> };
 }
 
-async function del(token: string, path: string) {
+async function del(token: string, path: string, body?: unknown) {
 	const res = await app.fetch(
 		new Request(`http://localhost${path}`, {
 			method: 'DELETE',
-			headers: { Authorization: `Bearer ${token}` },
+			headers: {
+				...(body !== undefined ? { 'Content-Type': 'application/json' } : {}),
+				Authorization: `Bearer ${token}`,
+			},
+			...(body !== undefined ? { body: JSON.stringify(body) } : {}),
 		}),
 	);
 	return { status: res.status, body: (await res.json()) as Record<string, any> };
@@ -338,7 +342,7 @@ describe('account deletion', () => {
 	it('deletes the whole family when the owner deletes their account', async () => {
 		const { owner, memberToken } = await joinOwnerAndMember('del-owner2@example.com', 'del-member2@example.com');
 
-		const removed = await del(owner.token, '/api/v1/users/me');
+		const removed = await del(owner.token, '/api/v1/users/me', { confirmFamilyName: 'del-owner2 Family' });
 		expect(removed.status).toBe(200);
 
 		const ownerAfter = await getJson(owner.token, '/api/v1/users/me');
@@ -347,10 +351,20 @@ describe('account deletion', () => {
 		expect(memberAfter.status).toBe(401);
 	});
 
+	it('refuses an owner deletion when the family name does not match', async () => {
+		const owner = await register('del-owner3@example.com');
+
+		const wrong = await del(owner.token, '/api/v1/users/me', { confirmFamilyName: 'not the name' });
+		expect(wrong.status).toBe(400);
+
+		const missing = await del(owner.token, '/api/v1/users/me');
+		expect(missing.status).toBe(400);
+	});
+
 	it('deletes a sole owner account together with the family', async () => {
 		const solo = await register('del-solo@example.com');
 
-		const removed = await del(solo.token, '/api/v1/users/me');
+		const removed = await del(solo.token, '/api/v1/users/me', { confirmFamilyName: 'del-solo Family' });
 		expect(removed.status).toBe(200);
 
 		const after = await getJson(solo.token, '/api/v1/users/me');

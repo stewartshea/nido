@@ -300,7 +300,7 @@ export const familyAdminAPI = {
 export const accountAPI = {
   changePassword: (currentPassword: string, newPassword: string) =>
     api.post('/users/me/password', { currentPassword, newPassword }),
-  remove: () => api.delete('/users/me'),
+  remove: (confirmFamilyName?: string) => api.delete('/users/me', { data: { confirmFamilyName } }),
 };
 
 export const settingsAPI = {

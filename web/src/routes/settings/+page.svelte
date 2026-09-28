@@ -237,6 +237,7 @@
 	let confirmPw = '';
 	let changingPw = false;
 	let deletingAccount = false;
+	let deleteConfirmName = '';
 
 	let feedStartedAt: number | null = null;
 	let feedElapsed = 0;
@@ -901,10 +902,16 @@
 
 	async function deleteAccount() {
 		error = '';
+		const isOwner = activeFamily?.role === 'owner';
+		const familyName = String(activeFamily?.name ?? '');
+		if (isOwner && deleteConfirmName.trim().toLowerCase() !== familyName.trim().toLowerCase()) {
+			error = 'Type the family name to confirm deleting the family.';
+			return;
+		}
 		if (!confirm('Delete your account permanently? This cannot be undone. If you own the family, the family and all of its data are removed too.')) return;
 		deletingAccount = true;
 		try {
-			await accountAPI.remove();
+			await accountAPI.remove(isOwner ? deleteConfirmName.trim() : undefined);
 			authActions.logout();
 			goto('/login');
 		} catch (err: any) {
@@ -1738,7 +1745,11 @@
 								<div class="border-t border-line-soft pt-4">
 									<h4 class="font-display font-semibold mb-3 text-danger-text">Delete account</h4>
 									<p class="text-xs text-ink-soft mb-3">Permanently removes your account. If you own the family, the family and all of its members and records are removed too. This cannot be undone.</p>
-									<button type="button" on:click={deleteAccount} disabled={deletingAccount} class="bg-danger text-danger-text border border-danger px-4 py-2 rounded-md font-semibold disabled:opacity-50">
+									{#if activeFamily?.role === 'owner'}
+										<label for="delete-confirm-name" class="block text-xs text-ink-soft mb-1">Type the family name to confirm</label>
+										<input id="delete-confirm-name" type="text" bind:value={deleteConfirmName} class="w-full px-3 py-2 border border-line rounded-md mb-3" placeholder={activeFamily?.name} />
+									{/if}
+									<button type="button" on:click={deleteAccount} disabled={deletingAccount || (activeFamily?.role === 'owner' && deleteConfirmName.trim().toLowerCase() !== String(activeFamily?.name ?? '').trim().toLowerCase())} class="bg-danger text-danger-text border border-danger px-4 py-2 rounded-md font-semibold disabled:opacity-50">
 										{deletingAccount ? 'Deleting...' : 'Delete my account'}
 									</button>
 								</div>

@@ -174,6 +174,25 @@ userRoutes.delete('/me', async (c) => {
   const familyId = String(me.family_id);
   const isOwner = String(me.role) === 'owner';
 
+  let confirmFamilyName = '';
+  try {
+    const body = await c.req.json();
+    confirmFamilyName = String(body?.confirmFamilyName ?? '').trim();
+  } catch {
+    confirmFamilyName = '';
+  }
+
+  if (isOwner) {
+    const famRes = await registry.execute({
+      sql: 'SELECT name FROM families WHERE family_id = ? LIMIT 1',
+      args: [familyId],
+    });
+    const familyName = String(famRes.rows[0]?.name ?? '').trim();
+    if (confirmFamilyName.toLowerCase() !== familyName.toLowerCase() || familyName === '') {
+      return c.json({ error: 'Type the family name to confirm deleting the family' }, 400);
+    }
+  }
+
   const profile = await db.execute({
     sql: 'SELECT email, first_name FROM users WHERE id = ? LIMIT 1',
     args: [userId],
