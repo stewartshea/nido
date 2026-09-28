@@ -6,10 +6,9 @@ shared with the other caregivers in your family — and grows from there to cove
 home maintenance and care.
 
 Run it yourself with Docker — that is the way it is designed, and it is free
-forever with no account — or use the hosted version at
-[my.nido-app.ca](https://my.nido-app.ca), which is also free and runs in Canada.
-Both are the same Apache-2.0 codebase with the same features; there are no paid
-tiers either way.
+forever with no account — or use [My Nido](https://my.nido-app.ca), the hosted
+version, which is also free and runs in Canada. Both are the same Apache-2.0
+codebase with the same features; there are no paid tiers either way.
 
 <!-- prettier-ignore -->
 > **On the name.** *Nido* means "nest" in Spanish and Italian. 巣 (*su*) is the

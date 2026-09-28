@@ -11,7 +11,7 @@ dependency releases. It does not unlock anything, and it cannot be turned on
 mid-session to make a feature disappear.
 
 There is no "pro" build, no feature flag behind a paywall, and no telemetry —
-opt-in or otherwise. The [hosted version](../hosted/) is not a paid tier; it is
+opt-in or otherwise. [My Nido](../my-nido/) is not a paid tier; it is
 free, and it runs the same code as a self-hosted install. If a change ever made
 a feature sponsorship-gated, that would be a different project, and it would be a
 different repository.

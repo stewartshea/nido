@@ -24,6 +24,12 @@ export default defineConfig({
 	site: ORIGIN,
 	base: SITE_BASE,
 	trailingSlash: 'ignore',
+	redirects: {
+		// The hosted page launched as /hosted/ and was renamed when the service
+		// got its own name. Astro writes the destination verbatim into the
+		// meta-refresh page, so it needs the base prefix baked in.
+		'/hosted': SITE_BASE === '/' ? '/my-nido' : `${SITE_BASE}/my-nido`,
+	},
 	markdown: {
 		processor: satteri({ hastPlugins: [baseRelativeLinks(SITE_BASE)] }),
 	},
@@ -31,7 +37,7 @@ export default defineConfig({
 		starlight({
 			title: 'Nido',
 			description:
-				'A free, open source tracker for the things you care for and keep — starting with your baby, and growing to cover the whole home. Run it on your own hardware, or use the free hosted version.',
+				'A free, open source tracker for the things you care for and keep — starting with your baby, and growing to cover the whole home. Self-host it, or use My Nido — hosted in Canada, free.',
 			logo: {
 				light: './src/assets/crest.svg',
 				dark: './src/assets/crest-dark.svg',
@@ -54,7 +60,8 @@ export default defineConfig({
 					items: [
 						{ label: 'Overview', slug: 'index' },
 						{ label: 'Self-hosting', slug: 'self-host' },
-						{ label: 'Hosted version', slug: 'hosted' },
+						{ label: 'My Nido (hosted)', slug: 'my-nido' },
+						{ label: 'Privacy policy', slug: 'privacy' },
 						{ label: 'Installation', slug: 'getting-started/installation' },
 						{ label: 'First run', slug: 'getting-started/first-run' },
 					],

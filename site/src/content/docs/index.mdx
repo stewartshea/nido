@@ -1,6 +1,6 @@
 ---
 title: Nido
-description: Nido is a free, open source tracker for the things you care for and keep. It starts as an infant tracker and grows into a home maintenance and care tracker. Run it on your own hardware, or use the free hosted version in Canada.
+description: Nido is a free, open source tracker for the things you care for and keep. It starts as an infant tracker and grows into a home maintenance and care tracker. Self-host it, or use My Nido — hosted in Canada, free.
 template: splash
 hero:
   tagline: A nest for the things you care for and keep. It starts with your baby, and grows to cover the whole home.
@@ -8,88 +8,89 @@ hero:
     - text: Install Nido
       link: ./getting-started/installation/
       icon: right-arrow
-    - text: Use the hosted version
+    - text: Try My Nido
       link: https://my.nido-app.ca
+      icon: external
       variant: minimal
 ---
 
 import { Card, CardGrid } from '@astrojs/starlight/components';
+import familyLight from '../../assets/screenshots/family-light-desktop.jpg';
+import familyDark from '../../assets/screenshots/family-dark-desktop.jpg';
+import familyMobile from '../../assets/screenshots/family-mobile.jpg';
+import homeSection from '../../assets/screenshots/home-section.jpg';
 
-*Nido* means "nest" — something you build, keep, and look after. Nido is a free,
-open source tracker for the things that need looking after, and it starts with
-the smallest and most relentless of them: a new baby.
+<div class="nido-showcase">
+	<figure class="nido-shot nido-shot--desktop">
+		<img src={familyLight.src} width="1440" height="1150" alt="The Nido family page: today's feeds, diapers and sleep for a baby named Wren, with quick reports for the last 24 hours and 30 days" />
+	</figure>
+	<figure class="nido-shot nido-shot--mobile">
+		<img src={familyMobile.src} width="780" height="1688" alt="Nido on a phone: the same today view with large tap targets and bottom navigation" loading="lazy" decoding="async" />
+	</figure>
+</div>
 
-Everything is yours to read, yours to run, and yours to keep. There is no paid
-version, no account to create, and nothing leaves your home unless you ask it
-to.
+<p class="nido-caption">
+	Built for the phone at 3am — one thumb, one hand, one eye open. Every record
+	is a tap away, and it works offline when the nursery Wi-Fi doesn't.
+</p>
 
 ## What Nido does
 
-A feed at 3am and two caregivers who both need to know what happened last. A
-sleeper one of them is still awake for. The growth chart the paediatrician asks
-about. All of it in one place, free, on hardware you control.
-
-| Area | What you get |
-| --- | --- |
-| **Feeding** | Breast and formula timers, side and session tracking, amounts |
-| **Diapers** | Wet, soiled, dry and combinations |
-| **Sleep** | Start and stop, with live duration |
-| **Growth** | Weight, height and head circumference against WHO and CDC percentiles |
-| **Milestones & vaccinations** | Logging, plus a schedule of what is due |
-| **Photos** | Per-member avatars and photo uploads |
-| **Journal & mood** | Free-form notes for each day |
-| **Shared access** | Invite other caregivers, with a role for what each one can do |
-| **Reminders** | Nudges for stretches and intervals worth noticing |
-| **Your data** | Export everything as JSON, any time, and move it back in |
-| **Works offline** | Entries made without a connection wait, then send themselves |
-| **Looks like yours** | Seven palettes in light and dark, plus a custom theme |
-
-## What comes next
-
-<div class="nido-card nido-card--edge">
-	<p>
-		A baby grows up, and the list of things needing care gets longer rather than
-		shorter. Nido is being built to cover all of it — the same shared records,
-		the same reminders, the same ownership, pointed at a whole home instead of
-		one small person.
-	</p>
+<div class="nido-features">
+	<div><strong>Feeding</strong><span>Breast, bottle and combo, with timers and amounts</span></div>
+	<div><strong>Sleep</strong><span>Start and stop, with live duration</span></div>
+	<div><strong>Diapers</strong><span>Wet, soiled, dry and combinations</span></div>
+	<div><strong>Growth</strong><span>Weight, height and head against WHO and CDC curves</span></div>
+	<div><strong>Shared</strong><span>Invite caregivers, with a role for each one</span></div>
+	<div><strong>Yours</strong><span>Export everything, any time. Works offline</span></div>
 </div>
 
-The next tracker is **home maintenance and care**: the filter that needs
-changing, the water heater that needs flushing, the smoke alarms that need
-testing, the warranty that expires in March. Nido will keep these the way it
-keeps a feeding — with history, with reminders, and shared between the people
-who live with them.
+Plus milestones, vaccinations, photos, a daily journal, and reminders — in
+seven palettes, light and dark.
 
-It is being built in the open, alongside the infant tracker. If that is the part
-you care about, it is written down in [the roadmap](./project/roadmap/).
+<figure class="nido-shot nido-shot--wide">
+	<img src={familyDark.src} width="1440" height="1150" alt="Nido in dark mode: the same family page in the forest dark palette" loading="lazy" decoding="async" />
+</figure>
 
 ## Two ways to run it
 
-Both are the same software with the same features, and neither has a paid tier.
-Pick whichever fits your household.
+Same software, same features, no paid tier either way. Pick whichever fits
+your household.
 
 <div class="nido-options">
 	<div class="nido-option">
 		<h3>Run it yourself</h3>
 		<p>
-			<strong>Free, on your own hardware.</strong> Your records stay on a disk
-			you control. There is no account to create, nothing is uploaded, and no
-			one else is involved. This is the way Nido is built, and the one the
-			documentation assumes.
+			<strong>Free, on your own hardware.</strong> Five minutes with Docker
+			and your records never leave the house. No account, no uploads, no one
+			else involved.
 		</p>
 		<p>[How self-hosting works →](./self-host/)</p>
 	</div>
 	<div class="nido-option">
-		<h3>Use the hosted version</h3>
+		<h3>My Nido <span class="nido-option-tag">hosted in Canada</span></h3>
 		<p>
-			<strong>Free, hosted in Canada.</strong> For anyone who would rather not
-			run a server, keep one patched, or remember a backup. The same software,
-			with an optional way to support the project if it is useful to you.
+			<strong>Free, for anyone who just wants to use it.</strong> Sign up with
+			an email and a password and start logging tonight. Your data stays in
+			Canada, and the only emails you get are about your account.
 		</p>
-		<p>[About the hosted version →](./hosted/)</p>
+		<p>[About My Nido →](./my-nido/) · [Privacy policy →](./privacy/)</p>
 	</div>
 </div>
+
+## What comes next
+
+A baby grows up, and the list of things needing care gets longer. The next
+tracker is **home maintenance and care** — filters, warranties, seasonal
+upkeep — kept the same way Nido keeps a feeding, and already taking shape in
+the app.
+
+<figure class="nido-shot nido-shot--wide">
+	<img src={homeSection.src} width="1440" height="1250" alt="The Home section of Nido: property assets, maintenance schedules, and manuals and routines" loading="lazy" decoding="async" />
+</figure>
+
+It is being built in the open, alongside the infant tracker — see
+[the roadmap](./project/roadmap/).
 
 ## Start here
 
@@ -110,10 +111,7 @@ Pick whichever fits your household.
 
 ## Help it keep going
 
-Nido is maintained in one person's evenings. There is no company behind it, so
-the two things that actually help are small ones:
-
-- **[Contribute](./project/contributing/)** — a bug report with a reproduction,
-  an answer to someone else's issue, or a note about your own setup.
-- **[Sponsor the project](./support/)** — optional, unlocks nothing, and buys
-  maintainer time: releases, security work, and answers.
+Nido is maintained in one person's evenings. The two things that actually help
+are small ones: [contribute](./project/contributing/) a bug report or an
+answer, or [sponsor the project](./support/) — optional, unlocks nothing, and
+buys maintainer time.

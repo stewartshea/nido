@@ -1,51 +1,53 @@
 ---
-title: The hosted version
-description: Nido hosted in Canada — the same open source code, run for you. Free, with no paid tiers.
+title: My Nido
+description: My Nido is the hosted version of Nido — the same open source code, run for you in Canada. Free, with no paid tiers.
 ---
 
 import { HOSTED_URL } from '../../site.config';
 
 <div class="nido-card nido-card--edge" style="margin:0 0 1.75rem">
 	<p style="margin:0">
-		<strong>The hosted version is free, and there are no paid tiers.</strong> It
-		is the same <a href="https://github.com/stewartshea/nido" rel="noopener">Apache-2.0</a>
+		<strong>My Nido is free, and there are no paid tiers.</strong> It is the
+		same <a href="https://github.com/stewartshea/nido" rel="noopener">Apache-2.0</a>
 		codebase as a self-hosted install, running on hardware the project maintains
-		instead of yours. Nothing is withheld from it, and nothing is held back from
-		the self-hosted version either.
+		in Canada instead of yours. Nothing is withheld from it, and nothing is held
+		back from the self-hosted version either.
 	</p>
 </div>
 
 <p style="margin-bottom:2rem">
-	<a href={HOSTED_URL} rel="noopener"><strong>Open the hosted version →</strong></a>
+	<a href={HOSTED_URL} rel="noopener"><strong>Open My Nido →</strong></a>
 </p>
 
 ## What it is
 
-Someone else's server running the software from this repository, hosted in
-Canada. That is the entire difference, and it is the whole point: it exists so
-that using Nido does not require running Docker, patching a host, or remembering
-to take a backup.
+Someone else's server running the software from this repository, **hosted in
+Canada** — your family's records stay on Canadian hardware, under Canadian
+privacy law. That is the entire difference, and it is the whole point: it exists
+so that using Nido does not require running Docker, patching a host, or
+remembering to take a backup.
 
-Log in at [my.nido-app.ca](https://my.nido-app.ca). Sign-up is the same email
-and password you would set up on your own instance.
+Sign up at [my.nido-app.ca](https://my.nido-app.ca) with an email and a
+password. The only emails you will ever get are about your account — no
+marketing, ever. The details are in the [privacy policy](./privacy/).
 
 ## What you give up
 
 Running it yourself is the better option when you can, and this page will not
 pretend otherwise:
 
-- **The data is on someone else's disk.** The hosted operator holds it, and
-  backs it up on its schedule rather than yours.
+- **The data is on someone else's disk.** The operator holds it, and
+  backs it up on their schedule rather than yours.
 - **A family database is keyed by the host's master key.** You never see it, so
   you cannot take an independent copy of the key — which is the one thing the
   [self-hosting guide](./self-host/) insists you do. Backups and restores are
   the operator's responsibility, not yours.
 - **It is a service, so it can go away.** A self-hosted install is on hardware
-  you control and has no expiry. The hosted version is a favour, not a
-  guarantee, and it is run by one person in their evenings.
+  you control and has no expiry. My Nido is a favour, not a guarantee, and
+  it is run by one person in their evenings.
 
-:::caution[Do not treat the hosted version as your only copy]
-The hosted version is a convenience. If your family's records matter to you, a
+:::caution[Do not treat My Nido as your only copy]
+My Nido is a convenience. If your family's records matter to you, a
 self-hosted instance you control is the durable answer — see
 [Self-hosting →](./self-host/). The same export and restore endpoints exist in
 both, so you can move between them.
@@ -53,19 +55,19 @@ both, so you can move between them.
 
 ## Is it really the same software?
 
-Yes. The hosted instance runs builds of
+Yes. My Nido runs builds of
 [stewartshea/nido](https://github.com/stewartshea/nido), and every feature
 listed in the [documentation index](./index/#what-nido-does) is present in
 both. There is no hosted build of Nido, no feature flag that only one side can
 see, and no separate codebase.
 
-If the hosted version is ever ahead of or behind a release, that is a
-deployment lag, not a product difference.
+If My Nido is ever ahead of or behind a release, that is a deployment lag,
+not a product difference.
 
 ## Supporting the project
 
-Using the hosted version is free and always will be. If it is useful to you and
-you want to give something back, there is an optional way to do that alongside
+Using My Nido is free and always will be. If it is useful to you and you
+want to give something back, there is an optional way to do that alongside
 your account.
 
 It is not a tier. It does not change what you can do, and nothing about your
@@ -75,6 +77,8 @@ what it buys (maintainer time, and nothing else).
 
 ## Other reasons to read this
 
+- **[Privacy policy →](./privacy/)** — what My Nido stores, where, and the
+  only emails it will ever send you.
 - **[Self-hosting →](./self-host/)** — the trade-offs in full, and the five
   minutes it takes to run your own.
 - **[Security model →](./reference/security/)** — what is encrypted and what is
