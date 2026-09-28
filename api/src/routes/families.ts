@@ -35,6 +35,15 @@ function isoNow(): string {
 	return new Date().toISOString();
 }
 
+function parseJson<T>(value: unknown, fallback: T): T {
+	if (!value) return fallback;
+	try {
+		return JSON.parse(String(value)) as T;
+	} catch {
+		return fallback;
+	}
+}
+
 // Maps a babies-family_members row to its REST shape.
 function memberShape(row: any) {
 	return {
@@ -48,7 +57,7 @@ function memberShape(row: any) {
 		legacyBabyId: row.legacy_baby_id ? Number(row.legacy_baby_id) : null,
 		trackable: Number(row.trackable ?? (row.legacy_baby_id ? 1 : 0)) === 1,
 		linkedAccount: Number(row.linked_account || 0) === 1,
-		categories: row.categories ? JSON.parse(String(row.categories)) : [],
+		categories: parseJson<string[]>(row.categories, []),
 	};
 }
 
@@ -120,8 +129,8 @@ const DEFAULT_CATEGORY_OPTIONS = {
 
 function settingsShape(row: any) {
 	return {
-		categories: row?.categories ? JSON.parse(String(row.categories)) : null,
-		categoryOptions: row?.category_options ? JSON.parse(String(row.category_options)) : {},
+		categories: parseJson<string[] | null>(row?.categories, null),
+		categoryOptions: parseJson<Record<string, unknown>>(row?.category_options, {}),
 		shareAnonymizedDaily: Number(row?.share_anonymized_daily ?? 0) === 1,
 	};
 }
@@ -1016,8 +1025,8 @@ async function handleExportFamily(c: Context<AuthEnv>) {
 		args: [NAMESPACE_HOUSEHOLD_ID],
 	})).rows;
 	exportData.settings = familySettingsRow ? {
-		categories: familySettingsRow.categories ? JSON.parse(String(familySettingsRow.categories)) : null,
-		categoryOptions: familySettingsRow.category_options ? JSON.parse(String(familySettingsRow.category_options)) : {},
+		categories: parseJson<string[] | null>(familySettingsRow.categories, null),
+		categoryOptions: parseJson<Record<string, unknown>>(familySettingsRow.category_options, {}),
 		shareAnonymizedDaily: Number(familySettingsRow.share_anonymized_daily ?? 0) === 1,
 	} : null;
 	exportData.invitations = invitations.map((r) => ({ email: r?.email, status: r?.status, createdAt: r?.created_at }));
