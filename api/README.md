@@ -99,6 +99,10 @@ Most read/write routes accept a `?babyId=` query parameter, except where a
 - `GET /api/v1/users/me` — current user
 - `PUT /api/v1/users/me` — update profile
 - `POST /api/v1/users/me/password` — change password
+- `DELETE /api/v1/users/me` — delete the account. A sole owner deletes the
+  whole family; a member is detached (the family keeps its member profiles and
+  records); an owner with other accounts is refused so the family is never left
+  ownerless
 
 ### Families
 - `POST /api/v1/families` — create a family (optionally with a first member)
@@ -108,7 +112,8 @@ Most read/write routes accept a `?babyId=` query parameter, except where a
   birth date)
 - `PUT /api/v1/families/members/:memberId` — update a member
 - `DELETE /api/v1/families/members/:memberId` — delete a member (cascades to
-  records, photos, avatar, reminders)
+  records, photos, avatar, reminders, and any member account linked to it; an
+  owner's own account is never removed this way)
 - `GET /api/v1/families/members/:memberId/avatar` — fetch a member's avatar
 - `POST /api/v1/families/members/:memberId/avatar` — upload a member's avatar
 - `GET /api/v1/families/invitations` — list pending invitations

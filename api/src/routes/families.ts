@@ -681,6 +681,23 @@ async function handleDeleteMember(c: Context<AuthEnv>) {
 		try { await rm(join(AVATAR_DIR, String(avatar)), { force: true }); } catch { /* already gone */ }
 	}
 
+	const linkedAccounts = await db.execute({
+		sql: 'SELECT user_id FROM account_members WHERE member_id = ?',
+		args: [memberId],
+	});
+	const registry = await ensureRegistry();
+	for (const row of linkedAccounts.rows) {
+		const linkedUserId = String(row.user_id);
+		const routing = await registry.execute({
+			sql: 'SELECT role FROM user_routing WHERE user_id = ? LIMIT 1',
+			args: [linkedUserId],
+		});
+		if (String(routing.rows[0]?.role ?? '') === 'owner') continue;
+		await db.execute({ sql: 'DELETE FROM user_households WHERE user_id = ?', args: [linkedUserId] });
+		await db.execute({ sql: 'DELETE FROM users WHERE id = ?', args: [linkedUserId] });
+		await registry.execute({ sql: 'DELETE FROM user_routing WHERE user_id = ?', args: [linkedUserId] });
+	}
+
 	await db.execute({ sql: 'DELETE FROM account_members WHERE member_id = ?', args: [memberId] });
 	await db.execute({ sql: 'DELETE FROM member_homes WHERE member_id = ?', args: [memberId] });
 	await db.execute({ sql: 'DELETE FROM family_members WHERE id = ? AND household_id = ?', args: [memberId, NAMESPACE_HOUSEHOLD_ID] });

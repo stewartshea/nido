@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 import bcrypt from 'bcryptjs';
-import { ensureRegistry } from '../db-namespaces';
+import { ensureRegistry, removeFamily } from '../db-namespaces';
 import { isPlatformAdmin } from '../authz';
 import { type AuthEnv } from '../auth';
 
@@ -153,6 +153,40 @@ userRoutes.post('/me/password', zValidator('json', changePasswordSchema), async 
     args: [hash, new Date().toISOString(), userId],
   });
   return c.json({ message: 'Password updated' });
+});
+
+// DELETE /me — delete the authenticated account (and its family, when it is the sole account).
+userRoutes.delete('/me', async (c) => {
+  const userId = c.get('userId');
+  const db = c.get('db');
+
+  const registry = await ensureRegistry();
+  const routing = await registry.execute({
+    sql: 'SELECT family_id, role FROM user_routing WHERE user_id = ? LIMIT 1',
+    args: [userId],
+  });
+  const me = routing.rows[0] as unknown as { family_id: string; role: string } | undefined;
+  if (!me) return c.json({ error: 'Account is not registered' }, 404);
+  const familyId = String(me.family_id);
+
+  if (String(me.role) === 'owner') {
+    const others = await registry.execute({
+      sql: 'SELECT COUNT(*) AS cnt FROM user_routing WHERE family_id = ? AND user_id <> ?',
+      args: [familyId, userId],
+    });
+    if (Number(others.rows[0]?.cnt ?? 0) > 0) {
+      return c.json({ error: 'You own this family and other accounts still belong to it. Remove them before deleting your account.' }, 409);
+    }
+    await removeFamily(familyId);
+    return c.json({ message: 'Account and family deleted' });
+  }
+
+  await db.execute({ sql: 'DELETE FROM account_members WHERE user_id = ?', args: [userId] });
+  await db.execute({ sql: 'DELETE FROM user_households WHERE user_id = ?', args: [userId] });
+  await db.execute({ sql: 'DELETE FROM users WHERE id = ?', args: [userId] });
+  await registry.execute({ sql: 'DELETE FROM user_routing WHERE user_id = ?', args: [userId] });
+
+  return c.json({ message: 'Account deleted' });
 });
 
 export { userRoutes };

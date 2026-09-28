@@ -29,6 +29,16 @@ async function getJson(token: string, path: string) {
 	return { status: res.status, body: (await res.json()) as Record<string, any> };
 }
 
+async function del(token: string, path: string) {
+	const res = await app.fetch(
+		new Request(`http://localhost${path}`, {
+			method: 'DELETE',
+			headers: { Authorization: `Bearer ${token}` },
+		}),
+	);
+	return { status: res.status, body: (await res.json()) as Record<string, any> };
+}
+
 async function register(email: string, pw = 'StrongP4ss!') {
 	const res = await postJson('', '/api/v1/auth/register', {
 		email,
@@ -293,5 +303,52 @@ describe('registration invite destination', () => {
 			next: '/join?family=abc&token=def',
 		});
 		expect(res.status).toBe(200);
+	});
+});
+
+async function joinOwnerAndMember(ownerEmail: string, memberEmail: string) {
+	const owner = await register(ownerEmail);
+	const invitee = await register(memberEmail);
+	await postJson(owner.token, `/api/v1/families/${owner.familyId}/invitations`, { email: memberEmail });
+	const target = getFamilyClient(owner.familyId);
+	const inviteRow = await target.execute({
+		sql: 'SELECT token FROM family_invitations WHERE email = ? LIMIT 1',
+		args: [memberEmail],
+	});
+	const inviteToken = String(inviteRow.rows[0]?.token ?? '');
+	const joined = await postJson(invitee.token, '/api/v1/families/join', {
+		familyId: owner.familyId,
+		token: inviteToken,
+	});
+	expect(joined.status).toBe(200);
+	return { owner, memberToken: String(joined.body.token ?? '') };
+}
+
+describe('account deletion', () => {
+	it('lets a member delete their own account and revokes the token', async () => {
+		const { memberToken } = await joinOwnerAndMember('del-owner@example.com', 'del-member@example.com');
+
+		const removed = await del(memberToken, '/api/v1/users/me');
+		expect(removed.status).toBe(200);
+
+		const after = await getJson(memberToken, '/api/v1/users/me');
+		expect(after.status).toBe(401);
+	});
+
+	it('refuses to delete an owner while other accounts remain', async () => {
+		const { owner } = await joinOwnerAndMember('del-owner2@example.com', 'del-member2@example.com');
+
+		const removed = await del(owner.token, '/api/v1/users/me');
+		expect(removed.status).toBe(409);
+	});
+
+	it('deletes a sole owner account together with the family', async () => {
+		const solo = await register('del-solo@example.com');
+
+		const removed = await del(solo.token, '/api/v1/users/me');
+		expect(removed.status).toBe(200);
+
+		const after = await getJson(solo.token, '/api/v1/users/me');
+		expect(after.status).toBe(401);
 	});
 });

@@ -236,6 +236,7 @@
 	let newPw = '';
 	let confirmPw = '';
 	let changingPw = false;
+	let deletingAccount = false;
 
 	let feedStartedAt: number | null = null;
 	let feedElapsed = 0;
@@ -896,6 +897,21 @@
 			notice = 'Password updated.';
 		} catch (err: any) { error = err.response?.data?.error || 'Failed to change password.'; }
 		finally { changingPw = false; }
+	}
+
+	async function deleteAccount() {
+		error = '';
+		if (!confirm('Delete your account permanently? This cannot be undone. Any family records you own will also be removed.')) return;
+		deletingAccount = true;
+		try {
+			await accountAPI.remove();
+			authActions.logout();
+			goto('/login');
+		} catch (err: any) {
+			error = err.response?.data?.error || 'Failed to delete account.';
+		} finally {
+			deletingAccount = false;
+		}
 	}
 
 	async function exportFamily() {
@@ -1718,6 +1734,13 @@
 										<input readonly value={inviteFallbackUrl} class="w-full px-3 py-2 border border-line rounded-md text-xs" on:focus={selectAll} aria-label="Invitation link" />
 									</div>
 								{/if}
+								</div>
+								<div class="border-t border-line-soft pt-4">
+									<h4 class="font-display font-semibold mb-3 text-danger-text">Delete account</h4>
+									<p class="text-xs text-ink-soft mb-3">Permanently removes your account. If you are the only account in your family, the family and its records are removed too. This cannot be undone.</p>
+									<button type="button" on:click={deleteAccount} disabled={deletingAccount} class="bg-danger text-danger-text border border-danger px-4 py-2 rounded-md font-semibold disabled:opacity-50">
+										{deletingAccount ? 'Deleting...' : 'Delete my account'}
+									</button>
 								</div>
 								<div class="border-t border-line-soft pt-4">
 									<h4 class="font-display font-semibold mb-3">Mobile quick links</h4>

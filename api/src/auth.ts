@@ -1,9 +1,9 @@
 import jwt from 'jsonwebtoken';
 import type { Context, Next } from 'hono';
 import type { SqliteFacade } from './db-core';
+import { NAMESPACE_HOUSEHOLD_ID } from './db-core';
 import type { Logger } from './logger';
 import { getFamilyClient } from './db-namespaces';
-
 // Route handlers read the authenticated user via c.get('userId'), the routed
 // family via c.get('familyId'), that family's namespace client via c.get('db'),
 // and a logger already bound to the request's correlation id via c.get('log').
@@ -88,8 +88,9 @@ export async function requireAuth(c: Context<AuthEnv>, next: Next): Promise<Resp
 
 	const userId = String(payload.userId);
 	const familyId = String(payload.familyId);
+	let db: SqliteFacade;
 	try {
-		c.set('db', getFamilyClient(familyId));
+		db = getFamilyClient(familyId);
 	} catch (error) {
 		// Thrown when the family is not provisioned or the id is malformed.
 		log.warn('family namespace unavailable', {
@@ -101,6 +102,16 @@ export async function requireAuth(c: Context<AuthEnv>, next: Next): Promise<Resp
 		return unauthorized('family_unavailable');
 	}
 
+	// A deleted account's JWT stays valid until expiry, so membership is re-checked.
+	const membership = await db.execute({
+		sql: 'SELECT 1 FROM user_households WHERE user_id = ? AND household_id = ? LIMIT 1',
+		args: [userId, NAMESPACE_HOUSEHOLD_ID],
+	});
+	if (membership.rows.length === 0) {
+		return unauthorized('account_deleted');
+	}
+
+	c.set('db', db);
 	c.set('userId', userId);
 	c.set('familyId', familyId);
 	// Re-bind so handler logs below carry the identity without each call site adding it.
