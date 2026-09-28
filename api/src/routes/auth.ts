@@ -27,6 +27,7 @@ const registerSchema = z.object({
   password: z.string().min(6),
   firstName: z.string(),
   lastName: z.string(),
+  next: z.string().max(512).optional(),
 });
 
 const loginSchema = z.object({
@@ -57,7 +58,7 @@ type FamilyUserRow = {
 // Register endpoint
 authRoutes.post('/register', zValidator('json', registerSchema), async (c) => {
   try {
-    const { email, password, firstName, lastName } = c.req.valid('json');
+    const { email, password, firstName, lastName, next } = c.req.valid('json');
 
     // Instance-level signup switch (env override, else DB setting).
     const settings = await getAppSettings();
@@ -116,8 +117,10 @@ authRoutes.post('/register', zValidator('json', registerSchema), async (c) => {
     }
 
     if (verificationNeeded) {
+      const safeNext = next && next.startsWith('/') && !next.startsWith('//') ? next : null;
+      const verifyUrl = `${baseUrl()}/?verify=${verificationToken}${safeNext ? `&next=${encodeURIComponent(safeNext)}` : ''}`;
       try {
-        await sendMail(settings, email, renderVerifyEmail({ firstName, url: `${baseUrl()}/?verify=${verificationToken}` }));
+        await sendMail(settings, email, renderVerifyEmail({ firstName, url: verifyUrl }));
       } catch (mailErr) {
         // SMTP may be misconfigured; do not block registration, but surface the state.
         c.get('log').error('verification email not sent', { event: 'email_verification_failed', err: mailErr });

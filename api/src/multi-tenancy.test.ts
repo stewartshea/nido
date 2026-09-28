@@ -282,3 +282,16 @@ describe('invitation acceptance', () => {
 		expect(members.status).toBe(200);
 	});
 });
+
+describe('registration invite destination', () => {
+	it('accepts a next destination on register', async () => {
+		const res = await postJson('', '/api/v1/auth/register', {
+			email: 'reg-next@example.com',
+			password: 'StrongP4ss!',
+			firstName: 'Next',
+			lastName: 'Dest',
+			next: '/join?family=abc&token=def',
+		});
+		expect(res.status).toBe(200);
+	});
+});

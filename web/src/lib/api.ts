@@ -86,7 +86,7 @@ export function getUserId(): number | null {
 
 // Auth API functions
 export const authAPI = {
-  register: (userData: { email: string; password: string; firstName: string; lastName: string }) => 
+  register: (userData: { email: string; password: string; firstName: string; lastName: string; next?: string }) => 
     api.post('/auth/register', userData),
   
   login: (credentials: { email: string; password: string }) => 

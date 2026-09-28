@@ -30,10 +30,31 @@
 	// Only same-origin relative paths are honoured: "//evil.example" and
 	// "https://evil.example" are both parsed as absolute and would turn the
 	// post-login redirect into an open redirect.
+	const PENDING_NEXT_KEY = 'nido.pendingNext';
+
+	function safeNext(value: string | null): string | null {
+		return value && value.startsWith('/') && !value.startsWith('//') ? value : null;
+	}
+
+	// Email verification sends the user away to their inbox, which drops ?next=.
+	// When verification is required the destination is stashed so it can be
+	// replayed after they confirm and sign in.
+	function stashNext() {
+		if (!browser) return;
+		const pending = safeNext(new URLSearchParams(window.location.search).get('next'));
+		if (pending) localStorage.setItem(PENDING_NEXT_KEY, pending);
+	}
+
 	function nextPath(): string {
 		if (!browser) return '/dashboard';
-		const next = new URLSearchParams(window.location.search).get('next');
-		return next && next.startsWith('/') && !next.startsWith('//') ? next : '/dashboard';
+		const direct = safeNext(new URLSearchParams(window.location.search).get('next'));
+		if (direct) return direct;
+		const stashed = safeNext(localStorage.getItem(PENDING_NEXT_KEY));
+		if (stashed) {
+			localStorage.removeItem(PENDING_NEXT_KEY);
+			return stashed;
+		}
+		return '/dashboard';
 	}
 
 	async function handleLogin(event: SubmitEvent) {
@@ -75,9 +96,11 @@
 				password: regPassword,
 				firstName: regFirstName,
 				lastName: regLastName,
+				next: safeNext(new URLSearchParams(window.location.search).get('next')) ?? undefined,
 			});
 			const { token, user, requiresEmailVerification } = res.data;
 			if (requiresEmailVerification) {
+				stashNext();
 				notice = res.data.message || 'Check your email to verify your account.';
 				view = 'signin';
 				return;
@@ -135,6 +158,13 @@
 					notice = res.data.message || 'Email verified.';
 				} catch (err: any) {
 					error = err.response?.data?.error || 'Verification failed.';
+				}
+				// The verify link carries ?next= for invite flows; stash it so it
+				// survives the sign-in that verification still requires.
+				const verifyNext = safeNext(params.get('next'));
+				if (verifyNext) {
+					if (browser) localStorage.setItem(PENDING_NEXT_KEY, verifyNext);
+					notice = 'Email verified — sign in to continue to your invitation.';
 				}
 				if (window.history.replaceState) window.history.replaceState(null, '', window.location.pathname);
 			}
