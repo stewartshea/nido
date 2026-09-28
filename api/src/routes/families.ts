@@ -147,9 +147,12 @@ const joinSchema = z.object({
 // Accepting an invitation deletes the joiner's own single-family namespace.
 // Every table below lives in that namespace, so a row in any of them is real
 // data that would be destroyed with the file. Refuse rather than orphan it.
+// Non-empty tracked-data tables block a move out of the family. `formulas` is
+// excluded: its default catalog is seeded automatically, so a non-empty table
+// is never a sign the account owner recorded anything.
 const FAMILY_CONTENT_TABLES = [
 	'babies', 'feedings', 'diapers', 'sleep', 'growth', 'milestones',
-	'vaccinations', 'moods', 'journal_entries', 'photos', 'reminders', 'formulas',
+	'vaccinations', 'moods', 'journal_entries', 'photos', 'reminders',
 ] as const;
 
 async function familyHasContent(db: ReturnType<typeof getFamilyClient>): Promise<boolean> {

@@ -247,3 +247,38 @@ describe('formula catalog seeding', () => {
 		expect(formulas.some((f: any) => f.brand === 'Kendamil')).toBe(true);
 	});
 });
+
+describe('invitation acceptance', () => {
+	it('moves the invitee into the inviting family even after their namespace seeded the formula catalog', async () => {
+		const owner = await register('join-owner@example.com');
+		const invitee = await register('join-invitee@example.com');
+
+		await postJson(owner.token, `/api/v1/families/${owner.familyId}/invitations`, {
+			email: 'join-invitee@example.com',
+		});
+
+		const target = getFamilyClient(owner.familyId);
+		const inviteRow = await target.execute({
+			sql: 'SELECT token FROM family_invitations WHERE email = ? LIMIT 1',
+			args: ['join-invitee@example.com'],
+		});
+		const token = String(inviteRow.rows[0]?.token ?? '');
+		expect(token).not.toBe('');
+
+		const seeded = await getJson(invitee.token, `/api/v1/formulas?familyId=${invitee.familyId}`);
+		expect((seeded.body.formulas ?? []).length).toBeGreaterThan(10);
+
+		const join = await postJson(invitee.token, '/api/v1/families/join', {
+			familyId: owner.familyId,
+			token,
+		});
+		expect(join.status).toBe(200);
+		expect(join.body.familyId).toBe(owner.familyId);
+
+		const memberToken = String(join.body.token ?? '');
+		expect(memberToken).not.toBe('');
+
+		const members = await getJson(memberToken, `/api/v1/families/${owner.familyId}/members`);
+		expect(members.status).toBe(200);
+	});
+});
