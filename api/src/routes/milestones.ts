@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 import { resolveTrackableMember, attachCreatedBy } from '../member-scope';
+import { parsePaging, countMatching } from '../paging';
 import { type AuthEnv } from '../auth';
 
 const milestoneRoutes = new Hono<AuthEnv>();
@@ -42,20 +43,24 @@ milestoneRoutes.get('/', async (c) => {
     const babyId = scope.babyId;
     
     // Get milestones for the baby
+    const { limit, offset } = parsePaging((k) => c.req.query(k));
+
     const milestonesResult = await db.execute({
       sql: `
       SELECT id, baby_id, title, description, achieved_date, category, tags, created_at, created_by
       FROM milestones
       WHERE baby_id = ?
+      ORDER BY achieved_date DESC, id DESC
+      LIMIT ? OFFSET ?
     `,
-      args: [babyId]
+      args: [babyId, limit, offset]
     });
-    
-    const milestonesSorted = [...milestonesResult.rows]
-      .sort((a, b) => String(b.achieved_date ?? '').localeCompare(String(a.achieved_date ?? '')));
-    
-    await attachCreatedBy(db, milestonesSorted);
-    return c.json({ milestones: milestonesSorted });
+    const total = await countMatching(db, 'milestones', [babyId]);
+
+    const milestones = milestonesResult.rows as any[];
+
+    await attachCreatedBy(db, milestones);
+    return c.json({ milestones, total });
   } catch (error) {
     c.get('log').error('get milestones failed', { err: error });
     return c.json({ error: 'Failed to fetch milestones' }, 500);

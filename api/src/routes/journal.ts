@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { type AuthEnv } from '../auth';
 import type { JournalEntryRow } from '../db-types';
 import { resolveTrackableMember, attachCreatedBy } from '../member-scope';
+import { parsePaging, countMatching } from '../paging';
 
 const journalRoutes = new Hono<AuthEnv>();
 
@@ -43,15 +44,18 @@ journalRoutes.get('/', async (c) => {
   const babyId = await resolveProfile(db, memberId, userId);
   if (!babyId) return c.json({ error: 'Access denied' }, 403);
 
+  const { limit, offset } = parsePaging((k) => c.req.query(k));
+
   const res = await db.execute({
-    sql: `SELECT id, baby_id, title, body, entry_date, created_at, created_by FROM journal_entries WHERE baby_id = ? ORDER BY COALESCE(entry_date, created_at) DESC`,
-    args: [babyId],
+    sql: `SELECT id, baby_id, title, body, entry_date, created_at, created_by FROM journal_entries WHERE baby_id = ? ORDER BY COALESCE(entry_date, created_at) DESC, id DESC LIMIT ? OFFSET ?`,
+    args: [babyId, limit, offset],
   });
+  const total = await countMatching(db, 'journal_entries', [babyId]);
   await attachCreatedBy(db, res.rows as any[]);
   return c.json({ entries: res.rows.map((r) => ({
     id: Number(r?.id), memberId: Number(r?.baby_id), title: r?.title, body: r?.body, entryDate: r?.entry_date, createdAt: r?.created_at,
     createdBy: r?.created_by ?? null, createdByName: (r as any)?.created_by_name ?? null,
-  })) });
+  })), total });
 });
 
 journalRoutes.post('/', zValidator('json', createJournalSchema), async (c) => {

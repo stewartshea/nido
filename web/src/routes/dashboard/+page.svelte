@@ -2,7 +2,7 @@
 	import { onMount, onDestroy } from 'svelte';
 	import { browser } from '$app/environment';
 	import { goto } from '$app/navigation';
-	import { authAPI, userAPI, babyAPI, familiesAPI, feedingAPI, diaperAPI, sleepAPI, growthAPI, healthAPI, importsAPI, photosAPI, formulasAPI, familyAdminAPI, accountAPI, milestoneAPI, vaccinationAPI, settingsAPI, moodAPI, journalAPI, tokenExpired, remindersAPI } from '$lib/api';
+	import { authAPI, userAPI, babyAPI, familiesAPI, feedingAPI, diaperAPI, sleepAPI, growthAPI, healthAPI, importsAPI, photosAPI, formulasAPI, familyAdminAPI, accountAPI, milestoneAPI, vaccinationAPI, settingsAPI, moodAPI, journalAPI, tokenExpired, remindersAPI, type PageOptions } from '$lib/api';
 	import { authStore, authActions } from '$lib/stores/authStore';
 	import { uiStore, uiActions } from '$lib/stores/uiStore';
 	import PhotoStrip from '$lib/components/PhotoStrip.svelte';
@@ -106,6 +106,7 @@
 	// "Other" picker: every category the quick pills do not already cover, so
 	// no log target is ever more than one tap from the dashboard.
 	let otherOpen = false;
+	let allOpen = false;
 
 	function quickCategories() {
 		return CATEGORIES.filter((c) => quickLinks.includes(c.id));
@@ -115,9 +116,14 @@
 		return CATEGORIES.filter((c) => !quickLinks.includes(c.id));
 	}
 
+	function recordedBy(r: any): string {
+		return r?.created_by_name || r?.createdByName || '';
+	}
+
 	function openLog(catId: string) {
 		activeTab = catId;
 		otherOpen = false;
+		allOpen = false;
 		sheetOpen = true;
 	}
 
@@ -310,6 +316,71 @@
 	let moods: any[] = [];
 	let journalEntries: any[] = [];
 
+	// Server-side row count per list, used to offer "Load older records" only
+	// when the server actually holds more than what is loaded.
+	let listTotals: Record<string, number> = {};
+	let loadingMore = false;
+
+	const HISTORY_PAGE_SIZE = 200;
+
+	const LIST_SOURCES = [
+		{ key: 'feedings', field: 'feedings', page: (id: number, o: PageOptions) => feedingAPI.getPage(id, o) },
+		{ key: 'diapers', field: 'diapers', page: (id: number, o: PageOptions) => diaperAPI.getPage(id, o) },
+		{ key: 'sleeps', field: 'sleep', page: (id: number, o: PageOptions) => sleepAPI.getPage(id, o) },
+		{ key: 'growths', field: 'growth', page: (id: number, o: PageOptions) => growthAPI.getPage(id, o) },
+		{ key: 'milestones', field: 'milestones', page: (id: number, o: PageOptions) => milestoneAPI.getPage(id, o) },
+		{ key: 'vaccinations', field: 'vaccinations', page: (id: number, o: PageOptions) => vaccinationAPI.getPage(id, o) },
+		{ key: 'moods', field: 'moods', page: (id: number, o: PageOptions) => moodAPI.getPage(id, o) },
+		{ key: 'journalEntries', field: 'entries', page: (id: number, o: PageOptions) => journalAPI.getPage(id, o) },
+	] as const;
+
+	function currentLists(): Record<string, any[]> {
+		return { feedings, diapers, sleeps, growths, milestones, vaccinations, moods, journalEntries };
+	}
+
+	function setList(key: string, value: any[]) {
+		if (key === 'feedings') feedings = value;
+		else if (key === 'diapers') diapers = value;
+		else if (key === 'sleeps') sleeps = value;
+		else if (key === 'growths') growths = value;
+		else if (key === 'milestones') milestones = value;
+		else if (key === 'vaccinations') vaccinations = value;
+		else if (key === 'moods') moods = value;
+		else if (key === 'journalEntries') journalEntries = value;
+	}
+
+	async function loadMoreLists() {
+		if (!selectedMemberId || loadingMore) return;
+		const memberId = selectedMemberId;
+		const loaded = currentLists();
+		const pending = LIST_SOURCES.filter((s) => loaded[s.key].length < (listTotals[s.key] ?? 0));
+		if (pending.length === 0) return;
+
+		loadingMore = true;
+		try {
+			await Promise.all(pending.map(async (s) => {
+				const res = await s.page(memberId, {
+					limit: HISTORY_PAGE_SIZE,
+					offset: loaded[s.key].length,
+				});
+				const items = res.data?.[s.field] ?? [];
+				if (items.length === 0) return;
+				setList(s.key, [...loaded[s.key], ...items]);
+				if (typeof res.data?.total === 'number') listTotals = { ...listTotals, [s.key]: res.data.total };
+			}));
+			const next = currentLists();
+			saveListsCache(memberId, {
+				feedings: next.feedings, diapers: next.diapers, sleeps: next.sleeps, growths: next.growths,
+				milestones: next.milestones, vaccinations: next.vaccinations, moods: next.moods,
+				journalEntries: next.journalEntries,
+			});
+		} catch (e: any) {
+			notice = e.response?.data?.error || 'Could not load older records.';
+		} finally {
+			loadingMore = false;
+		}
+	}
+
 	// Breast-feeding totals + last side, derived from loaded feedings.
 	$: breastFeedings = feedings.filter((f) => f.type === 'breast' || f.type === 'bottle');
 	$: lastBreastSide = (() => {
@@ -420,14 +491,14 @@
 		}
 		try {
 			const [f, d, s, g, m, v, mo, j] = await Promise.all([
-				feedingAPI.getAll(selectedMemberId),
-				diaperAPI.getAll(selectedMemberId),
-				sleepAPI.getAll(selectedMemberId),
-				growthAPI.getAll(selectedMemberId),
-				milestoneAPI.getAll(selectedMemberId),
-				vaccinationAPI.getAll(selectedMemberId),
-				moodAPI.getAll(selectedMemberId),
-				journalAPI.getAll(selectedMemberId),
+				feedingAPI.getPage(selectedMemberId, { limit: HISTORY_PAGE_SIZE }),
+				diaperAPI.getPage(selectedMemberId, { limit: HISTORY_PAGE_SIZE }),
+				sleepAPI.getPage(selectedMemberId, { limit: HISTORY_PAGE_SIZE }),
+				growthAPI.getPage(selectedMemberId, { limit: HISTORY_PAGE_SIZE }),
+				milestoneAPI.getPage(selectedMemberId, { limit: HISTORY_PAGE_SIZE }),
+				vaccinationAPI.getPage(selectedMemberId, { limit: HISTORY_PAGE_SIZE }),
+				moodAPI.getPage(selectedMemberId, { limit: HISTORY_PAGE_SIZE }),
+				journalAPI.getPage(selectedMemberId, { limit: HISTORY_PAGE_SIZE }),
 			]);
 			feedings = f.data.feedings;
 			diapers = d.data.diapers;
@@ -437,6 +508,16 @@
 			vaccinations = v.data.vaccinations;
 			moods = mo.data.moods ?? [];
 			journalEntries = j.data.entries ?? [];
+			listTotals = {
+				feedings: f.data.total ?? feedings.length,
+				diapers: d.data.total ?? diapers.length,
+				sleeps: s.data.total ?? sleeps.length,
+				growths: g.data.total ?? growths.length,
+				milestones: m.data.total ?? milestones.length,
+				vaccinations: v.data.total ?? vaccinations.length,
+				moods: mo.data.total ?? moods.length,
+				journalEntries: j.data.total ?? journalEntries.length,
+			};
 			saveListsCache(selectedMemberId, {
 				feedings, diapers, sleeps, growths,
 				milestones, vaccinations, moods, journalEntries,
@@ -1777,10 +1858,22 @@
 							<div class="mb-6">
 								<div class="flex items-center justify-between mb-3">
 									<h3 class="text-lg font-display font-semibold">Quick Actions</h3>
-									<button type="button" on:click={() => openLog(quickCategories()[0]?.id || 'feeds')} class="flex items-center gap-1.5 h-9 px-3 rounded-full bg-primary text-on-primary text-sm font-semibold hover:opacity-90">
+									<button type="button" on:click={() => (allOpen = !allOpen)} aria-expanded={allOpen} class="flex items-center gap-1.5 h-9 px-3 rounded-full bg-primary text-on-primary text-sm font-semibold hover:opacity-90">
 										<Plus class="w-4 h-4" aria-hidden="true" /> Log activity
 									</button>
 								</div>
+								{#if allOpen}
+									<div class="mb-2.5 bg-surface rounded-xl shadow-card border border-line-soft p-3">
+										<div class="grid grid-cols-3 sm:grid-cols-4 gap-2">
+											{#each CATEGORIES as cat}
+												<button type="button" on:click={() => openLog(cat.id)} class="min-h-[4.5rem] px-2 py-3 rounded-lg bg-surface2 flex flex-col items-center justify-center gap-1.5 hover:bg-accent-soft active:scale-95 transition">
+													<svelte:component this={cat.icon} class="w-4 h-4 text-ink-soft" />
+													<span class="text-xs font-semibold text-ink-soft text-center leading-tight">{cat.label}</span>
+												</button>
+											{/each}
+										</div>
+									</div>
+								{/if}
 								<div class="grid grid-cols-3 sm:grid-cols-4 gap-2.5">
 									{#each quickCategories() as cat}
 										<button type="button" on:click={() => openLog(cat.id)} class="min-h-[5.5rem] px-2 py-3 bg-surface rounded-xl shadow-sm border border-line-soft flex flex-col items-center justify-center gap-1.5 hover:border-accent hover:bg-accent-soft/30 active:scale-95 transition">
@@ -1815,13 +1908,14 @@
 							{#if summary}
 								<h3 class="text-lg font-display font-semibold mb-3">Today for {babies.find(b => b.id === selectedMemberId)?.name || 'Selected'}</h3>
 								<div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
-									<div class="bg-surface rounded-lg shadow-card p-4 border-l-4 border-line">
+									<button type="button" on:click={() => openLog('growth')} class="text-left bg-surface rounded-lg shadow-card p-4 border-l-4 border-line hover:shadow-card focus:outline-none focus-visible:ring-2 focus-visible:ring-accent active:scale-[0.98] transition">
 										<div class="flex items-center gap-2 mb-1">
 											<Baby class="w-5 h-5 text-ink-soft" aria-hidden="true" />
 											<p class="text-xs text-ink-soft uppercase font-semibold tracking-wider">Age</p>
 										</div>
 										<p class="text-2xl font-display font-semibold text-ink">{summary.baby.ageInWeeks} <span class="text-sm text-ink-soft font-sans font-normal">weeks</span></p>
-									</div>
+										<p class="text-sm text-ink-soft mt-1">Add measurement</p>
+									</button>
 									<button type="button" on:click={() => openLog('feeds')} class="text-left bg-surface rounded-lg shadow-card p-4 border-l-4 border-primary hover:shadow-card focus:outline-none focus-visible:ring-2 focus-visible:ring-accent active:scale-[0.98] transition">
 										<div class="flex items-center gap-2 mb-1">
 											<span class="shrink-0" aria-hidden="true"><Milk class="w-5 h-5" /></span>
@@ -1829,6 +1923,7 @@
 										</div>
 										<p class="text-2xl font-display font-semibold text-ink">{summary.latestFeeding ? formatTime(summary.latestFeeding.end_time || summary.latestFeeding.start_time).split(', ')[1] || formatTime(summary.latestFeeding.end_time || summary.latestFeeding.start_time) : '—'}</p>
 										<p class="text-sm text-ink-soft mt-1">{summary.latestFeeding?.type || 'no feed recorded'}</p>
+										{#if recordedBy(summary.latestFeeding)}<p class="text-xs text-ink-soft mt-0.5">by {recordedBy(summary.latestFeeding)}</p>{/if}
 									</button>
 									<button type="button" on:click={() => openLog('diapers')} class="text-left bg-surface rounded-lg shadow-card p-4 border-l-4 border-accent hover:shadow-card focus:outline-none focus-visible:ring-2 focus-visible:ring-accent active:scale-[0.98] transition">
 										<div class="flex items-center gap-2 mb-1">
@@ -1837,6 +1932,7 @@
 										</div>
 										<p class="text-2xl font-display font-semibold text-ink">{summary.latestDiaper ? formatTime(summary.latestDiaper.change_time).split(', ')[1] || formatTime(summary.latestDiaper.change_time) : '—'}</p>
 										<p class="text-sm text-ink-soft mt-1">{summary.latestDiaper?.type || 'no change recorded'}</p>
+										{#if recordedBy(summary.latestDiaper)}<p class="text-xs text-ink-soft mt-0.5">by {recordedBy(summary.latestDiaper)}</p>{/if}
 									</button>
 									<button type="button" on:click={() => openLog('sleep')} class="text-left bg-surface rounded-lg shadow-card p-4 border-l-4 border-ink hover:shadow-card focus:outline-none focus-visible:ring-2 focus-visible:ring-accent active:scale-[0.98] transition">
 										<div class="flex items-center gap-2 mb-1">
@@ -1845,6 +1941,7 @@
 										</div>
 										<p class="text-2xl font-display font-semibold text-ink">{summary.latestSleep ? formatTime(summary.latestSleep.start_time).split(', ')[1] || formatTime(summary.latestSleep.start_time) : '—'}</p>
 										<p class="text-sm text-ink-soft mt-1">{summary.latestSleep?.duration ? formatElapsed(summary.latestSleep.duration) : 'no sleep recorded'}</p>
+										{#if recordedBy(summary.latestSleep)}<p class="text-xs text-ink-soft mt-0.5">by {recordedBy(summary.latestSleep)}</p>{/if}
 									</button>
 								</div>
 							{/if}
@@ -1858,6 +1955,9 @@
 									{feedings} {diapers} {sleeps} {growths}
 									{milestones} {vaccinations} {moods} {journalEntries}
 									{activeCategories}
+									totals={listTotals}
+									{loadingMore}
+									on:loadmore={loadMoreLists}
 									on:refresh={async () => { await refreshLists(); await refreshSummary(); }}
 								/>
 							</div>

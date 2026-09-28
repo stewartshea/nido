@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import type { BabyRow, SleepAggRow, DiaperAggRow, FeedingAggRow } from '../db-types';
-import { resolveTrackableMember } from '../member-scope';
+import { resolveTrackableMember, attachCreatedBy } from '../member-scope';
 import { type AuthEnv } from '../auth';
 
 const healthRoutes = new Hono<AuthEnv>();
@@ -27,7 +27,7 @@ healthRoutes.get('/summary/:memberId{[0-9]+}', async (c) => {
     // Get latest feeding
     const latestFeeding = await db.execute({
       sql: `
-      SELECT start_time, end_time, duration, amount, type, side
+      SELECT start_time, end_time, duration, amount, type, side, created_by
       FROM feedings
       WHERE baby_id = ?
       ORDER BY start_time DESC
@@ -39,7 +39,7 @@ healthRoutes.get('/summary/:memberId{[0-9]+}', async (c) => {
     // Get latest diaper
     const latestDiaper = await db.execute({
       sql: `
-      SELECT change_time, type, color, consistency
+      SELECT change_time, type, color, consistency, created_by
       FROM diapers
       WHERE baby_id = ?
       ORDER BY change_time DESC
@@ -51,7 +51,7 @@ healthRoutes.get('/summary/:memberId{[0-9]+}', async (c) => {
     // Get latest sleep
     const latestSleep = await db.execute({
       sql: `
-      SELECT start_time, end_time, duration, location
+      SELECT start_time, end_time, duration, location, created_by
       FROM sleep
       WHERE baby_id = ?
       ORDER BY start_time DESC
@@ -101,6 +101,12 @@ healthRoutes.get('/summary/:memberId{[0-9]+}', async (c) => {
     const today = new Date();
     const ageInWeeks = Math.floor((today.getTime() - birthDate.getTime()) / (1000 * 60 * 60 * 24 * 7));
     
+    await attachCreatedBy(db, [
+      ...latestFeeding.rows,
+      ...latestDiaper.rows,
+      ...latestSleep.rows,
+    ]);
+
     const healthSummary = {
       baby: {
         id: baby.id,

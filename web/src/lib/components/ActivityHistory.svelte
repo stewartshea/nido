@@ -4,7 +4,7 @@
 		feedingAPI, diaperAPI, sleepAPI, growthAPI, milestoneAPI,
 		vaccinationAPI, moodAPI, journalAPI,
 	} from '$lib/api';
-	import { CATEGORIES } from '$lib/shared';
+	import { CATEGORIES, milestoneCategory } from '$lib/shared';
 	import RecordEditModal from '$lib/components/RecordEditModal.svelte';
 	import {
 		Milk, Baby, Moon, TrendingUp, Star, Trophy, Stethoscope, Syringe,
@@ -23,8 +23,28 @@
 	export let journalEntries: any[] = [];
 	// Categories enabled for the member — controls the filter pills.
 	export let activeCategories: string[] = [];
+	// Server-side row counts per list, so the component can tell "there is more
+	// on the server" from "you have not scrolled far enough".
+	export let totals: Record<string, number> = {};
+	export let loadingMore = false;
 
 	const dispatch = createEventDispatcher();
+
+	const WINDOW_STEP = 200;
+	let visibleCount = WINDOW_STEP;
+
+	// A category pill can be backed by a whole list rather than a slice of one:
+	// Feeds and Pumping both come from `feedings`, and Firsts/Routines/Medical/
+	// Milestones all come from `milestones`. "Is there more to load?" therefore
+	// has to be asked of the backing list, not of the category's filtered rows —
+	// otherwise the button offers to load records the page will never render.
+	const FILTER_SOURCE: Record<string, string> = {
+		feeds: 'feedings', pumping: 'feedings',
+		diapers: 'diapers', sleep: 'sleeps', growth: 'growths',
+		milestones: 'milestones', firsts: 'milestones',
+		routines: 'milestones', medical: 'milestones',
+		vaccines: 'vaccinations', moods: 'moods', journal: 'journalEntries',
+	};
 
 	const KIND_ICON: Record<string, any> = {
 		feeds: Milk, pumping: Milk, diapers: Baby, sleep: Moon, growth: TrendingUp,
@@ -48,15 +68,6 @@
 		return r.created_by_name || r.createdByName || '';
 	}
 
-	function milestoneCat(r: any): string {
-		const c = String(r.category || '').toLowerCase();
-		if (c === 'firsts') return 'firsts';
-		if (c === 'vitamin' || c === 'medication' || c === 'bath' || c === 'tummy time'
-			|| c === 'story time' || c === 'walk' || c === 'appointment') return 'routines';
-		if (c === 'medical') return 'medical';
-		return 'milestones';
-	}
-
 	function tag(kind: string, cat: string, r: any) {
 		return { ...r, _kind: kind, _cat: cat, _when: rowTime(r) };
 	}
@@ -66,7 +77,7 @@
 		...diapers.map((r) => tag('diaper', 'diapers', r)),
 		...sleeps.map((r) => tag('sleep', 'sleep', r)),
 		...growths.map((r) => tag('growth', 'growth', r)),
-		...milestones.map((r) => tag('milestone', milestoneCat(r), r)),
+		...milestones.map((r) => tag('milestone', milestoneCategory(r), r)),
 		...vaccinations.map((r) => tag('vaccine', 'vaccines', r)),
 		...moods.map((r) => tag('mood', 'moods', r)),
 		...journalEntries.map((r) => tag('journal', 'journal', r)),
@@ -77,7 +88,44 @@
 		...CATEGORIES.filter((c) => activeCategories.length === 0 || activeCategories.includes(c.id)),
 	];
 
-	$: rows = (filter === 'all' ? merged : merged.filter((r) => r._cat === filter)).slice(0, 200);
+	$: filtered = filter === 'all' ? merged : merged.filter((r) => r._cat === filter);
+	$: rows = filtered.slice(0, visibleCount);
+	$: serverTotal = Object.values(totals).reduce((a, b) => a + (b ?? 0), 0);
+	$: loadedTotal = feedings.length + diapers.length + sleeps.length + growths.length
+		+ milestones.length + vaccinations.length + moods.length + journalEntries.length;
+	$: moreLoadedButHidden = filtered.length > visibleCount;
+	// For 'all' the whole feed is one pool. For a single category, only that
+	// category's backing list can grow — the page appends by list offset, so
+	// asking the global totals would offer a button that fetches nothing.
+	$: activeSource = filter === 'all' ? null : (FILTER_SOURCE[filter] ?? null);
+	$: moreOnServer = activeSource
+		? listLength(activeSource) < (totals[activeSource] ?? 0)
+		: loadedTotal < serverTotal;
+	// A category pill can be a slice of a list (Pumping inside feedings, Firsts
+	// inside milestones), and the server counts whole lists, so there is no
+	// honest server-side number for the slice. Fall back to the loaded count
+	// rather than quoting a total that includes rows the filter will not show.
+	$: displayTotal = filter === 'all' ? (serverTotal || loadedTotal) : filtered.length;
+
+	function listLength(key: string): number {
+		switch (key) {
+			case 'feedings': return feedings.length;
+			case 'diapers': return diapers.length;
+			case 'sleeps': return sleeps.length;
+			case 'growths': return growths.length;
+			case 'milestones': return milestones.length;
+			case 'vaccinations': return vaccinations.length;
+			case 'moods': return moods.length;
+			case 'journalEntries': return journalEntries.length;
+			default: return 0;
+		}
+	}
+
+	let lastFilter = filter;
+	$: if (filter !== lastFilter) {
+		lastFilter = filter;
+		visibleCount = WINDOW_STEP;
+	}
 
 	function formatTime(iso: string | null): string {
 		if (!iso) return '—';
@@ -184,6 +232,33 @@
 			<button type="button" on:click={() => (viewMode = 'table')} class="{viewMode === 'table' ? 'bg-surface text-ink shadow-sm' : 'text-ink-soft hover:text-ink'} h-8 px-3 rounded-md text-sm font-semibold transition-colors">Table</button>
 		</div>
 	</div>
+
+	{#if rows.length > 0}
+		<div class="flex flex-col items-center gap-2 py-4 text-center">
+			<p class="text-xs text-ink-soft">
+				Showing {rows.length} of {displayTotal}
+			</p>
+			{#if moreLoadedButHidden}
+				<button
+					type="button"
+					on:click={() => (visibleCount += WINDOW_STEP)}
+					class="px-4 h-9 rounded-full text-sm font-semibold border border-line-soft text-ink hover:bg-surface2 transition-colors"
+				>
+					Show more
+				</button>
+			{/if}
+			{#if moreOnServer}
+				<button
+					type="button"
+					on:click={() => dispatch('loadmore')}
+					disabled={loadingMore}
+					class="px-4 h-9 rounded-full text-sm font-semibold border border-line-soft text-ink hover:bg-surface2 transition-colors disabled:opacity-50"
+				>
+					{loadingMore ? 'Loading…' : 'Load older records'}
+				</button>
+			{/if}
+		</div>
+	{/if}
 
 	{#if rows.length === 0}
 		<p class="py-6 text-center text-ink-soft text-sm">No activities yet — log one to get started.</p>

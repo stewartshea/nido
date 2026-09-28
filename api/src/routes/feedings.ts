@@ -3,6 +3,7 @@ import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 import type { FeedingRow } from '../db-types';
 import { resolveTrackableMember, attachCreatedBy } from '../member-scope';
+import { parsePaging, countMatching } from '../paging';
 import { type AuthEnv } from '../auth';
 
 const feedingRoutes = new Hono<AuthEnv>();
@@ -45,16 +46,19 @@ feedingRoutes.get('/', async (c) => {
       return c.json({ error: 'Member not found or access denied' }, 404);
     }
     const babyId = scope.babyId;
-    // Get feedings for the baby
+    const { limit, offset } = parsePaging((k) => c.req.query(k));
+
     const feedingsResult = await db.execute({
       sql: `
       SELECT id, baby_id, start_time, end_time, duration, amount, type, side, formula_id, notes, created_at, created_by
       FROM feedings
       WHERE baby_id = ?
-      LIMIT 100
+      ORDER BY start_time DESC, id DESC
+      LIMIT ? OFFSET ?
     `,
-      args: [babyId]
+      args: [babyId, limit, offset]
     });
+    const total = await countMatching(db, 'feedings', [babyId]);
     
     // Calculate duration if not already calculated
     const feedings = (feedingsResult.rows as unknown as FeedingRow[])
@@ -66,12 +70,10 @@ feedingRoutes.get('/', async (c) => {
           return { ...feeding, duration };
         }
         return feeding;
-      })
-      .sort((a, b) => (b.start_time ?? '').localeCompare(a.start_time ?? ''))
-      .slice(0, 100);
-    
+      });
+
     await attachCreatedBy(db, feedings);
-    return c.json({ feedings });
+    return c.json({ feedings, total });
   } catch (error) {
     c.get('log').error('get feedings failed', { err: error });
     return c.json({ error: 'Failed to fetch feedings' }, 500);

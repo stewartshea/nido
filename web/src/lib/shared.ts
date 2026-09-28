@@ -19,6 +19,15 @@ export const CATEGORIES = [
 
 export const QUICK_LINK_DEFAULT = ['feeds', 'diapers', 'sleep'];
 
+export function milestoneCategory(r: { category?: string | null }): string {
+    const c = String(r?.category || '').toLowerCase();
+    if (c === 'firsts') return 'firsts';
+    if (c === 'vitamin' || c === 'medication' || c === 'bath' || c === 'tummy time'
+        || c === 'story time' || c === 'walk' || c === 'appointment') return 'routines';
+    if (c === 'medical') return 'medical';
+    return 'milestones';
+}
+
 export function quickLinksKey(userId: number | null) {
     // DO NOT CHANGE the 'nido.' prefix — see note in lib/theme.ts. Quick links
     // are browser-persisted with no migration, so a rename drops them silently.

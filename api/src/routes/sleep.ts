@@ -3,6 +3,7 @@ import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 import type { SleepRow } from '../db-types';
 import { resolveTrackableMember, attachCreatedBy } from '../member-scope';
+import { parsePaging, countMatching } from '../paging';
 import { type AuthEnv } from '../auth';
 
 const sleepRoutes = new Hono<AuthEnv>();
@@ -41,15 +42,19 @@ sleepRoutes.get('/', async (c) => {
     const babyId = scope.babyId;
     
     // Get sleep records for the baby
+    const { limit, offset } = parsePaging((k) => c.req.query(k));
+
     const sleepResult = await db.execute({
       sql: `
       SELECT id, baby_id, start_time, end_time, duration, location, notes, created_at, created_by
       FROM sleep
       WHERE baby_id = ?
-      LIMIT 100
+      ORDER BY start_time DESC, id DESC
+      LIMIT ? OFFSET ?
     `,
-      args: [babyId]
+      args: [babyId, limit, offset]
     });
+    const total = await countMatching(db, 'sleep', [babyId]);
     
     // Calculate duration if not already calculated
     const sleepRecords = (sleepResult.rows as unknown as SleepRow[])
@@ -61,12 +66,10 @@ sleepRoutes.get('/', async (c) => {
           return { ...record, duration };
         }
         return record;
-      })
-      .sort((a, b) => (b.start_time ?? '').localeCompare(a.start_time ?? ''))
-      .slice(0, 100);
-    
+      });
+
     await attachCreatedBy(db, sleepRecords);
-    return c.json({ sleep: sleepRecords });
+    return c.json({ sleep: sleepRecords, total });
   } catch (error) {
     c.get('log').error('get sleep records failed', { err: error });
     return c.json({ error: 'Failed to fetch sleep records' }, 500);

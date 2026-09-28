@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 import { resolveTrackableMember, attachCreatedBy } from '../member-scope';
+import { parsePaging, countMatching } from '../paging';
 import { type AuthEnv } from '../auth';
 import type { BabyRow, GrowthRow, GrowthWithBabyRow } from '../db-types';
 
@@ -155,15 +156,19 @@ growthRoutes.get('/', async (c) => {
     const baby = babyRes.rows[0] as unknown as BabyRow;
     
     // Get growth records for the baby
+    const { limit, offset } = parsePaging((k) => c.req.query(k));
+
     const growthResult = await db.execute({
       sql: `
       SELECT id, baby_id, measurement_date, weight, height, head_circumference, bmi, unit_system, notes, created_at, created_by
       FROM growth
       WHERE baby_id = ?
-      LIMIT 100
+      ORDER BY measurement_date DESC, id DESC
+      LIMIT ? OFFSET ?
     `,
-      args: [babyId]
+      args: [babyId, limit, offset]
     });
+    const total = await countMatching(db, 'growth', [babyId]);
     
     // Calculate WHO/CDC comparisons for each record
     const growthWithComparisons = (growthResult.rows as unknown as GrowthRow[])
@@ -211,12 +216,10 @@ growthRoutes.get('/', async (c) => {
           height: heightPercentile ? `At ${heightPercentile}th percentile for age` : 'No comparison available'
         }
       };
-    })
-      .sort((a, b) => (b.measurement_date ?? '').localeCompare(a.measurement_date ?? ''))
-      .slice(0, 100);
-    
+    });
+
     await attachCreatedBy(db, growthWithComparisons);
-    return c.json({ growth: growthWithComparisons });
+    return c.json({ growth: growthWithComparisons, total });
   } catch (error) {
     c.get('log').error('get growth records failed', { err: error });
     return c.json({ error: 'Failed to fetch growth records' }, 500);

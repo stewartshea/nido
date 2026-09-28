@@ -2,7 +2,7 @@
 	import { onMount, onDestroy } from 'svelte';
 	import { browser } from '$app/environment';
 	import { goto } from '$app/navigation';
-	import { authAPI, userAPI, babyAPI, familiesAPI, feedingAPI, diaperAPI, sleepAPI, growthAPI, healthAPI, importsAPI, photosAPI, formulasAPI, familyAdminAPI, accountAPI, milestoneAPI, vaccinationAPI, settingsAPI, moodAPI, journalAPI, tokenExpired, remindersAPI } from '$lib/api';
+	import { authAPI, userAPI, babyAPI, familiesAPI, feedingAPI, diaperAPI, sleepAPI, growthAPI, healthAPI, importsAPI, photosAPI, formulasAPI, familyAdminAPI, accountAPI, milestoneAPI, vaccinationAPI, settingsAPI, moodAPI, journalAPI, tokenExpired, remindersAPI, type PageOptions } from '$lib/api';
 	import { authStore, authActions } from '$lib/stores/authStore';
 	import { uiStore, uiActions } from '$lib/stores/uiStore';
 	import PhotoStrip from '$lib/components/PhotoStrip.svelte';
@@ -11,7 +11,7 @@
 	import Avatar from '$lib/components/Avatar.svelte';
 	import RecordEditModal from '$lib/components/RecordEditModal.svelte';
 	import { loadListsCache, saveListsCache } from '$lib/cache';
-		import { CATEGORIES } from '$lib/shared';
+		import { CATEGORIES, milestoneCategory } from '$lib/shared';
 	import { Milk, Baby, Moon, TrendingUp, Calendar, Star, Trophy, Stethoscope, Syringe, Smile, Book, Users, Home, Trash2, Mail, Timer, PenLine, ArrowLeft, ArrowRight, Pause, Play, RotateCcw, Plus, Camera, Droplet, AlertCircle, Activity, ChevronDown, Settings, Check, Infinity, Heart } from 'lucide-svelte';
 
 	const FORMULA_TYPES = [
@@ -234,7 +234,7 @@
 	// Milestone + vaccine manual forms
 	let milestoneTitle = '';
 	let milestoneTime = '';
-	let milestoneCategory = '';
+	let milestoneCategoryInput = '';
 	let vaccineName = '';
 	let vaccineTime = '';
 	let vaccineNotes = '';
@@ -284,6 +284,116 @@
 	let vaccinations: any[] = [];
 	let moods: any[] = [];
 	let journalEntries: any[] = [];
+
+	let listTotals: Record<string, number> = {};
+	let loadingMore = false;
+
+	const HISTORY_PAGE_SIZE = 200;
+
+	// Each entry maps a tab to the list that backs it. Several tabs share one
+	// list (the milestone sub-tabs, and feeds/pumping), so the tab's count and
+	// its load-more target are deliberately resolved separately.
+	const TAB_LIST: Record<string, string> = {
+		feeds: 'feedings', pumping: 'feedings', diapers: 'diapers', sleep: 'sleeps',
+		growth: 'growths', milestones: 'milestones', firsts: 'milestones',
+		routines: 'milestones', medical: 'milestones', vaccines: 'vaccinations',
+		moods: 'moods', journal: 'journalEntries',
+	};
+
+	const LIST_SOURCES = [
+		{ key: 'feedings', field: 'feedings', page: (id: number, o: PageOptions) => feedingAPI.getPage(id, o) },
+		{ key: 'diapers', field: 'diapers', page: (id: number, o: PageOptions) => diaperAPI.getPage(id, o) },
+		{ key: 'sleeps', field: 'sleep', page: (id: number, o: PageOptions) => sleepAPI.getPage(id, o) },
+		{ key: 'growths', field: 'growth', page: (id: number, o: PageOptions) => growthAPI.getPage(id, o) },
+		{ key: 'milestones', field: 'milestones', page: (id: number, o: PageOptions) => milestoneAPI.getPage(id, o) },
+		{ key: 'vaccinations', field: 'vaccinations', page: (id: number, o: PageOptions) => vaccinationAPI.getPage(id, o) },
+		{ key: 'moods', field: 'moods', page: (id: number, o: PageOptions) => moodAPI.getPage(id, o) },
+		{ key: 'journalEntries', field: 'entries', page: (id: number, o: PageOptions) => journalAPI.getPage(id, o) },
+	] as const;
+
+	function currentLists(): Record<string, any[]> {
+		return { feedings, diapers, sleeps, growths, milestones, vaccinations, moods, journalEntries };
+	}
+
+	function setList(key: string, value: any[]) {
+		if (key === 'feedings') feedings = value;
+		else if (key === 'diapers') diapers = value;
+		else if (key === 'sleeps') sleeps = value;
+		else if (key === 'growths') growths = value;
+		else if (key === 'milestones') milestones = value;
+		else if (key === 'vaccinations') vaccinations = value;
+		else if (key === 'moods') moods = value;
+		else if (key === 'journalEntries') journalEntries = value;
+	}
+
+	// Pumping and the four milestone tabs are slices of a shared list, and the
+	// API counts whole lists, so there is no server-side total for a slice.
+	const SLICED_TABS = new Set(['pumping', 'milestones', 'firsts', 'routines', 'medical']);
+
+	function listTotalForTab(): number | null {
+		const key = TAB_LIST[activeTab];
+		if (!key) return null;
+		return listTotals[key] ?? null;
+	}
+
+	function isSlicedTab(): boolean {
+		return SLICED_TABS.has(activeTab);
+	}
+
+	function loadedCount(): number {
+		return recordsForTab().length;
+	}
+
+	// Rows pulled from the backing list and classified into this tab. A slice has
+	// no server-side total, so this is the honest denominator to show next to it.
+	function scannedCount(): number {
+		const key = TAB_LIST[activeTab];
+		if (!key) return 0;
+		return currentLists()[key].length;
+	}
+
+	// Asked of the backing list, not the slice, so Load older stays available
+	// on sliced tabs after their own rows are exhausted.
+	function moreOnServerForTab(): boolean {
+		const key = TAB_LIST[activeTab];
+		if (!key) return false;
+		const total = listTotals[key];
+		if (total == null) return false;
+		return currentLists()[key].length < total;
+	}
+
+	async function loadMoreForTab() {
+		if (!selectedMemberId || loadingMore) return;
+		const key = TAB_LIST[activeTab];
+		if (!key) return;
+		const loaded = currentLists()[key];
+		if (loaded.length >= (listTotals[key] ?? 0)) return;
+
+		loadingMore = true;
+		try {
+			const source = LIST_SOURCES.find((s) => s.key === key);
+			if (!source) return;
+			const res = await source.page(selectedMemberId, {
+				limit: HISTORY_PAGE_SIZE,
+				offset: loaded.length,
+			});
+			const items = res.data?.[source.field] ?? [];
+			if (items.length > 0) {
+				setList(key, [...loaded, ...items]);
+				const next = currentLists();
+				saveListsCache(selectedMemberId, {
+					feedings: next.feedings, diapers: next.diapers, sleeps: next.sleeps, growths: next.growths,
+					milestones: next.milestones, vaccinations: next.vaccinations, moods: next.moods,
+					journalEntries: next.journalEntries,
+				});
+			}
+			if (typeof res.data?.total === 'number') listTotals = { ...listTotals, [key]: res.data.total };
+		} catch (e: any) {
+			notice = e.response?.data?.error || 'Could not load older records.';
+		} finally {
+			loadingMore = false;
+		}
+	}
 
 	// Breast-feeding totals + last side, derived from loaded feedings.
 	$: breastFeedings = feedings.filter((f) => f.type === 'breast' || f.type === 'bottle');
@@ -396,14 +506,14 @@
 		}
 		try {
 			const [f, d, s, g, m, v, mo, j] = await Promise.all([
-				feedingAPI.getAll(selectedMemberId),
-				diaperAPI.getAll(selectedMemberId),
-				sleepAPI.getAll(selectedMemberId),
-				growthAPI.getAll(selectedMemberId),
-				milestoneAPI.getAll(selectedMemberId),
-				vaccinationAPI.getAll(selectedMemberId),
-				moodAPI.getAll(selectedMemberId),
-				journalAPI.getAll(selectedMemberId),
+				feedingAPI.getPage(selectedMemberId, { limit: HISTORY_PAGE_SIZE }),
+				diaperAPI.getPage(selectedMemberId, { limit: HISTORY_PAGE_SIZE }),
+				sleepAPI.getPage(selectedMemberId, { limit: HISTORY_PAGE_SIZE }),
+				growthAPI.getPage(selectedMemberId, { limit: HISTORY_PAGE_SIZE }),
+				milestoneAPI.getPage(selectedMemberId, { limit: HISTORY_PAGE_SIZE }),
+				vaccinationAPI.getPage(selectedMemberId, { limit: HISTORY_PAGE_SIZE }),
+				moodAPI.getPage(selectedMemberId, { limit: HISTORY_PAGE_SIZE }),
+				journalAPI.getPage(selectedMemberId, { limit: HISTORY_PAGE_SIZE }),
 			]);
 			feedings = f.data.feedings;
 			diapers = d.data.diapers;
@@ -413,6 +523,16 @@
 			vaccinations = v.data.vaccinations;
 			moods = mo.data.moods ?? [];
 			journalEntries = j.data.entries ?? [];
+			listTotals = {
+				feedings: f.data.total ?? feedings.length,
+				diapers: d.data.total ?? diapers.length,
+				sleeps: s.data.total ?? sleeps.length,
+				growths: g.data.total ?? growths.length,
+				milestones: m.data.total ?? milestones.length,
+				vaccinations: v.data.total ?? vaccinations.length,
+				moods: mo.data.total ?? moods.length,
+				journalEntries: j.data.total ?? journalEntries.length,
+			};
 			saveListsCache(selectedMemberId, {
 				feedings, diapers, sleeps, growths,
 				milestones, vaccinations, moods, journalEntries,
@@ -433,7 +553,8 @@
 			case 'diapers': return diapers;
 			case 'sleep': return sleeps;
 			case 'growth': return growths;
-			case 'milestones': case 'firsts': case 'routines': case 'medical': return milestones;
+			case 'milestones': case 'firsts': case 'routines': case 'medical':
+				return milestones.filter((m) => milestoneCategory(m) === activeTab);
 			case 'vaccines': return vaccinations;
 			case 'moods': return moods;
 			case 'journal': return journalEntries;
@@ -1544,7 +1665,7 @@
 				memberId: selectedMemberId,
 				title: milestoneTitle.trim(),
 				achievedDate: milestoneTime ? new Date(milestoneTime).toISOString() : new Date().toISOString(),
-				category: milestoneCategory || undefined,
+				category: milestoneCategoryInput || undefined,
 			});
 			milestoneTitle = ''; milestoneTime = '';
 			notice = 'Milestone recorded.';
@@ -2261,7 +2382,15 @@
 				<div class="bg-surface rounded-lg shadow-card p-4 mb-4">
 					<div class="flex items-center justify-between mb-3">
 						<h3 class="font-display font-semibold">{CATEGORIES.find((c) => c.id === activeTab)?.label} — table view</h3>
-						<span class="text-xs text-ink-soft">{recordsForTab().length} record(s)</span>
+						<span class="text-xs text-ink-soft">
+							{#if isSlicedTab()}
+								{loadedCount()} record(s) matching · {scannedCount()} scanned
+							{:else if (listTotalForTab() ?? 0) > loadedCount()}
+								Showing {loadedCount()} of {listTotalForTab()}
+							{:else}
+								{loadedCount()} record(s)
+							{/if}
+						</span>
 					</div>
 					<div class="overflow-x-auto">
 						<table class="w-full text-sm">
@@ -2275,7 +2404,7 @@
 								</tr>
 							</thead>
 							<tbody>
-								{#each recordsForTab().slice(0, 100) as r}
+								{#each recordsForTab() as r}
 									<tr class="border-b border-line-soft">
 										<td class="py-2 px-2 whitespace-nowrap">{formatTime(r.start_time || r.change_time || r.measurement_date || r.achieved_date || r.date_given)}</td>
 										<td class="py-2 px-2">
@@ -2299,6 +2428,18 @@
 							</tbody>
 						</table>
 					</div>
+					{#if moreOnServerForTab()}
+						<div class="flex justify-center pt-4">
+							<button
+								type="button"
+								on:click={loadMoreForTab}
+								disabled={loadingMore}
+								class="px-4 h-9 rounded-full text-sm font-semibold border border-line-soft text-ink hover:bg-surface2 transition-colors disabled:opacity-50"
+							>
+								{loadingMore ? 'Loading…' : 'Load older records'}
+							</button>
+						</div>
+					{/if}
 				</div>
 			{/if}
 
@@ -2674,7 +2815,7 @@
 							</div>
 							<div>
 								<label for="milestone-category-inline" class="block text-sm font-medium text-ink-soft mb-1">Category (type or choose)</label>
-								<input id="milestone-category-inline" type="text" bind:value={milestoneCategory} list="milestone-cat-list" class="w-full px-3 py-2 border border-line rounded-md" placeholder="vitamin, tummy time…" />
+								<input id="milestone-category-inline" type="text" bind:value={milestoneCategoryInput} list="milestone-cat-list" class="w-full px-3 py-2 border border-line rounded-md" placeholder="vitamin, tummy time…" />
 								<datalist id="milestone-cat-list">
 									<option value="motor" />
 									<option value="cognitive" />
@@ -2726,7 +2867,7 @@
 							</div>
 							<div>
 								<label for="routine-category-inline" class="block text-sm font-medium text-ink-soft mb-1">Category</label>
-								<input id="routine-category-inline" type="text" bind:value={milestoneCategory} list="routine-cat-list" class="w-full px-3 py-2 border border-line rounded-md" placeholder="vitamin" />
+								<input id="routine-category-inline" type="text" bind:value={milestoneCategoryInput} list="routine-cat-list" class="w-full px-3 py-2 border border-line rounded-md" placeholder="vitamin" />
 								<datalist id="routine-cat-list">
 									<option value="vitamin" />
 									<option value="medication" />
@@ -3214,7 +3355,7 @@
 							</div>
 							<div>
 								<label for="milestone-category" class="block text-sm font-medium text-ink-soft mb-1">Category (type or choose)</label>
-								<input id="milestone-category" type="text" bind:value={milestoneCategory} list="milestone-cat-list-sheet" class="w-full px-3 py-2 border border-line rounded-md" placeholder="vitamin, tummy time…" />
+								<input id="milestone-category" type="text" bind:value={milestoneCategoryInput} list="milestone-cat-list-sheet" class="w-full px-3 py-2 border border-line rounded-md" placeholder="vitamin, tummy time…" />
 								<datalist id="milestone-cat-list-sheet">
 									<option value="motor" />
 									<option value="cognitive" />
@@ -3262,7 +3403,7 @@
 							</div>
 							<div>
 								<label for="routine-category-sheet" class="block text-sm font-medium text-ink-soft mb-1">Category</label>
-								<input id="routine-category-sheet" type="text" bind:value={milestoneCategory} list="routine-cat-list-sheet" class="w-full px-3 py-2 border border-line rounded-md" placeholder="vitamin" />
+								<input id="routine-category-sheet" type="text" bind:value={milestoneCategoryInput} list="routine-cat-list-sheet" class="w-full px-3 py-2 border border-line rounded-md" placeholder="vitamin" />
 								<datalist id="routine-cat-list-sheet">
 									<option value="vitamin" />
 									<option value="medication" />

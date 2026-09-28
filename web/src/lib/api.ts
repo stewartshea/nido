@@ -150,9 +150,29 @@ export const familiesAPI = {
   getAnonymizedPreview: (familyId: string) => api.get(`/families/${familyId}/settings/anonymized-preview`),
 };
 
+export interface PageOptions {
+  limit?: number;
+  offset?: number;
+}
+
+export interface PagedResult<T> {
+  items: T[];
+  total: number | null;
+}
+
+function pageQuery(opts?: PageOptions): string {
+  if (!opts) return '';
+  const parts: string[] = [];
+  if (opts.limit != null) parts.push(`limit=${opts.limit}`);
+  if (opts.offset) parts.push(`offset=${opts.offset}`);
+  return parts.length ? `&${parts.join('&')}` : '';
+}
+
 // Feeding API functions
 export const feedingAPI = {
   getAll: (memberId: number) => api.get(`/feedings?memberId=${memberId}`),
+  getPage: (memberId: number, opts?: PageOptions) =>
+    api.get(`/feedings?memberId=${memberId}${pageQuery(opts)}`),
   getById: (id: number) => api.get(`/feedings/${id}`),
   create: (feedingData: { memberId: number; startTime: string; endTime?: string; amount?: number; type: 'breast' | 'bottle' | 'formula' | 'pump' | 'solid'; side?: 'left' | 'right' | 'both'; formulaId?: number; notes?: string }) => 
     api.post('/feedings', feedingData),
@@ -164,6 +184,8 @@ export const feedingAPI = {
 // Diaper API functions
 export const diaperAPI = {
   getAll: (memberId: number) => api.get(`/diapers?memberId=${memberId}`),
+  getPage: (memberId: number, opts?: PageOptions) =>
+    api.get(`/diapers?memberId=${memberId}${pageQuery(opts)}`),
   getById: (id: number) => api.get(`/diapers/${id}`),
   create: (diaperData: { memberId: number; changeTime: string; type: 'wet' | 'dirty' | 'both'; color?: string; consistency?: string; notes?: string }) => 
     api.post('/diapers', diaperData),
@@ -175,6 +197,8 @@ export const diaperAPI = {
 // Sleep API functions
 export const sleepAPI = {
   getAll: (memberId: number) => api.get(`/sleep?memberId=${memberId}`),
+  getPage: (memberId: number, opts?: PageOptions) =>
+    api.get(`/sleep?memberId=${memberId}${pageQuery(opts)}`),
   getById: (id: number) => api.get(`/sleep/${id}`),
   create: (sleepData: { memberId: number; startTime: string; endTime?: string; location?: string; notes?: string }) => 
     api.post('/sleep', sleepData),
@@ -186,6 +210,8 @@ export const sleepAPI = {
 // Growth API functions
 export const growthAPI = {
   getAll: (memberId: number) => api.get(`/growth?memberId=${memberId}`),
+  getPage: (memberId: number, opts?: PageOptions) =>
+    api.get(`/growth?memberId=${memberId}${pageQuery(opts)}`),
   getById: (id: number) => api.get(`/growth/${id}`),
   getChartData: (id: number) => api.get(`/growth/${id}/chart-data`),
   create: (growthData: { memberId: number; measurementDate: string; weight?: number; height?: number; headCircumference?: number; bmi?: number; unitSystem?: 'imperial' | 'metric'; notes?: string }) => 
@@ -198,6 +224,8 @@ export const growthAPI = {
 // Milestone API functions
 export const milestoneAPI = {
   getAll: (memberId: number) => api.get(`/milestones?memberId=${memberId}`),
+  getPage: (memberId: number, opts?: PageOptions) =>
+    api.get(`/milestones?memberId=${memberId}${pageQuery(opts)}`),
   getById: (id: number) => api.get(`/milestones/${id}`),
   getCategories: () => api.get('/milestones/categories'),
   getTrends: (memberId: number, opts?: { category?: string; days?: number }) =>
@@ -212,6 +240,8 @@ export const milestoneAPI = {
 // Vaccination API functions
 export const vaccinationAPI = {
   getAll: (memberId: number) => api.get(`/vaccinations?memberId=${memberId}`),
+  getPage: (memberId: number, opts?: PageOptions) =>
+    api.get(`/vaccinations?memberId=${memberId}${pageQuery(opts)}`),
   getById: (id: number) => api.get(`/vaccinations/${id}`),
   getSchedule: () => api.get('/vaccinations/schedule'),
   create: (vaccinationData: { memberId: number; name: string; dateGiven?: string; nextDueDate?: string; administeredBy?: string; notes?: string }) => 
@@ -223,6 +253,8 @@ export const vaccinationAPI = {
 
 export const moodAPI = {
   getAll: (memberId: number) => api.get(`/moods?memberId=${memberId}`),
+  getPage: (memberId: number, opts?: PageOptions) =>
+    api.get(`/moods?memberId=${memberId}${pageQuery(opts)}`),
   create: (data: { memberId: number; mood: string; recordedAt?: string; notes?: string }) =>
     api.post('/moods', data),
   update: (id: number, data: Partial<{ mood: string; recordedAt?: string; notes?: string }>) =>
@@ -232,6 +264,8 @@ export const moodAPI = {
 
 export const journalAPI = {
   getAll: (memberId: number) => api.get(`/journal?memberId=${memberId}`),
+  getPage: (memberId: number, opts?: PageOptions) =>
+    api.get(`/journal?memberId=${memberId}${pageQuery(opts)}`),
   create: (data: { memberId: number; title?: string; body?: string; entryDate?: string }) =>
     api.post('/journal', data),
   update: (id: number, data: Partial<{ title?: string; body?: string; entryDate?: string }>) =>

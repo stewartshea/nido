@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 import { resolveTrackableMember, attachCreatedBy } from '../member-scope';
+import { parsePaging, countMatching } from '../paging';
 import { type AuthEnv } from '../auth';
 
 const vaccinationRoutes = new Hono<AuthEnv>();
@@ -42,18 +43,22 @@ vaccinationRoutes.get('/', async (c) => {
     const babyId = scope.babyId;
     
     // Get vaccinations for the baby
+    const { limit, offset } = parsePaging((k) => c.req.query(k));
+
     const vaccinationsResult = await db.execute({
       sql: `
       SELECT id, baby_id, name, date_given, next_due_date, administered_by, notes, created_at, created_by
       FROM vaccinations
       WHERE baby_id = ?
-      ORDER BY date_given DESC, next_due_date ASC
+      ORDER BY date_given DESC, next_due_date ASC, id DESC
+      LIMIT ? OFFSET ?
     `,
-      args: [babyId]
+      args: [babyId, limit, offset]
     });
-    
+    const total = await countMatching(db, 'vaccinations', [babyId]);
+
     await attachCreatedBy(db, vaccinationsResult.rows as any[]);
-    return c.json({ vaccinations: vaccinationsResult.rows });
+    return c.json({ vaccinations: vaccinationsResult.rows, total });
   } catch (error) {
     c.get('log').error('get vaccinations failed', { err: error });
     return c.json({ error: 'Failed to fetch vaccinations' }, 500);

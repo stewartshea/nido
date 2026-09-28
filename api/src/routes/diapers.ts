@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 import { resolveTrackableMember, attachCreatedBy } from '../member-scope';
+import { parsePaging, countMatching } from '../paging';
 import { type AuthEnv } from '../auth';
 
 const diaperRoutes = new Hono<AuthEnv>();
@@ -42,22 +43,24 @@ diaperRoutes.get('/', async (c) => {
     const babyId = scope.babyId;
     
     // Get diapers for the baby
+    const { limit, offset } = parsePaging((k) => c.req.query(k));
+
     const diapersResult = await db.execute({
       sql: `
       SELECT id, baby_id, change_time, type, color, consistency, notes, created_at, created_by
       FROM diapers
       WHERE baby_id = ?
-      LIMIT 100
+      ORDER BY change_time DESC, id DESC
+      LIMIT ? OFFSET ?
     `,
-      args: [babyId]
+      args: [babyId, limit, offset]
     });
-    
-    const diapersSorted = [...diapersResult.rows]
-      .sort((a, b) => String(b.change_time ?? '').localeCompare(String(a.change_time ?? '')))
-      .slice(0, 100);
-    
-    await attachCreatedBy(db, diapersSorted);
-    return c.json({ diapers: diapersSorted });
+    const total = await countMatching(db, 'diapers', [babyId]);
+
+    const diapers = diapersResult.rows as any[];
+
+    await attachCreatedBy(db, diapers);
+    return c.json({ diapers, total });
   } catch (error) {
     c.get('log').error('get diapers failed', { err: error });
     return c.json({ error: 'Failed to fetch diapers' }, 500);
