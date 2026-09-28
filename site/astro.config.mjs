@@ -44,6 +44,11 @@ export default defineConfig({
 				alt: 'Nido nest mark',
 			},
 			customCss: ['./src/styles/global.css'],
+			components: {
+				// Starlight's icon set has no Ko-fi mark, so the social row is
+				// overridden to draw one for any link pointing at ko-fi.com.
+				SocialIcons: './src/components/SocialIcons.astro',
+			},
 			social: [
 				{ icon: 'github', label: 'GitHub', href: `https://github.com/${REPO}` },
 				{
