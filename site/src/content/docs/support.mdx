@@ -18,27 +18,23 @@ import { funding, isLive } from '../../site.config';
 
 ## Where to sponsor
 
+Two options: a monthly sponsorship, or a one-time tip. Neither unlocks
+anything, and either is genuinely useful.
+
 {[
 	{
 		key: 'githubSponsors',
 		title: 'GitHub Sponsors',
-		role: 'primary, recurring',
+		role: 'monthly',
 		blurb:
-			'Cheapest and least friction: no platform fee on a personal account, and it sits alongside the GitHub billing you already use, so supporting costs no extra account. It also handles cross-border tax withholding and reporting that a solo maintainer would otherwise own.',
+			'Recurring, and it sits alongside the GitHub billing you already use, so supporting costs no extra account. No platform fee on a personal account, and it handles the cross-border tax reporting a solo maintainer would otherwise own.',
 	},
 	{
-		key: 'buyMeACoffee',
-		title: 'Buy Me a Coffee',
-		role: 'secondary, one-time',
+		key: 'kofi',
+		title: 'Ko-fi',
+		role: 'one-time',
 		blurb:
-			'For giving once without creating a GitHub account, and for people who would rather not take on a recurring commitment to a project they are not using day to day. Charges 5% plus processing, and asks for nothing in return.',
-	},
-	{
-		key: 'liberapay',
-		title: 'Liberapay',
-		role: 'tertiary, recurring, non-profit operated',
-		blurb:
-			'The only option that takes no cut at all, which is why it is worth listing. Weak discoverability is what keeps it out of the primary slots.',
+			'Give once, without a GitHub account and without a recurring commitment. Ko-fi takes no platform fee on a tip, so the whole amount arrives, and it asks for nothing in return.',
 	},
 ].map(({ key, title, role, blurb }) => {
 	const live = isLive(key);
@@ -66,32 +62,8 @@ import { funding, isLive } from '../../site.config';
 	);
 })}
 
-:::note[These two links are marked as unconfigured on purpose]
-The maintainer can set real URLs in one place — `site/src/site.config.ts` — and
-they appear here automatically. Until then the inactive panels render as
-inactive, so a half-configured deploy never ships a 404 to someone who came to
-support the project. `npm run build` passes either way.
-:::
-
-## Why not Patreon
-
-Three reasons, in order of how much they matter.
-
-- **It is the most expensive option.** Patreon charges a 10% platform fee on
-  new creator pages, and payment processing on top of that, where GitHub
-  Sponsors charges no platform fee at all. For supporters giving small amounts,
-  most of which goes to the platform rather than the project.
-- **It is a membership platform, and this is not a membership.** Patreon tiers
-  exist because there is stuff behind them — early builds, private channels,
-  badges, discounts. Here there is exactly one thing, the software, and it is
-  already free. A tier would be a label on a donation.
-- **A recurring membership creates an obligation to keep recurring.** Someone
-  paying monthly reasonably expects the relationship to continue, which is a
-  commitment a solo maintainer of a free project should not be making.
-
-Buy Me a Coffee covers the same need — giving once, with no strings — for a
-fraction of the fee, and is the recommended alternative. The full comparison,
-including the current numbers, is on the [funding page](./project/funding/).
+Neither is a tier, and there is nothing behind either one. The full picture of
+where the money goes is on the [funding page](./project/funding/).
 
 ## What sponsorship pays for
 

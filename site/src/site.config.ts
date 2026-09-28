@@ -1,9 +1,9 @@
 /**
  * Single source of truth for the URLs the site chrome and the funding panels
  * read, so those are edited in one place rather than in `astro.config.mjs` and
- * the MDX that renders them. Funding channels still marked `null` render as a
- * visibly inactive control rather than a dead link, so a half-configured deploy
- * never ships a 404 to a supporter.
+ * the MDX that renders them. A channel left without a URL renders as a visibly
+ * inactive control rather than a dead link, so a half-configured deploy never
+ * ships a 404 to a supporter.
  *
  * Docs *prose* still spells out `github.com/stewartshea/...` literally; those
  * are copy, not chrome, and are not wired through here.
@@ -57,30 +57,23 @@ export const withBase = (route: string): string => {
 
 /**
  * Funding channels, in priority order. The ordering follows platform cost and
- * account friction, not sentiment — see the "Where the money goes" section of
+ * account friction, not sentiment — see the "Where to sponsor" section of
  * `src/content/docs/support.mdx` for the comparison.
  */
 export const funding = {
 	/**
-	 * Primary. Recurring, and it sits alongside the GitHub billing the target
-	 * audience already uses, so supporting costs no extra account. It also
-	 * handles the cross-border tax withholding and reporting that a solo
-	 * maintainer would otherwise own. GitHub takes no platform fee on
-	 * sponsorship from a personal account, so this is also the cheapest option.
+	 * Primary, recurring. It sits alongside the GitHub billing the target
+	 * audience already uses, so supporting costs no extra account, and it
+	 * handles the cross-border tax withholding a solo maintainer would
+	 * otherwise own. GitHub takes no platform fee on sponsorship from a
+	 * personal account, so it is also the cheapest option.
 	 */
 	githubSponsors: 'https://github.com/sponsors/stewartshea',
 	/**
-	 * Secondary, one-time. For people who want to give once without creating a
-	 * GitHub account, and who would rather not take on a recurring commitment
-	 * to a project they are not using day to day.
+	 * Secondary, one-time. For people who want to give once without a GitHub
+	 * account or a recurring commitment. Ko-fi takes no platform fee on tips.
 	 */
-	buyMeACoffee: null as string | null,
-	/**
-	 * Tertiary. Non-profit operated, and the only option that takes no cut at
-	 * all, which is why it is worth listing. Weak discoverability keeps it out
-	 * of the primary slots.
-	 */
-	liberapay: null as string | null,
+	kofi: 'https://ko-fi.com/sheastewart0494',
 } as const;
 
 export type FundingKey = keyof typeof funding;
