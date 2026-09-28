@@ -4,6 +4,8 @@ import { z } from 'zod';
 import bcrypt from 'bcryptjs';
 import { ensureRegistry, removeFamily } from '../db-namespaces';
 import { isPlatformAdmin } from '../authz';
+import { getAppSettings, sendMail, smtpConfigured } from '../mail';
+import { renderAccountDeletedEmail } from '../mail-templates';
 import { type AuthEnv } from '../auth';
 
 const userRoutes = new Hono<AuthEnv>();
@@ -155,7 +157,9 @@ userRoutes.post('/me/password', zValidator('json', changePasswordSchema), async 
   return c.json({ message: 'Password updated' });
 });
 
-// DELETE /me — delete the authenticated account (and its family, when it is the sole account).
+// DELETE /me — delete the authenticated account. An owner takes the whole
+// family (and every account in it) with them; a member is detached but the
+// family keeps its member profiles and records.
 userRoutes.delete('/me', async (c) => {
   const userId = c.get('userId');
   const db = c.get('db');
@@ -168,25 +172,36 @@ userRoutes.delete('/me', async (c) => {
   const me = routing.rows[0] as unknown as { family_id: string; role: string } | undefined;
   if (!me) return c.json({ error: 'Account is not registered' }, 404);
   const familyId = String(me.family_id);
+  const isOwner = String(me.role) === 'owner';
 
-  if (String(me.role) === 'owner') {
-    const others = await registry.execute({
-      sql: 'SELECT COUNT(*) AS cnt FROM user_routing WHERE family_id = ? AND user_id <> ?',
-      args: [familyId, userId],
-    });
-    if (Number(others.rows[0]?.cnt ?? 0) > 0) {
-      return c.json({ error: 'You own this family and other accounts still belong to it. Remove them before deleting your account.' }, 409);
-    }
+  const profile = await db.execute({
+    sql: 'SELECT email, first_name FROM users WHERE id = ? LIMIT 1',
+    args: [userId],
+  });
+  const email = String(profile.rows[0]?.email ?? '');
+  const firstName = profile.rows[0]?.first_name ? String(profile.rows[0].first_name) : null;
+
+  if (isOwner) {
     await removeFamily(familyId);
-    return c.json({ message: 'Account and family deleted' });
+  } else {
+    await db.execute({ sql: 'DELETE FROM account_members WHERE user_id = ?', args: [userId] });
+    await db.execute({ sql: 'DELETE FROM user_households WHERE user_id = ?', args: [userId] });
+    await db.execute({ sql: 'DELETE FROM users WHERE id = ?', args: [userId] });
+    await registry.execute({ sql: 'DELETE FROM user_routing WHERE user_id = ?', args: [userId] });
   }
 
-  await db.execute({ sql: 'DELETE FROM account_members WHERE user_id = ?', args: [userId] });
-  await db.execute({ sql: 'DELETE FROM user_households WHERE user_id = ?', args: [userId] });
-  await db.execute({ sql: 'DELETE FROM users WHERE id = ?', args: [userId] });
-  await registry.execute({ sql: 'DELETE FROM user_routing WHERE user_id = ?', args: [userId] });
+  if (email) {
+    try {
+      const settings = await getAppSettings();
+      if (smtpConfigured(settings)) {
+        await sendMail(settings, email, renderAccountDeletedEmail({ firstName, familyDeleted: isOwner }));
+      }
+    } catch (err) {
+      c.get('log').error('account deletion email not sent', { event: 'account_deletion_email_failed', err });
+    }
+  }
 
-  return c.json({ message: 'Account deleted' });
+  return c.json({ message: isOwner ? 'Account and family deleted' : 'Account deleted' });
 });
 
 export { userRoutes };

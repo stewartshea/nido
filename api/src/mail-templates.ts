@@ -193,3 +193,26 @@ export function renderSmtpTestEmail(opts: { to: string }): RenderedEmail {
 		}),
 	};
 }
+
+export function renderAccountDeletedEmail(opts: { firstName?: string | null; familyDeleted?: boolean }): RenderedEmail {
+	const whatHappened = opts.familyDeleted
+		? 'this account was the owner of its family, so the family and all records that belonged to it were deleted as well'
+		: 'this account was removed from its family; the family keeps its member profiles and tracked records';
+	return {
+		subject: 'Your Nido account has been deleted',
+		text: [
+			greeting(opts.firstName),
+			'',
+			`Your Nido account has been deleted. Because ${whatHappened}.`,
+			'',
+			'This cannot be undone. If you did not do this, contact whoever runs this Nido instance immediately.',
+		].join('\n'),
+		html: layout({
+			preheader: 'Your Nido account has been deleted.',
+			heading: 'Account deleted',
+			intro: `Your Nido account has been deleted. Because ${whatHappened}.`,
+			footnote: 'This cannot be undone. If you did not do this, contact whoever runs this Nido instance immediately.',
+			closing: 'Take care,',
+		}),
+	};
+}

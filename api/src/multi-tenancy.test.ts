@@ -335,11 +335,16 @@ describe('account deletion', () => {
 		expect(after.status).toBe(401);
 	});
 
-	it('refuses to delete an owner while other accounts remain', async () => {
-		const { owner } = await joinOwnerAndMember('del-owner2@example.com', 'del-member2@example.com');
+	it('deletes the whole family when the owner deletes their account', async () => {
+		const { owner, memberToken } = await joinOwnerAndMember('del-owner2@example.com', 'del-member2@example.com');
 
 		const removed = await del(owner.token, '/api/v1/users/me');
-		expect(removed.status).toBe(409);
+		expect(removed.status).toBe(200);
+
+		const ownerAfter = await getJson(owner.token, '/api/v1/users/me');
+		expect(ownerAfter.status).toBe(401);
+		const memberAfter = await getJson(memberToken, '/api/v1/users/me');
+		expect(memberAfter.status).toBe(401);
 	});
 
 	it('deletes a sole owner account together with the family', async () => {

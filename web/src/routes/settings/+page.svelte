@@ -901,7 +901,7 @@
 
 	async function deleteAccount() {
 		error = '';
-		if (!confirm('Delete your account permanently? This cannot be undone. Any family records you own will also be removed.')) return;
+		if (!confirm('Delete your account permanently? This cannot be undone. If you own the family, the family and all of its data are removed too.')) return;
 		deletingAccount = true;
 		try {
 			await accountAPI.remove();
@@ -1737,7 +1737,7 @@
 								</div>
 								<div class="border-t border-line-soft pt-4">
 									<h4 class="font-display font-semibold mb-3 text-danger-text">Delete account</h4>
-									<p class="text-xs text-ink-soft mb-3">Permanently removes your account. If you are the only account in your family, the family and its records are removed too. This cannot be undone.</p>
+									<p class="text-xs text-ink-soft mb-3">Permanently removes your account. If you own the family, the family and all of its members and records are removed too. This cannot be undone.</p>
 									<button type="button" on:click={deleteAccount} disabled={deletingAccount} class="bg-danger text-danger-text border border-danger px-4 py-2 rounded-md font-semibold disabled:opacity-50">
 										{deletingAccount ? 'Deleting...' : 'Delete my account'}
 									</button>

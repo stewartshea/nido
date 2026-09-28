@@ -5,6 +5,7 @@ import {
 	renderPasswordResetEmail,
 	renderFamilyInviteEmail,
 	renderSmtpTestEmail,
+	renderAccountDeletedEmail,
 } from './mail-templates';
 
 const URL = 'https://nido.test/join?family=abc&token=xyz';
@@ -16,6 +17,8 @@ describe('mail templates', () => {
 			renderPasswordResetEmail({ firstName: 'Ada', url: URL }),
 			renderFamilyInviteEmail({ inviterName: 'Ada', familyName: 'Lovelaces', url: URL }),
 			renderSmtpTestEmail({ to: 'ada@example.com' }),
+			renderAccountDeletedEmail({ firstName: 'Ada', familyDeleted: false }),
+			renderAccountDeletedEmail({ firstName: 'Ada', familyDeleted: true }),
 		];
 		for (const mail of all) {
 			expect(mail.subject.length).toBeGreaterThan(0);

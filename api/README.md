@@ -99,10 +99,10 @@ Most read/write routes accept a `?babyId=` query parameter, except where a
 - `GET /api/v1/users/me` — current user
 - `PUT /api/v1/users/me` — update profile
 - `POST /api/v1/users/me/password` — change password
-- `DELETE /api/v1/users/me` — delete the account. A sole owner deletes the
-  whole family; a member is detached (the family keeps its member profiles and
-  records); an owner with other accounts is refused so the family is never left
-  ownerless
+- `DELETE /api/v1/users/me` — delete the account. An owner deletes the whole
+  family and every account in it; a member is detached (the family keeps its
+  member profiles and records). A confirmation email is sent when SMTP is
+  configured
 
 ### Families
 - `POST /api/v1/families` — create a family (optionally with a first member)
