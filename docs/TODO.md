@@ -2,6 +2,13 @@
 
 Backlog of known issues and future improvements, in rough priority order.
 
+## Mobile & offline — PARKED
+
+**Parked (2026-09):** Mobile session persistence and semi-offline feed timing
+(load the app offline, keep the session past 24h, extend the existing outbox)
+are captured in [`mobile-offline-plan.md`](mobile-offline-plan.md). Not
+scheduled; first slice estimated at ~3–4 engineering days.
+
 ## Auth: JWT verification on all user routes — DONE
 
 **Fixed (2026-09):** Replaced the insecure per-handler "read Bearer token, then
