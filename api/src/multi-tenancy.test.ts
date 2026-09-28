@@ -43,6 +43,17 @@ async function del(token: string, path: string, body?: unknown) {
 	return { status: res.status, body: (await res.json()) as Record<string, any> };
 }
 
+async function putJson(token: string, path: string, body: unknown) {
+	const res = await app.fetch(
+		new Request(`http://localhost${path}`, {
+			method: 'PUT',
+			headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+			body: JSON.stringify(body),
+		}),
+	);
+	return { status: res.status, body: (await res.json()) as Record<string, any> };
+}
+
 async function register(email: string, pw = 'StrongP4ss!') {
 	const res = await postJson('', '/api/v1/auth/register', {
 		email,
@@ -369,5 +380,77 @@ describe('account deletion', () => {
 
 		const after = await getJson(solo.token, '/api/v1/users/me');
 		expect(after.status).toBe(401);
+	});
+});
+
+describe('member profile resolution', () => {
+	it('tracks a child whose member id differs from its profile id (adult added first)', async () => {
+		const owner = await register('drift-owner@example.com');
+		await addMember(owner.token, owner.familyId, { type: 'adult', name: `Adult-${Date.now()}` });
+		const child = await addMember(owner.token, owner.familyId, { type: 'child', name: `Child-${Date.now()}` });
+
+		const created = await postJson(owner.token, '/api/v1/feedings', {
+			memberId: child.id,
+			startTime: new Date().toISOString(),
+			type: 'breast',
+			side: 'left',
+		});
+		expect(created.status).toBe(200);
+
+		const list = await getJson(owner.token, `/api/v1/feedings?memberId=${child.id}`);
+		expect(list.status).toBe(200);
+		expect((list.body.feedings ?? []).length).toBe(1);
+	});
+
+	it('toggles a member trackable flag without losing records', async () => {
+		const owner = await register('track-owner@example.com');
+		const child = await addMember(owner.token, owner.familyId, { name: `Kid-${Date.now()}` });
+
+		const created = await postJson(owner.token, '/api/v1/feedings', {
+			memberId: child.id,
+			startTime: new Date().toISOString(),
+			type: 'breast',
+			side: 'left',
+		});
+		expect(created.status).toBe(200);
+
+		const off = await putJson(owner.token, `/api/v1/families/${owner.familyId}/members/${child.id}`, { trackable: false });
+		expect(off.status).toBe(200);
+		expect(off.body.member.trackable).toBe(false);
+
+		const blocked = await postJson(owner.token, '/api/v1/feedings', {
+			memberId: child.id,
+			startTime: new Date().toISOString(),
+			type: 'breast',
+			side: 'left',
+		});
+		expect(blocked.status).toBe(404);
+
+		const on = await putJson(owner.token, `/api/v1/families/${owner.familyId}/members/${child.id}`, { trackable: true });
+		expect(on.status).toBe(200);
+		expect(on.body.member.trackable).toBe(true);
+
+		const list = await getJson(owner.token, `/api/v1/feedings?memberId=${child.id}`);
+		expect(list.status).toBe(200);
+		expect((list.body.feedings ?? []).length).toBe(1);
+	});
+
+	it('enables tracking for an adult by creating a profile on demand', async () => {
+		const owner = await register('adult-track@example.com');
+		const adult = await addMember(owner.token, owner.familyId, { type: 'adult', name: `Grown-${Date.now()}` });
+		expect(adult.trackable).toBe(false);
+
+		const on = await putJson(owner.token, `/api/v1/families/${owner.familyId}/members/${adult.id}`, { trackable: true });
+		expect(on.status).toBe(200);
+		expect(on.body.member.trackable).toBe(true);
+		expect(on.body.member.legacyBabyId).toBeGreaterThan(0);
+
+		const created = await postJson(owner.token, '/api/v1/feedings', {
+			memberId: adult.id,
+			startTime: new Date().toISOString(),
+			type: 'bottle',
+			amount: 4,
+		});
+		expect(created.status).toBe(200);
 	});
 });

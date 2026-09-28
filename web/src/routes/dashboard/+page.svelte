@@ -505,6 +505,8 @@
 				email: m.email ?? null,
 				avatar: m.avatar ?? null,
 				categories: Array.isArray(m.categories) ? m.categories : [],
+				trackable: m.trackable !== false,
+				legacyBabyId: m.legacyBabyId ?? null,
 			}));
 
 			if (babies.length > 0) {

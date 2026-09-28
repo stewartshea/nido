@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import type { SqliteFacade } from '../db-core';
 import { parseNarababyCsv } from '../import/narababy';
+import { resolveTrackableMember } from '../member-scope';
 import { type AuthEnv } from '../auth';
 
 const importRoutes = new Hono<AuthEnv>();
@@ -22,38 +23,36 @@ async function getHouseholdId(db: SqliteFacade, userId: string): Promise<number 
 	return row ? Number(row.household_id) : null;
 }
 
-async function resolveBaby(db: SqliteFacade, userId: string, name: string, gender: string, birthDate: string, targetBabyId?: number | null) {
-	if (targetBabyId) {
-		const res = await db.execute({
-			sql: `SELECT b.id, b.household_id AS householdId
-			      FROM babies b
-			      JOIN user_households uh ON uh.household_id = b.household_id
-			      WHERE b.id = ? AND uh.user_id = ? LIMIT 1`,
-			args: [targetBabyId, userId],
-		});
-		const row = res.rows[0];
-		if (row) return { householdId: Number(row.householdId), babyId: Number(row.id) };
-		return { householdId: null, babyId: null };
+async function resolveBaby(db: SqliteFacade, userId: string, name: string, gender: string, birthDate: string, targetMemberId?: number | null) {
+	if (targetMemberId) {
+		const scope = await resolveTrackableMember(db, userId, targetMemberId);
+		if (!scope) return { householdId: null, babyId: null };
+		const hh = await db.execute({ sql: 'SELECT household_id AS householdId FROM babies WHERE id = ? LIMIT 1', args: [scope.babyId] });
+		return { householdId: Number(hh.rows[0]?.householdId ?? 0), babyId: scope.babyId };
 	}
 
 	const householdId = await getHouseholdId(db, userId);
 	if (!householdId) return { householdId, babyId: null };
 
 	const existing = await db.execute({
-		sql: 'SELECT id FROM babies WHERE household_id = ? AND name = ? LIMIT 1',
+		sql: 'SELECT legacy_baby_id FROM family_members WHERE household_id = ? AND name = ? AND legacy_baby_id IS NOT NULL LIMIT 1',
 		args: [householdId, name],
 	});
-	if (existing.rows.length > 0) {
-		const id = existing.rows[0]?.id;
-		return { householdId, babyId: id ? Number(id) : null };
-	}
+	const existingBaby = existing.rows[0]?.legacy_baby_id;
+	if (existingBaby) return { householdId, babyId: Number(existingBaby) };
 
 	const ins = await db.execute({
-		sql: `INSERT INTO babies (household_id, name, birth_date, gender, created_at, updated_at)
-		      VALUES (?, ?, ?, ?, ?, ?)`,
+		sql: `INSERT INTO babies (household_id, name, birth_date, gender, type, created_at, updated_at)
+		      VALUES (?, ?, ?, ?, 'child', ?, ?)`,
 		args: [householdId, name, birthDate || null, gender || null, isoNow(), isoNow()],
 	});
-	return { householdId, babyId: Number(ins.lastInsertRowid) };
+	const babyId = Number(ins.lastInsertRowid);
+	await db.execute({
+		sql: `INSERT INTO family_members (household_id, legacy_baby_id, trackable, name, member_type, birth_date, gender, categories, created_at, updated_at)
+		      VALUES (?, ?, 1, ?, 'child', ?, ?, ?, ?, ?)`,
+		args: [householdId, babyId, name, birthDate || null, gender || null, JSON.stringify(['feeds', 'diapers', 'sleep', 'growth']), isoNow(), isoNow()],
+	});
+	return { householdId, babyId };
 }
 
 // The import writes thousands of rows. In file mode the shared client is the

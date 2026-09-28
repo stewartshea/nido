@@ -486,6 +486,8 @@
 				email: m.email ?? null,
 				avatar: m.avatar ?? null,
 				categories: Array.isArray(m.categories) ? m.categories : [],
+				trackable: m.trackable !== false,
+				legacyBabyId: m.legacyBabyId ?? null,
 			}));
 
 			if (babies.length > 0) {
@@ -1193,6 +1195,19 @@
 
 	function closeEditMember() {
 		editingMember = null;
+	}
+
+	async function toggleMemberTracking(baby: any) {
+		if (!activeFamilyId) return;
+		error = '';
+		const next = !baby.trackable;
+		try {
+			await familiesAPI.updateMember(activeFamilyId, Number(baby.id), { trackable: next });
+			await loadFamilies();
+			notice = next ? `${baby.name} will now be tracked.` : `${baby.name} is no longer tracked.`;
+		} catch (err: any) {
+			error = err.response?.data?.error || 'Failed to update tracking.';
+		}
 	}
 
 	async function deleteEditMember() {
@@ -1931,6 +1946,7 @@
 														<button type="button" class="text-xs text-primary underline" on:click={() => inviteMemberEmail(String(baby.email))}>invite account</button>
 													{/if}
 													<button type="button" class="text-xs text-ink-soft underline" on:click={() => openEditMember(baby)}>edit</button>
+													<button type="button" class="text-xs {baby.trackable ? 'text-danger-text' : 'text-primary'} underline" on:click={() => toggleMemberTracking(baby)}>{baby.trackable ? 'stop tracking' : 'track'}</button>
 												</div>
 											</li>
 										{/each}

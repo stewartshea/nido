@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
+import { resolveTrackableMember } from '../member-scope';
 import { type AuthEnv } from '../auth';
 import type { BabyRow, GrowthRow, GrowthWithBabyRow } from '../db-types';
 
@@ -145,23 +146,13 @@ growthRoutes.get('/', async (c) => {
       return c.json({ error: 'Member ID is required' }, 400);
     }
     
-    // Verify user has access to this baby
-    const memberCheck = await db.execute({
-      sql: `
-      SELECT b.id, b.birth_date, b.gender
-      FROM babies b
-      JOIN households h ON b.household_id = h.id
-      JOIN user_households uh ON h.id = uh.household_id
-      WHERE b.id = ? AND uh.user_id = ?
-    `,
-      args: [memberId, userId]
-    });
-    
-    if (memberCheck.rows.length === 0) {
+    const scope = await resolveTrackableMember(db, userId, memberId);
+    if (!scope) {
       return c.json({ error: 'Member not found or access denied' }, 404);
     }
-    
-    const baby = memberCheck.rows[0] as unknown as BabyRow;
+    const babyId = scope.babyId;
+    const babyRes = await db.execute({ sql: 'SELECT id, birth_date, gender FROM babies WHERE id = ? LIMIT 1', args: [babyId] });
+    const baby = babyRes.rows[0] as unknown as BabyRow;
     
     // Get growth records for the baby
     const growthResult = await db.execute({
@@ -171,7 +162,7 @@ growthRoutes.get('/', async (c) => {
       WHERE baby_id = ?
       LIMIT 100
     `,
-      args: [memberId]
+      args: [babyId]
     });
     
     // Calculate WHO/CDC comparisons for each record
@@ -314,23 +305,13 @@ growthRoutes.post('/', zValidator('json', createGrowthSchema), async (c) => {
     const userId = c.get('userId');
     const db = c.get('db');
     
-    // Verify user has access to this baby
-    const memberCheck = await db.execute({
-      sql: `
-      SELECT b.id, b.birth_date, b.gender
-      FROM babies b
-      JOIN households h ON b.household_id = h.id
-      JOIN user_households uh ON h.id = uh.household_id
-      WHERE b.id = ? AND uh.user_id = ?
-    `,
-      args: [memberId, userId]
-    });
-    
-    if (memberCheck.rows.length === 0) {
+    const scope = await resolveTrackableMember(db, userId, memberId);
+    if (!scope) {
       return c.json({ error: 'Member not found or access denied' }, 404);
     }
-    
-    const baby = memberCheck.rows[0] as unknown as BabyRow;
+    const babyId = scope.babyId;
+    const babyRes = await db.execute({ sql: 'SELECT id, birth_date, gender FROM babies WHERE id = ? LIMIT 1', args: [babyId] });
+    const baby = babyRes.rows[0] as unknown as BabyRow;
     
     // Calculate BMI if not provided and we have weight and height
     let calculatedBmi = bmi;
@@ -649,23 +630,13 @@ growthRoutes.get('/:id{[0-9]+}/chart-data', async (c) => {
     const userId = c.get('userId');
     const db = c.get('db');
     
-    // Verify user has access to this baby
-    const memberCheck = await db.execute({
-      sql: `
-      SELECT b.id, b.birth_date, b.gender
-      FROM babies b
-      JOIN households h ON b.household_id = h.id
-      JOIN user_households uh ON h.id = uh.household_id
-      WHERE b.id = ? AND uh.user_id = ?
-    `,
-      args: [memberId, userId]
-    });
-    
-    if (memberCheck.rows.length === 0) {
+    const scope = await resolveTrackableMember(db, userId, memberId);
+    if (!scope) {
       return c.json({ error: 'Member not found or access denied' }, 404);
     }
-    
-    const baby = memberCheck.rows[0] as unknown as BabyRow;
+    const babyId = scope.babyId;
+    const babyRes = await db.execute({ sql: 'SELECT id, birth_date, gender FROM babies WHERE id = ? LIMIT 1', args: [babyId] });
+    const baby = babyRes.rows[0] as unknown as BabyRow;
     const gender = baby.gender || 'male';
     
     // Get all growth records for this baby
@@ -675,7 +646,7 @@ growthRoutes.get('/:id{[0-9]+}/chart-data', async (c) => {
       FROM growth
       WHERE baby_id = ?
     `,
-      args: [memberId]
+      args: [babyId]
     });
     
     // Prepare chart data with WHO standards

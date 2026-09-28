@@ -3,6 +3,7 @@ import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 import { type AuthEnv } from '../auth';
 import type { MoodRow } from '../db-types';
+import { resolveTrackableMember } from '../member-scope';
 
 const moodRoutes = new Hono<AuthEnv>();
 
@@ -21,12 +22,15 @@ const updateMoodSchema = z.object({
 
 const getUserId = (c: any) => c.get('userId') as string;
 
-async function babyAccess(db: any, memberId: number, userId: string): Promise<boolean> {
+async function resolveProfile(db: any, memberId: number, userId: string): Promise<number | null> {
+  const scope = await resolveTrackableMember(db, userId, memberId);
+  return scope ? scope.babyId : null;
+}
+
+async function babyAccessById(db: any, babyId: number, userId: string): Promise<boolean> {
   const res = await db.execute({
-    sql: `SELECT b.id FROM babies b
-          JOIN user_households uh ON uh.household_id = b.household_id
-          WHERE b.id = ? AND uh.user_id = ? LIMIT 1`,
-    args: [memberId, userId],
+    sql: `SELECT 1 FROM babies b JOIN user_households uh ON uh.household_id = b.household_id WHERE b.id = ? AND uh.user_id = ? LIMIT 1`,
+    args: [babyId, userId],
   });
   return res.rows.length > 0;
 }
@@ -36,11 +40,12 @@ moodRoutes.get('/', async (c) => {
   const userId = getUserId(c);
   const memberId = parseInt(c.req.query('memberId') || '0');
   if (!memberId) return c.json({ error: 'memberId is required' }, 400);
-  if (!(await babyAccess(db, memberId, userId))) return c.json({ error: 'Access denied' }, 403);
+  const babyId = await resolveProfile(db, memberId, userId);
+  if (!babyId) return c.json({ error: 'Access denied' }, 403);
 
   const res = await db.execute({
     sql: `SELECT id, baby_id, mood, recorded_at, notes, created_at FROM moods WHERE baby_id = ? ORDER BY recorded_at DESC`,
-    args: [memberId],
+    args: [babyId],
   });
   return c.json({ moods: res.rows.map((r) => ({
     id: Number(r?.id), memberId: Number(r?.baby_id), mood: r?.mood, recordedAt: r?.recorded_at, notes: r?.notes, createdAt: r?.created_at,
@@ -51,14 +56,15 @@ moodRoutes.post('/', zValidator('json', createMoodSchema), async (c) => {
   const db = c.get('db');
   const userId = getUserId(c);
   const { memberId, mood, recordedAt, notes } = c.req.valid('json');
-  if (!(await babyAccess(db, memberId, userId))) return c.json({ error: 'Access denied' }, 403);
+  const babyId = await resolveProfile(db, memberId, userId);
+  if (!babyId) return c.json({ error: 'Access denied' }, 403);
 
   const now = new Date().toISOString();
   const ins = await db.execute({
     sql: `INSERT INTO moods (baby_id, mood, recorded_at, notes, created_at) VALUES (?, ?, ?, ?, ?)`,
-    args: [memberId, mood, recordedAt || now, notes || null, now],
+    args: [babyId, mood, recordedAt || now, notes || null, now],
   });
-  return c.json({ message: 'Mood recorded', mood: { id: Number(ins.lastInsertRowid), memberId, mood, recordedAt: recordedAt || now, notes } }, 201);
+  return c.json({ message: 'Mood recorded', mood: { id: Number(ins.lastInsertRowid), memberId: babyId, mood, recordedAt: recordedAt || now, notes } }, 201);
 });
 
 moodRoutes.put('/:id{[0-9]+}', zValidator('json', updateMoodSchema), async (c) => {
@@ -69,7 +75,7 @@ moodRoutes.put('/:id{[0-9]+}', zValidator('json', updateMoodSchema), async (c) =
   const rowRes = await db.execute({ sql: `SELECT baby_id FROM moods WHERE id = ? LIMIT 1`, args: [id] });
   if (rowRes.rows.length === 0) return c.json({ error: 'Mood not found' }, 404);
   const memberId = Number((rowRes.rows[0] as any).baby_id);
-  if (!(await babyAccess(db, memberId, userId))) return c.json({ error: 'Access denied' }, 403);
+  if (!(await babyAccessById(db, memberId, userId))) return c.json({ error: 'Access denied' }, 403);
 
   const updates: string[] = [];
   const params: Array<number | string | null> = [];
@@ -89,7 +95,7 @@ moodRoutes.delete('/:id{[0-9]+}', async (c) => {
   const rowRes = await db.execute({ sql: `SELECT baby_id FROM moods WHERE id = ? LIMIT 1`, args: [id] });
   if (rowRes.rows.length === 0) return c.json({ error: 'Mood not found' }, 404);
   const memberId = Number((rowRes.rows[0] as any).baby_id);
-  if (!(await babyAccess(db, memberId, userId))) return c.json({ error: 'Access denied' }, 403);
+  if (!(await babyAccessById(db, memberId, userId))) return c.json({ error: 'Access denied' }, 403);
 
   await db.execute({ sql: `DELETE FROM moods WHERE id = ?`, args: [id] });
   return c.json({ message: 'Mood deleted' });

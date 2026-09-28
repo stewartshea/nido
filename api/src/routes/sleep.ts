@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 import type { SleepRow } from '../db-types';
+import { resolveTrackableMember } from '../member-scope';
 import { type AuthEnv } from '../auth';
 
 const sleepRoutes = new Hono<AuthEnv>();
@@ -33,21 +34,11 @@ sleepRoutes.get('/', async (c) => {
       return c.json({ error: 'Member ID is required' }, 400);
     }
     
-    // Verify user has access to this baby
-    const memberCheck = await db.execute({
-      sql: `
-      SELECT b.id
-      FROM babies b
-      JOIN households h ON b.household_id = h.id
-      JOIN user_households uh ON h.id = uh.household_id
-      WHERE b.id = ? AND uh.user_id = ?
-    `,
-      args: [memberId, userId]
-    });
-    
-    if (memberCheck.rows.length === 0) {
+    const scope = await resolveTrackableMember(db, userId, memberId);
+    if (!scope) {
       return c.json({ error: 'Member not found or access denied' }, 404);
     }
+    const babyId = scope.babyId;
     
     // Get sleep records for the baby
     const sleepResult = await db.execute({
@@ -57,7 +48,7 @@ sleepRoutes.get('/', async (c) => {
       WHERE baby_id = ?
       LIMIT 100
     `,
-      args: [memberId]
+      args: [babyId]
     });
     
     // Calculate duration if not already calculated
@@ -129,21 +120,11 @@ sleepRoutes.post('/', zValidator('json', createSleepSchema), async (c) => {
     const userId = c.get('userId');
     const db = c.get('db');
     
-    // Verify user has access to this baby
-    const memberCheck = await db.execute({
-      sql: `
-      SELECT b.id
-      FROM babies b
-      JOIN households h ON b.household_id = h.id
-      JOIN user_households uh ON h.id = uh.household_id
-      WHERE b.id = ? AND uh.user_id = ?
-    `,
-      args: [memberId, userId]
-    });
-    
-    if (memberCheck.rows.length === 0) {
+    const scope = await resolveTrackableMember(db, userId, memberId);
+    if (!scope) {
       return c.json({ error: 'Member not found or access denied' }, 404);
     }
+    const babyId = scope.babyId;
     
     // Calculate duration if both start and end times are provided
     let duration = null;

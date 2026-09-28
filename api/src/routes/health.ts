@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import type { BabyRow, SleepAggRow, DiaperAggRow, FeedingAggRow } from '../db-types';
+import { resolveTrackableMember } from '../member-scope';
 import { type AuthEnv } from '../auth';
 
 const healthRoutes = new Hono<AuthEnv>();
@@ -10,24 +11,18 @@ healthRoutes.get('/summary/:memberId{[0-9]+}', async (c) => {
     const memberId = parseInt(c.req.param('memberId'));
     const userId = c.get('userId');
     const db = c.get('db');
-    
-    // Verify user has access to this baby
-    const memberCheck = await db.execute({
-      sql: `
-      SELECT b.id, b.name, b.birth_date, b.gender
-      FROM babies b
-      JOIN households h ON b.household_id = h.id
-      JOIN user_households uh ON h.id = uh.household_id
-      WHERE b.id = ? AND uh.user_id = ?
-    `,
-      args: [memberId, userId]
-    });
-    
-    if (memberCheck.rows.length === 0) {
+
+    const scope = await resolveTrackableMember(db, userId, memberId);
+    if (!scope) {
       return c.json({ error: 'Member not found or access denied' }, 404);
     }
-    
-    const baby = memberCheck.rows[0] as unknown as BabyRow;
+    const babyId = scope.babyId;
+
+    const babyRes = await db.execute({
+      sql: `SELECT id, name, birth_date, gender FROM babies WHERE id = ? LIMIT 1`,
+      args: [babyId],
+    });
+    const baby = babyRes.rows[0] as unknown as BabyRow;
     
     // Get latest feeding
     const latestFeeding = await db.execute({
@@ -38,7 +33,7 @@ healthRoutes.get('/summary/:memberId{[0-9]+}', async (c) => {
       ORDER BY start_time DESC
       LIMIT 1
     `,
-      args: [memberId]
+      args: [babyId]
     });
     
     // Get latest diaper
@@ -50,7 +45,7 @@ healthRoutes.get('/summary/:memberId{[0-9]+}', async (c) => {
       ORDER BY change_time DESC
       LIMIT 1
     `,
-      args: [memberId]
+      args: [babyId]
     });
     
     // Get latest sleep
@@ -62,7 +57,7 @@ healthRoutes.get('/summary/:memberId{[0-9]+}', async (c) => {
       ORDER BY start_time DESC
       LIMIT 1
     `,
-      args: [memberId]
+      args: [babyId]
     });
     
     // Get latest growth
@@ -74,7 +69,7 @@ healthRoutes.get('/summary/:memberId{[0-9]+}', async (c) => {
       ORDER BY measurement_date DESC
       LIMIT 1
     `,
-      args: [memberId]
+      args: [babyId]
     });
     
     // Get latest milestones
@@ -86,7 +81,7 @@ healthRoutes.get('/summary/:memberId{[0-9]+}', async (c) => {
       ORDER BY achieved_date DESC
       LIMIT 5
     `,
-      args: [memberId]
+      args: [babyId]
     });
     
     // Get upcoming vaccinations
@@ -98,7 +93,7 @@ healthRoutes.get('/summary/:memberId{[0-9]+}', async (c) => {
       ORDER BY next_due_date ASC
       LIMIT 5
     `,
-      args: [memberId]
+      args: [babyId]
     });
     
     // Calculate age in weeks
@@ -137,21 +132,11 @@ healthRoutes.get('/insights/:memberId{[0-9]+}', async (c) => {
     const userId = c.get('userId');
     const db = c.get('db');
     
-    // Verify user has access to this baby
-    const memberCheck = await db.execute({
-      sql: `
-      SELECT b.id
-      FROM babies b
-      JOIN households h ON b.household_id = h.id
-      JOIN user_households uh ON h.id = uh.household_id
-      WHERE b.id = ? AND uh.user_id = ?
-    `,
-      args: [memberId, userId]
-    });
-    
-    if (memberCheck.rows.length === 0) {
+    const scope = await resolveTrackableMember(db, userId, memberId);
+    if (!scope) {
       return c.json({ error: 'Member not found or access denied' }, 404);
     }
+    const babyId = scope.babyId;
     
     // Get feeding patterns (last 7 days)
     const weekAgo = new Date();
@@ -169,7 +154,7 @@ healthRoutes.get('/insights/:memberId{[0-9]+}', async (c) => {
       FROM feedings
       WHERE baby_id = ? AND start_time >= ?
     `,
-      args: [memberId, weekAgo.toISOString()]
+      args: [babyId, weekAgo.toISOString()]
     });
     
     // Get sleep patterns (last 7 days)
@@ -182,7 +167,7 @@ healthRoutes.get('/insights/:memberId{[0-9]+}', async (c) => {
       FROM sleep
       WHERE baby_id = ? AND start_time >= ?
     `,
-      args: [memberId, weekAgo.toISOString()]
+      args: [babyId, weekAgo.toISOString()]
     });
     
     // Get diaper patterns (last 7 days)
@@ -196,7 +181,7 @@ healthRoutes.get('/insights/:memberId{[0-9]+}', async (c) => {
       FROM diapers
       WHERE baby_id = ? AND change_time >= ?
     `,
-      args: [memberId, weekAgo.toISOString()]
+      args: [babyId, weekAgo.toISOString()]
     });
     
     const insights = {

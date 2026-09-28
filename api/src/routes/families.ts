@@ -46,7 +46,7 @@ function memberShape(row: any) {
 		email: row.email || null,
 		avatar: row.avatar || null,
 		legacyBabyId: row.legacy_baby_id ? Number(row.legacy_baby_id) : null,
-		trackable: row.legacy_baby_id ? true : false,
+		trackable: Number(row.trackable ?? (row.legacy_baby_id ? 1 : 0)) === 1,
 		linkedAccount: Number(row.linked_account || 0) === 1,
 		categories: row.categories ? JSON.parse(String(row.categories)) : [],
 	};
@@ -170,6 +170,7 @@ const updateMemberSchema = z.object({
 	gender: z.string().max(20).nullable().optional(),
 	email: z.string().email().nullable().optional(),
 	categories: z.array(z.string()).optional(),
+	trackable: z.boolean().optional(),
 });
 
 const settingsSchema = z.object({
@@ -417,8 +418,8 @@ async function handleCreateFamily(c: Context<AuthEnv>) {
 		let memberId = existingMember.rows[0]?.id ? Number(existingMember.rows[0]?.id) : null;
 		if (!memberId) {
 			const insMember = await target.execute({
-				sql: `INSERT INTO family_members (household_id, legacy_baby_id, name, member_type, email, categories, created_at, updated_at)
-				      VALUES (?, NULL, ?, 'adult', ?, ?, ?, ?)`,
+				sql: `INSERT INTO family_members (household_id, legacy_baby_id, trackable, name, member_type, email, categories, created_at, updated_at)
+				      VALUES (?, NULL, 0, ?, 'adult', ?, ?, ?, ?)`,
 				args: [NAMESPACE_HOUSEHOLD_ID, row.first_name || me.email, me.email, JSON.stringify(DEFAULT_CATEGORIES), now, now],
 			});
 			memberId = Number(insMember.lastInsertRowid);
@@ -469,6 +470,7 @@ async function handleGetMembers(c: Context<AuthEnv>) {
 			SELECT
 				fm.id,
 				fm.legacy_baby_id,
+				fm.trackable,
 				fm.name,
 				fm.birth_date,
 				fm.gender,
@@ -520,9 +522,9 @@ async function handleAddMember(c: Context<AuthEnv>) {
 	}
 
 	const ins = await db.execute({
-		sql: `INSERT INTO family_members (household_id, legacy_baby_id, name, birth_date, gender, member_type, email, categories, created_at, updated_at)
-		      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		args: [NAMESPACE_HOUSEHOLD_ID, legacyBabyId, name, birthDate || null, gender || null, memberType, normalizedEmail, JSON.stringify(memberCategories), isoNow(), isoNow()],
+		sql: `INSERT INTO family_members (household_id, legacy_baby_id, trackable, name, birth_date, gender, member_type, email, categories, created_at, updated_at)
+		      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		args: [NAMESPACE_HOUSEHOLD_ID, legacyBabyId, memberType === 'child' ? 1 : 0, name, birthDate || null, gender || null, memberType, normalizedEmail, JSON.stringify(memberCategories), isoNow(), isoNow()],
 	});
 	const memberId = Number(ins.lastInsertRowid);
 	await db.execute({
@@ -533,7 +535,7 @@ async function handleAddMember(c: Context<AuthEnv>) {
 
 	const rowRes = await db.execute({
 		sql: `
-			SELECT fm.id, fm.legacy_baby_id, fm.name, fm.birth_date, fm.gender, fm.member_type, fm.email, fm.avatar, fm.categories,
+			SELECT fm.id, fm.legacy_baby_id, fm.trackable, fm.name, fm.birth_date, fm.gender, fm.member_type, fm.email, fm.avatar, fm.categories,
 			       CASE WHEN am.user_id IS NULL THEN 0 ELSE 1 END AS linked_account
 			FROM family_members fm
 			LEFT JOIN account_members am ON am.member_id = fm.id
@@ -560,7 +562,7 @@ async function handleUpdateMember(c: Context<AuthEnv>) {
 	if (rowRes.rows.length === 0) return c.json({ error: 'Member not found' }, 404);
 	const existing = rowRes.rows[0] as any;
 
-	const { type, name, birthDate, gender, email, categories } = (c.req as any).valid('json');
+	const { type, name, birthDate, gender, email, categories, trackable } = (c.req as any).valid('json');
 	const nextMemberType = type || String(existing.member_type || 'child');
 	const normalizedEmail = email === undefined ? undefined : (email === null ? null : String(email).trim().toLowerCase());
 	const updates: string[] = [];
@@ -571,19 +573,27 @@ async function handleUpdateMember(c: Context<AuthEnv>) {
 	if (gender !== undefined) { updates.push('gender = ?'); params.push(gender); }
 	if (normalizedEmail !== undefined) { updates.push('email = ?'); params.push(normalizedEmail); }
 	if (categories) { updates.push('categories = ?'); params.push(JSON.stringify(categories)); }
-	if (updates.length === 0) return c.json({ error: 'Nothing to update' }, 400);
 
 	let legacyBabyId = existing.legacy_baby_id ? Number(existing.legacy_baby_id) : null;
-	if (!legacyBabyId && nextMemberType === 'child') {
+	// Flagging a member off is non-destructive: the profile and its records are kept.
+	let nextTrackable = Number(existing.trackable ?? (legacyBabyId ? 1 : 0)) === 1;
+	if (trackable !== undefined) nextTrackable = trackable;
+	else if (nextMemberType === 'child' && !legacyBabyId) nextTrackable = true;
+
+	if (trackable !== undefined || (nextTrackable && !legacyBabyId)) {
+		updates.push('trackable = ?'); params.push(nextTrackable ? 1 : 0);
+	}
+
+	if (nextTrackable && !legacyBabyId) {
 		const childInsert = await db.execute({
 			sql: `INSERT INTO babies (household_id, name, birth_date, gender, type, email, categories, created_at, updated_at)
 			      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			args: [
 				NAMESPACE_HOUSEHOLD_ID,
-				name ?? 'Child',
+				name ?? 'Member',
 				birthDate ?? null,
 				gender ?? null,
-				'child',
+				nextMemberType === 'adult' ? 'adult' : 'child',
 				normalizedEmail ?? null,
 				JSON.stringify(categories ?? DEFAULT_CATEGORIES),
 				isoNow(),
@@ -594,6 +604,8 @@ async function handleUpdateMember(c: Context<AuthEnv>) {
 		updates.push('legacy_baby_id = ?');
 		params.push(legacyBabyId);
 	}
+
+	if (updates.length === 0) return c.json({ error: 'Nothing to update' }, 400);
 
 	updates.push('updated_at = ?'); params.push(isoNow());
 	params.push(memberId, NAMESPACE_HOUSEHOLD_ID);
@@ -625,7 +637,7 @@ async function handleUpdateMember(c: Context<AuthEnv>) {
 
 	const memRes = await db.execute({
 		sql: `
-			SELECT fm.id, fm.legacy_baby_id, fm.name, fm.birth_date, fm.gender, fm.member_type, fm.email, fm.avatar, fm.categories,
+			SELECT fm.id, fm.legacy_baby_id, fm.trackable, fm.name, fm.birth_date, fm.gender, fm.member_type, fm.email, fm.avatar, fm.categories,
 			       CASE WHEN am.user_id IS NULL THEN 0 ELSE 1 END AS linked_account
 			FROM family_members fm
 			LEFT JOIN account_members am ON am.member_id = fm.id
@@ -947,7 +959,7 @@ async function handleExportFamily(c: Context<AuthEnv>) {
 
 	const members = (await db.execute({
 		sql: `
-			SELECT fm.id, fm.legacy_baby_id, fm.name, fm.birth_date, fm.gender, fm.member_type, fm.email, fm.avatar, fm.categories,
+			SELECT fm.id, fm.legacy_baby_id, fm.trackable, fm.name, fm.birth_date, fm.gender, fm.member_type, fm.email, fm.avatar, fm.categories,
 			       CASE WHEN am.user_id IS NULL THEN 0 ELSE 1 END AS linked_account
 			FROM family_members fm
 			LEFT JOIN account_members am ON am.member_id = fm.id
@@ -1055,9 +1067,9 @@ async function handleRestoreFamily(c: Context<AuthEnv>) {
 		});
 		const newId = Number(ins.lastInsertRowid);
 		const fmIns = await db.execute({
-			sql: `INSERT INTO family_members (household_id, legacy_baby_id, name, member_type, birth_date, gender, email, avatar, categories, created_at, updated_at)
-			      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			args: [NAMESPACE_HOUSEHOLD_ID, newId, name, m.type || 'child', m.birthDate || null, m.gender || null, m.email || null, m.avatar || null, catRes, isoNow(), isoNow()],
+			sql: `INSERT INTO family_members (household_id, legacy_baby_id, trackable, name, member_type, birth_date, gender, email, avatar, categories, created_at, updated_at)
+			      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			args: [NAMESPACE_HOUSEHOLD_ID, newId, (m.type || 'child') === 'child' ? 1 : 0, name, m.type || 'child', m.birthDate || null, m.gender || null, m.email || null, m.avatar || null, catRes, isoNow(), isoNow()],
 		});
 		const familyMemberId = Number(fmIns.lastInsertRowid);
 		await db.execute({

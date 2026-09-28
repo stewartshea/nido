@@ -110,7 +110,8 @@ Most read/write routes accept a `?babyId=` query parameter, except where a
 - `GET /api/v1/families/members` — list members
 - `POST /api/v1/families/members` — add a member (rejects a duplicate name +
   birth date)
-- `PUT /api/v1/families/members/:memberId` — update a member
+- `PUT /api/v1/families/members/:memberId` — update a member (including
+  `trackable`: flagging off keeps the profile and its records)
 - `DELETE /api/v1/families/members/:memberId` — delete a member (cascades to
   records, photos, avatar, reminders, and any member account linked to it; an
   owner's own account is never removed this way)

@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 import type { FeedingRow } from '../db-types';
+import { resolveTrackableMember } from '../member-scope';
 import { type AuthEnv } from '../auth';
 
 const feedingRoutes = new Hono<AuthEnv>();
@@ -39,21 +40,11 @@ feedingRoutes.get('/', async (c) => {
       return c.json({ error: 'Member ID is required' }, 400);
     }
     
-    // Verify user has access to this baby
-    const memberCheck = await db.execute({
-      sql: `
-      SELECT b.id
-      FROM babies b
-      JOIN households h ON b.household_id = h.id
-      JOIN user_households uh ON h.id = uh.household_id
-      WHERE b.id = ? AND uh.user_id = ?
-    `,
-      args: [memberId, userId]
-    });
-    
-if (memberCheck.rows.length === 0) {
+    const scope = await resolveTrackableMember(db, userId, memberId);
+    if (!scope) {
       return c.json({ error: 'Member not found or access denied' }, 404);
     }
+    const babyId = scope.babyId;
     // Get feedings for the baby
     const feedingsResult = await db.execute({
       sql: `
@@ -62,7 +53,7 @@ if (memberCheck.rows.length === 0) {
       WHERE baby_id = ?
       LIMIT 100
     `,
-      args: [memberId]
+      args: [babyId]
     });
     
     // Calculate duration if not already calculated
@@ -134,19 +125,8 @@ feedingRoutes.post('/', zValidator('json', createFeedingSchema), async (c) => {
     const userId = c.get('userId');
     const db = c.get('db');
     
-    // Verify user has access to this baby
-    const memberCheck = await db.execute({
-      sql: `
-      SELECT b.id
-      FROM babies b
-      JOIN households h ON b.household_id = h.id
-      JOIN user_households uh ON h.id = uh.household_id
-      WHERE b.id = ? AND uh.user_id = ?
-    `,
-      args: [memberId, userId]
-    });
-    
-    if (memberCheck.rows.length === 0) {
+    const scope = await resolveTrackableMember(db, userId, memberId);
+    if (!scope) {
       return c.json({ error: 'Member not found or access denied' }, 404);
     }
     
@@ -166,7 +146,7 @@ feedingRoutes.post('/', zValidator('json', createFeedingSchema), async (c) => {
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
       args: [
-        memberId, 
+        scope.babyId, 
         startTime, 
         endTime || null, 
         duration, 

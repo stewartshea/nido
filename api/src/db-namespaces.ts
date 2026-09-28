@@ -399,6 +399,15 @@ export const FAMILY_MIGRATIONS: Migration[] = [
       CREATE INDEX IF NOT EXISTS idx_reminders_kind_category ON reminders(kind, category);
     `,
   },
+  {
+    version: 4,
+    name: 'family-members-trackable',
+    sql: `
+      ALTER TABLE family_members ADD COLUMN trackable INTEGER NOT NULL DEFAULT 1;
+      UPDATE family_members SET trackable = CASE WHEN legacy_baby_id IS NULL THEN 0 ELSE 1 END;
+      CREATE INDEX IF NOT EXISTS idx_family_members_legacy ON family_members(legacy_baby_id);
+    `,
+  },
 ];
 
 // ---------------------------------------------------------------------------

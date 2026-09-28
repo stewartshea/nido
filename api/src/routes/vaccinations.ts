@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
+import { resolveTrackableMember } from '../member-scope';
 import { type AuthEnv } from '../auth';
 
 const vaccinationRoutes = new Hono<AuthEnv>();
@@ -34,21 +35,11 @@ vaccinationRoutes.get('/', async (c) => {
       return c.json({ error: 'Member ID is required' }, 400);
     }
     
-    // Verify user has access to this baby
-    const memberCheck = await db.execute({
-      sql: `
-      SELECT b.id
-      FROM babies b
-      JOIN households h ON b.household_id = h.id
-      JOIN user_households uh ON h.id = uh.household_id
-      WHERE b.id = ? AND uh.user_id = ?
-    `,
-      args: [memberId, userId]
-    });
-    
-    if (memberCheck.rows.length === 0) {
+    const scope = await resolveTrackableMember(db, userId, memberId);
+    if (!scope) {
       return c.json({ error: 'Member not found or access denied' }, 404);
     }
+    const babyId = scope.babyId;
     
     // Get vaccinations for the baby
     const vaccinationsResult = await db.execute({
@@ -58,7 +49,7 @@ vaccinationRoutes.get('/', async (c) => {
       WHERE baby_id = ?
       ORDER BY date_given DESC, next_due_date ASC
     `,
-      args: [memberId]
+      args: [babyId]
     });
     
     return c.json({ vaccinations: vaccinationsResult.rows });
@@ -106,21 +97,11 @@ vaccinationRoutes.post('/', zValidator('json', createVaccinationSchema), async (
     const userId = c.get('userId');
     const db = c.get('db');
     
-    // Verify user has access to this baby
-    const memberCheck = await db.execute({
-      sql: `
-      SELECT b.id
-      FROM babies b
-      JOIN households h ON b.household_id = h.id
-      JOIN user_households uh ON h.id = uh.household_id
-      WHERE b.id = ? AND uh.user_id = ?
-    `,
-      args: [memberId, userId]
-    });
-    
-    if (memberCheck.rows.length === 0) {
+    const scope = await resolveTrackableMember(db, userId, memberId);
+    if (!scope) {
       return c.json({ error: 'Member not found or access denied' }, 404);
     }
+    const babyId = scope.babyId;
     
     // Insert new vaccination
     const result = await db.execute({

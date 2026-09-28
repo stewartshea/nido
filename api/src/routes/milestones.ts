@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
+import { resolveTrackableMember } from '../member-scope';
 import { type AuthEnv } from '../auth';
 
 const milestoneRoutes = new Hono<AuthEnv>();
@@ -34,21 +35,11 @@ milestoneRoutes.get('/', async (c) => {
       return c.json({ error: 'Member ID is required' }, 400);
     }
     
-    // Verify user has access to this baby
-    const memberCheck = await db.execute({
-      sql: `
-      SELECT b.id
-      FROM babies b
-      JOIN households h ON b.household_id = h.id
-      JOIN user_households uh ON h.id = uh.household_id
-      WHERE b.id = ? AND uh.user_id = ?
-    `,
-      args: [memberId, userId]
-    });
-    
-    if (memberCheck.rows.length === 0) {
+    const scope = await resolveTrackableMember(db, userId, memberId);
+    if (!scope) {
       return c.json({ error: 'Member not found or access denied' }, 404);
     }
+    const babyId = scope.babyId;
     
     // Get milestones for the baby
     const milestonesResult = await db.execute({
@@ -57,7 +48,7 @@ milestoneRoutes.get('/', async (c) => {
       FROM milestones
       WHERE baby_id = ?
     `,
-      args: [memberId]
+      args: [babyId]
     });
     
     const milestonesSorted = [...milestonesResult.rows]
@@ -108,21 +99,11 @@ milestoneRoutes.post('/', zValidator('json', createMilestoneSchema), async (c) =
     const userId = c.get('userId');
     const db = c.get('db');
     
-    // Verify user has access to this baby
-    const memberCheck = await db.execute({
-      sql: `
-      SELECT b.id
-      FROM babies b
-      JOIN households h ON b.household_id = h.id
-      JOIN user_households uh ON h.id = uh.household_id
-      WHERE b.id = ? AND uh.user_id = ?
-    `,
-      args: [memberId, userId]
-    });
-    
-    if (memberCheck.rows.length === 0) {
+    const scope = await resolveTrackableMember(db, userId, memberId);
+    if (!scope) {
       return c.json({ error: 'Member not found or access denied' }, 404);
     }
+    const babyId = scope.babyId;
     
     const tagsJson = tags?.length ? JSON.stringify(tags) : null;
 
@@ -325,21 +306,14 @@ milestoneRoutes.get('/trends', async (c) => {
 
     if (!memberId) return c.json({ error: 'memberId is required' }, 400);
 
-    const memberCheck = await db.execute({
-      sql: `
-      SELECT b.id FROM babies b
-      JOIN households h ON b.household_id = h.id
-      JOIN user_households uh ON h.id = uh.household_id
-      WHERE b.id = ? AND uh.user_id = ?
-    `,
-      args: [memberId, userId],
-    });
-    if (memberCheck.rows.length === 0) return c.json({ error: 'Member not found or access denied' }, 404);
+    const scope = await resolveTrackableMember(db, userId, memberId);
+    if (!scope) return c.json({ error: 'Member not found or access denied' }, 404);
+    const babyId = scope.babyId;
 
     const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
 
     let sql = 'SELECT category, COUNT(*) as count FROM milestones WHERE baby_id = ? AND achieved_date >= ?';
-    const args: any[] = [memberId, since];
+    const args: any[] = [babyId, since];
     if (category) { sql += ' AND category = ?'; args.push(category); }
     sql += ' GROUP BY category ORDER BY count DESC';
 
