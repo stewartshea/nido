@@ -958,23 +958,30 @@
 		return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
 	}
 
-	function setFeedMode(mode: 'timer' | 'log') {
-		feedMode = mode;
-		if (mode === 'timer') feedType = 'breast';
-		if (mode === 'log' && !manualStart) manualStart = nowLocalISO();
-	}
+ 	function setFeedMode(mode: 'timer' | 'log') {
+ 		feedMode = mode;
+ 		if (mode === 'timer') {
+ 			feedType = 'breast';
+ 			leftStartedAt = null;
+ 			leftElapsed = 0;
+ 			rightStartedAt = null;
+ 			rightElapsed = 0;
+ 		}
+ 		if (mode === 'log' && !manualStart) manualStart = nowLocalISO();
+ 	}
 
-	function chooseManualFeedType(type: 'breast' | 'bottle' | 'combo') {
-		manualType = type;
-		if (type === 'breast' || type === 'combo') {
-			feedMode = 'timer';
-			manualBottleSource = 'breastmilk';
-		} else {
-			feedMode = 'log';
-			manualBottleSource = 'breastmilk';
-		}
-		if (!manualStart) manualStart = nowLocalISO();
-	}
+ 	function chooseManualFeedType(type: 'breast' | 'bottle' | 'combo') {
+ 		manualType = type;
+ 		if (type === 'breast' || type === 'combo') {
+ 			feedMode = 'timer';
+ 			manualBottleSource = 'breastmilk';
+ 			if (lastBreastSide && manualSide !== lastBreastSide) manualSide = lastBreastSide;
+ 		} else {
+ 			feedMode = 'log';
+ 			manualBottleSource = 'breastmilk';
+ 		}
+ 		if (!manualStart) manualStart = nowLocalISO();
+ 	}
 
 	function setSleepMode(mode: 'timer' | 'log') {
 		sleepMode = mode;
