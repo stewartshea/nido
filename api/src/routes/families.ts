@@ -695,7 +695,13 @@ async function handleDeleteMember(c: Context<AuthEnv>) {
 			sql: `DELETE FROM reminders WHERE target_type = 'member' AND target_id = ?`,
 			args: [legacyBabyId],
 		});
-		await db.execute({ sql: 'DELETE FROM babies WHERE id = ? AND household_id = ?', args: [legacyBabyId, NAMESPACE_HOUSEHOLD_ID] });
+		try {
+			await db.execute({ sql: 'DELETE FROM babies WHERE id = ? AND household_id = ?', args: [legacyBabyId, NAMESPACE_HOUSEHOLD_ID] });
+		} catch (err: any) {
+			const babyCheck = await db.execute({ sql: 'SELECT * FROM babies WHERE id = ?', args: [legacyBabyId] });
+			c.get('log').error('baby delete failed', { event: 'baby_delete_error', legacyBabyId, baby: babyCheck.rows[0], error: err?.message });
+			throw err;
+		}
 	}
 
 	if (avatar) {
