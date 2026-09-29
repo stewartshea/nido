@@ -217,7 +217,7 @@
 	let manualEnd = '';
 	let manualType: 'breast' | 'bottle' | 'combo' | 'pump' | 'solid' | null = null;
 	let manualBottleSource: 'breastmilk' | 'formula' = 'breastmilk';
-	let manualSide = 'left';
+	let manualSide: 'left' | 'right' = 'left';
 	let manualFormulaId: number | null = null;
 	let manualAmount = '';
 	let manualAmountUnit: 'ml' | 'oz' = 'oz';
@@ -388,6 +388,11 @@
 		}
 		return null;
 	})();
+	$: lastBreastFeedTime = breastFeedings.length > 0 ? Math.max(...breastFeedings.map((f) => new Date(f.start_time).getTime())) : null;
+	$: pumpSessionsSinceLastBreast = feedings
+		.filter((f) => f.type === 'pump')
+		.some((f) => lastBreastFeedTime && new Date(f.start_time).getTime() > lastBreastFeedTime);
+	$: if (lastBreastSide && manualSide !== lastBreastSide) manualSide = lastBreastSide;
 	$: leftBreastTotal = breastFeedings.filter((f) => f.side === 'left').reduce((s, f) => s + (f.duration || 0), 0);
 	$: rightBreastTotal = breastFeedings.filter((f) => f.side === 'right').reduce((s, f) => s + (f.duration || 0), 0);
 
@@ -2331,9 +2336,14 @@
 										<div>
 											<div class="flex items-center justify-between mb-1">
 												<div class="block text-sm font-medium text-ink-soft">Breast</div>
-												{#if lastBreastSide}
-											<span class="text-xs text-ink-soft">last: {#if lastBreastSide === 'left'}<ArrowLeft class="w-3 h-3 inline mr-1" /> left{:else}right <ArrowRight class="w-3 h-3 inline ml-1" />{/if}</span>
-												{/if}
+												<div class="flex items-center gap-2">
+													{#if pumpSessionsSinceLastBreast}
+														<span class="text-xs text-accent" title="Pump session between feeds"><Syringe class="w-3 h-3 inline mr-1" /> pump</span>
+													{/if}
+													{#if lastBreastSide}
+														<span class="text-xs text-ink-soft">last: {#if lastBreastSide === 'left'}<ArrowLeft class="w-3 h-3 inline mr-1" /> left{:else}right <ArrowRight class="w-3 h-3 inline ml-1" />{/if}</span>
+													{/if}
+												</div>
 											</div>
 											<div class="flex gap-2">
 												<button type="button" on:click={() => (manualSide = 'left')} class="{manualSide === 'left' ? 'bg-primary text-on-primary border-primary' : 'bg-surface text-ink-soft border-line hover:border-line-soft'} flex-1 px-3 py-2 rounded-md border text-sm font-semibold transition-colors">
@@ -2595,9 +2605,14 @@
 										<div>
 											<div class="flex items-center justify-between mb-1">
 												<div class="block text-sm font-medium text-ink-soft">Breast</div>
-												{#if lastBreastSide}
-											<span class="text-xs text-ink-soft">last: {#if lastBreastSide === 'left'}<ArrowLeft class="w-3 h-3 inline mr-1" /> left{:else}right <ArrowRight class="w-3 h-3 inline ml-1" />{/if}</span>
-												{/if}
+												<div class="flex items-center gap-2">
+													{#if pumpSessionsSinceLastBreast}
+														<span class="text-xs text-accent" title="Pump session between feeds"><Syringe class="w-3 h-3 inline mr-1" /> pump</span>
+													{/if}
+													{#if lastBreastSide}
+														<span class="text-xs text-ink-soft">last: {#if lastBreastSide === 'left'}<ArrowLeft class="w-3 h-3 inline mr-1" /> left{:else}right <ArrowRight class="w-3 h-3 inline ml-1" />{/if}</span>
+													{/if}
+												</div>
 											</div>
 											<div class="flex gap-2">
 												<button type="button" on:click={() => (manualSide = 'left')} class="{manualSide === 'left' ? 'bg-primary text-on-primary border-primary' : 'bg-surface text-ink-soft border-line hover:border-line-soft'} flex-1 px-3 py-2 rounded-md border text-sm font-semibold transition-colors">
