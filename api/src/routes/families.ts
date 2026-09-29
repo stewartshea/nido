@@ -695,19 +695,14 @@ async function handleDeleteMember(c: Context<AuthEnv>) {
 			sql: `DELETE FROM reminders WHERE target_type = 'member' AND target_id = ?`,
 			args: [legacyBabyId],
 		});
+		await db.execute({ sql: 'UPDATE family_members SET legacy_baby_id = NULL WHERE legacy_baby_id = ?', args: [legacyBabyId] });
 		try {
 			await db.execute({ sql: 'DELETE FROM babies WHERE id = ? AND household_id = ?', args: [legacyBabyId, NAMESPACE_HOUSEHOLD_ID] });
 		} catch (err: any) {
 			const babyCheck = await db.execute({ sql: 'SELECT * FROM babies WHERE id = ?', args: [legacyBabyId] });
 			const householdCheck = await db.execute({ sql: 'SELECT * FROM households WHERE id = ?', args: [NAMESPACE_HOUSEHOLD_ID] });
-			if (householdCheck.rows.length === 0) {
-				await db.execute({ sql: 'INSERT OR IGNORE INTO households (id, name) VALUES (?, ?)', args: [NAMESPACE_HOUSEHOLD_ID, 'Default Household'] });
-				await db.execute({ sql: 'DELETE FROM babies WHERE id = ? AND household_id = ?', args: [legacyBabyId, NAMESPACE_HOUSEHOLD_ID] });
-			} else {
-				const familyCheck = await db.execute({ sql: 'SELECT id, legacy_baby_id FROM family_members WHERE legacy_baby_id = ?', args: [legacyBabyId] });
-				c.get('log').error('baby delete failed', { event: 'baby_delete_error', legacyBabyId, baby: babyCheck.rows[0], households: householdCheck.rows, familyMembers: familyCheck.rows, error: err?.message });
-				throw err;
-			}
+			c.get('log').error('baby delete failed', { event: 'baby_delete_error', legacyBabyId, baby: babyCheck.rows[0], households: householdCheck.rows, error: err?.message });
+			throw err;
 		}
 	}
 
