@@ -17,6 +17,8 @@ const createFeedingSchema = z.object({
 	amountUnit: z.enum(['ml', 'oz']).optional(),
 	type: z.enum(['breast', 'bottle', 'pump', 'formula', 'solid']),
 	side: z.enum(['left', 'right', 'both']).optional(),
+	leftBreastAt: z.string().datetime().optional(),
+	rightBreastAt: z.string().datetime().optional(),
 	formulaId: z.number().optional(),
 	notes: z.string().optional(),
 });
@@ -126,7 +128,7 @@ feedingRoutes.get('/:id{[0-9]+}', async (c) => {
 // Create a new feeding
 feedingRoutes.post('/', zValidator('json', createFeedingSchema), async (c) => {
   try {
-    const { memberId, startTime, endTime, amount, amountUnit, type, side, formulaId, notes } = c.req.valid('json');
+    const { memberId, startTime, endTime, amount, amountUnit, type, side, leftBreastAt, rightBreastAt, formulaId, notes } = c.req.valid('json');
     const userId = c.get('userId');
     const db = c.get('db');
     
@@ -147,8 +149,8 @@ feedingRoutes.post('/', zValidator('json', createFeedingSchema), async (c) => {
     const result = await db.execute({
       sql: `
         INSERT INTO feedings (
-          baby_id, start_time, end_time, duration, amount, amount_unit, type, side, formula_id, notes, created_at, created_by
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          baby_id, start_time, end_time, duration, amount, amount_unit, type, side, left_breast_at, right_breast_at, formula_id, notes, created_at, created_by
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
       args: [
         scope.babyId, 
@@ -159,6 +161,8 @@ feedingRoutes.post('/', zValidator('json', createFeedingSchema), async (c) => {
         amountUnit || 'oz',
         type, 
         side || null, 
+        leftBreastAt || null,
+        rightBreastAt || null,
         formulaId || null, 
         notes || null, 
         new Date().toISOString(),
@@ -169,7 +173,7 @@ feedingRoutes.post('/', zValidator('json', createFeedingSchema), async (c) => {
     // Return the created feeding
     const feedingResult = await db.execute({
       sql: `
-      SELECT id, baby_id, start_time, end_time, duration, amount, amount_unit, type, side, formula_id, notes, created_at, created_by
+      SELECT id, baby_id, start_time, end_time, duration, amount, amount_unit, type, side, left_breast_at, right_breast_at, formula_id, notes, created_at, created_by
       FROM feedings
       WHERE id = ?
     `,

@@ -433,14 +433,22 @@ export const FAMILY_MIGRATIONS: Migration[] = [
       ALTER TABLE journal_entries ADD COLUMN created_by TEXT;
     `,
   },
-  {
-    version: 7,
-    name: 'feeding-amount-unit',
-    sql: `
-      ALTER TABLE feedings ADD COLUMN amount_unit TEXT NOT NULL DEFAULT 'oz';
-    `,
-  },
-];
+   {
+     version: 7,
+     name: 'feeding-amount-unit',
+     sql: `
+       ALTER TABLE feedings ADD COLUMN amount_unit TEXT NOT NULL DEFAULT 'oz';
+     `,
+   },
+   {
+     version: 8,
+     name: 'feeding-breast-timestamps',
+     sql: `
+       ALTER TABLE feedings ADD COLUMN left_breast_at TEXT;
+       ALTER TABLE feedings ADD COLUMN right_breast_at TEXT;
+     `,
+   },
+ ];
 
 // ---------------------------------------------------------------------------
 // Clients

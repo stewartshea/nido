@@ -1024,6 +1024,10 @@
 		const start = manualStart ? new Date(manualStart).toISOString() : new Date().toISOString();
 		const usesEndTime = feedType === 'pump' || feedType === 'solid';
 		const end = usesEndTime && manualEnd ? new Date(manualEnd).toISOString() : undefined;
+		// Track breast side timestamps for accurate "last breast" tracking
+		const now = new Date().toISOString();
+		const leftBreastAt = manualSide === 'left' ? now : undefined;
+		const rightBreastAt = manualSide === 'right' ? now : undefined;
 		try {
 			if (feedType === 'combo') {
 				const bottleType = manualBottleSource === 'formula' ? 'formula' : 'bottle';
@@ -1032,6 +1036,8 @@
 					startTime: start,
 					type: 'breast' as any,
 					side: manualSide as any,
+					leftBreastAt,
+					rightBreastAt,
 					notes: manualNotes || undefined,
 				});
 				await feedingAPI.create({
@@ -1050,6 +1056,8 @@
 					endTime: end,
 					type: resolvedType as any,
 					side: manualType === 'breast' ? (manualSide as any) : undefined,
+					leftBreastAt,
+					rightBreastAt,
 					formulaId: resolvedType === 'formula' ? manualFormulaId : undefined,
 					amount: manualAmount ? Number(manualAmount) : undefined,
 					amountUnit: resolvedType === 'pump' ? manualAmountUnit : undefined,
