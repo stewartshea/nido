@@ -27,11 +27,14 @@
 		'sensitive',
 	];
 
-	let familyView: 'dashboard' | 'detail' = 'dashboard';
-	let sheetOpen = false;
-	let categoryMenuOpen = false;
+  let familyView: 'dashboard' | 'detail' = 'dashboard';
+  let sheetOpen = false;
+  let categoryMenuOpen = false;
 
-	$: if ($uiStore.accountPanelOpen) {
+  // Reset manualSide to lastBreastSide when opening feed sheet for accurate breast tracking
+  $: if (activeTab === 'feeds' && sheetOpen && lastBreastSide && manualSide !== lastBreastSide) manualSide = lastBreastSide;
+
+  $: if ($uiStore.accountPanelOpen) {
 		uiActions.setSection('account');
 		uiStore.update(s => ({ ...s, accountPanelOpen: false }));
 	}
