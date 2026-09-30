@@ -448,6 +448,14 @@ export const FAMILY_MIGRATIONS: Migration[] = [
        ALTER TABLE feedings ADD COLUMN right_breast_at TEXT;
      `,
    },
+   {
+     version: 9,
+     name: 'feeding-breast-durations',
+     sql: `
+       ALTER TABLE feedings ADD COLUMN left_duration INTEGER;
+       ALTER TABLE feedings ADD COLUMN right_duration INTEGER;
+     `,
+   },
  ];
 
 // ---------------------------------------------------------------------------

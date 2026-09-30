@@ -36,6 +36,8 @@ export interface FeedingRow {
   side: string | null;
   left_breast_at: string | null;
   right_breast_at: string | null;
+  left_duration: number | null;
+  right_duration: number | null;
   formula_id?: number | null;
   notes: string | null;
   created_at: string;

@@ -1011,7 +1011,7 @@ async function handleExportFamily(c: Context<AuthEnv>) {
 				: table === 'vaccinations' ? 'id, baby_id, name, date_given, next_due_date, administered_by, notes, created_at, created_by'
 				: table === 'moods' ? 'id, baby_id, mood, recorded_at, notes, created_at, created_by'
 				: table === 'journal_entries' ? 'id, baby_id, title, body, entry_date, created_at, created_by'
-				: 'id, baby_id, start_time, end_time, duration, amount, amount_unit, type, side, formula_id, notes, created_at, created_by';
+				: 'id, baby_id, start_time, end_time, duration, amount, amount_unit, type, side, left_breast_at, right_breast_at, left_duration, right_duration, formula_id, notes, created_at, created_by';
 			const rows = await db.execute({ sql: `SELECT ${cols} FROM ${table} WHERE baby_id IN (${ids})`, args: [] });
 			exportData.records[table] = rows.rows;
 		}
@@ -1124,8 +1124,8 @@ async function handleRestoreFamily(c: Context<AuthEnv>) {
 			try {
 				if (table === 'feedings') {
 					const mappedFormulaId = rec.formula_id == null ? null : (formulaIdMap[Number(rec.formula_id)] ?? null);
-await db.execute({ sql: `INSERT INTO feedings (baby_id, start_time, end_time, duration, amount, amount_unit, type, side, formula_id, notes, created_at, created_by)
-                                        VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`, args: [babyId, rec.start_time, rec.end_time, rec.duration, rec.amount, rec.amount_unit ?? 'oz', rec.type, rec.side, mappedFormulaId, rec.notes, rec.created_at ?? isoNow(), rec.created_by ?? userId] });
+await db.execute({ sql: `INSERT INTO feedings (baby_id, start_time, end_time, duration, amount, amount_unit, type, side, left_breast_at, right_breast_at, left_duration, right_duration, formula_id, notes, created_at, created_by)
+                                        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, args: [babyId, rec.start_time, rec.end_time, rec.duration, rec.amount, rec.amount_unit ?? 'oz', rec.type, rec.side, rec.left_breast_at ?? null, rec.right_breast_at ?? null, rec.left_duration ?? null, rec.right_duration ?? null, mappedFormulaId, rec.notes, rec.created_at ?? isoNow(), rec.created_by ?? userId] });
 				} else if (table === 'diapers') {
 					await db.execute({ sql: `INSERT INTO diapers (baby_id, change_time, type, color, consistency, notes, created_at, created_by) VALUES (?,?,?,?,?,?,?,?)`, args: [babyId, rec.change_time, rec.type, rec.color, rec.consistency, rec.notes, rec.created_at ?? isoNow(), rec.created_by ?? userId] });
 				} else if (table === 'sleep') {

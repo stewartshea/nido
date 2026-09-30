@@ -6,6 +6,7 @@
 	} from '$lib/api';
 	import { CATEGORIES, milestoneCategory } from '$lib/shared';
 	import RecordEditModal from '$lib/components/RecordEditModal.svelte';
+	import { breastDetail } from '$lib/breast';
 	import {
 		Milk, Baby, Moon, TrendingUp, Star, Trophy, Stethoscope, Syringe,
 		Smile, Book, Calendar, PenLine, Trash2,
@@ -147,7 +148,9 @@
 			case 'feeding':
 			case 'pumping': {
 				const bits = [r.type];
-				if (r.side) bits.push(String(r.side));
+				const perBreast = breastDetail(r);
+				if (perBreast) bits.push(perBreast);
+				else if (r.side) bits.push(String(r.side));
 				if (r.amount) bits.push(`${r.amount}${r.amount_unit ?? 'oz'}`);
 				if (r.duration) bits.push(formatElapsed(Number(r.duration)));
 				return bits.filter(Boolean).join(' · ');

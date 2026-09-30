@@ -11,6 +11,7 @@
 	import Avatar from '$lib/components/Avatar.svelte';
 	import RecordEditModal from '$lib/components/RecordEditModal.svelte';
 	import { loadListsCache, saveListsCache } from '$lib/cache';
+	import { lastSide, oppositeSide, buildTimerFeed, sideTotalMs, breastDetail } from '$lib/breast';
 		import { CATEGORIES, milestoneCategory } from '$lib/shared';
 	import { Milk, Baby, Moon, TrendingUp, Calendar, Star, Trophy, Stethoscope, Syringe, Smile, Book, Users, Home, Trash2, Mail, Timer, PenLine, ArrowLeft, ArrowRight, Pause, Play, RotateCcw, Plus, Camera, Droplet, AlertCircle, Activity, ChevronDown, Settings, Check, Infinity, Heart } from 'lucide-svelte';
 
@@ -30,9 +31,6 @@
   let familyView: 'dashboard' | 'detail' = 'dashboard';
   let sheetOpen = false;
   let categoryMenuOpen = false;
-
-  // Reset manualSide to lastBreastSide when opening feed sheet for accurate breast tracking
-  $: if (activeTab === 'feeds' && sheetOpen && lastBreastSide && manualSide !== lastBreastSide) manualSide = lastBreastSide;
 
   $: if ($uiStore.accountPanelOpen) {
 		uiActions.setSection('account');
@@ -221,6 +219,8 @@
 	let manualType: 'breast' | 'bottle' | 'combo' | 'pump' | 'solid' | null = null;
 	let manualBottleSource: 'breastmilk' | 'formula' = 'breastmilk';
 	let manualSide: 'left' | 'right' = 'left';
+	const PUMP_SIDES: ('left' | 'right' | 'both')[] = ['left', 'right', 'both'];
+	let pumpSide: 'left' | 'right' | 'both' = 'both';
 	let manualFormulaId: number | null = null;
 	let manualAmount = '';
 	let manualAmountUnit: 'ml' | 'oz' = 'oz';
@@ -263,6 +263,8 @@
 	let leftElapsed = 0;
 	let rightStartedAt: number | null = null;
 	let rightElapsed = 0;
+	let leftLastAt: number | null = null;
+	let rightLastAt: number | null = null;
 	let feedType = 'breast';
 	let feedSide = 'left';
 	let feedAmount = '';
@@ -385,19 +387,14 @@
 
 	// Breast-feeding totals + last side, derived from loaded feedings.
 	$: breastFeedings = feedings.filter((f) => f.type === 'breast' || f.type === 'bottle');
-	$: lastBreastSide = (() => {
-		for (const f of [...breastFeedings].sort((a, b) => new Date(b.start_time).getTime() - new Date(a.start_time).getTime())) {
-			if (f.side === 'left' || f.side === 'right') return f.side;
-		}
-		return null;
-	})();
+	$: lastBreastSide = lastSide(feedings.filter((f) => f.type === 'breast'));
+	$: lastPumpSide = lastSide(feedings.filter((f) => f.type === 'pump'));
 	$: lastBreastFeedTime = breastFeedings.length > 0 ? Math.max(...breastFeedings.map((f) => new Date(f.start_time).getTime())) : null;
 	$: pumpSessionsSinceLastBreast = feedings
 		.filter((f) => f.type === 'pump')
 		.some((f) => lastBreastFeedTime && new Date(f.start_time).getTime() > lastBreastFeedTime);
-	$: if (lastBreastSide && manualSide !== lastBreastSide) manualSide = lastBreastSide;
-	$: leftBreastTotal = breastFeedings.filter((f) => f.side === 'left').reduce((s, f) => s + (f.duration || 0), 0);
-	$: rightBreastTotal = breastFeedings.filter((f) => f.side === 'right').reduce((s, f) => s + (f.duration || 0), 0);
+	$: leftBreastTotal = sideTotalMs(breastFeedings, 'left');
+	$: rightBreastTotal = sideTotalMs(breastFeedings, 'right');
 
 	let timerTick: any = null;
 	// Ticking clock source for live "running" portions; updated by the timer
@@ -978,7 +975,7 @@
  		if (type === 'breast' || type === 'combo') {
  			feedMode = 'timer';
  			manualBottleSource = 'breastmilk';
- 			if (lastBreastSide && manualSide !== lastBreastSide) manualSide = lastBreastSide;
+ 			manualSide = oppositeSide(lastBreastSide);
  		} else {
  			feedMode = 'log';
  			manualBottleSource = 'breastmilk';
@@ -1034,10 +1031,10 @@
 		const start = manualStart ? new Date(manualStart).toISOString() : new Date().toISOString();
 		const usesEndTime = feedType === 'pump' || feedType === 'solid';
 		const end = usesEndTime && manualEnd ? new Date(manualEnd).toISOString() : undefined;
-		// Track breast side timestamps for accurate "last breast" tracking
-		const now = new Date().toISOString();
-		const leftBreastAt = manualSide === 'left' ? now : undefined;
-		const rightBreastAt = manualSide === 'right' ? now : undefined;
+		const breastSide = feedType === 'breast' || feedType === 'combo' ? manualSide : null;
+		const pumpedSide = feedType === 'pump' ? pumpSide : null;
+		const stampLeft = breastSide === 'left' || pumpedSide === 'left' || pumpedSide === 'both' ? (end ?? start) : undefined;
+		const stampRight = breastSide === 'right' || pumpedSide === 'right' || pumpedSide === 'both' ? (end ?? start) : undefined;
 		try {
 			if (feedType === 'combo') {
 				const bottleType = manualBottleSource === 'formula' ? 'formula' : 'bottle';
@@ -1046,8 +1043,8 @@
 					startTime: start,
 					type: 'breast' as any,
 					side: manualSide as any,
-					leftBreastAt,
-					rightBreastAt,
+					leftBreastAt: stampLeft,
+					rightBreastAt: stampRight,
 					notes: manualNotes || undefined,
 				});
 				await feedingAPI.create({
@@ -1065,9 +1062,9 @@
 					startTime: start,
 					endTime: end,
 					type: resolvedType as any,
-					side: manualType === 'breast' ? (manualSide as any) : undefined,
-					leftBreastAt,
-					rightBreastAt,
+					side: manualType === 'breast' ? (manualSide as any) : pumpedSide ?? undefined,
+					leftBreastAt: stampLeft,
+					rightBreastAt: stampRight,
 					formulaId: resolvedType === 'formula' ? manualFormulaId : undefined,
 					amount: manualAmount ? Number(manualAmount) : undefined,
 					amountUnit: resolvedType === 'pump' ? manualAmountUnit : undefined,
@@ -1450,6 +1447,7 @@
 			localStorage.setItem(timerKey(), JSON.stringify({
 				leftElapsed, rightElapsed,
 				leftStartedAt, rightStartedAt,
+				leftLastAt, rightLastAt,
 				sleepElapsed, sleepStartedAt,
 			}));
 		} catch {}
@@ -1468,6 +1466,8 @@
 			rightElapsed = Number(s.rightElapsed || 0);
 			leftStartedAt = s.leftStartedAt ? Number(s.leftStartedAt) : null;
 			rightStartedAt = s.rightStartedAt ? Number(s.rightStartedAt) : null;
+			leftLastAt = s.leftLastAt ? Number(s.leftLastAt) : null;
+			rightLastAt = s.rightLastAt ? Number(s.rightLastAt) : null;
 			sleepElapsed = Number(s.sleepElapsed || 0);
 			sleepStartedAt = s.sleepStartedAt ? Number(s.sleepStartedAt) : null;
 			// Timers intentionally survive app switches and device sleep: elapsed
@@ -1520,6 +1520,7 @@
 			} else {
 				leftStartedAt = Date.now();
 			}
+			leftLastAt = Date.now();
 		} else {
 			if (rightStartedAt) {
 				rightElapsed += Date.now() - rightStartedAt;
@@ -1527,6 +1528,7 @@
 			} else {
 				rightStartedAt = Date.now();
 			}
+			rightLastAt = Date.now();
 		}
 		persistTimerState();
 		startTimerLoop();
@@ -1538,21 +1540,16 @@
 
 	async function saveFeedTimer() {
 		if (!anySideHasTime()) return;
-		const startTimes: number[] = [];
-		if (leftStartedAt) startTimes.push(leftStartedAt);
-		if (rightStartedAt) startTimes.push(rightStartedAt);
-		const earliest = Math.min(...(startTimes.length ? startTimes : [Date.now() - feedTotalMs]));
-		const startTime = new Date(earliest).toISOString();
-		const endTime = new Date().toISOString();
-		const bothSides = leftElapsed > 0 && rightElapsed > 0;
-		const side = bothSides ? 'both' : leftElapsed > 0 || leftStartedAt ? 'left' : 'right';
-		if (leftStartedAt) { leftElapsed += Date.now() - leftStartedAt; leftStartedAt = null; }
-		if (rightStartedAt) { rightElapsed += Date.now() - rightStartedAt; rightStartedAt = null; }
-		const totalMs = leftElapsed + rightElapsed;
+		const feed = buildTimerFeed({ nowMs: Date.now(), leftElapsed, rightElapsed, leftStartedAt, rightStartedAt, leftLastAt, rightLastAt });
+		if (!feed) return;
+		const side = feed.side;
+		leftStartedAt = null; rightStartedAt = null;
 		stopTimerLoop();
 		leftElapsed = 0; rightElapsed = 0; feedElapsed = 0; feedStartedAt = null;
+		leftLastAt = null; rightLastAt = null;
 		clearTimerState();
-		const payload = { memberId: selectedMemberId, startTime, endTime, type: 'breast', side: side as 'left' };
+		const { startTime } = feed;
+		const payload = { memberId: selectedMemberId, type: 'breast' as const, ...feed };
 		try {
 			await feedingAPI.create(payload);
 			if (manualType === 'combo') {
@@ -1593,6 +1590,8 @@
 		rightStartedAt = null;
 		leftElapsed = 0;
 		rightElapsed = 0;
+		leftLastAt = null;
+		rightLastAt = null;
 		feedElapsed = 0;
 		feedStartedAt = null;
 		stopTimerLoop();
@@ -2437,7 +2436,7 @@
 									<tr class="border-b border-line-soft">
 										<td class="py-2 px-2 whitespace-nowrap">{formatTime(r.start_time || r.change_time || r.measurement_date || r.achieved_date || r.date_given)}</td>
 										<td class="py-2 px-2">
-											{#if activeTab === 'feeds' || activeTab === 'pumping'}{r.type}{r.amount ? ` · ${r.amount}${r.amount_unit ?? 'oz'}` : ''}
+											{#if activeTab === 'feeds' || activeTab === 'pumping'}{r.type}{breastDetail(r) ? ` · ${breastDetail(r)}` : r.side ? ` · ${r.side}` : ''}{r.amount ? ` · ${r.amount}${r.amount_unit ?? 'oz'}` : ''}
 											{:else if activeTab === 'diapers'}{r.type}{r.consistency ? ` · ${r.consistency}` : ''}
 											{:else if activeTab === 'sleep'}{r.duration ? formatElapsed(r.duration) : ''}
 											{:else if activeTab === 'growth'}{r.weight ? `${r.weight}${r.unit_system === 'imperial' ? 'lb' : 'kg'}` : '—'}
@@ -2833,6 +2832,17 @@
 							<div>
 								<label for="pump-time-inline" class="block text-sm font-medium text-ink-soft mb-1">Date &amp; time</label>
 								<input id="pump-time-inline" type="datetime-local" bind:value={manualStart} class="w-full px-3 py-2 border border-line rounded-md" />
+							</div>
+							<div>
+								<div class="flex items-center justify-between mb-1">
+									<div class="block text-sm font-medium text-ink-soft">Pumped from</div>
+									{#if lastPumpSide}<span class="text-xs text-ink-soft">last pumped: {lastPumpSide}</span>{/if}
+								</div>
+								<div class="grid grid-cols-3 gap-2">
+									{#each PUMP_SIDES as ps}
+										<button type="button" on:click={() => (pumpSide = ps)} class="{pumpSide === ps ? 'bg-primary text-on-primary border-primary' : 'bg-surface text-ink-soft border-line'} border rounded-md px-3 py-2 text-sm font-semibold capitalize">{ps}</button>
+									{/each}
+								</div>
 							</div>
 							<div>
 								<label for="pump-volume-inline" class="block text-sm font-medium text-ink-soft mb-1">Volume</label>
@@ -3392,6 +3402,17 @@
 							<label for="pump-time" class="block text-sm font-medium text-ink-soft mb-1">Date &amp; time</label>
 							<input id="pump-time" type="datetime-local" bind:value={manualStart} class="w-full px-3 py-2 border border-line rounded-md" />
 							</div>
+<div>
+	<div class="flex items-center justify-between mb-1">
+		<div class="block text-sm font-medium text-ink-soft">Pumped from</div>
+		{#if lastPumpSide}<span class="text-xs text-ink-soft">last pumped: {lastPumpSide}</span>{/if}
+	</div>
+	<div class="grid grid-cols-3 gap-2">
+		{#each PUMP_SIDES as ps}
+			<button type="button" on:click={() => (pumpSide = ps)} class="{pumpSide === ps ? 'bg-primary text-on-primary border-primary' : 'bg-surface text-ink-soft border-line'} border rounded-md px-3 py-2 text-sm font-semibold capitalize">{ps}</button>
+		{/each}
+	</div>
+</div>
 <div>
 							<label for="pump-volume" class="block text-sm font-medium text-ink-soft mb-1">Volume</label>
 							<div class="flex items-center gap-2">
