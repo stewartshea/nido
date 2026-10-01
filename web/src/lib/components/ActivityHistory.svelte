@@ -9,7 +9,7 @@
 	import { breastDetail } from '$lib/breast';
 	import {
 		Milk, Baby, Moon, TrendingUp, Star, Trophy, Stethoscope, Syringe,
-		Smile, Book, Calendar, PenLine, Trash2,
+		Smile, Book, Calendar, PenLine, Trash2, ListFilter, Check,
 	} from 'lucide-svelte';
 
 	// All tracking lists for the selected member (snake_case rows as returned
@@ -53,7 +53,11 @@
 		vaccines: Syringe, moods: Smile, journal: Book,
 	};
 
-	let filter = 'all';
+	// Empty selection means "no filter". A multi-select beats the old row of
+	// pills: those had to scroll sideways once a member had many categories,
+	// and each tap replaced the previous choice instead of adding to it.
+	let selected: string[] = [];
+	let filterOpen = false;
 	let viewMode: 'feed' | 'table' = 'feed';
 	let editingKind = '';
 	let editingRecord: any = null;
@@ -84,29 +88,35 @@
 		...journalEntries.map((r) => tag('journal', 'journal', r)),
 	].sort((a, b) => new Date(b._when || 0).getTime() - new Date(a._when || 0).getTime());
 
-	$: filterTabs = [
-		{ id: 'all', label: 'All' },
-		...CATEGORIES.filter((c) => activeCategories.length === 0 || activeCategories.includes(c.id)),
-	];
+	$: availableCats = CATEGORIES.filter((c) => activeCategories.length === 0 || activeCategories.includes(c.id));
+	$: filterLabel = selected.length === 0
+		? 'All activities'
+		: selected.length === 1
+			? (CATEGORIES.find((c) => c.id === selected[0])?.label ?? '1 selected')
+			: `${selected.length} selected`;
 
-	$: filtered = filter === 'all' ? merged : merged.filter((r) => r._cat === filter);
+	function toggleCat(id: string) {
+		selected = selected.includes(id) ? selected.filter((c) => c !== id) : [...selected, id];
+	}
+
+	$: filtered = selected.length === 0 ? merged : merged.filter((r) => selected.includes(r._cat));
 	$: rows = filtered.slice(0, visibleCount);
 	$: serverTotal = Object.values(totals).reduce((a, b) => a + (b ?? 0), 0);
 	$: loadedTotal = feedings.length + diapers.length + sleeps.length + growths.length
 		+ milestones.length + vaccinations.length + moods.length + journalEntries.length;
 	$: moreLoadedButHidden = filtered.length > visibleCount;
-	// For 'all' the whole feed is one pool. For a single category, only that
-	// category's backing list can grow — the page appends by list offset, so
+	// With no filter the whole feed is one pool. Once categories are selected,
+	// only their backing lists can grow — the page appends by list offset, so
 	// asking the global totals would offer a button that fetches nothing.
-	$: activeSource = filter === 'all' ? null : (FILTER_SOURCE[filter] ?? null);
-	$: moreOnServer = activeSource
-		? listLength(activeSource) < (totals[activeSource] ?? 0)
+	$: activeSources = [...new Set(selected.map((c) => FILTER_SOURCE[c]).filter((k): k is string => !!k))];
+	$: moreOnServer = activeSources.length
+		? activeSources.some((src) => listLength(src) < (totals[src] ?? 0))
 		: loadedTotal < serverTotal;
 	// A category pill can be a slice of a list (Pumping inside feedings, Firsts
 	// inside milestones), and the server counts whole lists, so there is no
 	// honest server-side number for the slice. Fall back to the loaded count
 	// rather than quoting a total that includes rows the filter will not show.
-	$: displayTotal = filter === 'all' ? (serverTotal || loadedTotal) : filtered.length;
+	$: displayTotal = selected.length === 0 ? (serverTotal || loadedTotal) : filtered.length;
 
 	function listLength(key: string): number {
 		switch (key) {
@@ -122,10 +132,13 @@
 		}
 	}
 
-	let lastFilter = filter;
-	$: if (filter !== lastFilter) {
-		lastFilter = filter;
-		visibleCount = WINDOW_STEP;
+	let lastSelection = '';
+	$: {
+		const key = selected.join(',');
+		if (key !== lastSelection) {
+			lastSelection = key;
+			visibleCount = WINDOW_STEP;
+		}
 	}
 
 	function formatTime(iso: string | null): string {
@@ -223,16 +236,49 @@
 
 <div>
 	<div class="flex flex-wrap items-center gap-2 mb-3">
-		<div class="flex overflow-x-auto no-scrollbar gap-2 flex-1 min-w-0">
-			{#each filterTabs as tab}
-				<button
-					type="button"
-					on:click={() => (filter = tab.id)}
-					class="flex-shrink-0 px-3 h-9 rounded-full text-sm font-semibold border transition-colors {filter === tab.id ? 'bg-accent text-on-accent border-accent' : 'bg-surface2 text-ink-soft border-line-soft hover:text-ink'}"
-				>
-					{tab.label}
-				</button>
-			{/each}
+		<div class="relative flex-1 min-w-0">
+			<button
+				type="button"
+				on:click={() => (filterOpen = !filterOpen)}
+				aria-haspopup="true"
+				aria-expanded={filterOpen}
+				class="w-full sm:w-auto flex items-center justify-between gap-2 px-3 h-9 rounded-full text-sm font-semibold border transition-colors {selected.length ? 'bg-accent text-on-accent border-accent' : 'bg-surface2 text-ink-soft border-line-soft hover:text-ink'}"
+			>
+				<span class="flex items-center gap-2 min-w-0">
+					<ListFilter class="w-4 h-4 shrink-0" />
+					<span class="truncate">{filterLabel}</span>
+				</span>
+			</button>
+			{#if filterOpen}
+				<button type="button" class="fixed inset-0 z-20 cursor-default" aria-label="Close filter" on:click={() => (filterOpen = false)}></button>
+				<div class="absolute left-0 z-30 mt-1 w-full sm:w-72 bg-surface border border-line-soft rounded-lg shadow-card" role="group" aria-label="Filter activities by type">
+					<div class="max-h-[min(55vh,15rem)] overflow-y-auto overscroll-contain p-2">
+						{#if selected.length}
+							<button
+								type="button"
+								on:click={() => (selected = [])}
+								class="w-full px-2 min-h-[44px] mb-1 rounded-md text-sm font-semibold text-accent hover:bg-surface2"
+							>
+								Clear filter ({selected.length})
+							</button>
+							<div class="h-px bg-line-soft mb-1"></div>
+						{/if}
+						{#each availableCats as cat}
+							<label class="flex items-center gap-3 px-2 min-h-[44px] rounded-md hover:bg-surface2 cursor-pointer">
+								<input
+									type="checkbox"
+									checked={selected.includes(cat.id)}
+									on:change={() => toggleCat(cat.id)}
+									class="w-4 h-4 shrink-0 accent-[var(--color-primary)]"
+								/>
+								<svelte:component this={cat.icon} class="w-4 h-4 text-ink-soft shrink-0" />
+								<span class="text-sm text-ink flex-1">{cat.label}</span>
+								{#if selected.includes(cat.id)}<Check class="w-4 h-4 text-accent shrink-0" />{/if}
+							</label>
+						{/each}
+					</div>
+				</div>
+			{/if}
 		</div>
 		<div class="flex bg-surface2 rounded-md p-1 shrink-0">
 			<button type="button" on:click={() => (viewMode = 'feed')} class="{viewMode === 'feed' ? 'bg-surface text-ink shadow-sm' : 'text-ink-soft hover:text-ink'} h-8 px-3 rounded-md text-sm font-semibold transition-colors">Feed</button>
