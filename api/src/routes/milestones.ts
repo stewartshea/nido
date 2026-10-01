@@ -8,11 +8,14 @@ import { type AuthEnv } from '../auth';
 const milestoneRoutes = new Hono<AuthEnv>();
 
 // Zod schemas for validation
+const MILESTONE_KINDS = ['milestones', 'firsts', 'routines', 'medical'] as const;
+
 const createMilestoneSchema = z.object({
   memberId: z.number(),
   title: z.string().min(1),
   description: z.string().optional(),
   achievedDate: z.string().datetime(),
+  kind: z.enum(MILESTONE_KINDS).optional(),
   category: z.string().max(80).optional(),
   tags: z.array(z.string().max(40)).max(10).optional(),
 });
@@ -21,6 +24,7 @@ const updateMilestoneSchema = z.object({
   title: z.string().min(1).optional(),
   description: z.string().optional(),
   achievedDate: z.string().datetime().optional(),
+  kind: z.enum(MILESTONE_KINDS).optional(),
   category: z.string().max(80).optional(),
   tags: z.array(z.string().max(40)).max(10).optional(),
 });
@@ -47,7 +51,7 @@ milestoneRoutes.get('/', async (c) => {
 
     const milestonesResult = await db.execute({
       sql: `
-      SELECT id, baby_id, title, description, achieved_date, category, tags, created_at, created_by
+      SELECT id, baby_id, title, description, achieved_date, kind, category, tags, created_at, created_by
       FROM milestones
       WHERE baby_id = ?
       ORDER BY achieved_date DESC, id DESC
@@ -77,7 +81,7 @@ milestoneRoutes.get('/:id{[0-9]+}', async (c) => {
     // Verify user has access to this milestone
     const milestoneResult = await db.execute({
       sql: `
-      SELECT m.id, m.baby_id, m.title, m.description, m.achieved_date, m.category, m.created_at, m.created_by
+      SELECT m.id, m.baby_id, m.title, m.description, m.achieved_date, m.kind, m.category, m.created_at, m.created_by
       FROM milestones m
       JOIN babies b ON m.baby_id = b.id
       JOIN households h ON b.household_id = h.id
@@ -101,7 +105,7 @@ milestoneRoutes.get('/:id{[0-9]+}', async (c) => {
 // Create a new milestone
 milestoneRoutes.post('/', zValidator('json', createMilestoneSchema), async (c) => {
   try {
-    const { memberId, title, description, achievedDate, category, tags } = c.req.valid('json');
+    const { memberId, title, description, achievedDate, kind, category, tags } = c.req.valid('json');
     const userId = c.get('userId');
     const db = c.get('db');
     
@@ -117,14 +121,15 @@ milestoneRoutes.post('/', zValidator('json', createMilestoneSchema), async (c) =
     const result = await db.execute({
       sql: `
         INSERT INTO milestones (
-          baby_id, title, description, achieved_date, category, tags, created_at, created_by
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+          baby_id, title, description, achieved_date, kind, category, tags, created_at, created_by
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
       args: [
         babyId, 
         title, 
         description || null, 
         achievedDate, 
+        kind || 'milestones',
         category || null,
         tagsJson,
         new Date().toISOString(),
@@ -135,7 +140,7 @@ milestoneRoutes.post('/', zValidator('json', createMilestoneSchema), async (c) =
     // Return the created milestone
     const milestoneResult = await db.execute({
       sql: `
-      SELECT id, baby_id, title, description, achieved_date, category, created_at, created_by
+      SELECT id, baby_id, title, description, achieved_date, kind, category, created_at, created_by
       FROM milestones
       WHERE id = ?
     `,
@@ -156,7 +161,7 @@ milestoneRoutes.post('/', zValidator('json', createMilestoneSchema), async (c) =
 milestoneRoutes.put('/:id{[0-9]+}', zValidator('json', updateMilestoneSchema), async (c) => {
   try {
     const milestoneId = parseInt(c.req.param('id'));
-    const { title, description, achievedDate, category, tags } = c.req.valid('json');
+    const { title, description, achievedDate, kind, category, tags } = c.req.valid('json');
     const userId = c.get('userId');
     const db = c.get('db');
     
@@ -196,6 +201,11 @@ milestoneRoutes.put('/:id{[0-9]+}', zValidator('json', updateMilestoneSchema), a
       params.push(achievedDate);
     }
     
+    if (kind !== undefined) {
+      updates.push('kind = ?');
+      params.push(kind);
+    }
+
     if (category !== undefined) {
       updates.push('category = ?');
       params.push(category);
@@ -222,7 +232,7 @@ milestoneRoutes.put('/:id{[0-9]+}', zValidator('json', updateMilestoneSchema), a
     // Return updated milestone
     const updatedMilestoneResult = await db.execute({
       sql: `
-      SELECT id, baby_id, title, description, achieved_date, category, created_at, created_by
+      SELECT id, baby_id, title, description, achieved_date, kind, category, created_at, created_by
       FROM milestones
       WHERE id = ?
     `,

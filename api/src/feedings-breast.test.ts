@@ -60,6 +60,33 @@ describe('per-breast timing on feedings', () => {
 		expect(row.right_duration).toBe(720000);
 	});
 
+	it('clears the per-breast split when PUT is given nulls', async () => {
+		const created = await call('POST', token, '/api/v1/feedings', {
+			memberId,
+			startTime: '2026-09-29T11:00:00.000Z',
+			type: 'breast',
+			side: 'both',
+			leftBreastAt: '2026-09-29T11:05:00.000Z',
+			rightBreastAt: '2026-09-29T11:10:00.000Z',
+			leftDuration: 300000,
+			rightDuration: 300000,
+		});
+		const id = created.body.feeding.id;
+
+		const put = await call('PUT', token, `/api/v1/feedings/${id}`, {
+			side: 'left',
+			leftBreastAt: '2026-09-29T11:02:00.000Z',
+			rightBreastAt: null,
+			leftDuration: 120000,
+			rightDuration: null,
+		});
+		expect(put.status).toBe(200);
+		expect(put.body.feeding.side).toBe('left');
+		expect(put.body.feeding.right_breast_at).toBeNull();
+		expect(put.body.feeding.right_duration).toBeNull();
+		expect(put.body.feeding.left_duration).toBe(120000);
+	});
+
 	it('returns them from GET by id and persists them through PUT', async () => {
 		const created = await call('POST', token, '/api/v1/feedings', {
 			memberId,

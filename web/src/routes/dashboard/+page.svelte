@@ -2,55 +2,25 @@
 	import { onMount, onDestroy } from 'svelte';
 	import { browser } from '$app/environment';
 	import { goto } from '$app/navigation';
-	import { authAPI, userAPI, babyAPI, familiesAPI, feedingAPI, diaperAPI, sleepAPI, growthAPI, healthAPI, importsAPI, photosAPI, formulasAPI, familyAdminAPI, accountAPI, milestoneAPI, vaccinationAPI, settingsAPI, moodAPI, journalAPI, tokenExpired, remindersAPI, type PageOptions } from '$lib/api';
+	import { authAPI, userAPI, familiesAPI, feedingAPI, diaperAPI, sleepAPI, growthAPI, healthAPI, importsAPI, milestoneAPI, vaccinationAPI, settingsAPI, moodAPI, journalAPI, tokenExpired, remindersAPI, type PageOptions } from '$lib/api';
 	import { authStore, authActions } from '$lib/stores/authStore';
 	import { uiStore, uiActions } from '$lib/stores/uiStore';
 	import PhotoStrip from '$lib/components/PhotoStrip.svelte';
 	import ToggleSwitch from '$lib/components/ToggleSwitch.svelte';
-	import LogSheet from '$lib/components/LogSheet.svelte';
 	import Avatar from '$lib/components/Avatar.svelte';
-	import ActivityHistory from '$lib/components/ActivityHistory.svelte';
 	import { loadListsCache, saveListsCache } from '$lib/cache';
-	import { lastSide, oppositeSide, buildTimerFeed, sideTotalMs } from '$lib/breast';
-	import { Milk, Baby, Moon, TrendingUp, Calendar, Star, Trophy, Stethoscope, Syringe, Smile, Book, Users, Home, Trash2, Mail, Timer, PenLine, ArrowLeft, ArrowRight, Pause, Play, RotateCcw, Plus, Camera, Droplet, AlertCircle, Activity, ChevronDown, Settings, Check, Infinity, Heart } from 'lucide-svelte';
+	import { flushOutbox } from '$lib/logging/outbox';
+	import MemberActivity from '$lib/components/logging/MemberActivity.svelte';
+	import LogDrawer from '$lib/components/logging/LogDrawer.svelte';
+	import { Users, Home, AlertCircle, Check } from 'lucide-svelte';
 
 
 	import { CATEGORIES, loadQuickLinks as loadSharedQuickLinks, saveQuickLinks as saveSharedQuickLinks } from '$lib/shared';
 
-	const FORMULA_TYPES = [
-		'standard',
-		'gentle',
-		'hypoallergenic',
-		'hydrolyzed',
-		'anti-reflux',
-		'lactose-free',
-		'soy',
-		'goat-milk',
-		'premature',
-		'sensitive',
-	];
 
-	const DIAPER_CONSISTENCY_ICON: Record<string, string> = {
-		mushy: '🍌',
-		runny: '💧',
-		formed: '🟤',
-		soft: '☁️',
-		blowout: '💥',
-		other: '🧷',
-	};
 
-	const DIAPER_COLOR_ICON: Record<string, string> = {
-		yellow: '🟨',
-		brown: '🟫',
-		green: '🟩',
-		black: '⬛',
-		red: '🟥',
-	};
 
-	type FeedLogType = 'breast' | 'formula' | 'bottle' | 'pump' | 'solid';
-	type BottleSource = 'breastmilk' | 'formula';
 
-	let familyView: 'dashboard' | 'detail' = 'dashboard';
 	let sheetOpen = false;
 
 	$: if ($uiStore.accountPanelOpen) {
@@ -74,16 +44,8 @@
 
 	let email = '';
 	let password = '';
-	let regEmail = '';
-	let regPassword = '';
-	let regFirstName = '';
-	let regLastName = '';
 	let showForgot = false;
-	let resetEmail = '';
-	let resetRequestSent = false;
 	let pendingResetToken = '';
-	let resetNewPassword = '';
-	let resetDone = false;
 	// Per-user mobile quick links (category ids), persisted in localStorage.
 	let quickLinks: string[] = [];
 
@@ -96,30 +58,14 @@
 		saveSharedQuickLinks($authStore.user?.id ?? null, next);
 	}
 
-	function toggleQuickLink(catId: string) {
-		const next = quickLinks.includes(catId)
-			? quickLinks.filter((c) => c !== catId)
-			: [...quickLinks, catId];
-		saveQuickLinks(next);
-		notice = 'Mobile quick links updated.';
-	}
 
 	// "Other" picker: every category the quick pills do not already cover, so
 	// no log target is ever more than one tap from the dashboard.
 	let otherOpen = false;
 	let allOpen = false;
 
-	function quickCategories() {
-		return CATEGORIES.filter((c) => quickLinks.includes(c.id));
-	}
 
-	function otherCategories() {
-		return CATEGORIES.filter((c) => !quickLinks.includes(c.id));
-	}
 
-	function recordedBy(r: any): string {
-		return r?.created_by_name || r?.createdByName || '';
-	}
 
 	function openLog(catId: string) {
 		activeTab = catId;
@@ -128,19 +74,6 @@
 		sheetOpen = true;
 	}
 
-	async function completeReset(event: SubmitEvent) {
-		event.preventDefault();
-		error = '';
-		try {
-			await authAPI.resetPassword(pendingResetToken, resetNewPassword);
-			resetDone = true;
-			pendingResetToken = '';
-			resetNewPassword = '';
-			notice = 'Password updated — you can now sign in.';
-		} catch (err: any) {
-			error = err.response?.data?.error || 'Failed to reset password.';
-		}
-	}
 	let loading = false;
 
 	let babies: any[] = [];
@@ -149,7 +82,6 @@
 	let activeFamilyId: string | null = null;
 	let selectedMemberId: number | null = null;
 	let activeTab = 'feeds';
-	let viewMode: 'list' | 'table' = 'list';
 	let defaultProfileId: number | null = null;
 	let summary: any = null;
 
@@ -164,155 +96,37 @@
 		} catch { reminderRules = []; }
 	}
 
-	async function addReminder(category: string, kind: 'inactivity' | 'interval', hours: number, label?: string) {
-		if (kind === 'inactivity' && hours <= 0) return;
-		if (kind === 'interval' && !label) return;
-		try {
-			await remindersAPI.create({
-				kind,
-				category: kind === 'inactivity' ? category : undefined,
-				label: kind === 'interval' ? label : undefined,
-				hours: kind === 'inactivity' ? hours : undefined,
-				intervalDays: kind === 'interval' ? hours : undefined,
-			});
-			await loadReminders();
-			notice = 'Reminder added.';
-		} catch (err: any) { error = err.response?.data?.error || 'Failed to add reminder.'; }
-	}
 
-	async function removeReminder(id: number) {
-		try {
-			await remindersAPI.remove(id);
-			await loadReminders();
-			notice = 'Reminder removed.';
-		} catch (err: any) { error = err.response?.data?.error || 'Failed to remove reminder.'; }
-	}
 
 	$: overdueReminders = reminderRules.filter((r) => r.enabled && r.overdue);
 
-	function reminderFieldValue(sel: string, fallback: string): string {
-		const el = document.querySelector(sel);
-		if (el instanceof HTMLSelectElement || el instanceof HTMLInputElement) return el.value || fallback;
-		return fallback;
-	}
 
-	function reminderFieldType(sel: string): 'inactivity' | 'interval' {
-		const el = document.querySelector(sel);
-		if (el instanceof HTMLSelectElement && el.value === 'interval') return 'interval';
-		return 'inactivity';
-	}
 
 	// Categories enabled for the selected member.
 	let activeCategories: string[] = [];
 
 	// Family-scoped tracking settings (categories + per-category option lists).
-	let settingsTab: 'profile' | 'family' | 'import' | 'members' | 'backup' | 'admin' = 'profile';
 	let familySettings: { categories: string[] | null; categoryOptions: Record<string, Record<string, string[]>>; defaultCategoryOptions: Record<string, Record<string, string[]>> } | null = null;
-	let savingFamilySettings = false;
 
-	let editingMember: any = null;
-	let editMemberName = '';
-	let editMemberBirthDate = '';
-	let editMemberGender = '';
-	let editMemberEmail = '';
 
 	// Family onboarding
-	let familyName = '';
-	let memberType = 'child';
-	let newMemberName = '';
-	let newBabyBirthDate = '';
-	let newBabyGender = 'female';
-	let creatingBaby = false;
 
 	// Invite-by-email
-	let inviteEmail = '';
 	let invitations: any[] = [];
 
 	// Import data (Narababy CSV)
-	let importFile: File | null = null;
-	let importResult: any = null;
-	let importing = false;
-	let importTargetBabyId: number | null = null;
-	let importType: 'narababy' | 'csv' = 'narababy';
 	let importRuns: any[] = [];
-	let undoingRunId: number | null = null;
 
 	// Formula catalog
-	let formulas: any[] = [];
-	let showAddFormula = false;
-	let newFormulaName = '';
-	let newFormulaBrand = '';
-	let newFormulaType = 'standard';
 	// Manual feed entry (backdated) + repeat-last
-	let manualStart = '';
-	let manualEnd = '';
-	let manualType: FeedLogType | 'combo' | null = null;
-	let manualBottleSource: BottleSource = 'breastmilk';
-	let manualSide: 'left' | 'right' = 'left';
-	const PUMP_SIDES: ('left' | 'right' | 'both')[] = ['left', 'right', 'both'];
-	let pumpSide: 'left' | 'right' | 'both' = 'both';
-	let manualFormulaId: number | null = null;
-	let manualAmount = '';
-	let manualAmountUnit: 'ml' | 'oz' = 'oz';
-	let manualMemberId: number | null = null;
-	let manualNotes = '';
 	// Diaper detail form
-	let diaperTime = '';
-	let diaperType = 'wet';
-	let diaperConsistency = '';
-	let diaperColor = '';
-	let diaperNotes = '';
-	let savingDiaper = false;
 	// Sleep + growth backdated
-	let sleepTime = '';
-	let growthTime = '';
 	// Milestone + vaccine manual forms
-	let milestoneTitle = '';
-	let milestoneTime = '';
-	let milestoneCategory = '';
-	let vaccineName = '';
-	let vaccineTime = '';
-	let vaccineNotes = '';
-	let moodMood = 'happy';
-	let moodTime = '';
-	let moodNotes = '';
-	let journalTitle = '';
-	let journalBody = '';
-	let journalTime = '';
 	// Photos (toggle state only — the PhotoStrip component handles loading)
-	let photoOpen: Record<string, boolean> = {};
 	// Account
-	let showAccountPanel = false;
-	let curPw = '';
-	let newPw = '';
-	let confirmPw = '';
-	let changingPw = false;
 
-	let feedStartedAt: number | null = null;
-	let feedElapsed = 0;
-	let leftStartedAt: number | null = null;
-	let leftElapsed = 0;
-	let rightStartedAt: number | null = null;
-	let rightElapsed = 0;
-	let leftLastAt: number | null = null;
-	let rightLastAt: number | null = null;
-	let timerNow = 0;
-	let feedType = 'breast';
-	let feedSide = 'left';
-	let feedAmount = '';
-	let feedNotes = '';
-	let feedMode: 'timer' | 'log' = 'log';
 
-	let sleepStartedAt: number | null = null;
-	let sleepElapsed = 0;
-	let sleepLocation = 'crib';
-	let sleepNotes = '';
-	let sleepMode: 'timer' | 'log' = 'timer';
 
-	let growthWeight = '';
-	let growthHeight = '';
-	let growthHead = '';
-	let growthUnit = 'metric';
 
 	let feedings: any[] = [];
 	let diapers: any[] = [];
@@ -389,13 +203,7 @@
 	}
 
 	// Breast-feeding totals + last side, derived from loaded feedings.
-	$: breastFeedings = feedings.filter((f) => f.type === 'breast' || f.type === 'bottle');
-	$: lastBreastSide = lastSide(feedings.filter((f) => f.type === 'breast'));
-	$: lastPumpSide = lastSide(feedings.filter((f) => f.type === 'pump'));
-	$: leftBreastTotal = sideTotalMs(breastFeedings, 'left');
-	$: rightBreastTotal = sideTotalMs(breastFeedings, 'right');
 
-	let timerTick: any = null;
 
 	function avg(a: number[]): number | null {
 		if (a.length === 0) return null;
@@ -422,50 +230,9 @@
 		};
 	})();
 
-	function formatElapsed(ms: number): string {
-		const totalSec = Math.floor(ms / 1000);
-		const h = Math.floor(totalSec / 3600);
-		const m = Math.floor((totalSec % 3600) / 60);
-		const s = totalSec % 60;
-		return `${h > 0 ? h + 'h ' : ''}${String(m).padStart(2, '0')}m ${String(s).padStart(2, '0')}s`;
-	}
 
-	function formatMinutes(totalMs: number): string {
-		const m = Math.round(totalMs / 60000);
-		if (m < 60) return `${m}m`;
-		const h = Math.floor(m / 60);
-		const rm = m % 60;
-		return rm ? `${h}h ${rm}m` : `${h}h`;
-	}
 
-	function formatTime(iso: string | null): string {
-		if (!iso) return '—';
-		const d = new Date(iso);
-		return d.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
-	}
 
-	function toLocalInput(iso: string | null | undefined): string {
-		if (!iso) return '';
-		const d = new Date(iso);
-		if (isNaN(d.getTime())) return '';
-		const pad = (n: number) => String(n).padStart(2, '0');
-		return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-	}
-
-	function startTimerLoop() {
-		stopTimerLoop();
-		timerNow = Date.now();
-		timerTick = window.setInterval(() => {
-			timerNow = Date.now();
-		}, 1000);
-	}
-
-	function stopTimerLoop() {
-		if (timerTick) {
-			window.clearInterval(timerTick);
-			timerTick = null;
-		}
-	}
 
 	async function refreshSummary() {
 		if (!selectedMemberId) return;
@@ -535,71 +302,11 @@
 		}
 	}
 
-	function recordsForTab(): any[] {
-		switch (activeTab) {
-			case 'feeds': return feedings;
-			case 'diapers': return diapers;
-			case 'sleep': return sleeps;
-			case 'growth': return growths;
-			case 'milestones': case 'firsts': case 'routines': case 'medical': return milestones;
-			case 'vaccines': return vaccinations;
-			case 'moods': return moods;
-			case 'journal': return journalEntries;
-			case 'pumping': return feedings.filter((f) => f.type === 'pump');
-			default: return [];
-		}
-	}
 
-	async function deleteRecord(type: string, id: number) {
-		if (!confirm('Delete this record?')) return;
-		try {
-			if (type === 'feeding' || type === 'pumping') await feedingAPI.delete(id);
-			else if (type === 'diaper') await diaperAPI.delete(id);
-			else if (type === 'sleep') await sleepAPI.delete(id);
-			else if (type === 'growth') await growthAPI.delete(id);
-			else if (type === 'milestone') await milestoneAPI.delete(id);
-			else if (type === 'vaccine') await vaccinationAPI.delete(id);
-			notice = 'Record deleted.';
-			await refreshLists();
-			await refreshSummary();
-		} catch (err: any) {
-			error = err.response?.data?.error || 'Failed to delete record.';
-		}
-	}
 
 	// Edit modal state
-	let editingRecord: any = null;
-	let editType = '';
-	let editTime = '';
-	let editNote = '';
 
-	function openEdit(type: string, record: any) {
-		editType = type;
-		editingRecord = record;
-		editTime = toLocalInput(record.start_time || record.change_time || record.measurement_date || record.achieved_date || record.date_given);
-		editNote = record.notes || '';
-		error = '';
-	}
 
-	async function saveEdit() {
-		if (!editingRecord) return;
-		const id = Number(editingRecord.id);
-		const time = editTime ? new Date(editTime).toISOString() : undefined;
-		try {
-			if (editType === 'feeding' || editType === 'pumping') await feedingAPI.update(id, { startTime: time, notes: editNote || undefined });
-			else if (editType === 'diaper') await diaperAPI.update(id, { changeTime: time, notes: editNote || undefined });
-			else if (editType === 'sleep') await sleepAPI.update(id, { startTime: time, notes: editNote || undefined });
-			else if (editType === 'growth') await growthAPI.update(id, { measurementDate: time, notes: editNote || undefined });
-			else if (editType === 'milestone') await milestoneAPI.update(id, { achievedDate: time });
-			else if (editType === 'vaccine') await vaccinationAPI.update(id, { dateGiven: time, notes: editNote || undefined });
-			editingRecord = null;
-			notice = 'Record updated.';
-			await refreshLists();
-			await refreshSummary();
-		} catch (err: any) {
-			error = err.response?.data?.error || 'Failed to update record.';
-		}
-	}
 
 	async function loadFamilies() {
 		try {
@@ -639,12 +346,11 @@
 				const selected = babies.find((b) => Number(b.id) === selectedMemberId);
 				activeCategories = selected?.categories?.length ? selected.categories : CATEGORIES.map((c) => c.id);
 				if (!activeCategories.includes(activeTab)) activeTab = activeCategories[0] || 'feeds';
-				restoreTimerState();
 			} else {
 				selectedMemberId = null;
 				activeCategories = [];
 			}
-			await Promise.all([loadFamilySettings(), refreshLists(), refreshSummary(), loadInvitations(), loadImportRuns(), loadFormulas()]);
+			await Promise.all([loadFamilySettings(), refreshLists(), refreshSummary(), loadInvitations(), loadImportRuns()]);
 		} catch (e: any) {
 			const status = e.response?.status;
 			if (status === 401 || status === 403) {
@@ -657,196 +363,20 @@
 		}
 	}
 
-	function setActiveFamily(familyId: string) {
-		activeFamilyId = familyId;
-		if (browser) localStorage.setItem('nido.familyId', familyId);
-		loadFamilies();
-	}
 
-	function setDefaultProfile(memberId: number) {
-		defaultProfileId = memberId;
-		selectedMemberId = memberId;
-		if (browser) localStorage.setItem('nido.defaultProfile', String(memberId));
-		notice = 'Default profile updated.';
-		error = '';
-	}
 
-	async function handleLogin(event: SubmitEvent) {
-		event.preventDefault();
-		error = '';
-		loading = true;
-		try {
-			const res = await authAPI.login({ email, password });
-			const { token, user } = res.data;
-			authActions.login(token, {
-				id: user.id,
-				email: user.email,
-				firstName: user.first_name ?? user.firstName,
-				lastName: user.last_name ?? user.lastName,
-				createdAt: user.created_at ?? user.createdAt,
-			});
-			isAuthenticated = true;
-			email = '';
-			password = '';
-			await loadFamilies();
-			await refreshUserProfile();
-			if (isPanelAdmin) await loadAppSettings();
-		} catch (err: any) {
-			error = err.response?.data?.error || 'Login failed. Check your credentials.';
-		} finally {
-			loading = false;
-		}
-	}
 
-	async function handleRegister(event: SubmitEvent) {
-		event.preventDefault();
-		error = '';
-		loading = true;
-		if (!regFirstName || !regLastName) {
-			error = 'First and last name are required.';
-			loading = false;
-			return;
-		}
-		try {
-			const res = await authAPI.register({
-				email: regEmail,
-				password: regPassword,
-				firstName: regFirstName,
-				lastName: regLastName,
-			});
-			const { token, user, requiresEmailVerification } = res.data;
-			if (requiresEmailVerification) {
-				notice = res.data.message || 'Check your email to verify your account.';
-				regEmail = '';
-				regPassword = '';
-				regFirstName = '';
-				regLastName = '';
-				return;
-			}
-			authActions.login(token, {
-				id: user.id,
-				email: user.email,
-				firstName: user.first_name ?? user.firstName,
-				lastName: user.last_name ?? user.lastName,
-				createdAt: user.created_at ?? user.createdAt,
-			});
-			isAuthenticated = true;
-			regEmail = '';
-			regPassword = '';
-			regFirstName = '';
-			regLastName = '';
-			await loadFamilies();
-			await refreshUserProfile();
-			if (isPanelAdmin) await loadAppSettings();
-		} catch (err: any) {
-			error = err.response?.data?.error || 'Registration failed.';
-		} finally {
-			loading = false;
-		}
-	}
 
-	async function sendResetRequest(event: SubmitEvent) {
-		event.preventDefault();
-		error = '';
-		try {
-			await authAPI.forgotPassword(resetEmail);
-			resetRequestSent = true;
-		} catch (err: any) {
-			error = err.response?.data?.error || 'Failed to send reset link.';
-		}
-	}
 
 	function handleLogout() {
-		stopTimerLoop();
 		authActions.logout();
 		isAuthenticated = false;
 		babies = [];
 		selectedMemberId = null;
-		feedStartedAt = null;
-		leftStartedAt = null;
-		rightStartedAt = null;
-		leftElapsed = 0;
-		rightElapsed = 0;
-		feedElapsed = 0;
-		sleepStartedAt = null;
 	}
 
-	async function buildFamily(event: SubmitEvent) {
-		event.preventDefault();
-		error = '';
-		if (!familyName.trim()) {
-			error = 'Give your family a name (e.g. "The Hollybrooks").';
-			return;
-		}
-		creatingBaby = true;
-		try {
-			const payload: any = { name: familyName.trim() };
-			if (newMemberName) {
-				payload.member = {
-					type: memberType,
-					name: newMemberName.trim(),
-					birthDate: newBabyBirthDate ? new Date(newBabyBirthDate).toISOString() : undefined,
-					gender: newBabyGender,
-				};
-			}
-			const res = await familiesAPI.create(payload);
-			const fam = res.data.family;
-			notice = `${fam.name} created — your family code is ${fam.familyCode}`;
-			familyName = '';
-			newMemberName = '';
-			newBabyBirthDate = '';
-			if (browser) localStorage.setItem('nido.familyId', fam.familyId);
-			await loadFamilies();
-		} catch (err: any) {
-			error = err.response?.data?.error || 'Failed to create your family.';
-			console.error(err);
-		} finally {
-			creatingBaby = false;
-		}
-	}
 
-	async function addFamilyMember(event: SubmitEvent) {
-		event.preventDefault();
-		error = '';
-		if (!newMemberName) {
-			error = 'Member name is required.';
-			return;
-		}
-		if (!activeFamilyId) return;
-		creatingBaby = true;
-		try {
-			const res = await familiesAPI.addMember(activeFamilyId, {
-				type: memberType,
-				name: newMemberName.trim(),
-				birthDate: newBabyBirthDate ? new Date(newBabyBirthDate).toISOString() : undefined,
-				gender: newBabyGender,
-			});
-			notice = `${res.data.member.name} added to the family.`;
-			newMemberName = '';
-			newBabyBirthDate = '';
-			await loadFamilies();
-		} catch (err: any) {
-			error = err.response?.data?.error || 'Failed to add family member.';
-			console.error(err);
-		} finally {
-			creatingBaby = false;
-		}
-	}
 
-	async function sendInvite(event: SubmitEvent) {
-		event.preventDefault();
-		error = '';
-		if (!inviteEmail.trim() || !activeFamilyId) return;
-		try {
-			const res = await familiesAPI.invite(activeFamilyId, inviteEmail.trim());
-			notice = `Invitation sent to ${res.data.invitation.email}.`;
-			inviteEmail = '';
-			await loadInvitations();
-		} catch (err: any) {
-			error = err.response?.data?.error || 'Failed to send invitation.';
-			console.error(err);
-		}
-	}
 
 	async function loadInvitations() {
 		if (!activeFamilyId) {
@@ -861,44 +391,8 @@
 		}
 	}
 
-	async function revokeInvite(inviteId: number) {
-		if (!activeFamilyId) return;
-		try {
-			await familiesAPI.revokeInvite(activeFamilyId, inviteId);
-			await loadInvitations();
-		} catch (e: any) {
-			error = e.response?.data?.error || 'Failed to revoke invitation.';
-		}
-	}
 
-	function onImportFileSelected() {
-		const input = document.getElementById('import-file') as HTMLInputElement | null;
-		importFile = input?.files?.[0] ?? null;
-		importResult = null;
-	}
 
-	async function importNarababy() {
-		error = '';
-		if (!importFile) {
-			error = 'Choose a Narababy export file first.';
-			return;
-		}
-		importing = true;
-		importResult = null;
-		try {
-			const res = await importsAPI.narababy(importFile, importTargetBabyId, importType);
-			importResult = res.data;
-			notice = res.data.message || 'Import complete.';
-			await loadImportRuns();
-			await loadFamilies();
-			await loadInvitations();
-		} catch (err: any) {
-			error = err.response?.data?.error || 'Import failed.';
-			console.error(err);
-		} finally {
-			importing = false;
-		}
-	}
 
 	async function loadImportRuns() {
 		try {
@@ -909,244 +403,17 @@
 		}
 	}
 
-	async function undoImportRun(runId: number) {
-		if (!confirm('Undo this import? Records created by it will be deleted.')) return;
-		undoingRunId = runId;
-		try {
-			const res = await importsAPI.undoRun(runId);
-			notice = res.data.message || 'Import undone.';
-			await loadImportRuns();
-			await loadFamilies();
-		} catch (err: any) {
-			error = err.response?.data?.error || 'Failed to undo import.';
-		} finally {
-			undoingRunId = null;
-		}
-	}
 
-	async function loadFormulas() {
-		if (!activeFamilyId) { formulas = []; return; }
-		try {
-			const res = await formulasAPI.list(activeFamilyId);
-			formulas = res.data.formulas || [];
-			if (formulas.length === 0) console.warn('Formulas list is empty — catalog may not have seeded yet');
-		} catch (e: any) {
-			console.error('Failed to load formulas:', e?.response?.status, e?.response?.data);
-			formulas = [];
-		}
-	}
 
-	async function addFormula() {
-		if (!newFormulaName.trim() || !activeFamilyId) return;
-		try {
-			await formulasAPI.create(activeFamilyId, {
-				name: newFormulaName.trim(),
-				brand: newFormulaBrand.trim() || undefined,
-				formulaType: newFormulaType,
-			});
-			newFormulaName = '';
-			newFormulaBrand = '';
-			newFormulaType = 'standard';
-			await loadFormulas();
-		} catch (e: any) { error = e.response?.data?.error || 'Failed to add formula.'; }
-	}
 
-	function nowLocalISO(): string {
-		// datetime-local friendly: YYYY-MM-DDTHH:mm
-		const d = new Date();
-		const p = (n: number) => String(n).padStart(2, '0');
-		return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
-	}
 
-	function setFeedMode(mode: 'timer' | 'log') {
-		feedMode = mode;
-		if (mode === 'timer') feedType = 'breast';
-		if (mode === 'log' && !manualStart) manualStart = nowLocalISO();
-	}
-
-	function chooseManualFeedType(type: 'breast' | 'bottle' | 'combo') {
-		manualType = type;
-		if (type === 'breast' || type === 'combo') {
-			feedMode = 'timer';
-			manualBottleSource = 'breastmilk';
-			manualSide = oppositeSide(lastBreastSide);
-		} else {
-			feedMode = 'log';
-			manualBottleSource = 'breastmilk';
-		}
-		if (!manualStart) manualStart = nowLocalISO();
-	}
-
-	function setSleepMode(mode: 'timer' | 'log') {
-		sleepMode = mode;
-		if (mode === 'log' && !sleepTime) sleepTime = nowLocalISO();
-	}
-
-	function repeatLastFeed() {
-		const last = localStorage.getItem('nido.lastFeed');
-		if (!last) { error = 'No previous feed to repeat.'; return; }
-		const l = JSON.parse(last);
-		if (l.type === 'formula') {
-			manualType = 'bottle';
-			manualBottleSource = 'formula';
-			feedMode = 'log';
-		} else if (l.type === 'combo') {
-			manualType = 'combo';
-			manualBottleSource = l.bottleSource === 'formula' ? 'formula' : 'breastmilk';
-			feedMode = 'timer';
-		} else {
-			manualType = (l.type || 'breast') as FeedLogType | 'combo';
-			if (manualType === 'bottle') { manualBottleSource = 'breastmilk'; feedMode = 'log'; }
-			else feedMode = 'timer';
-		}
-		manualSide = l.side === 'right' ? 'right' : 'left';
-		manualFormulaId = l.formulaId ?? null;
-		manualAmount = l.amount ?? '';
-		manualAmountUnit = l.amountUnit === 'ml' ? 'ml' : 'oz';
-		manualMemberId = null;
-		error = '';
-	}
-
-	async function saveManualFeed(event: SubmitEvent) {
-		event.preventDefault();
-		if (!selectedMemberId) return;
-		const pumpsTab = activeTab === 'pumping';
-		if (!manualType && !pumpsTab) {
-			error = 'Choose Breast feed, Bottle feed, or Combo first.';
-			return;
-		}
-		const feedType = pumpsTab ? 'pump' : manualType as string;
-		if (!manualStart) manualStart = nowLocalISO();
-		const isBottleBased = feedType === 'bottle' || feedType === 'combo';
-		if (isBottleBased && manualBottleSource === 'formula' && !manualFormulaId) {
-			error = 'Pick a formula for bottle feeding.';
-			return;
-		}
-		error = '';
-		const start = manualStart ? new Date(manualStart).toISOString() : new Date().toISOString();
-		const usesEndTime = feedType === 'pump' || feedType === 'solid';
-		const end = usesEndTime && manualEnd ? new Date(manualEnd).toISOString() : undefined;
-		const breastSide = feedType === 'breast' || feedType === 'combo' ? manualSide : null;
-		const pumpedSide = feedType === 'pump' ? pumpSide : null;
-		const stampLeft = breastSide === 'left' || pumpedSide === 'left' || pumpedSide === 'both' ? (end ?? start) : undefined;
-		const stampRight = breastSide === 'right' || pumpedSide === 'right' || pumpedSide === 'both' ? (end ?? start) : undefined;
-		try {
-			if (feedType === 'combo') {
-				const bottleType = manualBottleSource === 'formula' ? 'formula' : 'bottle';
-				await feedingAPI.create({
-					memberId: selectedMemberId,
-					startTime: start,
-					type: 'breast' as any,
-					side: manualSide as any,
-					leftBreastAt: stampLeft,
-					rightBreastAt: stampRight,
-					notes: manualNotes || undefined,
-				});
-				await feedingAPI.create({
-					memberId: selectedMemberId,
-					startTime: start,
-					type: bottleType as any,
-					formulaId: bottleType === 'formula' ? (manualFormulaId ?? undefined) : undefined,
-					amount: manualAmount ? Number(manualAmount) : undefined,
-					notes: manualNotes || undefined,
-				});
-	} else {
-		const resolvedType = pumpsTab ? 'pump' : manualType === 'bottle' && manualBottleSource === 'formula' ? 'formula' : manualType;
-		const memberId = pumpsTab && manualMemberId !== null ? manualMemberId : selectedMemberId;
-		await feedingAPI.create({
-			memberId: memberId,
-			startTime: start,
-			endTime: end,
-			type: resolvedType as any,
-			side: manualType === 'breast' ? (manualSide as any) : pumpedSide ?? undefined,
-			leftBreastAt: stampLeft,
-			rightBreastAt: stampRight,
-			formulaId: resolvedType === 'formula' ? (manualFormulaId ?? undefined) : undefined,
-			amount: manualAmount ? Number(manualAmount) : undefined,
-			amountUnit: resolvedType === 'pump' ? manualAmountUnit : undefined,
-			notes: manualNotes || undefined,
-		});
-	}
-			// Remember for "repeat last"
-			localStorage.setItem('nido.lastFeed', JSON.stringify({
-				type: manualType,
-				side: manualType === 'breast' || manualType === 'combo' ? manualSide : undefined,
-				bottleSource: isBottleBased ? manualBottleSource : undefined,
-				formulaId: isBottleBased && manualBottleSource === 'formula' ? manualFormulaId : null,
-				amount: manualAmount,
-				amountUnit: manualAmountUnit,
-			}));
-		manualStart = ''; manualEnd = ''; manualAmount = ''; manualMemberId = null; manualType = null;
-			manualBottleSource = 'breastmilk';
-			notice = 'Feed recorded.';
-			sheetOpen = false;
-			await refreshLists(); await refreshSummary();
-		} catch (err: any) { error = err.response?.data?.error || 'Failed to record feed.'; console.error(err); }
-	}
-
-	async function saveDiaperManual(event: SubmitEvent) {
-		event.preventDefault();
-		if (!selectedMemberId) return;
-		error = '';
-		savingDiaper = true;
-		const time = diaperTime ? new Date(diaperTime).toISOString() : new Date().toISOString();
-		try {
-			await diaperAPI.create({
-				memberId: selectedMemberId,
-				changeTime: time,
-				type: diaperType as any,
-				consistency: diaperConsistency || undefined,
-				color: diaperColor || undefined,
-				notes: diaperNotes || undefined,
-			});
-			diaperTime = ''; diaperConsistency = ''; diaperColor = ''; diaperNotes = '';
-			notice = 'Diaper saved.';
-			await refreshLists(); await refreshSummary();
-		} catch (err: any) { error = err.response?.data?.error || 'Failed to save diaper.'; console.error(err); }
-		finally { savingDiaper = false; }
-	}
-
-	// Account + family admin
-	async function changePassword(event: SubmitEvent) {
-		event.preventDefault();
-		error = '';
-		if (newPw !== confirmPw) { error = 'New passwords do not match.'; return; }
-		changingPw = true;
-		try {
-			await accountAPI.changePassword(curPw, newPw);
-			curPw = ''; newPw = ''; confirmPw = '';
-			notice = 'Password updated.';
-		} catch (err: any) { error = err.response?.data?.error || 'Failed to change password.'; }
-		finally { changingPw = false; }
-	}
-
-	async function exportFamily() {
-		if (!activeFamilyId) return;
-		try {
-			const res = await familyAdminAPI.export(activeFamilyId);
-			const blob = new Blob([JSON.stringify(res.data, null, 2)], { type: 'application/json' });
-			const url = URL.createObjectURL(blob);
-			const a = document.createElement('a');
-			a.href = url;
-			a.download = `${activeFamily?.name || 'family'}-backup-${new Date().toISOString().slice(0, 10)}.json`;
-			a.click();
-			URL.revokeObjectURL(url);
-			notice = 'All-data backup downloaded.';
-		} catch (err: any) { error = err.response?.data?.error || 'Backup failed.'; }
-	}
-
-	let backupFile: File | null = null;
-	let restoring = false;
 
 	// Instance settings (Admin tab)
 	let appSettings: any = null;
 	let isPanelAdmin = false;
-	let savingSettings = false;
-	let testingSmtp = false;
 	let smtpHost = '';
 	let smtpPort = 587;
 	let smtpUser = '';
-	let smtpPass = '';
 	let smtpFrom = '';
 	let signupEnabled = true;
 	let signupEnvLocked = false;
@@ -1189,84 +456,16 @@
 		}
 	}
 
-	async function saveAppSettings() {
-		savingSettings = true;
-		error = '';
-		try {
-			const res = await settingsAPI.update({
-				signupEnabled,
-				emailVerification: emailVerificationSetting,
-				smtpHost: smtpHost || null,
-				smtpPort: smtpPort || null,
-				smtpUser: smtpUser || null,
-				smtpPass: smtpPass || null,
-				smtpFrom: smtpFrom || null,
-			});
-			appSettings = res.data.settings;
-			notice = 'Settings saved.';
-		} catch (err: any) {
-			error = err.response?.data?.error || 'Failed to save settings.';
-		} finally {
-			savingSettings = false;
-		}
-	}
 
-	async function testSmtp() {
-		testingSmtp = true;
-		error = '';
-		try {
-			const res = await settingsAPI.test();
-			notice = res.data.message || 'Test email sent.';
-		} catch (err: any) {
-			error = err.response?.data?.error || 'Test failed.';
-		} finally {
-			testingSmtp = false;
-		}
-	}
 
-	function onBackupFileSelected() {
-		const input = document.getElementById('backup-file') as HTMLInputElement | null;
-		backupFile = input?.files?.[0] ?? null;
-	}
 
-	async function restoreBackup() {
-		if (!activeFamilyId || !backupFile) {
-			error = 'Choose a Nido backup file first.';
-			return;
-		}
-		if (!confirm('Restore this backup into your family? Existing members are matched by name and skipped; records will be re-added.')) return;
-		restoring = true;
-		try {
-			const text = await backupFile.text();
-			const json = JSON.parse(text);
-			const res = await familyAdminAPI.restore(activeFamilyId, json);
-			notice = `${res.data.message}. Members added: ${res.data.membersAdded}.`;
-			backupFile = null;
-			await loadFamilies();
-			await refreshLists();
-		} catch (err: any) {
-			error = err.response?.data?.error || (err instanceof SyntaxError ? 'Not a valid JSON backup file.' : 'Restore failed.');
-		} finally {
-			restoring = false;
-		}
-	}
 
-	async function deleteFamily() {
-		if (!activeFamilyId) return;
-		if (!confirm(`Delete "${activeFamily?.name}" and ALL of its data? This cannot be undone.`)) return;
-		try {
-			await familyAdminAPI.remove(activeFamilyId);
-			notice = 'Family deleted.';
-			await loadFamilies();
-		} catch (err: any) { error = err.response?.data?.error || 'Failed to delete family.'; }
-	}
 
 	async function selectMember(memberId: number) {
 		selectedMemberId = memberId;
 		const selected = babies.find((b) => Number(b.id) === memberId);
 		activeCategories = selected?.categories?.length ? selected.categories : CATEGORIES.map((c) => c.id);
 		if (!activeCategories.includes(activeTab)) activeTab = activeCategories[0] || 'feeds';
-		restoreTimerState();
 		await refreshLists();
 		await refreshSummary();
 	}
@@ -1285,467 +484,40 @@
 		}
 	}
 
-	async function toggleFamilyCategory(catId: string) {
-		if (!activeFamilyId) return;
-		const next = activeCategories.includes(catId)
-			? activeCategories.filter((c) => c !== catId)
-			: [...activeCategories, catId];
-		activeCategories = next;
-		savingFamilySettings = true;
-		try {
-			await familiesAPI.updateSettings(activeFamilyId, { categories: next });
-			if (familySettings) familySettings.categories = next;
-			if (!activeCategories.includes(activeTab)) activeTab = activeCategories[0] || 'feeds';
-			notice = 'Tracking categories updated.';
-		} catch (err: any) {
-			error = err.response?.data?.error || 'Failed to update categories.';
-		} finally {
-			savingFamilySettings = false;
-		}
-	}
 
-	async function saveCategoryOptions(nextOptions: Record<string, Record<string, string[]>>) {
-		if (!activeFamilyId) return;
-		savingFamilySettings = true;
-		try {
-			await familiesAPI.updateSettings(activeFamilyId, { categoryOptions: nextOptions });
-			if (familySettings) familySettings.categoryOptions = nextOptions;
-			notice = 'Category options saved.';
-		} catch (err: any) {
-			error = err.response?.data?.error || 'Failed to save category options.';
-		} finally {
-			savingFamilySettings = false;
-		}
-	}
 
-	function currentCategoryOptions(category: string, key: string): string[] {
-		const merged = familySettings?.categoryOptions?.[category]?.[key]
-			?? familySettings?.defaultCategoryOptions?.[category]?.[key]
-			?? [];
-		return Array.isArray(merged) ? merged : [];
-	}
 
-	function setCategoryOptions(category: string, key: string, options: string[]) {
-		const cur = { ...(familySettings?.categoryOptions ?? {}) };
-		const catOpts = { ...(cur[category] ?? {}) };
-		catOpts[key] = options;
-		cur[category] = catOpts;
-		return cur;
-	}
 
-	function addCategoryOption(category: string, key: string, value: string) {
-		const v = value.trim();
-		if (!v) return;
-		const next = [...currentCategoryOptions(category, key), v];
-		saveCategoryOptions(setCategoryOptions(category, key, next));
-	}
 
-	function removeCategoryOption(category: string, key: string, opt: string) {
-		const next = currentCategoryOptions(category, key).filter((o) => o !== opt);
-		saveCategoryOptions(setCategoryOptions(category, key, next));
-	}
 
-	function openEditMember(baby: any) {
-		editingMember = baby;
-		editMemberName = baby.name || '';
-		editMemberBirthDate = baby.birth_date ? baby.birth_date.slice(0, 10) : '';
-		editMemberGender = baby.gender || '';
-		editMemberEmail = baby.email || '';
-		error = '';
-	}
 
-	function closeEditMember() {
-		editingMember = null;
-	}
 
-	async function deleteEditMember() {
-		if (!editingMember || !activeFamilyId) return;
-		if (!confirm(`Delete "${editMemberName.trim() || editingMember.name}" and ALL of their records? This cannot be undone.`)) return;
-		try {
-			await familiesAPI.removeMember(activeFamilyId, Number(editingMember.id));
-			notice = 'Member deleted.';
-			editingMember = null;
-			await loadFamilies();
-		} catch (err: any) {
-			error = err.response?.data?.error || 'Failed to delete member.';
-		}
-	}
 
-	async function saveEditMember(event: SubmitEvent) {
-		event.preventDefault();
-		if (!editingMember || !activeFamilyId) return;
-		try {
-			const birthDate = editMemberBirthDate ? new Date(editMemberBirthDate + 'T00:00:00Z').toISOString() : null;
-			await familiesAPI.updateMember(activeFamilyId, Number(editingMember.id), {
-				name: editMemberName.trim(),
-				birthDate,
-				gender: editMemberGender || null,
-				email: editMemberEmail.trim() || null,
-			});
-			notice = 'Member updated.';
-			editingMember = null;
-			await loadFamilies();
-		} catch (err: any) {
-			error = err.response?.data?.error || 'Failed to update member.';
-		}
-	}
 
-	async function inviteMemberEmail(email: string) {
-		if (!email || !activeFamilyId) return;
-		try {
-			await familiesAPI.invite(activeFamilyId, email);
-			notice = `Invite sent to ${email}.`;
-			await loadInvitations();
-		} catch (err: any) {
-			error = err.response?.data?.error || 'Failed to send invite.';
-		}
-	}
 
-	async function onMemberAvatarSelected(event: Event) {
-		const input = event.currentTarget as HTMLInputElement;
-		const file = input.files?.[0];
-		if (!file || !editingMember || !activeFamilyId) return;
-		try {
-			await familiesAPI.uploadAvatar(activeFamilyId, Number(editingMember.id), file);
-			notice = 'Profile photo updated.';
-			await loadFamilies();
-		} catch (err: any) {
-			error = err.response?.data?.error || 'Failed to upload photo.';
-		}
-	}
 
-	function togglePhoto(key: string) {
-		photoOpen[key] = !photoOpen[key];
-	}
-
-	// Live per-side elapsed (ms) = frozen total + live running time.
-	$: leftTotalMs = leftElapsed + (leftStartedAt ? timerNow - leftStartedAt : 0);
-	$: rightTotalMs = rightElapsed + (rightStartedAt ? timerNow - rightStartedAt : 0);
-	$: feedTotalMs = leftTotalMs + rightTotalMs;
-	$: anyBreastRunning = !!(leftStartedAt || rightStartedAt);
-	$: liveSleepElapsed = sleepStartedAt ? timerNow - sleepStartedAt : sleepElapsed;
-
-	// ----- Connection-resilience: persisted timers + offline outbox -----
-	// Timer state is written to localStorage on every mutation so a reload or a
-	// dropped connection mid-session does not lose accumulated time. The outbox
-	// queues records that fail to reach the API (offline/5xx) and retries later.
-	function timerKey(): string {
-		return `nido.timer.${selectedMemberId ?? 0}`;
-	}
-
-	function persistTimerState() {
-		if (!selectedMemberId) return;
-		try {
-			localStorage.setItem(timerKey(), JSON.stringify({
-				leftElapsed, rightElapsed,
-				leftStartedAt, rightStartedAt,
-				leftLastAt, rightLastAt,
-				sleepElapsed, sleepStartedAt,
-			}));
-		} catch {}
-	}
-
-	function clearTimerState() {
-		try { localStorage.removeItem(timerKey()); } catch {}
-	}
-
-	function restoreTimerState() {
-		try {
-			const raw = localStorage.getItem(timerKey());
-			if (!raw) return;
-			const s = JSON.parse(raw);
-			leftElapsed = Number(s.leftElapsed || 0);
-			rightElapsed = Number(s.rightElapsed || 0);
-			leftStartedAt = s.leftStartedAt ? Number(s.leftStartedAt) : null;
-			rightStartedAt = s.rightStartedAt ? Number(s.rightStartedAt) : null;
-			leftLastAt = s.leftLastAt ? Number(s.leftLastAt) : null;
-			rightLastAt = s.rightLastAt ? Number(s.rightLastAt) : null;
-			sleepElapsed = Number(s.sleepElapsed || 0);
-			sleepStartedAt = s.sleepStartedAt ? Number(s.sleepStartedAt) : null;
-			// Timers intentionally survive app switches and device sleep: elapsed
-			// time is derived from wall-clock timestamps, so nothing accumulates
-			// wrongly and a long nap never silently stops a running timer.
-		} catch {}
-		if (leftStartedAt || rightStartedAt || sleepStartedAt) startTimerLoop();
-	}
-
-	function enqueueRecord(kind: 'feeding' | 'sleep', payload: any) {
-		try {
-			const key = 'nido.outbox';
-			const outbox = JSON.parse(localStorage.getItem(key) || '[]');
-			outbox.push({ kind, payload, queuedAt: new Date().toISOString() });
-			localStorage.setItem(key, JSON.stringify(outbox.slice(-200)));
-		} catch {}
-	}
-
-	async function flushOutbox() {
-		const key = 'nido.outbox';
-		try {
-			const outbox = JSON.parse(localStorage.getItem(key) || '[]');
-			if (outbox.length === 0) return;
-			const remaining: any[] = [];
-			let synced = 0;
-			for (const item of outbox) {
-				try {
-					if (item.kind === 'feeding') await feedingAPI.create(item.payload);
-					else if (item.kind === 'sleep') await sleepAPI.create(item.payload);
-					synced++;
-				} catch {
-					remaining.push(item);
-				}
-			}
-			localStorage.setItem(key, JSON.stringify(remaining));
-			if (synced > 0) {
-				notice = `${synced} offline record(s) synced.`;
-				await refreshLists();
-				await refreshSummary();
-			}
-		} catch {}
-	}
-
-	function toggleSideTimer(side: 'left' | 'right') {
-		error = '';
-		if (side === 'left') {
-			if (leftStartedAt) {
-				leftElapsed += Date.now() - leftStartedAt;
-				leftStartedAt = null;
-			} else {
-				leftStartedAt = Date.now();
-			}
-			leftLastAt = Date.now();
-		} else {
-			if (rightStartedAt) {
-				rightElapsed += Date.now() - rightStartedAt;
-				rightStartedAt = null;
-			} else {
-				rightStartedAt = Date.now();
-			}
-			rightLastAt = Date.now();
-		}
-		persistTimerState();
-		startTimerLoop();
-	}
-
-	function anySideHasTime() {
-		return leftElapsed > 0 || rightElapsed > 0 || leftStartedAt || rightStartedAt;
-	}
-
-	async function saveFeedTimer() {
-		if (!anySideHasTime()) return;
-		const feed = buildTimerFeed({ nowMs: Date.now(), leftElapsed, rightElapsed, leftStartedAt, rightStartedAt, leftLastAt, rightLastAt });
-		if (!feed) return;
-		leftStartedAt = null; rightStartedAt = null;
-		stopTimerLoop();
-		leftElapsed = 0; rightElapsed = 0; feedElapsed = 0; feedStartedAt = null;
-		leftLastAt = null; rightLastAt = null;
-		clearTimerState();
-		const payload = { memberId: selectedMemberId ?? 0, type: 'breast' as const, ...feed };
-		try {
-			await feedingAPI.create(payload);
-			if (manualType === 'combo') {
-				const bottleType = manualBottleSource === 'formula' ? 'formula' : 'bottle';
-				await feedingAPI.create({
-					memberId: selectedMemberId ?? 0,
-					startTime,
-					type: bottleType as any,
-					formulaId: bottleType === 'formula' ? (manualFormulaId ?? undefined) : undefined,
-					amount: manualAmount ? Number(manualAmount) : undefined,
-					notes: manualNotes || undefined,
-				});
-			}
-			manualType = null;
-			manualBottleSource = 'breastmilk';
-			manualFormulaId = null;
-			manualAmount = '';
-			sheetOpen = false;
-			await refreshLists();
-			await refreshSummary();
-		} catch (err: any) {
-			enqueueRecord('feeding', payload);
-			notice = 'Feeding saved locally — will sync when connected.';
-			sheetOpen = false;
-		}
-	}
-
-	function cancelFeed() {
-		leftStartedAt = null;
-		rightStartedAt = null;
-		leftElapsed = 0;
-		rightElapsed = 0;
-		feedElapsed = 0;
-		feedStartedAt = null;
-		leftLastAt = null;
-		rightLastAt = null;
-		stopTimerLoop();
-		clearTimerState();
-	}
-
-	async function startSleep() {
-		if (sleepStartedAt) return;
-		error = '';
-		sleepStartedAt = Date.now();
-		sleepElapsed = 0;
-		persistTimerState();
-		startTimerLoop();
-	}
-
-	async function stopSleep() {
-		if (!sleepStartedAt) return;
-		const endTime = new Date().toISOString();
-		const startTime = new Date(sleepStartedAt).toISOString();
-		sleepStartedAt = null;
-		stopTimerLoop();
-		sleepElapsed = 0;
-		clearTimerState();
-		const payload = { memberId: selectedMemberId, startTime, endTime, location: sleepLocation, notes: sleepNotes || undefined };
-		try {
-			await sleepAPI.create(payload);
-			sleepNotes = '';
-			notice = 'Sleep recorded.';
-			await refreshLists();
-			await refreshSummary();
-		} catch (err: any) {
-			enqueueRecord('sleep', payload);
-			sleepNotes = '';
-			notice = 'Sleep saved locally — will sync when connected.';
-		}
-	}
-
-	function cancelSleep() {
-		sleepStartedAt = null;
-		sleepElapsed = 0;
-		stopTimerLoop();
-		clearTimerState();
-	}
-
-	async function saveManualSleep(event: SubmitEvent) {
-		event.preventDefault();
-		if (!selectedMemberId) return;
-		error = '';
-		const start = sleepTime ? new Date(sleepTime).toISOString() : new Date().toISOString();
-		try {
-			await sleepAPI.create({ memberId: selectedMemberId, startTime: start, location: sleepLocation, notes: sleepNotes || undefined });
-			sleepTime = ''; sleepNotes = '';
-			notice = 'Sleep recorded.';
-			await refreshLists(); await refreshSummary();
-		} catch (err: any) { error = err.response?.data?.error || 'Failed to record sleep.'; console.error(err); }
-	}
-
-	async function saveManualGrowth(event: SubmitEvent) {
-		event.preventDefault();
-		if (!selectedMemberId) return;
-		error = '';
-		try {
-			await growthAPI.create({
-				memberId: selectedMemberId,
-				measurementDate: growthTime ? new Date(growthTime).toISOString() : new Date().toISOString(),
-				weight: growthWeight ? Number(growthWeight) : undefined,
-				height: growthHeight ? Number(growthHeight) : undefined,
-				headCircumference: growthHead ? Number(growthHead) : undefined,
-				unitSystem: growthUnit as 'metric',
-			});
-			growthTime = ''; growthWeight = ''; growthHeight = ''; growthHead = '';
-			notice = 'Growth measurement recorded.';
-			await refreshLists(); await refreshSummary();
-		} catch (err: any) { error = err.response?.data?.error || 'Failed to save growth measurement.'; console.error(err); }
-	}
-
-	async function saveManualMilestone(event: SubmitEvent) {
-		event.preventDefault();
-		if (!selectedMemberId) return;
-		error = '';
-		if (!milestoneTitle.trim()) { error = 'Milestone name is required.'; return; }
-		try {
-			await milestoneAPI.create({
-				memberId: selectedMemberId,
-				title: milestoneTitle.trim(),
-				achievedDate: milestoneTime ? new Date(milestoneTime).toISOString() : new Date().toISOString(),
-				category: milestoneCategory || undefined,
-			});
-			milestoneTitle = ''; milestoneTime = '';
-			notice = 'Milestone recorded.';
-			await refreshLists();
-		} catch (err: any) { error = err.response?.data?.error || 'Failed to record milestone.'; console.error(err); }
-	}
-
-	async function saveManualVaccine(event: SubmitEvent) {
-		event.preventDefault();
-		if (!selectedMemberId) return;
-		error = '';
-		if (!vaccineName.trim()) { error = 'Vaccine name is required.'; return; }
-		try {
-			await vaccinationAPI.create({
-				memberId: selectedMemberId,
-				name: vaccineName.trim(),
-				dateGiven: vaccineTime ? new Date(vaccineTime).toISOString() : undefined,
-				notes: vaccineNotes || undefined,
-			});
-			vaccineName = ''; vaccineTime = ''; vaccineNotes = '';
-			notice = 'Vaccine recorded.';
-			await refreshLists();
-		} catch (err: any) { error = err.response?.data?.error || 'Failed to record vaccine.'; console.error(err); }
-	}
-
-	async function saveMood(event: SubmitEvent) {
-		event.preventDefault();
-		if (!selectedMemberId) return;
-		error = '';
-		try {
-			await moodAPI.create({
-				memberId: selectedMemberId,
-				mood: moodMood,
-				recordedAt: moodTime ? new Date(moodTime).toISOString() : undefined,
-				notes: moodNotes || undefined,
-			});
-			moodMood = ''; moodTime = ''; moodNotes = '';
-			notice = 'Mood recorded.';
-			await refreshLists();
-		} catch (err: any) { error = err.response?.data?.error || 'Failed to record mood.'; console.error(err); }
-	}
-
-	async function saveJournal(event: SubmitEvent) {
-		event.preventDefault();
-		if (!selectedMemberId) return;
-		error = '';
-		if (!journalTitle.trim() && !journalBody.trim()) { error = 'Add a title or a note.'; return; }
-		try {
-			await journalAPI.create({
-				memberId: selectedMemberId,
-				title: journalTitle.trim() || undefined,
-				body: journalBody.trim() || undefined,
-				entryDate: journalTime ? new Date(journalTime).toISOString() : undefined,
-			});
-			journalTitle = ''; journalBody = ''; journalTime = '';
-			notice = 'Journal entry saved.';
-			await refreshLists();
-		} catch (err: any) { error = err.response?.data?.error || 'Failed to save journal entry.'; console.error(err); }
-	}
-
-	async function saveGrowth(event: SubmitEvent) {
-		event.preventDefault();
-		error = '';
-		try {
-			await growthAPI.create({
-				memberId: selectedMemberId,
-				measurementDate: new Date().toISOString(),
-				weight: growthWeight ? Number(growthWeight) : undefined,
-				height: growthHeight ? Number(growthHeight) : undefined,
-				headCircumference: growthHead ? Number(growthHead) : undefined,
-				unitSystem: growthUnit as 'metric',
-			});
-			growthWeight = '';
-			growthHeight = '';
-			growthHead = '';
-			notice = 'Growth measurement recorded.';
-			await refreshLists();
-			await refreshSummary();
-		} catch (err: any) {
-			error = err.response?.data?.error || 'Failed to save growth measurement.';
-			console.error(err);
-		}
-	}
 
 	
+
+	let outboxTimer: number | undefined;
+
+	async function syncOutbox() {
+		const synced = await flushOutbox({
+			feeding: (payload) => feedingAPI.create(payload),
+			sleep: (payload) => sleepAPI.create(payload),
+		});
+		if (synced > 0) {
+			notice = `${synced} offline record(s) synced.`;
+			await refreshLists();
+			await refreshSummary();
+		}
+	}
+
+	async function onLogged(e: CustomEvent<{ message: string }>) {
+		notice = e.detail.message;
+		await refreshLists();
+		await refreshSummary();
+	}
 
 	onMount(async () => {
 		if (browser) {
@@ -1777,36 +549,21 @@
 				await Promise.all([loadFamilies(), refreshUserProfile()]);
 				if (isPanelAdmin) await loadAppSettings();
 				// Reconnect resilience: push anything queued while offline.
-				await flushOutbox();
-				window.setInterval(() => flushOutbox(), 60 * 1000);
+				await syncOutbox();
+				outboxTimer = window.setInterval(() => syncOutbox(), 60 * 1000);
 			}
-			// Keep timers truthful across app switches: mobile browsers throttle
-			// or freeze intervals in the background, so re-sync the clock when the
-			// app comes back and persist state right before it goes away.
-			document.addEventListener('visibilitychange', resyncTimers);
-			window.addEventListener('pageshow', resyncTimers);
-			window.addEventListener('focus', resyncTimers);
-			window.addEventListener('pagehide', persistTimerState);
+			// Older builds kept one never-expiring timer blob per member; it is what
+			// made finished feeds reappear, so drop any that are still around.
+			for (let i = localStorage.length - 1; i >= 0; i--) {
+				const k = localStorage.key(i);
+				if (k && /^nido\.timer\.\d+$/.test(k)) localStorage.removeItem(k);
+			}
 		}
 	});
 
-	function resyncTimers() {
-		if (document.visibilityState === 'hidden') {
-			persistTimerState();
-			return;
-		}
-		timerNow = Date.now();
-		if (leftStartedAt || rightStartedAt || sleepStartedAt) startTimerLoop();
-	}
 
 	onDestroy(() => {
-		if (browser) {
-			document.removeEventListener('visibilitychange', resyncTimers);
-			window.removeEventListener('pageshow', resyncTimers);
-			window.removeEventListener('focus', resyncTimers);
-			window.removeEventListener('pagehide', persistTimerState);
-			stopTimerLoop();
-		}
+		if (browser && outboxTimer) window.clearInterval(outboxTimer);
 	});
 </script>
 				{#if notice || error}
@@ -1867,112 +624,19 @@
 								{/each}
 							</div>
 
-							<div class="mb-6">
-								<div class="flex items-center justify-between mb-3">
-									<h3 class="text-lg font-display font-semibold">Quick Actions</h3>
-									<button type="button" on:click={() => (allOpen = !allOpen)} aria-expanded={allOpen} class="flex items-center gap-1.5 h-9 px-3 rounded-full bg-primary text-on-primary text-sm font-semibold hover:opacity-90">
-										<Plus class="w-4 h-4" aria-hidden="true" /> Log activity
-									</button>
-								</div>
-								{#if allOpen}
-									<div class="mb-2.5 bg-surface rounded-xl shadow-card border border-line-soft p-3">
-										<div class="grid grid-cols-3 sm:grid-cols-4 gap-2">
-											{#each CATEGORIES as cat}
-												<button type="button" on:click={() => openLog(cat.id)} class="min-h-[4.5rem] px-2 py-3 rounded-lg bg-surface2 flex flex-col items-center justify-center gap-1.5 hover:bg-accent-soft active:scale-95 transition">
-													<svelte:component this={cat.icon} class="w-4 h-4 text-ink-soft" />
-													<span class="text-xs font-semibold text-ink-soft text-center leading-tight">{cat.label}</span>
-												</button>
-											{/each}
-										</div>
-									</div>
-								{/if}
-								<div class="grid grid-cols-3 sm:grid-cols-4 gap-2.5">
-									{#each quickCategories() as cat}
-										<button type="button" on:click={() => openLog(cat.id)} class="min-h-[5.5rem] px-2 py-3 bg-surface rounded-xl shadow-sm border border-line-soft flex flex-col items-center justify-center gap-1.5 hover:border-accent hover:bg-accent-soft/30 active:scale-95 transition">
-											<svelte:component this={cat.icon} class="w-5 h-5 text-accent" />
-											<span class="text-xs font-semibold text-ink text-center leading-tight">{cat.label}</span>
-										</button>
-									{/each}
-									<button type="button" on:click={() => (otherOpen = !otherOpen)} aria-expanded={otherOpen} class="min-h-[5.5rem] px-2 py-3 bg-surface rounded-xl shadow-sm border border-dashed border-line-soft flex flex-col items-center justify-center gap-1.5 hover:border-accent active:scale-95 transition">
-										{#if otherOpen}
-											<ChevronDown class="w-5 h-5 text-accent" />
-										{:else}
-											<Plus class="w-5 h-5 text-accent" />
-										{/if}
-										<span class="text-xs font-semibold text-ink text-center leading-tight">Other</span>
-									</button>
-								</div>
-
-								{#if otherOpen}
-									<div class="mt-2.5 bg-surface rounded-xl shadow-card border border-line-soft p-3">
-										<div class="grid grid-cols-3 sm:grid-cols-4 gap-2">
-											{#each otherCategories() as cat}
-												<button type="button" on:click={() => openLog(cat.id)} class="min-h-[4.5rem] px-2 py-3 rounded-lg bg-surface2 flex flex-col items-center justify-center gap-1.5 hover:bg-accent-soft active:scale-95 transition">
-													<svelte:component this={cat.icon} class="w-4 h-4 text-ink-soft" />
-													<span class="text-xs font-semibold text-ink-soft text-center leading-tight">{cat.label}</span>
-												</button>
-											{/each}
-										</div>
-									</div>
-								{/if}
-							</div>
-
-							{#if summary}
-								<h3 class="text-lg font-display font-semibold mb-3">Today for {babies.find(b => b.id === selectedMemberId)?.name || 'Selected'}</h3>
-								<div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
-									<button type="button" on:click={() => openLog('growth')} class="text-left bg-surface rounded-lg shadow-card p-4 border-l-4 border-line hover:shadow-card focus:outline-none focus-visible:ring-2 focus-visible:ring-accent active:scale-[0.98] transition">
-										<div class="flex items-center gap-2 mb-1">
-											<Baby class="w-5 h-5 text-ink-soft" aria-hidden="true" />
-											<p class="text-xs text-ink-soft uppercase font-semibold tracking-wider">Age</p>
-										</div>
-										<p class="text-2xl font-display font-semibold text-ink">{summary.baby.ageInWeeks} <span class="text-sm text-ink-soft font-sans font-normal">weeks</span></p>
-										<p class="text-sm text-ink-soft mt-1">Add measurement</p>
-									</button>
-									<button type="button" on:click={() => openLog('feeds')} class="text-left bg-surface rounded-lg shadow-card p-4 border-l-4 border-primary hover:shadow-card focus:outline-none focus-visible:ring-2 focus-visible:ring-accent active:scale-[0.98] transition">
-										<div class="flex items-center gap-2 mb-1">
-											<span class="shrink-0" aria-hidden="true"><Milk class="w-5 h-5" /></span>
-											<p class="text-xs text-ink-soft uppercase font-semibold tracking-wider">Last Feed</p>
-										</div>
-										<p class="text-2xl font-display font-semibold text-ink">{summary.latestFeeding ? formatTime(summary.latestFeeding.end_time || summary.latestFeeding.start_time).split(', ')[1] || formatTime(summary.latestFeeding.end_time || summary.latestFeeding.start_time) : '—'}</p>
-										<p class="text-sm text-ink-soft mt-1">{summary.latestFeeding?.type || 'no feed recorded'}</p>
-										{#if recordedBy(summary.latestFeeding)}<p class="text-xs text-ink-soft mt-0.5">by {recordedBy(summary.latestFeeding)}</p>{/if}
-									</button>
-									<button type="button" on:click={() => openLog('diapers')} class="text-left bg-surface rounded-lg shadow-card p-4 border-l-4 border-accent hover:shadow-card focus:outline-none focus-visible:ring-2 focus-visible:ring-accent active:scale-[0.98] transition">
-										<div class="flex items-center gap-2 mb-1">
-											<span class="shrink-0" aria-hidden="true"><Baby class="w-5 h-5" /></span>
-											<p class="text-xs text-ink-soft uppercase font-semibold tracking-wider">Last Diaper</p>
-										</div>
-										<p class="text-2xl font-display font-semibold text-ink">{summary.latestDiaper ? formatTime(summary.latestDiaper.change_time).split(', ')[1] || formatTime(summary.latestDiaper.change_time) : '—'}</p>
-										<p class="text-sm text-ink-soft mt-1">{summary.latestDiaper?.type || 'no change recorded'}</p>
-										{#if recordedBy(summary.latestDiaper)}<p class="text-xs text-ink-soft mt-0.5">by {recordedBy(summary.latestDiaper)}</p>{/if}
-									</button>
-									<button type="button" on:click={() => openLog('sleep')} class="text-left bg-surface rounded-lg shadow-card p-4 border-l-4 border-ink hover:shadow-card focus:outline-none focus-visible:ring-2 focus-visible:ring-accent active:scale-[0.98] transition">
-										<div class="flex items-center gap-2 mb-1">
-											<span class="shrink-0" aria-hidden="true"><Moon class="w-5 h-5" /></span>
-											<p class="text-xs text-ink-soft uppercase font-semibold tracking-wider">Last Sleep</p>
-										</div>
-										<p class="text-2xl font-display font-semibold text-ink">{summary.latestSleep ? formatTime(summary.latestSleep.start_time).split(', ')[1] || formatTime(summary.latestSleep.start_time) : '—'}</p>
-										<p class="text-sm text-ink-soft mt-1">{summary.latestSleep?.duration ? formatElapsed(summary.latestSleep.duration) : 'no sleep recorded'}</p>
-										{#if recordedBy(summary.latestSleep)}<p class="text-xs text-ink-soft mt-0.5">by {recordedBy(summary.latestSleep)}</p>{/if}
-									</button>
-								</div>
-							{/if}
-
-							<div class="bg-surface rounded-lg shadow-card p-5 border border-line-soft" id="activities">
-								<div class="flex items-center justify-between mb-4">
-									<h3 class="text-lg font-display font-semibold">Activities</h3>
-									<button type="button" on:click={() => openLog(quickCategories()[0]?.id || 'feeds')} class="text-sm font-semibold text-primary hover:underline">Log activity +</button>
-								</div>
-								<ActivityHistory
-									{feedings} {diapers} {sleeps} {growths}
-									{milestones} {vaccinations} {moods} {journalEntries}
-									{activeCategories}
-									totals={listTotals}
-									{loadingMore}
-									on:loadmore={loadMoreLists}
-									on:refresh={async () => { await refreshLists(); await refreshSummary(); }}
-								/>
-							</div>
+							<MemberActivity
+								memberName={babies.find((b) => b.id === selectedMemberId)?.name || 'Selected'}
+								{quickLinks}
+								{summary}
+								{activeCategories}
+								{feedings} {diapers} {sleeps} {growths}
+								{milestones} {vaccinations} {moods} {journalEntries}
+								totals={listTotals}
+								{loadingMore}
+								on:log={(e) => openLog(e.detail.kind)}
+								on:loadmore={loadMoreLists}
+								on:refresh={async () => { await refreshLists(); await refreshSummary(); }}
+							/>
 						{/if}
 					</section>
 
@@ -2016,514 +680,13 @@
 					</section>
 				</div>
 
-<LogSheet bind:open={sheetOpen} title="Log {CATEGORIES.find(c => c.id === activeTab)?.label || 'Activity'}">
-	{#if activeTab === 'feeds'}
-		<!-- FEEDS FORM -->
-
-							<div class="flex items-center justify-between mb-4">
-								<h3 class="text-xl font-display font-semibold">Feed</h3>
-								<div class="flex items-center gap-2">
-									<button type="button" on:click={() => setFeedMode('log')} class="{feedMode === 'log' ? 'bg-accent text-on-accent border-accent' : 'bg-surface2 text-ink-soft border-line-soft'} h-11 px-4 rounded-full text-sm border flex items-center gap-2 whitespace-nowrap font-semibold transition-colors"><PenLine class="w-4 h-4" /> Log</button>
-									<button type="button" on:click={() => setFeedMode('timer')} class="{feedMode === 'timer' ? 'bg-accent text-on-accent border-accent' : 'bg-surface2 text-ink-soft border-line-soft'} h-11 px-4 rounded-full text-sm border flex items-center gap-2 whitespace-nowrap font-semibold transition-colors"><Timer class="w-4 h-4" /> Timer</button>
-								</div>
-							</div>
-							{#if feedMode === 'timer'}
-								<div class="mb-3 text-sm text-ink-soft">Timer mode is available for breast feeds only.</div>
-
-								{#if feedType === 'breast'}
-									<div class="flex items-center justify-between mb-2">
-									<div class="block text-sm font-medium text-ink-soft">Breast</div>
-										{#if lastBreastSide}
-											<span class="text-xs text-ink-soft">last: {#if lastBreastSide === 'left'}<ArrowLeft class="w-3 h-3 inline mr-1" /> left{:else}right <ArrowRight class="w-3 h-3 inline ml-1" />{/if}</span>
-										{/if}
-									</div>
-									<div class="grid grid-cols-2 gap-4 mb-4">
-										<div class="rounded-lg border p-4 text-center {leftStartedAt ? 'border-primary bg-accent-soft' : 'border-line-soft bg-surface2'}">
-											<p class="text-xs text-ink-soft uppercase font-semibold mb-1">Left</p>
-											<p class="text-2xl font-display font-semibold text-ink">{formatElapsed(leftTotalMs)}</p>
-											<button type="button" on:click={() => toggleSideTimer('left')} class="mt-3 w-full {leftStartedAt ? 'bg-accent text-on-accent' : 'bg-primary text-on-primary'} py-2 px-3 rounded-md text-sm font-semibold hover:opacity-90 transition-opacity">
-												{#if leftStartedAt}<Pause class="w-4 h-4 inline mr-1" /> Pause{:else}<Play class="w-4 h-4 inline mr-1" /> Start{/if}
-											</button>
-										</div>
-										<div class="rounded-lg border p-4 text-center {rightStartedAt ? 'border-primary bg-accent-soft' : 'border-line-soft bg-surface2'}">
-											<p class="text-xs text-ink-soft uppercase font-semibold mb-1">Right</p>
-											<p class="text-2xl font-display font-semibold text-ink">{formatElapsed(rightTotalMs)}</p>
-											<button type="button" on:click={() => toggleSideTimer('right')} class="mt-3 w-full {rightStartedAt ? 'bg-accent text-on-accent' : 'bg-primary text-on-primary'} py-2 px-3 rounded-md text-sm font-semibold hover:opacity-90 transition-opacity">
-												{#if rightStartedAt}<Pause class="w-4 h-4 inline mr-1" /> Pause{:else}<Play class="w-4 h-4 inline mr-1" /> Start{/if}
-											</button>
-										</div>
-									</div>
-									<div class="flex items-center justify-between mb-3 text-sm">
-										<span class="text-ink-soft">Total</span>
-										<span class="font-display font-semibold text-ink text-lg">{formatElapsed(feedTotalMs)}</span>
-									</div>
-									<div class="flex justify-between mt-2 mb-4 text-xs text-ink-soft">
-										<span>L total: {formatMinutes(leftBreastTotal)}</span>
-										<span>R total: {formatMinutes(rightBreastTotal)}</span>
-									</div>
-									<div class="flex gap-2">
-										<button type="button" on:click={saveFeedTimer} disabled={!anySideHasTime()} class="flex-1 bg-primary text-on-primary py-3 px-4 rounded-md hover:bg-primary disabled:opacity-50 text-lg font-display font-semibold">Save</button>
-										{#if anySideHasTime()}
-											<button type="button" on:click={cancelFeed} class="bg-surface2 text-ink-soft px-4 py-2 rounded-md hover:bg-line-soft">Cancel</button>
-										{/if}
-									</div>
-									{#if manualType === 'combo'}
-										<div class="mt-4 space-y-3 border-t pt-3">
-											<p class="text-sm font-medium text-ink-soft">Bottle</p>
-											<select bind:value={manualBottleSource} class="w-full px-3 py-2 border border-line rounded-md">
-												<option value="breastmilk">Breast milk</option>
-												<option value="formula">Formula</option>
-											</select>
-											{#if manualBottleSource === 'formula'}
-												<div class="flex gap-2">
-													<select bind:value={manualFormulaId} class="flex-1 px-3 py-2 border border-line rounded-md">
-														<option value="">—</option>
-														{#each formulas as f}
-															<option value={f.id}>{f.brand} {f.name}</option>
-														{/each}
-													</select>
-													<button type="button" on:click={() => (showAddFormula = !showAddFormula)} class="px-3 py-2 bg-surface2 text-ink-soft rounded-md"><Plus class="w-4 h-4" /></button>
-												</div>
-												{#if showAddFormula}
-													<div class="flex gap-2 mt-2">
-														<input type="text" bind:value={newFormulaName} placeholder="Formula name" class="flex-1 px-3 py-2 border border-line rounded-md" />
-														<input type="text" bind:value={newFormulaBrand} placeholder="Brand" class="flex-1 px-3 py-2 border border-line rounded-md" />
-														<select bind:value={newFormulaType} class="flex-1 px-3 py-2 border border-line rounded-md">
-															{#each FORMULA_TYPES as t}
-																<option value={t}>{t}</option>
-															{/each}
-														</select>
-														<button type="button" on:click={addFormula} class="px-3 py-2 bg-primary text-on-primary rounded-md">Add</button>
-													</div>
-												{/if}
-											{/if}
-											<label for="combo-feed-amount" class="block text-sm font-medium text-ink-soft">Amount (oz)</label>
-											<input id="combo-feed-amount" type="number" step="0.1" bind:value={manualAmount} class="w-full px-3 py-2 border border-line rounded-md" placeholder="4.5" />
-										</div>
-									{/if}
-								{:else}
-									<div class="mb-3">
-										<label for="feed-timer-amount" class="block text-sm font-medium text-ink-soft mb-1">Amount ({feedType === 'formula' ? 'oz' : 'servings'})</label>
-										<input id="feed-timer-amount" type="number" step="0.1" bind:value={feedAmount} class="w-full px-3 py-2 border border-line rounded-md" placeholder="4.5" />
-									</div>
-									<button type="button" on:click={saveFeedTimer} class="w-full bg-primary text-on-primary py-3 px-4 rounded-md hover:bg-primary text-lg font-display font-semibold">Save Feed</button>
-								{/if}
-							{:else}
-								<form on:submit={saveManualFeed} class="space-y-3">
-									<div class="flex gap-2 items-center">
-										<div class="flex-1">
-											<label for="manual-feed-start" class="block text-sm font-medium text-ink-soft mb-1">Date &amp; time (start)</label>
-											<input id="manual-feed-start" type="datetime-local" bind:value={manualStart} class="w-full px-3 py-2 border border-line rounded-md" />
-										</div>
-										<div class="pt-5">
-											<button type="button" on:click={repeatLastFeed} title="Repeat last selection" class="px-3 py-2 bg-surface2 text-ink-soft rounded-md hover:bg-line-soft"><RotateCcw class="w-4 h-4 inline mr-1" /> Repeat last</button>
-										</div>
-									</div>
-								<div>
-									<div class="block text-sm font-medium text-ink-soft mb-1">BreastFeed, Bottle Feed, or Combo?</div>
-									<div class="grid grid-cols-3 gap-2">
-										<button type="button" on:click={() => chooseManualFeedType('breast')} class="{manualType === 'breast' ? 'bg-primary text-on-primary border-primary' : 'bg-surface text-ink-soft border-line-soft'} border rounded-lg py-2 px-3 text-sm font-semibold flex items-center justify-center gap-2"><Heart class="w-4 h-4" /> BreastFeed</button>
-										<button type="button" on:click={() => chooseManualFeedType('bottle')} class="{manualType === 'bottle' ? 'bg-primary text-on-primary border-primary' : 'bg-surface text-ink-soft border-line-soft'} border rounded-lg py-2 px-3 text-sm font-semibold flex items-center justify-center gap-2"><Baby class="w-4 h-4" /> Bottle Feed</button>
-										<button type="button" on:click={() => chooseManualFeedType('combo')} class="{manualType === 'combo' ? 'bg-primary text-on-primary border-primary' : 'bg-surface text-ink-soft border-line-soft'} border rounded-lg py-2 px-3 text-sm font-semibold flex items-center justify-center gap-2"><Infinity class="w-4 h-4" /> Combo</button>
-									</div>
-								</div>
-									{#if manualType === 'bottle' || manualType === 'combo'}
-										<div>
-											<label for="manual-bottle-source" class="block text-sm font-medium text-ink-soft mb-1">Bottle contents</label>
-											<select id="manual-bottle-source" bind:value={manualBottleSource} class="w-full px-3 py-2 border border-line rounded-md">
-												<option value="breastmilk">Breast milk</option>
-												<option value="formula">Formula</option>
-											</select>
-										</div>
-									{/if}
-									{#if (manualType === 'bottle' || manualType === 'combo') && manualBottleSource === 'formula'}
-										<div>
-											<label for="manual-feed-formula" class="block text-sm font-medium text-ink-soft mb-1">Formula</label>
-											<div class="flex gap-2">
-												<select id="manual-feed-formula" bind:value={manualFormulaId} class="flex-1 px-3 py-2 border border-line rounded-md">
-													<option value="">—</option>
-													{#each formulas as f}
-														<option value={f.id}>{f.brand} {f.name} · {f.formulaType || 'standard'}</option>
-													{/each}
-												</select>
-												<button type="button" on:click={() => (showAddFormula = !showAddFormula)} class="px-3 py-2 bg-surface2 text-ink-soft rounded-md"><Plus class="w-4 h-4" /></button>
-											</div>
-											{#if showAddFormula}
-												<div class="flex gap-2 mt-2">
-													<input type="text" bind:value={newFormulaName} placeholder="Formula name" class="flex-1 px-3 py-2 border border-line rounded-md" />
-												<input type="text" bind:value={newFormulaBrand} placeholder="Brand" class="flex-1 px-3 py-2 border border-line rounded-md" />
-												<select bind:value={newFormulaType} class="flex-1 px-3 py-2 border border-line rounded-md">
-													{#each FORMULA_TYPES as t}
-														<option value={t}>{t}</option>
-													{/each}
-												</select>
-													<button type="button" on:click={addFormula} class="px-3 py-2 bg-primary text-on-primary rounded-md">Add</button>
-												</div>
-{/if}
-									</div>
-									{/if}
-									{#if manualType === 'breast' || manualType === 'combo'}
-										<div>
-											<div class="flex items-center justify-between mb-1">
-												<div class="block text-sm font-medium text-ink-soft">Breast</div>
-												{#if lastBreastSide}
-											<span class="text-xs text-ink-soft">last: {#if lastBreastSide === 'left'}<ArrowLeft class="w-3 h-3 inline mr-1" /> left{:else}right <ArrowRight class="w-3 h-3 inline ml-1" />{/if}</span>
-												{/if}
-											</div>
-											<div class="flex gap-2">
-												<button type="button" on:click={() => (manualSide = 'left')} class="{manualSide === 'left' ? 'bg-primary text-on-primary border-primary' : 'bg-surface text-ink-soft border-line hover:border-line-soft'} flex-1 px-3 py-2 rounded-md border text-sm font-semibold transition-colors">
-													<ArrowLeft class="w-4 h-4 inline mr-1" /> Left
-												</button>
-												<button type="button" on:click={() => (manualSide = 'right')} class="{manualSide === 'right' ? 'bg-primary text-on-primary border-primary' : 'bg-surface text-ink-soft border-line hover:border-line-soft'} flex-1 px-3 py-2 rounded-md border text-sm font-semibold transition-colors">
-													Right <ArrowRight class="w-4 h-4 inline ml-1" />
-												</button>
-											</div>
-											<div class="flex justify-between mt-2 text-xs text-ink-soft">
-												<span>L total: {formatMinutes(leftBreastTotal)}</span>
-												<span>R total: {formatMinutes(rightBreastTotal)}</span>
-											</div>
-										</div>
-									{/if}
-{#if manualType && manualType !== 'breast'}
-									<div>
-										<label for="manual-feed-amount" class="block text-sm font-medium text-ink-soft mb-1">Amount {manualType === 'pump' ? `({manualAmountUnit})` : '(oz)'}</label>
-										{#if manualType === 'pump'}
-											<div class="flex items-center gap-2">
-												<input id="manual-feed-amount" type="number" step="0.1" bind:value={manualAmount} class="flex-1 px-3 py-2 border border-line rounded-md" placeholder="4.0" />
-												<div class="flex rounded-md border border-line-soft overflow-hidden">
-													<button type="button" on:click={() => (manualAmountUnit = 'oz')} class="{manualAmountUnit === 'oz' ? 'bg-primary text-on-primary' : 'bg-surface text-ink-soft'} h-9 px-3 text-sm font-semibold">oz</button>
-													<button type="button" on:click={() => (manualAmountUnit = 'ml')} class="{manualAmountUnit === 'ml' ? 'bg-primary text-on-primary' : 'bg-surface text-ink-soft'} h-9 px-3 text-sm font-semibold">ml</button>
-												</div>
-											</div>
-										{:else}
-											<input id="manual-feed-amount" type="number" step="0.1" bind:value={manualAmount} class="w-full px-3 py-2 border border-line rounded-md" placeholder="4.5" />
-										{/if}
-									</div>
-								{/if}
-									{#if manualType === 'pump' || manualType === 'solid'}
-										<div>
-											<label for="manual-feed-end" class="block text-sm font-medium text-ink-soft mb-1">End time (optional)</label>
-											<input id="manual-feed-end" type="datetime-local" bind:value={manualEnd} class="w-full px-3 py-2 border border-line rounded-md" />
-										</div>
-									{/if}
-									<div>
-										<label for="manual-feed-notes" class="block text-sm font-medium text-ink-soft mb-1">Notes</label>
-										<input id="manual-feed-notes" type="text" bind:value={manualNotes} class="w-full px-3 py-2 border border-line rounded-md" />
-									</div>
-									<button type="submit" class="w-full bg-primary text-on-primary py-2 px-4 rounded-md hover:bg-primary">Save Feed</button>
-								</form>
-							{/if}
-						
-
-	{:else if activeTab === 'diapers'}
-		<!-- DIAPERS FORM -->
-
-							<h3 class="text-xl font-display font-semibold mb-4">Log Diaper</h3>
-							<form on:submit={saveDiaperManual} class="space-y-4">
-								<div>
-									<div class="block text-sm font-medium text-ink-soft mb-2">Type</div>
-									<div class="grid grid-cols-4 gap-3">
-										<button type="button" on:click={() => (diaperType = 'wet')} class="{diaperType === 'wet' ? 'bg-primary text-on-primary border-primary' : 'bg-surface text-ink-soft border-line-soft hover:border-line'} border rounded-lg py-4 flex flex-col items-center gap-1 text-sm font-semibold transition-colors">
-											<Droplet class="w-6 h-6 mb-1" aria-hidden="true" /> Wet
-										</button>
-										<button type="button" on:click={() => (diaperType = 'dirty')} class="{diaperType === 'dirty' ? 'bg-primary text-on-primary border-primary' : 'bg-surface text-ink-soft border-line-soft hover:border-line'} border rounded-lg py-4 flex flex-col items-center gap-1 text-sm font-semibold transition-colors">
-											<AlertCircle class="w-6 h-6 mb-1" aria-hidden="true" /> Dirty
-										</button>
-										<button type="button" on:click={() => (diaperType = 'both')} class="{diaperType === 'both' ? 'bg-primary text-on-primary border-primary' : 'bg-surface text-ink-soft border-line-soft hover:border-line'} border rounded-lg py-4 flex flex-col items-center gap-1 text-sm font-semibold transition-colors">
-											<Activity class="w-6 h-6 mb-1" aria-hidden="true" /> Both
-										</button>
-									</div>
-								</div>
-
-								<div class="grid grid-cols-2 gap-3">
-									<div>
-										<label for="diaper-time" class="block text-sm font-medium text-ink-soft mb-1">Date &amp; time</label>
-										<input id="diaper-time" type="datetime-local" bind:value={diaperTime} class="w-full px-3 py-2 border border-line rounded-md" />
-									</div>
-									<div>
-										<div class="block text-sm font-medium text-ink-soft mb-1">Consistency</div>
-										<div class="flex flex-wrap gap-2">
-											<button type="button" on:click={() => (diaperConsistency = '')} class="{diaperConsistency === '' ? 'bg-primary text-on-primary border-primary' : 'bg-surface2 text-ink-soft border-line-soft'} px-2.5 py-1.5 rounded-full border text-xs">—</button>
-											{#each currentCategoryOptions('diapers', 'consistency') as opt}
-												<button type="button" on:click={() => (diaperConsistency = opt)} class="{diaperConsistency === opt ? 'bg-primary text-on-primary border-primary' : 'bg-surface2 text-ink-soft border-line-soft'} px-2.5 py-1.5 rounded-full border text-xs inline-flex items-center gap-1"><span>{DIAPER_CONSISTENCY_ICON[opt] || '🧷'}</span>{opt}</button>
-											{/each}
-										</div>
-									</div>
-								</div>
-
-								<div class="grid grid-cols-2 gap-3">
-									<div>
-										<div class="block text-sm font-medium text-ink-soft mb-1">Color (optional)</div>
-										<div class="flex flex-wrap gap-2">
-											<button type="button" on:click={() => (diaperColor = '')} class="{diaperColor === '' ? 'bg-primary text-on-primary border-primary' : 'bg-surface2 text-ink-soft border-line-soft'} px-2.5 py-1.5 rounded-full border text-xs">—</button>
-											{#each currentCategoryOptions('diapers', 'color') as opt}
-												<button type="button" on:click={() => (diaperColor = opt)} class="{diaperColor === opt ? 'bg-primary text-on-primary border-primary' : 'bg-surface2 text-ink-soft border-line-soft'} px-2.5 py-1.5 rounded-full border text-xs inline-flex items-center gap-1"><span>{DIAPER_COLOR_ICON[opt] || '◻︎'}</span>{opt}</button>
-											{/each}
-										</div>
-									</div>
-									<div>
-										<label for="diaper-notes" class="block text-sm font-medium text-ink-soft mb-1">Notes (optional)</label>
-										<input id="diaper-notes" type="text" bind:value={diaperNotes} class="w-full px-3 py-2 border border-line rounded-md" placeholder="rash, etc." />
-									</div>
-								</div>
-
-								<button type="submit" disabled={savingDiaper} class="w-full bg-primary text-on-primary py-3 px-4 rounded-md hover:bg-primary disabled:opacity-50 text-lg font-display font-semibold">
-									{savingDiaper ? 'Saving...' : 'Save Diaper'}
-								</button>
-							</form>
-						
-
-	{:else if activeTab === 'sleep'}
-		<!-- SLEEP FORM -->
-
-							<div class="flex items-center justify-between mb-4">
-								<h3 class="text-xl font-display font-semibold">Sleep</h3>
-								<div class="flex items-center gap-2">
-									<button type="button" on:click={() => setSleepMode('log')} class="{sleepMode === 'log' ? 'bg-accent text-on-accent border-accent' : 'bg-surface2 text-ink-soft border-line-soft'} h-11 px-4 rounded-full text-sm border flex items-center gap-2 whitespace-nowrap font-semibold transition-colors"><PenLine class="w-4 h-4" /> Log</button>
-									<button type="button" on:click={() => setSleepMode('timer')} class="{sleepMode === 'timer' ? 'bg-accent text-on-accent border-accent' : 'bg-surface2 text-ink-soft border-line-soft'} h-11 px-4 rounded-full text-sm border flex items-center gap-2 whitespace-nowrap font-semibold transition-colors"><Timer class="w-4 h-4" /> Timer</button>
-								</div>
-							</div>
-							{#if sleepMode === 'timer'}
-								{#if sleepStartedAt}
-									<div class="text-center mb-4">
-										<p class="text-5xl font-display font-bold text-ink-soft">{formatElapsed(liveSleepElapsed)}</p>
-										<p class="text-sm text-ink-soft">sleeping since {formatTime(new Date(sleepStartedAt).toISOString())}</p>
-									</div>
-								{/if}
-								<div class="mb-3">
-									<label for="sleep-location" class="block text-sm font-medium text-ink-soft mb-1">Location</label>
-									<select id="sleep-location" bind:value={sleepLocation} class="w-full px-3 py-2 border border-line rounded-md">
-										<option value="crib">Crib</option>
-										<option value="bassinet">Bassinet</option>
-										<option value="stroller">Stroller</option>
-										<option value="carrier">Carrier</option>
-										<option value="other">Other</option>
-									</select>
-								</div>
-								<div class="mb-3">
-									<label for="sleep-notes" class="block text-sm font-medium text-ink-soft mb-1">Notes (optional)</label>
-									<input id="sleep-notes" type="text" bind:value={sleepNotes} class="w-full px-3 py-2 border border-line rounded-md" />
-								</div>
-								{#if sleepStartedAt}
-									<div class="flex gap-4">
-										<button type="button" on:click={stopSleep} class="flex-1 bg-primary text-on-primary py-2 px-4 rounded-md hover:bg-primary">Wake & Save</button>
-										<button type="button" on:click={cancelSleep} class="bg-surface2 text-ink-soft py-2 px-4 rounded-md hover:bg-line-soft">Cancel</button>
-									</div>
-								{:else}
-									<button type="button" on:click={startSleep} class="w-full bg-primary text-on-primary py-3 px-4 rounded-md hover:bg-primary text-lg font-display font-semibold"><Moon class="w-5 h-5 inline mr-2" /> Start Sleep</button>
-								{/if}
-							{:else}
-								<form on:submit={saveManualSleep} class="space-y-3">
-									<div>
-										<label for="sleep-start" class="block text-sm font-medium text-ink-soft mb-1">Start date &amp; time</label>
-										<input id="sleep-start" type="datetime-local" bind:value={sleepTime} class="w-full px-3 py-2 border border-line rounded-md" />
-									</div>
-									<button type="submit" class="w-full bg-primary text-on-primary py-2 px-4 rounded-md hover:bg-primary">Save Sleep</button>
-								</form>
-							{/if}
-						
-
-	{:else if activeTab === 'growth'}
-		<!-- GROWTH FORM -->
-
-							<h3 class="text-xl font-display font-semibold mb-4">New Measurement</h3>
-							<form on:submit={saveManualGrowth}>
-								<div class="mb-3">
-									<label for="growth-time" class="block text-sm font-medium text-ink-soft mb-1">Date &amp; time</label>
-									<input id="growth-time" type="datetime-local" bind:value={growthTime} class="w-full px-3 py-2 border border-line rounded-md" />
-								</div>
-								<div class="mb-3">
-									<label for="growth-unit" class="block text-sm font-medium text-ink-soft mb-1">Units</label>
-									<select id="growth-unit" bind:value={growthUnit} class="w-full px-3 py-2 border border-line rounded-md">
-										<option value="metric">Metric (kg / cm)</option>
-										<option value="imperial">Imperial (lbs / inches)</option>
-									</select>
-								</div>
-								<div class="mb-3">
-									<label for="growth-weight" class="block text-sm font-medium text-ink-soft mb-1">Weight ({growthUnit === 'metric' ? 'kg' : 'lbs'})</label>
-									<input id="growth-weight" type="number" step="0.1" bind:value={growthWeight} class="w-full px-3 py-2 border border-line rounded-md" placeholder="7.2" />
-								</div>
-								<div class="mb-3">
-									<label for="growth-height" class="block text-sm font-medium text-ink-soft mb-1">Length ({growthUnit === 'metric' ? 'cm' : 'inches'})</label>
-									<input id="growth-height" type="number" step="0.1" bind:value={growthHeight} class="w-full px-3 py-2 border border-line rounded-md" placeholder="64.1" />
-								</div>
-								<div class="mb-3">
-									<label for="growth-head" class="block text-sm font-medium text-ink-soft mb-1">Head Circumference ({growthUnit === 'metric' ? 'cm' : 'inches'})</label>
-									<input id="growth-head" type="number" step="0.1" bind:value={growthHead} class="w-full px-3 py-2 border border-line rounded-md" placeholder="40.2" />
-								</div>
-								<button type="submit" class="w-full bg-primary text-on-primary py-2 px-4 rounded-md hover:bg-primary">Save Measurement</button>
-							</form>
-						
-
-	{:else if activeTab === 'pumping'}
-						<!-- PUMPING FORM -->
-
-						<h3 class="text-xl font-display font-semibold mb-4">Log a pump session</h3>
-						<form on:submit={saveManualFeed} class="space-y-3">
-							<div>
-								<label for="pump-member" class="block text-sm font-medium text-ink-soft mb-1">Member</label>
-								<select id="pump-member" bind:value={manualMemberId} class="w-full px-3 py-2 border border-line rounded-md">
-									{#each babies as baby}
-										<option value={baby.id}>{baby.name}</option>
-									{/each}
-								</select>
-							</div>
-							<div>
-							<label for="pump-time" class="block text-sm font-medium text-ink-soft mb-1">Date &amp; time</label>
-							<input id="pump-time" type="datetime-local" bind:value={manualStart} class="w-full px-3 py-2 border border-line rounded-md" />
-							</div>
-<div>
-	<div class="flex items-center justify-between mb-1">
-		<div class="block text-sm font-medium text-ink-soft">Pumped from</div>
-		{#if lastPumpSide}<span class="text-xs text-ink-soft">last pumped: {lastPumpSide}</span>{/if}
-	</div>
-	<div class="grid grid-cols-3 gap-2">
-		{#each PUMP_SIDES as ps}
-			<button type="button" on:click={() => (pumpSide = ps)} class="{pumpSide === ps ? 'bg-primary text-on-primary border-primary' : 'bg-surface text-ink-soft border-line'} border rounded-md px-3 py-2 text-sm font-semibold capitalize">{ps}</button>
-		{/each}
-	</div>
-</div>
-<div>
-							<label for="pump-volume" class="block text-sm font-medium text-ink-soft mb-1">Volume</label>
-							<div class="flex items-center gap-2">
-								<input id="pump-volume" type="number" step="0.1" bind:value={manualAmount} class="flex-1 px-3 py-2 border border-line rounded-md" placeholder="4.0" />
-								<div class="flex rounded-md border border-line-soft overflow-hidden">
-									<button type="button" on:click={() => (manualAmountUnit = 'oz')} class="{manualAmountUnit === 'oz' ? 'bg-primary text-on-primary' : 'bg-surface text-ink-soft'} h-9 px-3 text-sm font-semibold">oz</button>
-									<button type="button" on:click={() => (manualAmountUnit = 'ml')} class="{manualAmountUnit === 'ml' ? 'bg-primary text-on-primary' : 'bg-surface text-ink-soft'} h-9 px-3 text-sm font-semibold">ml</button>
-								</div>
-							</div>
-						</div>
-							<button type="submit" class="w-full bg-primary text-on-primary py-2 px-4 rounded-md hover:bg-primary">Save Pump</button>
-						</form>
-					
-
-	{:else if activeTab === 'milestones' || activeTab === 'firsts'}
-		<!-- MILESTONES FORM -->
-
-						<h3 class="text-xl font-display font-semibold mb-4">{activeTab === 'firsts' ? 'Log a First' : 'Log a Milestone'}</h3>
-						<form on:submit={saveManualMilestone} class="space-y-3">
-							<div>
-								<label for="milestone-name" class="block text-sm font-medium text-ink-soft mb-1">Name</label>
-								<input id="milestone-name" type="text" bind:value={milestoneTitle} required class="w-full px-3 py-2 border border-line rounded-md" placeholder="First smile, rolled over…" />
-							</div>
-							<div>
-								<label for="milestone-time" class="block text-sm font-medium text-ink-soft mb-1">Date &amp; time</label>
-								<input id="milestone-time" type="datetime-local" bind:value={milestoneTime} class="w-full px-3 py-2 border border-line rounded-md" />
-							</div>
-							<div>
-								<label for="milestone-category" class="block text-sm font-medium text-ink-soft mb-1">Category (type or choose)</label>
-								<input id="milestone-category" type="text" bind:value={milestoneCategory} list="milestone-cat-list" class="w-full px-3 py-2 border border-line rounded-md" placeholder="vitamin, tummy time, first smile…" />
-								<datalist id="milestone-cat-list">
-									<option value="motor" />
-									<option value="cognitive" />
-									<option value="social" />
-									<option value="communication" />
-									<option value="firsts" />
-									<option value="vitamin" />
-									<option value="medication" />
-									<option value="tummy time" />
-									<option value="bath" />
-									<option value="other" />
-								</datalist>
-							</div>
-							<button type="submit" class="w-full bg-primary text-on-primary py-2 px-4 rounded-md hover:bg-primary">{activeTab === 'firsts' ? 'Save First' : 'Save Milestone'}</button>
-						</form>
-					
-
-	{:else if activeTab === 'vaccines'}
-		<!-- VACCINES FORM -->
-
-						<h3 class="text-xl font-display font-semibold mb-4">Log a Vaccine</h3>
-						<form on:submit={saveManualVaccine} class="space-y-3">
-							<div>
-								<label for="vaccine-name" class="block text-sm font-medium text-ink-soft mb-1">Vaccine name</label>
-								<input id="vaccine-name" type="text" bind:value={vaccineName} required class="w-full px-3 py-2 border border-line rounded-md" placeholder="Hepatitis B, DTaP…" />
-							</div>
-							<div>
-								<label for="vaccine-time" class="block text-sm font-medium text-ink-soft mb-1">Date &amp; time</label>
-								<input id="vaccine-time" type="datetime-local" bind:value={vaccineTime} class="w-full px-3 py-2 border border-line rounded-md" />
-							</div>
-							<div>
-								<label for="vaccine-notes" class="block text-sm font-medium text-ink-soft mb-1">Notes (optional)</label>
-								<input id="vaccine-notes" type="text" bind:value={vaccineNotes} class="w-full px-3 py-2 border border-line rounded-md" />
-							</div>
-							<button type="submit" class="w-full bg-primary text-on-primary py-2 px-4 rounded-md hover:bg-primary">Save Vaccine</button>
-						</form>
-					
-
-	{:else if activeTab === 'routines' || activeTab === 'medical'}
-		<!-- ROUTINES FORM -->
-
-						<h3 class="text-xl font-display font-semibold mb-4">Log {CATEGORIES.find((c) => c.id === activeTab)?.label}</h3>
-						<form on:submit={saveManualMilestone} class="space-y-3">
-							<div>
-								<label for="routine-description" class="block text-sm font-medium text-ink-soft mb-1">Description</label>
-								<input id="routine-description" type="text" bind:value={milestoneTitle} required class="w-full px-3 py-2 border border-line rounded-md" placeholder="Bath, vitamin, medication…" />
-							</div>
-							<div>
-								<label for="routine-category" class="block text-sm font-medium text-ink-soft mb-1">Category (e.g. vitamin, medication, bath)</label>
-								<input id="routine-category" type="text" bind:value={milestoneCategory} list="routine-cat-list" class="w-full px-3 py-2 border border-line rounded-md" placeholder="vitamin" />
-								<datalist id="routine-cat-list">
-									<option value="vitamin" />
-									<option value="medication" />
-									<option value="bath" />
-									<option value="tummy time" />
-									<option value="story time" />
-									<option value="walk" />
-									<option value="appointment" />
-								</datalist>
-							</div>
-							<div>
-								<label for="routine-time" class="block text-sm font-medium text-ink-soft mb-1">Date &amp; time</label>
-								<input id="routine-time" type="datetime-local" bind:value={milestoneTime} class="w-full px-3 py-2 border border-line rounded-md" />
-							</div>
-							<button type="submit" class="w-full bg-primary text-on-primary py-2 px-4 rounded-md hover:bg-primary">Save</button>
-						</form>
-					
-
-	{:else if activeTab === 'moods'}
-		<!-- MOODS FORM -->
-
-						<h3 class="text-xl font-display font-semibold mb-4">Log Mood</h3>
-						<form on:submit={saveMood} class="space-y-3">
-							<div class="mb-3">
-								<div class="block text-sm font-medium text-ink-soft mb-1">Mood</div>
-								<div class="flex flex-wrap gap-2">
-									{#each currentCategoryOptions('moods', 'mood') as opt}
-										<button type="button" on:click={() => (moodMood = opt)} class="{moodMood === opt ? 'bg-accent border-accent text-ink' : 'bg-surface2 text-ink-soft border-line-soft'} px-3 py-2 rounded-full border text-sm">{opt}</button>
-									{/each}
-								</div>
-							</div>
-							<div>
-								<label for="mood-time" class="block text-sm font-medium text-ink-soft mb-1">Date &amp; time</label>
-								<input id="mood-time" type="datetime-local" bind:value={moodTime} class="w-full px-3 py-2 border border-line rounded-md" />
-							</div>
-							<div>
-								<label for="mood-notes" class="block text-sm font-medium text-ink-soft mb-1">Notes</label>
-								<input id="mood-notes" type="text" bind:value={moodNotes} class="w-full px-3 py-2 border border-line rounded-md" />
-							</div>
-							<button type="submit" class="w-full bg-primary text-on-primary py-2 px-4 rounded-md hover:bg-primary">Save Mood</button>
-						</form>
-					
-
-	{:else if activeTab === 'journal'}
-		<!-- JOURNAL FORM -->
-
-						<h3 class="text-xl font-display font-semibold mb-4">New Journal Entry</h3>
-						<form on:submit={saveJournal} class="space-y-3">
-							<div>
-								<label for="journal-title" class="block text-sm font-medium text-ink-soft mb-1">Title</label>
-								<input id="journal-title" type="text" bind:value={journalTitle} class="w-full px-3 py-2 border border-line rounded-md" placeholder="First walk, doctor visit…" />
-							</div>
-							<div>
-								<label for="journal-body" class="block text-sm font-medium text-ink-soft mb-1">Note</label>
-								<textarea id="journal-body" bind:value={journalBody} rows="4" class="w-full px-3 py-2 border border-line rounded-md" placeholder="What happened today…"></textarea>
-							</div>
-							<div>
-								<label for="journal-time" class="block text-sm font-medium text-ink-soft mb-1">Date &amp; time</label>
-								<input id="journal-time" type="datetime-local" bind:value={journalTime} class="w-full px-3 py-2 border border-line rounded-md" />
-							</div>
-							<button type="submit" class="w-full bg-primary text-on-primary py-2 px-4 rounded-md hover:bg-primary">Save Entry</button>
-						</form>
-						{/if}
-</LogSheet>
+<LogDrawer
+	bind:open={sheetOpen}
+	kind={activeTab}
+	familyId={activeFamilyId}
+	memberId={selectedMemberId}
+	members={babies}
+	on:saved={onLogged}
+	on:error={(e) => (error = e.detail.message)}
+	on:notice={(e) => (notice = e.detail.message)}
+/>

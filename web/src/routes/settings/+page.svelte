@@ -2,16 +2,15 @@
 	import { onMount } from 'svelte';
 	import { browser } from '$app/environment';
 	import { goto } from '$app/navigation';
-	import { authAPI, userAPI, babyAPI, familiesAPI, feedingAPI, diaperAPI, sleepAPI, growthAPI, healthAPI, importsAPI, photosAPI, formulasAPI, familyAdminAPI, accountAPI, milestoneAPI, vaccinationAPI, settingsAPI, moodAPI, journalAPI, tokenExpired, remindersAPI } from '$lib/api';
+	import { authAPI, userAPI, familiesAPI, feedingAPI, diaperAPI, sleepAPI, growthAPI, healthAPI, importsAPI, familyAdminAPI, accountAPI, milestoneAPI, vaccinationAPI, settingsAPI, moodAPI, journalAPI, tokenExpired, remindersAPI } from '$lib/api';
 	import { authStore, authActions } from '$lib/stores/authStore';
 	import { uiStore, uiActions } from '$lib/stores/uiStore';
 	import PhotoStrip from '$lib/components/PhotoStrip.svelte';
 	import ToggleSwitch from '$lib/components/ToggleSwitch.svelte';
 	import { CATEGORIES } from '$lib/shared';
-	import { Milk, Baby, Moon, TrendingUp, Calendar, Star, Trophy, Stethoscope, Syringe, Smile, Book, Users, Home, Trash2, Mail, Timer, PenLine, ArrowLeft, ArrowRight, Pause, Play, RotateCcw, Plus, Camera, Droplet, AlertCircle, Activity, ChevronDown, Settings, Check , ChevronRight, User, Database, Shield, Upload, Download} from 'lucide-svelte';
+	import { Users, Home, Trash2, Timer, AlertCircle, Settings, Check, ChevronRight, User, Shield, Upload, Download } from 'lucide-svelte';
 
 
-	let familyView: 'dashboard' | 'detail' = 'dashboard';
 
 	$: if ($uiStore.accountPanelOpen) {
 		uiActions.setSection('account');
@@ -34,16 +33,8 @@
 
 	let email = '';
 	let password = '';
-	let regEmail = '';
-	let regPassword = '';
-	let regFirstName = '';
-	let regLastName = '';
 	let showForgot = false;
-	let resetEmail = '';
-	let resetRequestSent = false;
 	let pendingResetToken = '';
-	let resetNewPassword = '';
-	let resetDone = false;
 	// Per-user mobile quick links (category ids), persisted in localStorage.
 	let quickLinks: string[] = [];
 	const QUICK_LINK_DEFAULT = ['feeds', 'diapers', 'sleep'];
@@ -79,19 +70,6 @@
 		notice = 'Mobile quick links updated.';
 	}
 
-	async function completeReset(event: SubmitEvent) {
-		event.preventDefault();
-		error = '';
-		try {
-			await authAPI.resetPassword(pendingResetToken, resetNewPassword);
-			resetDone = true;
-			pendingResetToken = '';
-			resetNewPassword = '';
-			notice = 'Password updated — you can now sign in.';
-		} catch (err: any) {
-			error = err.response?.data?.error || 'Failed to reset password.';
-		}
-	}
 	let loading = false;
 
 	let babies: any[] = [];
@@ -100,7 +78,6 @@
 	let activeFamilyId: string | null = null;
 	let selectedMemberId: number | null = null;
 	let activeTab = 'feeds';
-	let viewMode: 'list' | 'table' = 'list';
 	let defaultProfileId: number | null = null;
 	let summary: any = null;
 
@@ -194,44 +171,12 @@
 
 	// Formula catalog
 	let formulas: any[] = [];
-	let showAddFormula = false;
-	let newFormulaName = '';
-	let newFormulaBrand = '';
 	// Manual feed entry (backdated) + repeat-last
-	let manualStart = '';
-	let manualEnd = '';
-	let manualType = 'breast';
-	let manualSide = 'left';
-	let manualFormulaId: number | null = null;
-	let manualAmount = '';
-	let manualNotes = '';
 	// Diaper detail form
-	let diaperTime = '';
-	let diaperType = 'wet';
-	let diaperConsistency = '';
-	let diaperColor = '';
-	let diaperNotes = '';
-	let savingDiaper = false;
 	// Sleep + growth backdated
-	let sleepTime = '';
-	let growthTime = '';
 	// Milestone + vaccine manual forms
-	let milestoneTitle = '';
-	let milestoneTime = '';
-	let milestoneCategory = '';
-	let vaccineName = '';
-	let vaccineTime = '';
-	let vaccineNotes = '';
-	let moodMood = 'happy';
-	let moodTime = '';
-	let moodNotes = '';
-	let journalTitle = '';
-	let journalBody = '';
-	let journalTime = '';
 	// Photos (toggle state only — the PhotoStrip component handles loading)
-	let photoOpen: Record<string, boolean> = {};
 	// Account
-	let showAccountPanel = false;
 	let curPw = '';
 	let newPw = '';
 	let confirmPw = '';
@@ -245,22 +190,9 @@
 	let leftElapsed = 0;
 	let rightStartedAt: number | null = null;
 	let rightElapsed = 0;
-	let feedType = 'breast';
-	let feedSide = 'left';
-	let feedAmount = '';
-	let feedNotes = '';
-	let feedMode: 'timer' | 'log' = 'timer';
 
 	let sleepStartedAt: number | null = null;
-	let sleepElapsed = 0;
-	let sleepLocation = 'crib';
-	let sleepNotes = '';
-	let sleepMode: 'timer' | 'log' = 'timer';
 
-	let growthWeight = '';
-	let growthHeight = '';
-	let growthHead = '';
-	let growthUnit = 'metric';
 
 	let feedings: any[] = [];
 	let diapers: any[] = [];
@@ -272,17 +204,7 @@
 	let journalEntries: any[] = [];
 
 	// Breast-feeding totals + last side, derived from loaded feedings.
-	$: breastFeedings = feedings.filter((f) => f.type === 'breast' || f.type === 'bottle');
-	$: lastBreastSide = (() => {
-		for (const f of [...breastFeedings].sort((a, b) => new Date(b.start_time).getTime() - new Date(a.start_time).getTime())) {
-			if (f.side === 'left' || f.side === 'right') return f.side;
-		}
-		return null;
-	})();
-	$: leftBreastTotal = breastFeedings.filter((f) => f.side === 'left').reduce((s, f) => s + (f.duration || 0), 0);
-	$: rightBreastTotal = breastFeedings.filter((f) => f.side === 'right').reduce((s, f) => s + (f.duration || 0), 0);
 
-	let timerTick: any = null;
 
 	function avg(a: number[]): number | null {
 		if (a.length === 0) return null;
@@ -309,21 +231,7 @@
 		};
 	})();
 
-	function formatElapsed(ms: number): string {
-		const totalSec = Math.floor(ms / 1000);
-		const h = Math.floor(totalSec / 3600);
-		const m = Math.floor((totalSec % 3600) / 60);
-		const s = totalSec % 60;
-		return `${h > 0 ? h + 'h ' : ''}${String(m).padStart(2, '0')}m ${String(s).padStart(2, '0')}s`;
-	}
 
-	function formatMinutes(totalMs: number): string {
-		const m = Math.round(totalMs / 60000);
-		if (m < 60) return `${m}m`;
-		const h = Math.floor(m / 60);
-		const rm = m % 60;
-		return rm ? `${h}h ${rm}m` : `${h}h`;
-	}
 
 	function formatTime(iso: string | null): string {
 		if (!iso) return '—';
@@ -331,30 +239,8 @@
 		return d.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 	}
 
-	function toLocalInput(iso: string | null | undefined): string {
-		if (!iso) return '';
-		const d = new Date(iso);
-		if (isNaN(d.getTime())) return '';
-		const pad = (n: number) => String(n).padStart(2, '0');
-		return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-	}
 
-	function startTimerLoop() {
-		stopTimerLoop();
-		timerTick = window.setInterval(() => {
-			const now = Date.now();
-			if (leftStartedAt) leftElapsed = now - leftStartedAt;
-			if (rightStartedAt) rightElapsed = now - rightStartedAt;
-			if (sleepStartedAt) sleepElapsed = now - sleepStartedAt;
-		}, 1000);
-	}
 
-	function stopTimerLoop() {
-		if (timerTick) {
-			window.clearInterval(timerTick);
-			timerTick = null;
-		}
-	}
 
 	async function refreshSummary() {
 		if (!selectedMemberId) return;
@@ -393,71 +279,11 @@
 		}
 	}
 
-	function recordsForTab(): any[] {
-		switch (activeTab) {
-			case 'feeds': return feedings;
-			case 'diapers': return diapers;
-			case 'sleep': return sleeps;
-			case 'growth': return growths;
-			case 'milestones': case 'firsts': case 'routines': case 'medical': return milestones;
-			case 'vaccines': return vaccinations;
-			case 'moods': return moods;
-			case 'journal': return journalEntries;
-			case 'pumping': return feedings.filter((f) => f.type === 'pump');
-			default: return [];
-		}
-	}
 
-	async function deleteRecord(type: string, id: number) {
-		if (!confirm('Delete this record?')) return;
-		try {
-			if (type === 'feeding' || type === 'pumping') await feedingAPI.delete(id);
-			else if (type === 'diaper') await diaperAPI.delete(id);
-			else if (type === 'sleep') await sleepAPI.delete(id);
-			else if (type === 'growth') await growthAPI.delete(id);
-			else if (type === 'milestone') await milestoneAPI.delete(id);
-			else if (type === 'vaccine') await vaccinationAPI.delete(id);
-			notice = 'Record deleted.';
-			await refreshLists();
-			await refreshSummary();
-		} catch (err: any) {
-			error = err.response?.data?.error || 'Failed to delete record.';
-		}
-	}
 
 	// Edit modal state
-	let editingRecord: any = null;
-	let editType = '';
-	let editTime = '';
-	let editNote = '';
 
-	function openEdit(type: string, record: any) {
-		editType = type;
-		editingRecord = record;
-		editTime = toLocalInput(record.start_time || record.change_time || record.measurement_date || record.achieved_date || record.date_given);
-		editNote = record.notes || '';
-		error = '';
-	}
 
-	async function saveEdit() {
-		if (!editingRecord) return;
-		const id = Number(editingRecord.id);
-		const time = editTime ? new Date(editTime).toISOString() : undefined;
-		try {
-			if (editType === 'feeding' || editType === 'pumping') await feedingAPI.update(id, { startTime: time, notes: editNote || undefined });
-			else if (editType === 'diaper') await diaperAPI.update(id, { changeTime: time, notes: editNote || undefined });
-			else if (editType === 'sleep') await sleepAPI.update(id, { startTime: time, notes: editNote || undefined });
-			else if (editType === 'growth') await growthAPI.update(id, { measurementDate: time, notes: editNote || undefined });
-			else if (editType === 'milestone') await milestoneAPI.update(id, { achievedDate: time });
-			else if (editType === 'vaccine') await vaccinationAPI.update(id, { dateGiven: time, notes: editNote || undefined });
-			editingRecord = null;
-			notice = 'Record updated.';
-			await refreshLists();
-			await refreshSummary();
-		} catch (err: any) {
-			error = err.response?.data?.error || 'Failed to update record.';
-		}
-	}
 
 	async function loadFamilies() {
 		try {
@@ -497,12 +323,11 @@
 				const selected = babies.find((b) => Number(b.id) === selectedMemberId);
 				activeCategories = selected?.categories?.length ? selected.categories : CATEGORIES.map((c) => c.id);
 				if (!activeCategories.includes(activeTab)) activeTab = activeCategories[0] || 'feeds';
-				restoreTimerState();
 			} else {
 				selectedMemberId = null;
 				activeCategories = [];
 			}
-			await Promise.all([loadFamilySettings(), refreshLists(), refreshSummary(), loadInvitations(), loadImportRuns(), loadFormulas()]);
+			await Promise.all([loadFamilySettings(), refreshLists(), refreshSummary(), loadInvitations(), loadImportRuns()]);
 		} catch (e: any) {
 			const status = e.response?.status;
 			if (status === 401 || status === 403) {
@@ -515,107 +340,12 @@
 		}
 	}
 
-	function setActiveFamily(familyId: string) {
-		activeFamilyId = familyId;
-		if (browser) localStorage.setItem('nido.familyId', familyId);
-		loadFamilies();
-	}
 
-	function setDefaultProfile(memberId: number) {
-		defaultProfileId = memberId;
-		selectedMemberId = memberId;
-		if (browser) localStorage.setItem('nido.defaultProfile', String(memberId));
-		notice = 'Default profile updated.';
-		error = '';
-	}
 
-	async function handleLogin(event: SubmitEvent) {
-		event.preventDefault();
-		error = '';
-		loading = true;
-		try {
-			const res = await authAPI.login({ email, password });
-			const { token, user } = res.data;
-			authActions.login(token, {
-				id: user.id,
-				email: user.email,
-				firstName: user.first_name ?? user.firstName,
-				lastName: user.last_name ?? user.lastName,
-				createdAt: user.created_at ?? user.createdAt,
-			});
-			isAuthenticated = true;
-			email = '';
-			password = '';
-			await loadFamilies();
-			await refreshUserProfile();
-			if (isPanelAdmin) await loadAppSettings();
-		} catch (err: any) {
-			error = err.response?.data?.error || 'Login failed. Check your credentials.';
-		} finally {
-			loading = false;
-		}
-	}
 
-	async function handleRegister(event: SubmitEvent) {
-		event.preventDefault();
-		error = '';
-		loading = true;
-		if (!regFirstName || !regLastName) {
-			error = 'First and last name are required.';
-			loading = false;
-			return;
-		}
-		try {
-			const res = await authAPI.register({
-				email: regEmail,
-				password: regPassword,
-				firstName: regFirstName,
-				lastName: regLastName,
-			});
-			const { token, user, requiresEmailVerification } = res.data;
-			if (requiresEmailVerification) {
-				notice = res.data.message || 'Check your email to verify your account.';
-				regEmail = '';
-				regPassword = '';
-				regFirstName = '';
-				regLastName = '';
-				return;
-			}
-			authActions.login(token, {
-				id: user.id,
-				email: user.email,
-				firstName: user.first_name ?? user.firstName,
-				lastName: user.last_name ?? user.lastName,
-				createdAt: user.created_at ?? user.createdAt,
-			});
-			isAuthenticated = true;
-			regEmail = '';
-			regPassword = '';
-			regFirstName = '';
-			regLastName = '';
-			await loadFamilies();
-			await refreshUserProfile();
-			if (isPanelAdmin) await loadAppSettings();
-		} catch (err: any) {
-			error = err.response?.data?.error || 'Registration failed.';
-		} finally {
-			loading = false;
-		}
-	}
 
-	async function sendResetRequest(event: SubmitEvent) {
-		event.preventDefault();
-		error = '';
-		try {
-			await authAPI.forgotPassword(resetEmail);
-			resetRequestSent = true;
-		} catch (err: any) {
-			error = err.response?.data?.error || 'Failed to send reset link.';
-		}
-	}
 
 	function handleLogout() {
-		stopTimerLoop();
 		authActions.logout();
 		isAuthenticated = false;
 		babies = [];
@@ -629,39 +359,6 @@
 		sleepStartedAt = null;
 	}
 
-	async function buildFamily(event: SubmitEvent) {
-		event.preventDefault();
-		error = '';
-		if (!familyName.trim()) {
-			error = 'Give your family a name (e.g. "The Hollybrooks").';
-			return;
-		}
-		creatingBaby = true;
-		try {
-			const payload: any = { name: familyName.trim() };
-			if (newMemberName) {
-				payload.member = {
-					type: memberType,
-					name: newMemberName.trim(),
-					birthDate: newBabyBirthDate ? new Date(newBabyBirthDate).toISOString() : undefined,
-					gender: newBabyGender,
-				};
-			}
-			const res = await familiesAPI.create(payload);
-			const fam = res.data.family;
-			notice = `${fam.name} created — your family code is ${fam.familyCode}`;
-			familyName = '';
-			newMemberName = '';
-			newBabyBirthDate = '';
-			if (browser) localStorage.setItem('nido.familyId', fam.familyId);
-			await loadFamilies();
-		} catch (err: any) {
-			error = err.response?.data?.error || 'Failed to create your family.';
-			console.error(err);
-		} finally {
-			creatingBaby = false;
-		}
-	}
 
 	async function addFamilyMember(event: SubmitEvent) {
 		event.preventDefault();
@@ -795,98 +492,13 @@
 		}
 	}
 
-	async function loadFormulas() {
-		if (!activeFamilyId) { formulas = []; return; }
-		try {
-			const res = await formulasAPI.list(activeFamilyId);
-			formulas = res.data.formulas || [];
-		} catch { formulas = []; }
-	}
 
-	async function addFormula() {
-		if (!newFormulaName.trim() || !activeFamilyId) return;
-		try {
-			await formulasAPI.create(activeFamilyId, { name: newFormulaName.trim(), brand: newFormulaBrand.trim() || undefined });
-			newFormulaName = ''; newFormulaBrand = '';
-			await loadFormulas();
-		} catch (e: any) { error = e.response?.data?.error || 'Failed to add formula.'; }
-	}
 
-	function nowLocalISO(): string {
-		// datetime-local friendly: YYYY-MM-DDTHH:mm
-		const d = new Date();
-		const p = (n: number) => String(n).padStart(2, '0');
-		return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
-	}
 
-	function setFeedMode(mode: 'timer' | 'log') {
-		feedMode = mode;
-		if (mode === 'log' && !manualStart) manualStart = nowLocalISO();
-	}
 
-	function setSleepMode(mode: 'timer' | 'log') {
-		sleepMode = mode;
-		if (mode === 'log' && !sleepTime) sleepTime = nowLocalISO();
-	}
 
-	function repeatLastFeed() {
-		const last = localStorage.getItem('nido.lastFeed');
-		if (!last) { error = 'No previous feed to repeat.'; return; }
-		const l = JSON.parse(last);
-		manualType = l.type || 'breast';
-		manualSide = l.side === 'right' ? 'right' : 'left';
-		manualFormulaId = l.formulaId ?? null;
-		manualAmount = l.amount ?? '';
-		error = '';
-	}
 
-	async function saveManualFeed(event: SubmitEvent) {
-		event.preventDefault();
-		if (!selectedMemberId) return;
-		if (!manualStart) manualStart = nowLocalISO();
-		error = '';
-		const start = manualStart ? new Date(manualStart).toISOString() : new Date().toISOString();
-		const end = manualEnd ? new Date(manualEnd).toISOString() : undefined;
-		try {
-			await feedingAPI.create({
-				memberId: selectedMemberId,
-				startTime: start,
-				endTime: end,
-				type: manualType as any,
-				side: manualType === 'breast' ? (manualSide as any) : undefined,
-				formulaId: manualType === 'formula' ? manualFormulaId : undefined,
-				amount: manualAmount ? Number(manualAmount) : undefined,
-				notes: manualNotes || undefined,
-			});
-			// Remember for "repeat last"
-			localStorage.setItem('nido.lastFeed', JSON.stringify({ type: manualType, side: manualType === 'breast' ? manualSide : undefined, formulaId: manualFormulaId, amount: manualAmount }));
-			manualStart = ''; manualEnd = ''; manualAmount = ''; manualNotes = '';
-			notice = 'Feed recorded.';
-			await refreshLists(); await refreshSummary();
-		} catch (err: any) { error = err.response?.data?.error || 'Failed to record feed.'; console.error(err); }
-	}
 
-	async function saveDiaperManual(event: SubmitEvent) {
-		event.preventDefault();
-		if (!selectedMemberId) return;
-		error = '';
-		savingDiaper = true;
-		const time = diaperTime ? new Date(diaperTime).toISOString() : new Date().toISOString();
-		try {
-			await diaperAPI.create({
-				memberId: selectedMemberId,
-				changeTime: time,
-				type: diaperType as any,
-				consistency: diaperConsistency || undefined,
-				color: diaperColor || undefined,
-				notes: diaperNotes || undefined,
-			});
-			diaperTime = ''; diaperConsistency = ''; diaperColor = ''; diaperNotes = '';
-			notice = 'Diaper saved.';
-			await refreshLists(); await refreshSummary();
-		} catch (err: any) { error = err.response?.data?.error || 'Failed to save diaper.'; console.error(err); }
-		finally { savingDiaper = false; }
-	}
 
 	// Account + family admin
 	async function changePassword(event: SubmitEvent) {
@@ -1064,15 +676,6 @@
 		} catch (err: any) { error = err.response?.data?.error || 'Failed to delete family.'; }
 	}
 
-	async function selectMember(memberId: number) {
-		selectedMemberId = memberId;
-		const selected = babies.find((b) => Number(b.id) === memberId);
-		activeCategories = selected?.categories?.length ? selected.categories : CATEGORIES.map((c) => c.id);
-		if (!activeCategories.includes(activeTab)) activeTab = activeCategories[0] || 'feeds';
-		restoreTimerState();
-		await refreshLists();
-		await refreshSummary();
-	}
 
 	async function loadFamilySettings() {
 		if (!activeFamilyId) return;
@@ -1266,323 +869,31 @@
 		}
 	}
 
-	function togglePhoto(key: string) {
-		photoOpen[key] = !photoOpen[key];
-	}
 
 	// Live per-side elapsed (ms) = frozen total + live running time.
-	$: leftTotalMs = leftElapsed + (leftStartedAt ? Date.now() - leftStartedAt : 0);
-	$: rightTotalMs = rightElapsed + (rightStartedAt ? Date.now() - rightStartedAt : 0);
-	$: feedTotalMs = leftTotalMs + rightTotalMs;
-	$: anyBreastRunning = !!(leftStartedAt || rightStartedAt);
 
 	// ----- Connection-resilience: persisted timers + offline outbox -----
 	// Timer state is written to localStorage on every mutation so a reload or a
 	// dropped connection mid-session does not lose accumulated time. The outbox
-	// queues records that fail to reach the API (offline/5xx) and retries later.
-	function timerKey(): string {
-		return `nido.timer.${selectedMemberId ?? 0}`;
-	}
 
-	function persistTimerState() {
-		if (!selectedMemberId) return;
-		try {
-			localStorage.setItem(timerKey(), JSON.stringify({
-				leftElapsed, rightElapsed,
-				leftStartedAt, rightStartedAt,
-				sleepElapsed, sleepStartedAt,
-			}));
-		} catch {}
-	}
 
-	function clearTimerState() {
-		try { localStorage.removeItem(timerKey()); } catch {}
-	}
 
-	function restoreTimerState() {
-		try {
-			const raw = localStorage.getItem(timerKey());
-			if (!raw) return;
-			const s = JSON.parse(raw);
-			leftElapsed = Number(s.leftElapsed || 0);
-			rightElapsed = Number(s.rightElapsed || 0);
-			leftStartedAt = s.leftStartedAt ? Number(s.leftStartedAt) : null;
-			rightStartedAt = s.rightStartedAt ? Number(s.rightStartedAt) : null;
-			sleepElapsed = Number(s.sleepElapsed || 0);
-			sleepStartedAt = s.sleepStartedAt ? Number(s.sleepStartedAt) : null;
-			// Auto-pause a timer whose wall-clock is unreasonably stale (e.g. the
-			// device was asleep over an hour) so it does not accumulate forever.
-			const now = Date.now();
-			if (leftStartedAt && now - leftStartedAt > 60 * 60 * 1000) leftStartedAt = null;
-			if (rightStartedAt && now - rightStartedAt > 60 * 60 * 1000) rightStartedAt = null;
-			if (sleepStartedAt && now - sleepStartedAt > 60 * 60 * 1000) sleepStartedAt = null;
-		} catch {}
-		if (leftStartedAt || rightStartedAt || sleepStartedAt) startTimerLoop();
-	}
 
-	function enqueueRecord(kind: 'feeding' | 'sleep', payload: any) {
-		try {
-			const key = 'nido.outbox';
-			const outbox = JSON.parse(localStorage.getItem(key) || '[]');
-			outbox.push({ kind, payload, queuedAt: new Date().toISOString() });
-			localStorage.setItem(key, JSON.stringify(outbox.slice(-200)));
-		} catch {}
-	}
 
-	async function flushOutbox() {
-		const key = 'nido.outbox';
-		try {
-			const outbox = JSON.parse(localStorage.getItem(key) || '[]');
-			if (outbox.length === 0) return;
-			const remaining: any[] = [];
-			let synced = 0;
-			for (const item of outbox) {
-				try {
-					if (item.kind === 'feeding') await feedingAPI.create(item.payload);
-					else if (item.kind === 'sleep') await sleepAPI.create(item.payload);
-					synced++;
-				} catch {
-					remaining.push(item);
-				}
-			}
-			localStorage.setItem(key, JSON.stringify(remaining));
-			if (synced > 0) {
-				notice = `${synced} offline record(s) synced.`;
-				await refreshLists();
-				await refreshSummary();
-			}
-		} catch {}
-	}
 
-	function toggleSideTimer(side: 'left' | 'right') {
-		error = '';
-		if (side === 'left') {
-			if (leftStartedAt) {
-				leftElapsed += Date.now() - leftStartedAt;
-				leftStartedAt = null;
-			} else {
-				leftStartedAt = Date.now();
-			}
-		} else {
-			if (rightStartedAt) {
-				rightElapsed += Date.now() - rightStartedAt;
-				rightStartedAt = null;
-			} else {
-				rightStartedAt = Date.now();
-			}
-		}
-		persistTimerState();
-		startTimerLoop();
-	}
 
-	function anySideHasTime() {
-		return leftElapsed > 0 || rightElapsed > 0 || leftStartedAt || rightStartedAt;
-	}
 
-	async function saveFeedTimer() {
-		if (!anySideHasTime()) return;
-		const startTimes: number[] = [];
-		if (leftStartedAt) startTimes.push(leftStartedAt);
-		if (rightStartedAt) startTimes.push(rightStartedAt);
-		const earliest = Math.min(...(startTimes.length ? startTimes : [Date.now() - feedTotalMs]));
-		const startTime = new Date(earliest).toISOString();
-		const endTime = new Date().toISOString();
-		const bothSides = leftElapsed > 0 && rightElapsed > 0;
-		const side = bothSides ? 'both' : leftElapsed > 0 || leftStartedAt ? 'left' : 'right';
-		// Freeze live timers into totals before computing duration.
-		if (leftStartedAt) { leftElapsed += Date.now() - leftStartedAt; leftStartedAt = null; }
-		if (rightStartedAt) { rightElapsed += Date.now() - rightStartedAt; rightStartedAt = null; }
-		const totalMs = leftElapsed + rightElapsed;
-		stopTimerLoop();
-		leftElapsed = 0; rightElapsed = 0; feedElapsed = 0; feedStartedAt = null;
-		clearTimerState();
-		const payload = { memberId: selectedMemberId, startTime, endTime, type: 'breast', side: side as 'left' };
-		try {
-			await feedingAPI.create(payload);
-			notice = 'Feeding recorded.';
-			await refreshLists();
-			await refreshSummary();
-		} catch (err: any) {
-			enqueueRecord('feeding', payload);
-			notice = 'Feeding saved locally — will sync when connected.';
-		}
-	}
 
-	function cancelFeed() {
-		leftStartedAt = null;
-		rightStartedAt = null;
-		leftElapsed = 0;
-		rightElapsed = 0;
-		feedElapsed = 0;
-		feedStartedAt = null;
-		stopTimerLoop();
-		clearTimerState();
-	}
 
-	async function startSleep() {
-		if (sleepStartedAt) return;
-		error = '';
-		sleepStartedAt = Date.now();
-		sleepElapsed = 0;
-		persistTimerState();
-		startTimerLoop();
-	}
 
-	async function stopSleep() {
-		if (!sleepStartedAt) return;
-		const endTime = new Date().toISOString();
-		const startTime = new Date(sleepStartedAt).toISOString();
-		sleepStartedAt = null;
-		stopTimerLoop();
-		sleepElapsed = 0;
-		clearTimerState();
-		const payload = { memberId: selectedMemberId, startTime, endTime, location: sleepLocation, notes: sleepNotes || undefined };
-		try {
-			await sleepAPI.create(payload);
-			sleepNotes = '';
-			notice = 'Sleep recorded.';
-			await refreshLists();
-			await refreshSummary();
-		} catch (err: any) {
-			enqueueRecord('sleep', payload);
-			sleepNotes = '';
-			notice = 'Sleep saved locally — will sync when connected.';
-		}
-	}
 
-	function cancelSleep() {
-		sleepStartedAt = null;
-		sleepElapsed = 0;
-		stopTimerLoop();
-		clearTimerState();
-	}
 
-	async function saveManualSleep(event: SubmitEvent) {
-		event.preventDefault();
-		if (!selectedMemberId) return;
-		error = '';
-		const start = sleepTime ? new Date(sleepTime).toISOString() : new Date().toISOString();
-		try {
-			await sleepAPI.create({ memberId: selectedMemberId, startTime: start, location: sleepLocation, notes: sleepNotes || undefined });
-			sleepTime = ''; sleepNotes = '';
-			notice = 'Sleep recorded.';
-			await refreshLists(); await refreshSummary();
-		} catch (err: any) { error = err.response?.data?.error || 'Failed to record sleep.'; console.error(err); }
-	}
 
-	async function saveManualGrowth(event: SubmitEvent) {
-		event.preventDefault();
-		if (!selectedMemberId) return;
-		error = '';
-		try {
-			await growthAPI.create({
-				memberId: selectedMemberId,
-				measurementDate: growthTime ? new Date(growthTime).toISOString() : new Date().toISOString(),
-				weight: growthWeight ? Number(growthWeight) : undefined,
-				height: growthHeight ? Number(growthHeight) : undefined,
-				headCircumference: growthHead ? Number(growthHead) : undefined,
-				unitSystem: growthUnit as 'metric',
-			});
-			growthTime = ''; growthWeight = ''; growthHeight = ''; growthHead = '';
-			notice = 'Growth measurement recorded.';
-			await refreshLists(); await refreshSummary();
-		} catch (err: any) { error = err.response?.data?.error || 'Failed to save growth measurement.'; console.error(err); }
-	}
 
-	async function saveManualMilestone(event: SubmitEvent) {
-		event.preventDefault();
-		if (!selectedMemberId) return;
-		error = '';
-		if (!milestoneTitle.trim()) { error = 'Milestone name is required.'; return; }
-		try {
-			await milestoneAPI.create({
-				memberId: selectedMemberId,
-				title: milestoneTitle.trim(),
-				achievedDate: milestoneTime ? new Date(milestoneTime).toISOString() : new Date().toISOString(),
-				category: milestoneCategory || undefined,
-			});
-			milestoneTitle = ''; milestoneTime = '';
-			notice = 'Milestone recorded.';
-			await refreshLists();
-		} catch (err: any) { error = err.response?.data?.error || 'Failed to record milestone.'; console.error(err); }
-	}
 
-	async function saveManualVaccine(event: SubmitEvent) {
-		event.preventDefault();
-		if (!selectedMemberId) return;
-		error = '';
-		if (!vaccineName.trim()) { error = 'Vaccine name is required.'; return; }
-		try {
-			await vaccinationAPI.create({
-				memberId: selectedMemberId,
-				name: vaccineName.trim(),
-				dateGiven: vaccineTime ? new Date(vaccineTime).toISOString() : undefined,
-				notes: vaccineNotes || undefined,
-			});
-			vaccineName = ''; vaccineTime = ''; vaccineNotes = '';
-			notice = 'Vaccine recorded.';
-			await refreshLists();
-		} catch (err: any) { error = err.response?.data?.error || 'Failed to record vaccine.'; console.error(err); }
-	}
 
-	async function saveMood(event: SubmitEvent) {
-		event.preventDefault();
-		if (!selectedMemberId) return;
-		error = '';
-		try {
-			await moodAPI.create({
-				memberId: selectedMemberId,
-				mood: moodMood,
-				recordedAt: moodTime ? new Date(moodTime).toISOString() : undefined,
-				notes: moodNotes || undefined,
-			});
-			moodMood = ''; moodTime = ''; moodNotes = '';
-			notice = 'Mood recorded.';
-			await refreshLists();
-		} catch (err: any) { error = err.response?.data?.error || 'Failed to record mood.'; console.error(err); }
-	}
 
-	async function saveJournal(event: SubmitEvent) {
-		event.preventDefault();
-		if (!selectedMemberId) return;
-		error = '';
-		if (!journalTitle.trim() && !journalBody.trim()) { error = 'Add a title or a note.'; return; }
-		try {
-			await journalAPI.create({
-				memberId: selectedMemberId,
-				title: journalTitle.trim() || undefined,
-				body: journalBody.trim() || undefined,
-				entryDate: journalTime ? new Date(journalTime).toISOString() : undefined,
-			});
-			journalTitle = ''; journalBody = ''; journalTime = '';
-			notice = 'Journal entry saved.';
-			await refreshLists();
-		} catch (err: any) { error = err.response?.data?.error || 'Failed to save journal entry.'; console.error(err); }
-	}
 
-	async function saveGrowth(event: SubmitEvent) {
-		event.preventDefault();
-		error = '';
-		try {
-			await growthAPI.create({
-				memberId: selectedMemberId,
-				measurementDate: new Date().toISOString(),
-				weight: growthWeight ? Number(growthWeight) : undefined,
-				height: growthHeight ? Number(growthHeight) : undefined,
-				headCircumference: growthHead ? Number(growthHead) : undefined,
-				unitSystem: growthUnit as 'metric',
-			});
-			growthWeight = '';
-			growthHeight = '';
-			growthHead = '';
-			notice = 'Growth measurement recorded.';
-			await refreshLists();
-			await refreshSummary();
-		} catch (err: any) {
-			error = err.response?.data?.error || 'Failed to save growth measurement.';
-			console.error(err);
-		}
-	}
 
 	
 
@@ -1615,9 +926,6 @@
 			if (isAuthenticated) {
 				await Promise.all([loadFamilies(), refreshUserProfile()]);
 				if (isPanelAdmin) await loadAppSettings();
-				// Reconnect resilience: push anything queued while offline.
-				await flushOutbox();
-				window.setInterval(() => flushOutbox(), 60 * 1000);
 			}
 		}
 	});

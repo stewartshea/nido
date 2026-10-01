@@ -84,6 +84,7 @@ export interface MilestoneRow {
   title: string;
   description: string | null;
   achieved_date: string;
+  kind: string;
   category: string | null;
   created_at: string;
 }

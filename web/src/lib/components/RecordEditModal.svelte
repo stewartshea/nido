@@ -4,6 +4,8 @@
 		feedingAPI, diaperAPI, sleepAPI, growthAPI, milestoneAPI,
 		vaccinationAPI, moodAPI, journalAPI,
 	} from '$lib/api';
+	import { DEFAULT_CATEGORY_OPTIONS, milestoneCategory, milestoneCategoryKey, isMilestoneKind } from '$lib/shared';
+	import { buildManualBreastFeed } from '$lib/breast';
 
 	// Shared edit dialog for every tracking record. `kind` is one of:
 	// feeding | pumping | diaper | sleep | growth | milestone | vaccine | mood | journal
@@ -22,6 +24,9 @@
 	// Feeds / pump
 	let eType = '';
 	let eSide = '';
+	let eLeftMin = '';
+	let eRightMin = '';
+	let eLastOn: 'left' | 'right' = 'right';
 	let eAmount: number | string = '';
 	let eAmountUnit: 'ml' | 'oz' = 'oz';
 	// Diapers
@@ -67,6 +72,13 @@
 		eEnd = toLocalInput(field(r, 'end_time', 'endTime'));
 		eType = String(field(r, 'type') ?? '');
 		eSide = String(field(r, 'side') ?? '');
+		const leftMs = field(r, 'left_duration');
+		const rightMs = field(r, 'right_duration');
+		eLeftMin = leftMs == null ? '' : String(Math.max(1, Math.round(Number(leftMs) / 60000)));
+		eRightMin = rightMs == null ? '' : String(Math.max(1, Math.round(Number(rightMs) / 60000)));
+		const leftAt = field(r, 'left_breast_at');
+		const rightAt = field(r, 'right_breast_at');
+		eLastOn = leftAt && rightAt && new Date(leftAt).getTime() > new Date(rightAt).getTime() ? 'left' : 'right';
 		eAmount = field(r, 'amount') ?? '';
 		eAmountUnit = String(field(r, 'amount_unit') ?? 'oz') === 'ml' ? 'ml' : 'oz';
 		eConsistency = String(field(r, 'consistency') ?? '');
@@ -85,6 +97,15 @@
 
 	$: if (open && record) initFields();
 
+	// A milestone row's own kind selects the vocabulary, so the edit dialog
+	// offers the same categories the logger does instead of free text.
+	$: eCategories = (() => {
+		if (!record) return [] as string[];
+		const k = milestoneCategory(record);
+		if (!isMilestoneKind(k)) return [];
+		return DEFAULT_CATEGORY_OPTIONS[k]?.[milestoneCategoryKey(k)] ?? [];
+	})();
+
 	function isoOrNull(local: string): string | undefined {
 		return local ? new Date(local).toISOString() : undefined;
 	}
@@ -98,11 +119,25 @@
 		const end = isoOrNull(eEnd);
 		try {
 			if (kind === 'feeding' || kind === 'pumping') {
+				const perSide = eSide && eType === 'breast' ? 1 : 0;
+				const breast = perSide
+					? buildManualBreastFeed({
+						startMs: new Date(time ?? new Date().toISOString()).getTime(),
+						side: eSide as 'left' | 'right' | 'both',
+						endsOn: eLastOn,
+						leftMin: eLeftMin ? Number(eLeftMin) : null,
+						rightMin: eRightMin ? Number(eRightMin) : null,
+					})
+					: { side: null, leftBreastAt: null, rightBreastAt: null, leftDuration: null, rightDuration: null };
 				await feedingAPI.update(id, {
 					startTime: time,
 					endTime: end,
 					type: eType as any,
-					side: eSide ? (eSide as any) : undefined,
+					side: breast.side as any,
+					leftBreastAt: breast.leftBreastAt ?? null,
+					rightBreastAt: breast.rightBreastAt ?? null,
+					leftDuration: breast.leftDuration ?? null,
+					rightDuration: breast.rightDuration ?? null,
 					amount: eAmount === '' ? undefined : Number(eAmount),
 					amountUnit: kind === 'pumping' ? eAmountUnit : undefined,
 					notes: eNotes || undefined,
@@ -203,14 +238,35 @@
 								<option value="solid">Solid</option>
 							</select>
 						</div>
-						{#if eType === 'breast'}
+					{/if}
+					{#if eType === 'breast' || kind === 'pumping'}
+						<div>
+							<div class="block text-sm font-medium text-ink-soft mb-1">Side</div>
+							<select bind:value={eSide} class="w-full px-3 py-2 border border-line rounded-md">
+								<option value="">—</option>
+								<option value="left">Left</option>
+								<option value="right">Right</option>
+								<option value="both">Both</option>
+							</select>
+						</div>
+						{#if eSide === 'left' || eSide === 'both'}
 							<div>
-								<div class="block text-sm font-medium text-ink-soft mb-1">Side</div>
-								<select bind:value={eSide} class="w-full px-3 py-2 border border-line rounded-md">
-									<option value="">—</option>
+								<label for="edit-record-left-min" class="block text-sm font-medium text-ink-soft mb-1">Left (minutes)</label>
+								<input id="edit-record-left-min" type="number" min="0" step="1" bind:value={eLeftMin} class="w-full px-3 py-2 border border-line rounded-md" placeholder="optional" />
+							</div>
+						{/if}
+						{#if eSide === 'right' || eSide === 'both'}
+							<div>
+								<label for="edit-record-right-min" class="block text-sm font-medium text-ink-soft mb-1">Right (minutes)</label>
+								<input id="edit-record-right-min" type="number" min="0" step="1" bind:value={eRightMin} class="w-full px-3 py-2 border border-line rounded-md" placeholder="optional" />
+							</div>
+						{/if}
+						{#if eSide === 'both'}
+							<div>
+								<div class="block text-sm font-medium text-ink-soft mb-1">Last used</div>
+								<select bind:value={eLastOn} class="w-full px-3 py-2 border border-line rounded-md">
 									<option value="left">Left</option>
 									<option value="right">Right</option>
-									<option value="both">Both</option>
 								</select>
 							</div>
 						{/if}
@@ -290,7 +346,15 @@
 					</div>
 					<div>
 						<label for="edit-record-category" class="block text-sm font-medium text-ink-soft mb-1">Category</label>
-						<input id="edit-record-category" type="text" bind:value={eCategory} class="w-full px-3 py-2 border border-line rounded-md" />
+						<select id="edit-record-category" bind:value={eCategory} class="w-full px-3 py-2 border border-line rounded-md">
+							<option value="">—</option>
+							{#each eCategories as c}
+								<option value={c}>{c}</option>
+							{/each}
+							{#if eCategory && !eCategories.includes(eCategory)}
+								<option value={eCategory}>{eCategory} (saved)</option>
+							{/if}
+						</select>
 					</div>
 				{:else if kind === 'vaccine'}
 					<div>

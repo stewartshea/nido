@@ -174,7 +174,11 @@
 				if (r.head_circumference) bits.push(`head ${r.head_circumference}`);
 				return bits.filter(Boolean).join(' · ') || '—';
 			}
-			case 'milestone': return r.title || '—';
+			case 'milestone': {
+				const bits = [r.title];
+				if (r.category) bits.push(String(r.category));
+				return bits.filter(Boolean).join(' · ') || '—';
+			}
 			case 'vaccine': return r.name || '—';
 			case 'mood': return r.mood || '—';
 			case 'journal': return r.title || (r.body ? String(r.body).slice(0, 60) : '—');

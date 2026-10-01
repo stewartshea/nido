@@ -77,13 +77,6 @@ api.interceptors.response.use(
 
 export default api;
 
-// Decode the current user's ID from the stored JWT, if present.
-export function getUserId(): number | null {
-  const token = typeof localStorage !== 'undefined' ? localStorage.getItem('token') : null;
-  if (!token) return null;
-  return decodeJwtPayload(token)?.userId ?? null;
-}
-
 // Auth API functions
 export const authAPI = {
   register: (userData: { email: string; password: string; firstName: string; lastName: string; next?: string }) => 
@@ -155,11 +148,6 @@ export interface PageOptions {
   offset?: number;
 }
 
-export interface PagedResult<T> {
-  items: T[];
-  total: number | null;
-}
-
 function pageQuery(opts?: PageOptions): string {
   if (!opts) return '';
   const parts: string[] = [];
@@ -176,7 +164,7 @@ export const feedingAPI = {
   getById: (id: number) => api.get(`/feedings/${id}`),
   create: (feedingData: { memberId: number; startTime: string; endTime?: string; amount?: number; amountUnit?: 'ml' | 'oz'; type: 'breast' | 'bottle' | 'formula' | 'pump' | 'solid'; side?: 'left' | 'right' | 'both'; leftBreastAt?: string; rightBreastAt?: string; leftDuration?: number; rightDuration?: number; formulaId?: number; notes?: string }) => 
     api.post('/feedings', feedingData),
-  update: (id: number, feedingData: Partial<{ startTime: string; endTime?: string; amount?: number; amountUnit?: 'ml' | 'oz'; type: 'breast' | 'bottle' | 'formula' | 'pump' | 'solid'; side?: 'left' | 'right' | 'both'; leftBreastAt?: string; rightBreastAt?: string; leftDuration?: number; rightDuration?: number; formulaId?: number; notes?: string }>) => 
+  update: (id: number, feedingData: Partial<{ startTime: string; endTime?: string; amount?: number; amountUnit?: 'ml' | 'oz'; type: 'breast' | 'bottle' | 'formula' | 'pump' | 'solid'; side?: 'left' | 'right' | 'both' | null; leftBreastAt?: string | null; rightBreastAt?: string | null; leftDuration?: number | null; rightDuration?: number | null; formulaId?: number; notes?: string }>) => 
     api.put(`/feedings/${id}`, feedingData),
   delete: (id: number) => api.delete(`/feedings/${id}`),
 };
@@ -230,9 +218,9 @@ export const milestoneAPI = {
   getCategories: () => api.get('/milestones/categories'),
   getTrends: (memberId: number, opts?: { category?: string; days?: number }) =>
     api.get(`/milestones/trends?memberId=${memberId}${opts?.category ? `&category=${opts.category}` : ''}${opts?.days ? `&days=${opts.days}` : ''}`),
-  create: (milestoneData: { memberId: number; title: string; description?: string; achievedDate: string; category?: string; tags?: string[] }) => 
+  create: (milestoneData: { memberId: number; title: string; description?: string; achievedDate: string; kind?: 'milestones' | 'firsts' | 'routines' | 'medical'; category?: string; tags?: string[] }) => 
     api.post('/milestones', milestoneData),
-  update: (id: number, milestoneData: Partial<{ title: string; description?: string; achievedDate: string; category?: string }>) => 
+  update: (id: number, milestoneData: Partial<{ title: string; description?: string; achievedDate: string; kind: 'milestones' | 'firsts' | 'routines' | 'medical'; category?: string }>) => 
     api.put(`/milestones/${id}`, milestoneData),
   delete: (id: number) => api.delete(`/milestones/${id}`),
 };

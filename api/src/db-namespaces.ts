@@ -456,6 +456,16 @@ export const FAMILY_MIGRATIONS: Migration[] = [
        ALTER TABLE feedings ADD COLUMN right_duration INTEGER;
      `,
    },
+   {
+     version: 10,
+     name: 'milestone-kind',
+     sql: `
+       ALTER TABLE milestones ADD COLUMN kind TEXT NOT NULL DEFAULT 'milestones';
+       UPDATE milestones SET kind = 'firsts' WHERE category = 'firsts';
+       UPDATE milestones SET kind = 'routines' WHERE category IN ('vitamin', 'medication', 'bath', 'tummy time', 'story time', 'walk', 'appointment');
+       UPDATE milestones SET kind = 'medical' WHERE category = 'medical';
+     `,
+   },
  ];
 
 // ---------------------------------------------------------------------------

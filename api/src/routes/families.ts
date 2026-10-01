@@ -695,15 +695,9 @@ async function handleDeleteMember(c: Context<AuthEnv>) {
 			sql: `DELETE FROM reminders WHERE target_type = 'member' AND target_id = ?`,
 			args: [legacyBabyId],
 		});
+		// family_members.legacy_baby_id references babies(id), so unlink it first.
 		await db.execute({ sql: 'UPDATE family_members SET legacy_baby_id = NULL WHERE legacy_baby_id = ?', args: [legacyBabyId] });
-		try {
-			await db.execute({ sql: 'DELETE FROM babies WHERE id = ? AND household_id = ?', args: [legacyBabyId, NAMESPACE_HOUSEHOLD_ID] });
-		} catch (err: any) {
-			const babyCheck = await db.execute({ sql: 'SELECT * FROM babies WHERE id = ?', args: [legacyBabyId] });
-			const householdCheck = await db.execute({ sql: 'SELECT * FROM households WHERE id = ?', args: [NAMESPACE_HOUSEHOLD_ID] });
-			c.get('log').error('baby delete failed', { event: 'baby_delete_error', legacyBabyId, baby: babyCheck.rows[0], households: householdCheck.rows, error: err?.message });
-			throw err;
-		}
+		await db.execute({ sql: 'DELETE FROM babies WHERE id = ? AND household_id = ?', args: [legacyBabyId, NAMESPACE_HOUSEHOLD_ID] });
 	}
 
 	if (avatar) {
@@ -1004,7 +998,7 @@ async function handleExportFamily(c: Context<AuthEnv>) {
 	if (trackedIds.length > 0) {
 		const ids = trackedIds.join(',');
 		for (const table of EXPORT_TABLES) {
-			const cols = table === 'milestones' ? 'id, baby_id, title, description, achieved_date, category, created_at, created_by'
+			const cols = table === 'milestones' ? 'id, baby_id, title, description, achieved_date, kind, category, created_at, created_by'
 				: table === 'growth' ? 'id, baby_id, measurement_date, weight, height, head_circumference, unit_system, notes, created_at, created_by'
 				: table === 'sleep' ? 'id, baby_id, start_time, end_time, duration, location, notes, created_at, created_by'
 				: table === 'diapers' ? 'id, baby_id, change_time, type, color, consistency, notes, created_at, created_by'
@@ -1133,7 +1127,7 @@ await db.execute({ sql: `INSERT INTO feedings (baby_id, start_time, end_time, du
 				} else if (table === 'growth') {
 					await db.execute({ sql: `INSERT INTO growth (baby_id, measurement_date, weight, height, head_circumference, unit_system, notes, created_at, created_by) VALUES (?,?,?,?,?,?,?,?,?)`, args: [babyId, rec.measurement_date, rec.weight, rec.height, rec.head_circumference, rec.unit_system, rec.notes, rec.created_at ?? isoNow(), rec.created_by ?? userId] });
 				} else if (table === 'milestones') {
-					await db.execute({ sql: `INSERT INTO milestones (baby_id, title, description, achieved_date, category, created_at, created_by) VALUES (?,?,?,?,?,?,?)`, args: [babyId, rec.title, rec.description, rec.achieved_date, rec.category, rec.created_at ?? isoNow(), rec.created_by ?? userId] });
+					await db.execute({ sql: `INSERT INTO milestones (baby_id, title, description, achieved_date, kind, category, created_at, created_by) VALUES (?,?,?,?,?,?,?,?)`, args: [babyId, rec.title, rec.description, rec.achieved_date, rec.kind ?? 'milestones', rec.category, rec.created_at ?? isoNow(), rec.created_by ?? userId] });
 				} else if (table === 'vaccinations') {
 					await db.execute({ sql: `INSERT INTO vaccinations (baby_id, name, date_given, next_due_date, administered_by, notes, created_at, created_by) VALUES (?,?,?,?,?,?,?,?)`, args: [babyId, rec.name, rec.date_given, rec.next_due_date ?? rec.nextDueDate, rec.administered_by, rec.notes, rec.created_at ?? isoNow(), rec.created_by ?? userId] });
 				} else if (table === 'moods') {
