@@ -137,6 +137,10 @@
 	// Family-scoped tracking settings (categories + per-category option lists).
 	let settingsTab: 'profile' | 'family' | 'import' | 'members' | 'backup' | 'admin' | null = null;
 	let familySettings: { categories: string[] | null; categoryOptions: Record<string, Record<string, string[]>>; defaultCategoryOptions: Record<string, Record<string, string[]>>; shareAnonymizedDaily?: boolean } | null = null;
+	// What the family tracks, as opposed to `activeCategories`, which is the
+	// selected member's own set. They shared one variable, so this tab showed
+	// one member's categories while writing a family-wide setting.
+	let familyCategories: string[] = [];
 	let savingFamilySettings = false;
 	let anonymizedPreview: any = null;
 	let loadingAnonymizedPreview = false;
@@ -683,10 +687,8 @@
 			const res = await familiesAPI.getSettings(activeFamilyId);
 			familySettings = res.data.settings;
 			anonymizedPreview = res.data.anonymizedPreview ?? anonymizedPreview;
-			const cats = familySettings.categories;
-			if (cats && cats.length) {
-				activeCategories = cats;
-			}
+			const cats = familySettings?.categories;
+			familyCategories = cats?.length ? cats : CATEGORIES.map((c) => c.id);
 		} catch (err: any) {
 			console.error('Failed to load family settings:', err);
 		}
@@ -707,17 +709,17 @@
 
 	async function toggleFamilyCategory(catId: string) {
 		if (!activeFamilyId) return;
-		const next = activeCategories.includes(catId)
-			? activeCategories.filter((c) => c !== catId)
-			: [...activeCategories, catId];
-		activeCategories = next;
+		const next = familyCategories.includes(catId)
+			? familyCategories.filter((c) => c !== catId)
+			: [...familyCategories, catId];
+		familyCategories = next;
 		savingFamilySettings = true;
 		try {
 			await familiesAPI.updateSettings(activeFamilyId, { categories: next });
 			if (familySettings) familySettings.categories = next;
-			if (!activeCategories.includes(activeTab)) activeTab = activeCategories[0] || 'feeds';
-			notice = 'Tracking categories updated.';
+			notice = 'Family tracking updated.';
 		} catch (err: any) {
+			familyCategories = familySettings?.categories?.length ? familySettings.categories : CATEGORIES.map((c) => c.id);
 			error = err.response?.data?.error || 'Failed to update categories.';
 		} finally {
 			savingFamilySettings = false;
@@ -978,7 +980,7 @@
 								<button type="button" on:click={() => (settingsTab = 'family')} class="w-full flex items-center justify-between px-4 py-3 min-h-[44px] hover:bg-surface2 transition-colors text-left border-b border-line-soft">
 									<div class="flex items-center gap-3">
 										<Home class="w-5 h-5 text-ink-soft" />
-										<span class="text-ink font-medium">Family</span>
+										<span class="text-ink font-medium">Family &amp; tracking</span>
 									</div>
 									<ChevronRight class="w-5 h-5 text-ink-soft" />
 								</button>
@@ -1138,13 +1140,18 @@
 							</div>
 							{:else if settingsTab === 'family'}
 							<div class="bg-surface rounded-lg shadow-card p-4 md:p-6 border border-line-soft">
-								<h3 class="text-lg font-display font-semibold mb-4">Family Settings</h3>
+								<h3 class="text-lg font-display font-semibold mb-1">Family &amp; tracking</h3>
+								<p class="text-sm text-ink-soft mb-5">
+									Everything on this tab is shared with everyone in {activeFamily?.name || 'your family'} — it is not a personal setting.
+									Your own account is under Profile, and the people you track are under Members.
+								</p>
 								<div class="mb-5">
-									<h4 class="font-display font-semibold text-sm mb-3">Tracked Categories</h4>
+									<h4 class="font-display font-semibold text-sm mb-1">What your family tracks</h4>
+									<p class="text-sm text-ink-soft mb-3">Turn a category off to remove it from the log options for every member. Any family member can change this.</p>
 									<div class="flex flex-col gap-2">
 										{#each CATEGORIES as cat}
 											<ToggleSwitch
-												checked={activeCategories.includes(cat.id)}
+												checked={familyCategories.includes(cat.id)}
 												label={cat.label}
 												onToggle={() => toggleFamilyCategory(cat.id)}
 											/>
@@ -1153,8 +1160,9 @@
 								</div>
 								{#if familySettings}
 									<div class="border-t border-line-soft pt-4">
-										<h4 class="font-display font-semibold text-sm mb-2">Category options</h4>
-										{#each CATEGORIES.filter((c) => activeCategories.includes(c.id)) as cat}
+										<h4 class="font-display font-semibold text-sm mb-1">Choices when logging</h4>
+										<p class="text-sm text-ink-soft mb-3">The values offered for each kind of record, for example routine type or visit type. They appear in the log forms for everyone.</p>
+										{#each CATEGORIES.filter((c) => familyCategories.includes(c.id)) as cat}
 											{@const options = familySettings.categoryOptions?.[cat.id] ?? familySettings.defaultCategoryOptions?.[cat.id] ?? {}}
 											{#if Object.entries(options).length > 0}
 												<div class="mb-4">
@@ -1178,7 +1186,8 @@
 									{/each}
 								</div>
 								<div class="border-t border-line-soft pt-4 mt-4">
-									<h4 class="font-display font-semibold text-sm mb-2">Daily anonymized summary sharing</h4>
+									<h4 class="font-display font-semibold text-sm mb-1">Daily anonymized summary sharing</h4>
+									<p class="text-sm text-ink-soft mb-2">Only an owner or admin can change this, because it decides what data leaves your family.</p>
 									<ToggleSwitch
 										checked={familySettings?.shareAnonymizedDaily === true}
 										disabled={savingFamilySettings}

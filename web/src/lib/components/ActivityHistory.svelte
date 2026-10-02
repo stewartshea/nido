@@ -73,6 +73,13 @@
 		return r.created_by_name || r.createdByName || '';
 	}
 
+	// Milestone-family rows keep their free text in `description`; everything
+	// else uses `notes`. The journal's own `body` is already the entry text.
+	function noteOf(r: any): string {
+		if (r._kind === 'journal') return '';
+		return String(r.notes || r.description || '');
+	}
+
 	function tag(kind: string, cat: string, r: any) {
 		return { ...r, _kind: kind, _cat: cat, _when: rowTime(r) };
 	}
@@ -327,8 +334,8 @@
 							{label(r)} · {details(r)}
 						</p>
 						<p class="text-xs text-ink-soft">{formatTime(r._when)}{#if recordedBy(r)} · by {recordedBy(r)}{/if}</p>
-						{#if (r.notes || r.body) && r._kind !== 'journal'}
-							<p class="text-xs text-ink-soft truncate">{r.notes}</p>
+						{#if noteOf(r)}
+							<p class="text-xs text-ink-soft truncate">{noteOf(r)}</p>
 						{/if}
 					</div>
 					<div class="flex items-center gap-1 shrink-0">

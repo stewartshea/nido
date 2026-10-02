@@ -905,14 +905,22 @@ async function handleGetSettings(c: Context<AuthEnv>) {
 	return c.json({ settings: { ...settingsShape(row), defaultCategoryOptions: DEFAULT_CATEGORY_OPTIONS }, anonymizedPreview: await buildAnonymizedDailyPreview(db) });
 }
 
-// PUT /settings — update family settings (owner/admin)
+// PUT /settings — update family settings
+//
+// Any family member may change what the family tracks and the category
+// options, because those are the vocabulary everyone logs against. Only the
+// anonymized-sharing opt-in stays with owner/admin: it decides what leaves the
+// family, so it is not a member-level decision.
 async function handleUpdateSettings(c: Context<AuthEnv>) {
 	const db = c.get('db');
 
-	const role = await familyAccess(c, ['owner', 'admin']);
-	if (!role) return c.json({ error: 'Owner or admin required' }, 403);
+	const role = await familyAccess(c);
+	if (!role) return c.json({ error: 'No family access' }, 403);
 
 	const { categories, categoryOptions, shareAnonymizedDaily } = (c.req as any).valid('json');
+	if (shareAnonymizedDaily !== undefined && !(await familyAccess(c, ['owner', 'admin']))) {
+		return c.json({ error: 'Only an owner or admin can change anonymized sharing' }, 403);
+	}
 
 	const existing = await db.execute({
 		sql: 'SELECT categories, category_options, share_anonymized_daily FROM family_settings WHERE family_id = ?',

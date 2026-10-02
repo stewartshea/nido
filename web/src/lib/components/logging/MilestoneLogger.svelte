@@ -28,6 +28,7 @@
 	let name = '';
 	let when = toLocalInput();
 	let category = '';
+	let notes = '';
 	let busy = false;
 
 	onMount(async () => {
@@ -50,8 +51,9 @@
 				achievedDate: localInputToIso(when),
 				kind,
 				category: category || undefined,
+				description: notes || undefined,
 			});
-			name = ''; category = '';
+			name = ''; category = ''; notes = '';
 			dispatch('saved', { message: copy.done });
 		} catch (err: any) {
 			dispatch('error', { message: apiError(err, 'Failed to record entry.') });
@@ -81,6 +83,10 @@
 	<div>
 		<label for="milestone-time" class="block text-sm font-medium text-ink-soft mb-1">Date &amp; time</label>
 		<input id="milestone-time" type="datetime-local" bind:value={when} class="w-full px-3 py-2 border border-line rounded-md" />
+	</div>
+	<div>
+		<label for="milestone-notes" class="block text-sm font-medium text-ink-soft mb-1">Notes (optional)</label>
+		<input id="milestone-notes" type="text" bind:value={notes} class="w-full px-3 py-2 border border-line rounded-md" placeholder="Symptoms, dose, advice given…" />
 	</div>
 	<button type="submit" disabled={busy} class="w-full bg-primary text-on-primary py-3 px-4 rounded-md hover:bg-primary disabled:opacity-50 text-lg font-display font-semibold">{busy ? 'Saving…' : copy.save}</button>
 </form>
