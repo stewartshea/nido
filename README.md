@@ -190,6 +190,25 @@ that the rest of the codebase depends on.
 
 ## Roadmap
 
+Roadmap lives in a GitHub Projects board, not in this file, so it cannot drift
+from the issues that actually describe the work.
+
+- **Roadmap board:** https://github.com/users/stewartshea/projects/2
+- **Open feature requests:** https://github.com/stewartshea/nido/issues?q=is%3Aissue+is%3Aopen+label%3A%22feature+request%22
+- **Conventions and current direction:** [`ROADMAP.md`](ROADMAP.md)
+
+Feature requests are GitHub issues labelled `feature request`. Anything labelled
+that way is triaged onto the board, where `Status`, `Priority` and `Area` are
+tracked. See [`ROADMAP.md`](ROADMAP.md) for the labels and how they map to the
+board's fields.
+
+Two directions at the moment: making the family tracking loop trustworthy, and
+the move into [inventory management](https://github.com/stewartshea/nido/issues/11)
+covering both family and home use cases — where stock is consumed by events you
+already record, and runout is forecast ahead of time.
+
+Also on the list:
+
 - Static build of the web client for GitHub Pages
 - Photo size limits and server-side EXIF stripping
 - Run tests in CI
