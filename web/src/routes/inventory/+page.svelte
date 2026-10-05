@@ -12,7 +12,6 @@
 	let notice = '';
 	let error = '';
 	let members: { id: number; name: string }[] = [];
-	let selectedMemberId: number | null = null;
 	let loaded = false;
 	// Alerts belong here as much as on the dashboard: this is the page where you
 	// would come to act on one, so it should not be somewhere else entirely.
@@ -43,7 +42,6 @@
 			if (!familyId) { loaded = true; return; }
 			const babies = await familiesAPI.members(familyId);
 			members = (babies.data.babies ?? babies.data.members ?? []).map((b: any) => ({ id: Number(b.id), name: b.name }));
-			selectedMemberId = members[0]?.id ?? null;
 			await loadAlerts();
 		} catch (e: any) {
 			if (e?.response?.status === 401) await goto('/login');
@@ -65,7 +63,8 @@
 		<h1 class="text-2xl font-display font-semibold text-ink">Inventory</h1>
 		<p class="text-sm text-ink-soft mt-1">
 			What you have on hand, what it is used up by, and when you will run out.
-			Rules for when to be told live in Settings.
+			This is the whole family's stock, not one person's. Rules for when to be told
+			live on the <a href="/notifications" class="underline">notifications page</a>.
 		</p>
 	</div>
 
@@ -73,14 +72,6 @@
 	{#if error}<p class="text-sm text-danger-text mb-3">{error}</p>{/if}
 
 	{#if loaded}
-		{#if members.length > 1}
-			<div class="mb-4">
-				<label for="inv-member-switch" class="block text-sm font-medium text-ink-soft mb-1">Member</label>
-				<select id="inv-member-switch" value={selectedMemberId} on:change={(e) => (selectedMemberId = Number(e.currentTarget.value))} class="w-full px-3 py-2 border border-line rounded-md">
-					{#each members as m}<option value={m.id}>{m.name}</option>{/each}
-				</select>
-			</div>
-		{/if}
 		<InventoryStats {items} {alerts} />
 
 		{#if alerts.length > 0}
@@ -94,6 +85,6 @@
 			</div>
 		{/if}
 
-		<InventoryPanel {members} {selectedMemberId} on:refresh={() => { notice = ''; loadAlerts(); }} />
+		<InventoryPanel {members} on:refresh={() => { notice = ''; loadAlerts(); }} />
 	{/if}
 </div>

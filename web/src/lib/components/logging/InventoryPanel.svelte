@@ -3,7 +3,9 @@
 	import { inventoryAPI, type InventoryItem, type InventoryAlert } from '$lib/api';
 
 	export let members: { id: number | string; name: string }[] = [];
-	export let selectedMemberId: number | null = null;
+
+	let selectedMemberId: number | null = null;
+	$: if (selectedMemberId === null && members.length > 0) selectedMemberId = Number(members[0].id);
 
 	const dispatch = createEventDispatcher<{ refresh: void }>();
 
@@ -380,7 +382,17 @@
 			<div class="flex items-center justify-between mb-2">
 				<div>
 					<p class="text-xs font-semibold text-ink-soft uppercase tracking-wider">Diaper sizes</p>
-
+					{#if members.length > 1}
+						<label for="inv-size-child" class="block text-xs text-ink-soft mt-1">Child</label>
+						<select
+							id="inv-size-child"
+							value={selectedMemberId}
+							on:change={(e) => (selectedMemberId = Number(e.currentTarget.value))}
+							class="mt-1 px-2 py-1 border border-line rounded-md bg-surface text-ink text-xs"
+						>
+							{#each members as m (m.id)}<option value={m.id}>{m.name}</option>{/each}
+						</select>
+					{/if}
 				</div>
 				<button type="button" on:click={() => (showAddSize = !showAddSize)} class="px-2 py-1 rounded-md bg-surface2 text-ink-soft text-xs font-semibold">
 					{showAddSize ? 'Cancel' : 'Add size'}

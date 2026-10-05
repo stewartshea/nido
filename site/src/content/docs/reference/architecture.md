@@ -102,9 +102,10 @@ sees every rule and every alert, and each rule is attributed to whoever set it.
 Rules for both tracking and inventory live on one page, `/notifications`.
 
 What you choose per inventory rule is **who gets emailed** — the whole family, or
-named caregivers. Only confirmed addresses are emailed. The audience governs email
-only: everyone in the family still sees everything, because the stock is shared
-and hiding it from the household helps nobody.
+named caregivers. Only caregivers with a confirmed address can be emailed, so only
+those appear in the picker. The audience governs email only: everyone in the family
+still sees everything, because the stock is shared and hiding it from the household
+helps nobody.
 
 The API emails newly firing inventory alerts on a timer, so nothing needs to be
 open in a browser. It is a timer inside the API process because a self-hosted

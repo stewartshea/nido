@@ -478,17 +478,27 @@ async function handleGetAccounts(c: Context<AuthEnv>) {
 	const role = await familyAccess(c);
 	if (!role) return c.json({ error: 'No family access' }, 403);
 
+	// The family's name for a person wins over the name they typed at sign-up:
+	// the picker is choosing between people, and a household may call someone
+	// something the account does not. Accounts with no linked member (the owner
+	// has none) fall back to their own name. The subquery takes a single member
+	// because an account can be linked to more than one profile.
 	const res = await db.execute({
-		sql: `SELECT u.id, u.first_name AS firstName, u.last_name AS lastName,
-		             u.email, u.email_verified AS emailVerified
+		sql: `SELECT u.id, u.email, u.email_verified AS emailVerified,
+		             COALESCE(
+		               (SELECT fm.name FROM account_members am
+		                 JOIN family_members fm ON fm.id = am.member_id
+		                 WHERE am.user_id = u.id ORDER BY fm.id LIMIT 1),
+		               NULLIF(TRIM(COALESCE(u.first_name, '') || ' ' || COALESCE(u.last_name, '')), '')
+		             ) AS name
 		      FROM users u JOIN user_households uh ON uh.user_id = u.id
 		      WHERE uh.household_id = ?
-		      ORDER BY u.first_name`,
+		      ORDER BY name`,
 		args: [NAMESPACE_HOUSEHOLD_ID],
 	});
 	const accounts = (res.rows as any[]).map((r) => ({
 		id: String(r.id),
-		name: [r.firstName, r.lastName].filter(Boolean).join(' ').trim() || String(r.email),
+		name: r.name || String(r.email),
 		email: String(r.email),
 		emailVerified: Number(r.emailVerified ?? 0) === 1,
 	}));

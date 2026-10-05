@@ -110,6 +110,29 @@ describe('who a notification rule is addressed to', () => {
 		await call(token, 'PUT', `/api/v1/inventory/rules/${ruleId}`, { audienceKind: 'family' });
 	});
 
+	it('names each caregiver the way the family does, not the way they signed up', async () => {
+		const now = new Date().toISOString();
+		const ins = await db.execute({
+			sql: `INSERT INTO family_members (household_id, name, member_type, created_at, updated_at)
+			      VALUES (?, ?, 'adult', ?, ?)`,
+			args: [NAMESPACE_HOUSEHOLD_ID, 'Vera Okafor', now, now],
+		});
+		await db.execute({
+			sql: 'INSERT INTO account_members (user_id, member_id, created_at) VALUES (?, ?, ?)',
+			args: [verifiedId, Number(ins.lastInsertRowid), now],
+		});
+
+		const res = await call(token, 'GET', '/api/v1/families/accounts');
+		expect(res.status).toBe(200);
+		const byId = new Map<string, any>((res.body.accounts as any[]).map((a) => [a.id, a]));
+
+		// Linked to a member: the family's name for that person wins over the
+		// first/last they typed at sign-up.
+		expect(byId.get(verifiedId).name).toBe('Vera Okafor');
+		// The owner has no member row, so their account name is the fallback.
+		expect(byId.get(ownerId).name).toBe('Ola Owner');
+	});
+
 	it('ignores an id that is not a member of this family', async () => {
 		await call(token, 'PUT', `/api/v1/inventory/rules/${ruleId}`, {
 			audienceKind: 'users', audienceIds: [verifiedId, 'someone-else-999'],

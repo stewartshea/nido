@@ -86,10 +86,13 @@
 				<p class="text-xs text-danger-text mt-2">Pick at least one caregiver.</p>
 			{:else if unverifiedSelected.length > 0}
 				<p class="text-xs text-ink-soft mt-2">
-					{unverifiedSelected.map((a) => a.name).join(', ')} never confirmed an email address, so
-					{unverifiedSelected.length === 1 ? 'they' : 'they'} will not be emailed.
+					{unverifiedSelected.map((a) => a.name).join(', ')} has not confirmed an email address, so will
+					not be emailed.
 				</p>
 			{/if}
+			<p class="text-xs text-ink-soft mt-2">
+				Only caregivers with an account appear here, because email needs an address to send to.
+			</p>
 		{/if}
 	{/if}
 </div>

@@ -77,8 +77,16 @@ Deliberate decisions:
   every firing alert, because the stock is shared: hiding a low-stock rule from
   the household because one person owns it helps nobody, and the information
   disappears exactly when that person is away.
-- **Members without an account cannot be selected.** They have no address to
-  email. A member profile is not an account, and the picker only lists accounts.
+- **The audience is stored as account ids, not member ids.** Delivery needs a
+  confirmed address, and an account is the only thing that has one. Nido also
+  models people as `family_members`, but the two sets barely overlap: registration
+  creates no member row for the owner at all, so member ids would make the owner
+  un-targetable. Targeting people would first mean backfilling a member row for
+  every account — a migration through the tenant model that still could not email
+  a member who has no account.
+- **A caregiver is listed under the name the family uses**, taken from a linked
+  member profile when one exists, falling back to the name they signed up with.
+  Picking between people should not depend on which string they typed first.
 
 ## 4. What a digest contains — and what it does not
 
