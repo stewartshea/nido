@@ -359,3 +359,61 @@ a {
 :root {
 	--c-on-accent: 43 38 34;
 }
+
+/*
+ * Foreground colour for interactive text — links, and any control whose whole
+ * job is to be read.
+ *
+ * `--c-primary` cannot do this job. In the dark presets it is a near-black
+ * *fill*, designed to carry light `--c-on-primary` text on top of it, so
+ * setting text to `--c-primary` put a 1.1:1 near-black label on a near-black
+ * page. Light presets get their own dark primary; dark presets get the brass
+ * accent, which is the one brand colour with enough luminance to read on a dark
+ * surface.
+ */
+:root,
+[data-theme$='-light'] {
+	color-scheme: light;
+	--c-link: var(--c-primary);
+}
+
+[data-theme$='-dark'] {
+	color-scheme: dark;
+	--c-link: var(--c-accent);
+}
+
+/*
+ * Without an explicit background, the browser paints the dropdown list itself
+ * and `color-scheme: normal` gave it light-mode defaults — so the light text on
+ * each option landed on a white list. Native option styling is patchy across
+ * browsers, so it is set explicitly rather than left to the UA.
+ */
+select option {
+	background-color: rgb(var(--c-surface));
+	color: rgb(var(--c-ink));
+}
+
+/*
+ * Themed explicitly rather than left to the user agent.
+ *
+ * `color-scheme: dark` is set and does compute on these elements, but the
+ * browser kept painting the control itself from a light `Field` colour, so a
+ * light `--c-ink` label landed on a white box at 1.2:1. A control that renders
+ * its own surface cannot be themed by a variable it does not read, so the
+ * background is set here. Element specificity means any explicit Tailwind
+ * background class still wins.
+ *
+ * Checkboxes, radios, ranges and colour inputs draw their own control and are
+ * left alone.
+ */
+input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='color']),
+select,
+textarea {
+	background-color: rgb(var(--c-surface));
+	color: rgb(var(--c-ink));
+}
+
+::placeholder {
+	color: rgb(var(--c-ink-soft));
+	opacity: 1;
+}

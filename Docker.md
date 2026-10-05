@@ -110,6 +110,25 @@ per-platform scheduler examples.
 - `LOG_FORMAT`: API log format — `json` or `pretty`. Unset lets the API choose,
   which resolves to `json` in a container (piped stdout) and `pretty` on a
   terminal
+- `NOTIFY_ENABLED`: run the notification digest on a timer (default on)
+- `NOTIFY_INTERVAL_MINUTES`: how often the digest runs, default `60`
+
+## Notification digests
+The API container emails each family's newly firing inventory alerts on a timer,
+so nothing has to be open in a browser. It is a plain timer inside the API
+process because a self-hosted install is one API container and one volume.
+
+**Running more than one API replica? Turn it off on all but one.** Replicas that
+share a data volume also coordinate through a lease row in `registry.db`, so they
+cannot double-send. Replicas on *separate* volumes have separate registries and
+cannot see each other — which is precisely the case `NOTIFY_ENABLED` exists for,
+and why the flag is the documented mechanism rather than the lease.
+
+Evaluating is cheap (local SQLite, and families with no rules are skipped), so the
+interval can be frequent; email only goes out when something newly matches. When
+the hosted deployment grows a queue, the digest is already a standalone function
+(`runFamilyDigest` in `api/src/notifications.ts`) that a worker calls per job, so
+the timer is the only thing that gets deleted.
 
 ## Reading the logs
 The API logs to **stdout** only — no log files, no stderr split — so the

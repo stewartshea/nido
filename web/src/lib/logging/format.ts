@@ -29,3 +29,25 @@ export function toLocalInput(date: Date = new Date()): string {
 export function localInputToIso(value: string): string {
 	return value ? new Date(value).toISOString() : new Date().toISOString();
 }
+
+/**
+ * Human "since" phrasing for a past moment.
+ *
+ * Deliberately coarse: this answers "how stale is this?", not "exactly when".
+ * Anything under a minute reads as "just now" rather than "0 minutes ago", and
+ * anything over a week falls back to a date so the number stays short.
+ */
+export function formatRelative(iso: string | null | undefined, nowMs: number = Date.now()): string {
+	if (!iso) return '—';
+	const t = new Date(iso).getTime();
+	if (!Number.isFinite(t)) return '—';
+	const mins = Math.floor((nowMs - t) / 60000);
+	if (mins < 1) return 'just now';
+	if (mins < 60) return `${mins} min ago`;
+	const hours = Math.floor(mins / 60);
+	if (hours < 24) return `${hours} hour${hours === 1 ? '' : 's'} ago`;
+	const days = Math.floor(hours / 24);
+	if (days === 1) return 'yesterday';
+	if (days < 7) return `${days} days ago`;
+	return formatTime(iso);
+}

@@ -95,6 +95,42 @@ repository.
 Nido is a record-keeping and charting tool. It is not a medical device, does
 not diagnose, and is not a substitute for a paediatrician.
 
+## Notifications
+
+Notification rules are **family-wide**. Any caregiver can add one, every caregiver
+sees every rule and every alert, and each rule is attributed to whoever set it.
+Rules for both tracking and inventory live on one page, `/notifications`.
+
+What you choose per inventory rule is **who gets emailed** — the whole family, or
+named caregivers. Only confirmed addresses are emailed. The audience governs email
+only: everyone in the family still sees everything, because the stock is shared
+and hiding it from the household helps nobody.
+
+The API emails newly firing inventory alerts on a timer, so nothing needs to be
+open in a browser. It is a timer inside the API process because a self-hosted
+install is one API container and one volume — evaluating is cheap, and families
+with no rules are skipped before their stock is read.
+
+Two details worth knowing:
+
+- A rule that matches keeps showing as firing, but each caregiver is **emailed
+  once per crossing**, not once per day, until the condition clears or its repeat
+  window elapses. That bookkeeping is per person, so one address bouncing does
+  not stop the others being told.
+- Reading the page never consumes a notification — only delivery records it.
+- The digest covers **inventory alerts only**. Tracking reminders appear in the
+  app but are not emailed yet.
+
+**Running more than one API replica?** Set `NOTIFY_ENABLED=false` on all but one.
+Replicas sharing a volume also coordinate through a lease in `registry.db`, but
+replicas on separate volumes have separate registries and cannot see each other,
+which is what the flag is for. `NOTIFY_INTERVAL_MINUTES` (default `60`) controls
+the interval; `GET /api/v1/notifications/status` reports the live configuration.
+
+The full design, including how the scheduler crosses the tenant boundary and the
+seam a future queue would slot into, is in
+`docs/notifications-architecture.md` in the repository.
+
 ## On-disk layout
 
 ```

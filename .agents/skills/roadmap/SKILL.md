@@ -82,6 +82,20 @@ When it reports drift, the board is the authority on **status** and the issues
 are the authority on **detail**. Fix whichever side is actually wrong — the
 report is a symptom, not an instruction to edit the generated block.
 
+### CI enforces it
+
+`.github/workflows/roadmap-sync.yml` runs `--check` on any change to `ROADMAP.md`,
+the script, or itself, so a stale table fails the build.
+
+The board is private to the owner, so the workflow needs a personal token:
+
+```bash
+# Actions secret: name it ROADMAP_SYNC_TOKEN, scope `project`
+```
+
+Without that secret the job warns and passes rather than pretending to verify
+anything. If it ever looks like it is skipping, check the secret first.
+
 ### Known wart
 
 GitHub is eventually consistent. Running the script immediately after creating an

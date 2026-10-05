@@ -1,6 +1,5 @@
 <script lang="ts">
 	import { ArrowLeft, ArrowRight } from 'lucide-svelte';
-	import { oppositeSide } from '$lib/breast';
 	import type { Side } from '$lib/logging/timers';
 
 	export let side: 'left' | 'right' | 'both' = 'left';
@@ -21,7 +20,6 @@
 		{#if lastSide}
 			<span class="text-xs text-ink-soft">
 				last: {#if lastSide === 'left'}<ArrowLeft class="w-3 h-3 inline mr-1" /> left{:else}right <ArrowRight class="w-3 h-3 inline ml-1" />{/if}
-				· try {oppositeSide(lastSide)} next
 			</span>
 		{/if}
 	</div>

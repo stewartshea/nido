@@ -22,6 +22,10 @@ services:
       - LOG_LEVEL=${LOG_LEVEL:-info}
       # Unset lets the API pick json (piped) or pretty (TTY) for itself.
       - LOG_FORMAT=${LOG_FORMAT:-}
+      # Notification digests. Leave on for a single API container. With replicas,
+      # set NOTIFY_ENABLED=false on all but one so nobody gets two copies.
+      - NOTIFY_ENABLED=${NOTIFY_ENABLED:-}
+      - NOTIFY_INTERVAL_MINUTES=${NOTIFY_INTERVAL_MINUTES:-60}
     volumes:
       - nido-data:/data
     restart: unless-stopped

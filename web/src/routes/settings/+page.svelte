@@ -2,7 +2,7 @@
 	import { onMount } from 'svelte';
 	import { browser } from '$app/environment';
 	import { goto } from '$app/navigation';
-	import { authAPI, userAPI, familiesAPI, feedingAPI, diaperAPI, sleepAPI, growthAPI, healthAPI, importsAPI, familyAdminAPI, accountAPI, milestoneAPI, vaccinationAPI, settingsAPI, moodAPI, journalAPI, tokenExpired, remindersAPI } from '$lib/api';
+	import { authAPI, userAPI, familiesAPI, feedingAPI, diaperAPI, sleepAPI, growthAPI, healthAPI, importsAPI, familyAdminAPI, accountAPI, milestoneAPI, vaccinationAPI, settingsAPI, moodAPI, journalAPI, tokenExpired } from '$lib/api';
 	import { authStore, authActions } from '$lib/stores/authStore';
 	import { uiStore, uiActions } from '$lib/stores/uiStore';
 	import PhotoStrip from '$lib/components/PhotoStrip.svelte';
@@ -80,55 +80,6 @@
 	let activeTab = 'feeds';
 	let defaultProfileId: number | null = null;
 	let summary: any = null;
-
-	// ----- Reminders (server-backed, family-scoped) -----
-	type ReminderRule = { id: number; kind: 'inactivity' | 'interval'; category: string; targetType: 'member' | 'home'; targetId: number | null; label: string | null; hours: number | null; intervalDays: number | null; overdue: boolean; since: string | null; enabled: boolean };
-	let reminderRules: ReminderRule[] = [];
-
-	async function loadReminders() {
-		try {
-			const res = await remindersAPI.list();
-			reminderRules = res.data.reminders ?? [];
-		} catch { reminderRules = []; }
-	}
-
-	async function addReminder(category: string, kind: 'inactivity' | 'interval', hours: number, label?: string) {
-		if (kind === 'inactivity' && hours <= 0) return;
-		if (kind === 'interval' && !label) return;
-		try {
-			await remindersAPI.create({
-				kind,
-				category: kind === 'inactivity' ? category : undefined,
-				label: kind === 'interval' ? label : undefined,
-				hours: kind === 'inactivity' ? hours : undefined,
-				intervalDays: kind === 'interval' ? hours : undefined,
-			});
-			await loadReminders();
-			notice = 'Reminder added.';
-		} catch (err: any) { error = err.response?.data?.error || 'Failed to add reminder.'; }
-	}
-
-	async function removeReminder(id: number) {
-		try {
-			await remindersAPI.remove(id);
-			await loadReminders();
-			notice = 'Reminder removed.';
-		} catch (err: any) { error = err.response?.data?.error || 'Failed to remove reminder.'; }
-	}
-
-	$: overdueReminders = reminderRules.filter((r) => r.enabled && r.overdue);
-
-	function reminderFieldValue(sel: string, fallback: string): string {
-		const el = document.querySelector(sel);
-		if (el instanceof HTMLSelectElement || el instanceof HTMLInputElement) return el.value || fallback;
-		return fallback;
-	}
-
-	function reminderFieldType(sel: string): 'inactivity' | 'interval' {
-		const el = document.querySelector(sel);
-		if (el instanceof HTMLSelectElement && el.value === 'interval') return 'interval';
-		return 'inactivity';
-	}
 
 	// Tracking categories now live in $lib/shared.ts (single source of truth).
 	// Categories enabled for the selected member.
@@ -586,7 +537,6 @@
 				isPanelAdmin = Number(u.is_platform_admin ?? 0) === 1;
 			}
 			loadQuickLinks();
-			loadReminders();
 		} catch {
 			isPanelAdmin = false;
 		}
@@ -1089,44 +1039,6 @@
 									<p class="text-xs text-ink-soft mt-2">{quickLinks.length} selected</p>
 								</div>
 								<div class="border-t border-line-soft pt-4">
-									<h4 class="font-display font-semibold mb-3">Reminders</h4>
-									<p class="text-xs text-ink-soft mb-2">Get an in-app nudge when something hasn&rsquo;t happened for a while — for baby tracking (&ldquo;no feed in 3h&rdquo;) or future home tasks (&ldquo;change furnace filter every 180 days&rdquo;).</p>
-									<div class="flex flex-col gap-3">
-										{#each reminderRules as rule}
-											<div class="flex items-center justify-between gap-2 bg-surface2 rounded-md px-3 py-2 text-sm">
-												<span class="text-ink">
-													{#if rule.kind === 'inactivity'}
-														no {rule.category === 'pumping' ? 'pump' : rule.category === 'diapers' ? 'change' : rule.category === 'sleep' ? 'sleep' : 'feed'} in {rule.hours}h
-													{:else}
-														{rule.label || rule.category} — every {rule.intervalDays}d
-													{/if}
-												</span>
-												<button type="button" on:click={() => removeReminder(rule.id)} class="text-xs text-danger-text hover:underline">Remove</button>
-											</div>
-										{/each}
-										<div class="flex flex-wrap items-end gap-2">
-											<select id="reminder-kind" class="px-3 py-2 border border-line rounded-md bg-surface text-ink text-sm">
-												<option value="inactivity">Babies: no … in</option>
-												<option value="interval">Home/routine: every</option>
-											</select>
-											<select id="reminder-category" class="px-3 py-2 border border-line rounded-md bg-surface text-ink text-sm">
-												<option value="feeds">Feed</option>
-												<option value="pumping">Pump</option>
-												<option value="diapers">Diaper</option>
-												<option value="sleep">Sleep</option>
-											</select>
-											<input id="reminder-hours" type="number" min="1" value="3" class="w-20 px-2 py-2 border border-line rounded-md bg-surface text-ink text-sm" placeholder="hours/days" />
-											<input id="reminder-label" type="text" class="w-40 px-2 py-2 border border-line rounded-md bg-surface text-ink text-sm" placeholder="task label (home)" />
-											<button type="button" on:click={() => addReminder(
-												reminderFieldValue('#reminder-category', 'feeds'),
-												reminderFieldType('#reminder-kind'),
-												Number(reminderFieldValue('#reminder-hours', '3')),
-												reminderFieldValue('#reminder-label', '') || undefined
-											)} class="bg-primary text-on-primary px-3 py-2 rounded-md text-sm">+ Add</button>
-										</div>
-									</div>
-								</div>
-								<div class="border-t border-line-soft pt-4">
 									<h4 class="font-display font-semibold mb-3">Family</h4>
 									<p class="text-sm text-ink-soft mb-2">Family: <span class="text-ink font-medium">{activeFamily?.name} <span class="text-accent font-mono text-sm">({activeFamily?.familyCode})</span></span></p>
 									<p class="text-sm text-ink-soft mb-2">Your role: <span class="text-ink font-medium">{activeFamily?.role || 'member'}</span></p>
@@ -1185,6 +1097,7 @@
 											{/if}
 									{/each}
 								</div>
+
 								<div class="border-t border-line-soft pt-4 mt-4">
 									<h4 class="font-display font-semibold text-sm mb-1">Daily anonymized summary sharing</h4>
 									<p class="text-sm text-ink-soft mb-2">Only an owner or admin can change this, because it decides what data leaves your family.</p>
@@ -1198,7 +1111,7 @@
 									<div class="mt-3 p-3 bg-surface2 rounded-md border border-line-soft">
 										<div class="flex items-center justify-between mb-2">
 											<p class="text-xs text-ink-soft uppercase">Preview of anonymized payload</p>
-											<button type="button" on:click={refreshAnonymizedPreview} class="text-xs text-primary underline" disabled={loadingAnonymizedPreview}>{loadingAnonymizedPreview ? 'Refreshing…' : 'Refresh'}</button>
+											<button type="button" on:click={refreshAnonymizedPreview} class="text-xs text-link underline" disabled={loadingAnonymizedPreview}>{loadingAnonymizedPreview ? 'Refreshing…' : 'Refresh'}</button>
 										</div>
 										{#if anonymizedPreview}
 											<pre class="text-[11px] leading-4 text-ink-soft whitespace-pre-wrap break-words">{JSON.stringify(anonymizedPreview, null, 2)}</pre>
@@ -1249,7 +1162,7 @@
 															<span class="px-2 py-0.5 rounded-full bg-surface2 text-ink-soft">trackable profile</span>
 														{/if}
 														{#if baby.linkedAccount}
-															<span class="px-2 py-0.5 rounded-full bg-primary/10 text-primary">account linked</span>
+															<span class="px-2 py-0.5 rounded-full bg-primary/10 text-link">account linked</span>
 														{:else}
 															<span class="px-2 py-0.5 rounded-full bg-danger/10 text-danger-text">no account linked</span>
 														{/if}
@@ -1260,10 +1173,10 @@
 												</div>
 												<div class="flex flex-col gap-1 items-end">
 													{#if baby.email && !baby.linkedAccount}
-														<button type="button" class="text-xs text-primary underline" on:click={() => inviteMemberEmail(String(baby.email))}>invite account</button>
+														<button type="button" class="text-xs text-link underline" on:click={() => inviteMemberEmail(String(baby.email))}>invite account</button>
 													{/if}
 													<button type="button" class="text-xs text-ink-soft underline" on:click={() => openEditMember(baby)}>edit</button>
-													<button type="button" class="text-xs {baby.trackable ? 'text-danger-text' : 'text-primary'} underline" on:click={() => toggleMemberTracking(baby)}>{baby.trackable ? 'stop tracking' : 'track'}</button>
+													<button type="button" class="text-xs {baby.trackable ? 'text-danger-text' : 'text-link'} underline" on:click={() => toggleMemberTracking(baby)}>{baby.trackable ? 'stop tracking' : 'track'}</button>
 												</div>
 											</li>
 										{/each}

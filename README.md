@@ -28,6 +28,7 @@ codebase with the same features.
 - **Journal & mood** — free-form notes per day
 - **Shared family access** — invite caregivers, owner/admin/member roles
 - **Reminders** — inactivity and interval nudges
+- **Notifications** — one page for every rule, with email digests sent on a timer
 - **Export / restore** — move a family's whole dataset as JSON
 - **Offline queue** — writes made without a connection are queued and replayed
 - **Themes** — 7 palettes × light/dark, plus a custom theme editor
@@ -77,6 +78,8 @@ the data volume.
 | `API_PROXY_TARGET` | no | Where the web server forwards `/api` |
 | `LOG_LEVEL` | no | API log verbosity: `debug`, `info` (default), `warn`, `error`, `silent` |
 | `LOG_FORMAT` | no | API log format: `json` or `pretty`. Defaults to `json` when stdout is a pipe, `pretty` on a terminal |
+| `NOTIFY_ENABLED` | no | Run the notification digest on a timer. Defaults to on. Turn off on all but one replica when running more than one |
+| `NOTIFY_INTERVAL_MINUTES` | no | How often the digest runs. Default `60`. Evaluating is cheap; email only goes out when something newly matches |
 
 ## Logging
 
@@ -209,7 +212,6 @@ already record, and runout is forecast ahead of time.
 
 Also on the list:
 
-- Static build of the web client for GitHub Pages
 - Photo size limits and server-side EXIF stripping
 - Run tests in CI
 

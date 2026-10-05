@@ -1,15 +1,13 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { browser } from '$app/environment';
-	import { authAPI, userAPI, familiesAPI, feedingAPI, diaperAPI, sleepAPI, growthAPI, healthAPI, importsAPI, milestoneAPI, vaccinationAPI, settingsAPI, moodAPI, journalAPI, tokenExpired, remindersAPI } from '$lib/api';
+	import { authAPI, userAPI, familiesAPI, feedingAPI, diaperAPI, sleepAPI, growthAPI, healthAPI, importsAPI, milestoneAPI, vaccinationAPI, settingsAPI, moodAPI, journalAPI, tokenExpired } from '$lib/api';
 	import { authStore, authActions } from '$lib/stores/authStore';
 	import { uiStore, uiActions } from '$lib/stores/uiStore';
 	import PhotoStrip from '$lib/components/PhotoStrip.svelte';
 	import ToggleSwitch from '$lib/components/ToggleSwitch.svelte';
 	import { CATEGORIES } from '$lib/shared';
 	import { Home, Timer, AlertCircle, Check } from 'lucide-svelte';
-
-
 
 	$: if ($uiStore.accountPanelOpen) {
 		uiActions.setSection('account');
@@ -54,8 +52,6 @@
 		}
 	}
 
-
-
 	let loading = false;
 
 	let babies: any[] = [];
@@ -67,30 +63,12 @@
 	let defaultProfileId: number | null = null;
 	let summary: any = null;
 
-	// ----- Reminders (server-backed, family-scoped) -----
-	type ReminderRule = { id: number; kind: 'inactivity' | 'interval'; category: string; targetType: 'member' | 'home'; targetId: number | null; label: string | null; hours: number | null; intervalDays: number | null; overdue: boolean; since: string | null; enabled: boolean };
-	let reminderRules: ReminderRule[] = [];
-
-	async function loadReminders() {
-		try {
-			const res = await remindersAPI.list();
-			reminderRules = res.data.reminders ?? [];
-		} catch { reminderRules = []; }
-	}
-
-
-
-	$: overdueReminders = reminderRules.filter((r) => r.enabled && r.overdue);
-
-
-
 	// Tracking categories now live in $lib/shared.ts (single source of truth).
 	// Categories enabled for the selected member.
 	let activeCategories: string[] = [];
 
 	// Family-scoped tracking settings (categories + per-category option lists).
 	let familySettings: { categories: string[] | null; categoryOptions: Record<string, Record<string, string[]>>; defaultCategoryOptions: Record<string, Record<string, string[]>> } | null = null;
-
 
 	// Family onboarding
 
@@ -117,7 +95,6 @@
 
 	let sleepStartedAt: number | null = null;
 
-
 	let feedings: any[] = [];
 	let diapers: any[] = [];
 	let sleeps: any[] = [];
@@ -128,7 +105,6 @@
 	let journalEntries: any[] = [];
 
 	// Breast-feeding totals + last side, derived from loaded feedings.
-
 
 	function avg(a: number[]): number | null {
 		if (a.length === 0) return null;
@@ -154,12 +130,6 @@
 			avgDur30d: avg(dur30d),
 		};
 	})();
-
-
-
-
-
-
 
 	async function refreshSummary() {
 		if (!selectedMemberId) return;
@@ -198,11 +168,7 @@
 		}
 	}
 
-
-
 	// Edit modal state
-
-
 
 	async function loadFamilies() {
 		try {
@@ -259,11 +225,6 @@
 		}
 	}
 
-
-
-
-
-
 	function handleLogout() {
 		authActions.logout();
 		isAuthenticated = false;
@@ -278,9 +239,6 @@
 		sleepStartedAt = null;
 	}
 
-
-
-
 	async function loadInvitations() {
 		if (!activeFamilyId) {
 			invitations = [];
@@ -294,9 +252,6 @@
 		}
 	}
 
-
-
-
 	async function loadImportRuns() {
 		try {
 			const res = await importsAPI.runs();
@@ -305,18 +260,6 @@
 			importRuns = [];
 		}
 	}
-
-
-
-
-
-
-
-
-
-
-
-
 
 	// Instance settings (Admin tab)
 	let appSettings: any = null;
@@ -344,7 +287,6 @@
 				isPanelAdmin = Number(u.is_platform_admin ?? 0) === 1;
 			}
 			loadQuickLinks();
-			loadReminders();
 		} catch {
 			isPanelAdmin = false;
 		}
@@ -366,12 +308,6 @@
 		}
 	}
 
-
-
-
-
-
-
 	async function loadFamilySettings() {
 		if (!activeFamilyId) return;
 		try {
@@ -386,43 +322,11 @@
 		}
 	}
 
-
-
-
-
-
-
-
-
-
-
-
-
-
 	// Live per-side elapsed (ms) = frozen total + live running time.
 
 	// ----- Connection-resilience: persisted timers + offline outbox -----
 	// Timer state is written to localStorage on every mutation so a reload or a
 	// dropped connection mid-session does not lose accumulated time. The outbox
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 	
 
@@ -458,7 +362,6 @@
 			}
 		}
 	});
-
 
 </script>
  			{#if notice || error}

@@ -64,6 +64,22 @@ export const REGISTRY_MIGRATIONS: Migration[] = [
       );
     `,
   },
+  {
+    version: 2,
+    name: 'registry-scheduler-leases',
+    sql: `
+      -- Which process currently owns a periodic job. Lives in the registry
+      -- rather than a family database because the job spans every family, and
+      -- because a single row is the cheapest possible coordination primitive
+      -- when several replicas share one data volume.
+      CREATE TABLE IF NOT EXISTS scheduler_leases (
+        name        TEXT PRIMARY KEY,
+        holder      TEXT NOT NULL,
+        acquired_at TEXT NOT NULL,
+        expires_at  TEXT NOT NULL
+      );
+    `,
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -466,10 +482,207 @@ export const FAMILY_MIGRATIONS: Migration[] = [
        UPDATE milestones SET kind = 'medical' WHERE category = 'medical';
      `,
    },
- ];
+   {
+     version: 11,
+     name: 'inventory',
+     sql: `
+       -- Inventory is household-scoped: baby_id is NULL for a home item (filters,
+       -- batteries) and set for stock belonging to one member (diaper sizes).
+       CREATE TABLE IF NOT EXISTS inventory_items (
+         id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+         baby_id            INTEGER,
+         name               TEXT NOT NULL,
+         category           TEXT NOT NULL,
+         variant            TEXT,
+         quantity           REAL NOT NULL DEFAULT 0,
+         unit               TEXT DEFAULT 'count',
+         pack_size          REAL,
+         lead_days          INTEGER,
+         event_category     TEXT,
+         decrement_per_event REAL,
+         active             INTEGER DEFAULT 1,
+         notes              TEXT,
+         created_at         TEXT DEFAULT CURRENT_TIMESTAMP,
+         updated_at         TEXT DEFAULT CURRENT_TIMESTAMP,
+         FOREIGN KEY (baby_id) REFERENCES babies(id) ON DELETE CASCADE
+       );
+       CREATE INDEX IF NOT EXISTS idx_inventory_items_baby ON inventory_items(baby_id, active);
+       CREATE INDEX IF NOT EXISTS idx_inventory_items_event ON inventory_items(event_category, active);
 
-// ---------------------------------------------------------------------------
-// Clients
+       -- Every quantity change is a row here, so consumption rate is a query
+       -- rather than a guess from the current number.
+       CREATE TABLE IF NOT EXISTS inventory_adjustments (
+         id          INTEGER PRIMARY KEY AUTOINCREMENT,
+         item_id     INTEGER NOT NULL,
+         change      REAL NOT NULL,
+         reason      TEXT NOT NULL DEFAULT 'manual',
+         ref_table   TEXT,
+         ref_id      INTEGER,
+         note        TEXT,
+         created_by  TEXT,
+         created_at  TEXT DEFAULT CURRENT_TIMESTAMP,
+         FOREIGN KEY (item_id) REFERENCES inventory_items(id) ON DELETE CASCADE
+       );
+       CREATE INDEX IF NOT EXISTS idx_inventory_adj_item ON inventory_adjustments(item_id, created_at);
+       -- One event counts once per item, so a retry cannot double-count. The
+       -- index must include item_id: two sizes of the same consumable are both
+       -- driven by the same logged event, and a global (ref_table, ref_id) index
+       -- let whichever inserted first swallow the event for the other.
+       CREATE UNIQUE INDEX IF NOT EXISTS idx_inventory_adj_ref ON inventory_adjustments(item_id, ref_table, ref_id) WHERE ref_table IS NOT NULL;
+
+       CREATE TABLE IF NOT EXISTS diaper_sizes (
+         id           INTEGER PRIMARY KEY AUTOINCREMENT,
+         baby_id      INTEGER NOT NULL,
+         size         TEXT NOT NULL,
+         item_id      INTEGER,
+         start_date   TEXT,
+         active       INTEGER DEFAULT 1,
+         created_at   TEXT DEFAULT CURRENT_TIMESTAMP,
+         FOREIGN KEY (baby_id) REFERENCES babies(id) ON DELETE CASCADE,
+         FOREIGN KEY (item_id) REFERENCES inventory_items(id) ON DELETE SET NULL
+       );
+       CREATE INDEX IF NOT EXISTS idx_diaper_sizes_baby ON diaper_sizes(baby_id, active);
+     `,
+   },
+   {
+     version: 12,
+     name: 'diaper-size-weight-band',
+     sql: `
+       -- Weight at which a size is expected to be outgrown. Nullable and
+       -- per-row so the bands can be corrected, or omitted entirely.
+       ALTER TABLE diaper_sizes ADD COLUMN weight_band_kg REAL;
+     `,
+   },
+   {
+     version: 13,
+     name: 'inventory-rules',
+     sql: `
+       -- Categories are deliberately NOT a lookup table: a household can invent
+       -- one whenever it needs to. The route seeds a starter list and otherwise
+       -- accepts free text, so adding a category is data, not a migration.
+       --
+       -- A rule names a signal (see api/src/inventory-signals.ts) and a line to
+       -- cross. item_id null plus a category applies the rule across that whole
+       -- category, which is how "warn me about any filter change" is expressed.
+       CREATE TABLE IF NOT EXISTS inventory_rules (
+         id            INTEGER PRIMARY KEY AUTOINCREMENT,
+         family_id     INTEGER NOT NULL,
+         item_id       INTEGER,
+         category      TEXT,
+         signal        TEXT NOT NULL,
+         comparator    TEXT NOT NULL DEFAULT 'lte',
+         threshold     REAL NOT NULL,
+         repeat_days   INTEGER,
+         enabled       INTEGER DEFAULT 1,
+         label         TEXT,
+         created_by    TEXT,
+         created_at    TEXT DEFAULT CURRENT_TIMESTAMP,
+         FOREIGN KEY (family_id) REFERENCES households(id)
+       );
+       CREATE INDEX IF NOT EXISTS idx_inventory_rules_family ON inventory_rules(family_id, enabled);
+
+       -- Fired-at history, so a rule that is simply true stays quiet instead of
+       -- alerting on every page load.
+       CREATE TABLE IF NOT EXISTS inventory_rule_state (
+         rule_id       INTEGER NOT NULL,
+         item_id       INTEGER NOT NULL,
+         last_fired_at TEXT,
+         PRIMARY KEY (rule_id, item_id),
+         FOREIGN KEY (rule_id) REFERENCES inventory_rules(id) ON DELETE CASCADE
+       );
+     `,
+   },
+   {
+     version: 16,
+     name: 'inventory-categories-and-per-item-ref',
+     sql: `
+       -- Items keep a free-text category so nothing is ever rejected, and this
+       -- table is the household's own vocabulary of categories to pick from.
+       -- Categories already used by items are unioned in at read time, so a
+       -- pre-existing item is never orphaned by adding the list afterwards.
+       --
+       -- Deliberately not seeded here: the households row is written after
+       -- migrations run, so a seed insert would fail the foreign key.
+       CREATE TABLE IF NOT EXISTS inventory_categories (
+         id          INTEGER PRIMARY KEY AUTOINCREMENT,
+         family_id   INTEGER NOT NULL,
+         name        TEXT NOT NULL,
+         sort_order  INTEGER NOT NULL DEFAULT 0,
+         created_at  TEXT DEFAULT CURRENT_TIMESTAMP,
+         UNIQUE (family_id, name),
+         FOREIGN KEY (family_id) REFERENCES households(id)
+       );
+
+       -- One logged event counts once per item. A global (ref_table, ref_id)
+       -- index let one of two same-type items swallow the event from the other,
+       -- so it is rebuilt per item wherever the narrower form is not in place.
+       DROP INDEX IF EXISTS idx_inventory_adj_ref;
+       CREATE UNIQUE INDEX IF NOT EXISTS idx_inventory_adj_ref
+         ON inventory_adjustments(item_id, ref_table, ref_id) WHERE ref_table IS NOT NULL;
+     `,
+   },
+   {
+     version: 17,
+     name: 'inventory-scheduled-consumption',
+     sql: `
+       -- Some things are used up by the calendar rather than by something you
+       -- log: a daily contact, a fortnightly filter. consume_interval_days is
+       -- that cadence, consume_started_at the anchor, and cycles_applied records
+       -- how far the ledger has been brought up to, so applying the catch-up is
+       -- idempotent no matter how long the app was not opened.
+       ALTER TABLE inventory_items ADD COLUMN consume_interval_days INTEGER;
+       ALTER TABLE inventory_items ADD COLUMN consume_started_at TEXT;
+       ALTER TABLE inventory_items ADD COLUMN consume_cycles_applied INTEGER NOT NULL DEFAULT 0;
+     `,
+   },
+   {
+     version: 18,
+     name: 'inventory-expiry-and-adjustment-source',
+     sql: `
+       -- Optional shelf life. Drives the days_to_expiry signal, so "tell me a
+       -- week before this expires" is a rule rather than bespoke code.
+       ALTER TABLE inventory_items ADD COLUMN expires_at TEXT;
+
+       -- Where each ledger row came from. A scheduled row is the app's own guess;
+       -- an event or manual row is something the user actually told us, which is
+       -- what "have they confirmed usage lately" has to be measured against.
+ALTER TABLE inventory_adjustments ADD COLUMN source TEXT DEFAULT 'manual';
+    `,
+  },
+  {
+    version: 19,
+    name: 'notification-audience-and-per-recipient-state',
+    sql: `
+      -- Who gets told. 'family' means every caregiver with an account; 'users'
+      -- means the listed account ids and nobody else. Stored as a JSON array of
+      -- ids rather than a child table because the set is small, always read
+      -- whole, and never queried across rules.
+      ALTER TABLE inventory_rules ADD COLUMN audience_kind TEXT NOT NULL DEFAULT 'family';
+      ALTER TABLE inventory_rules ADD COLUMN audience_ids TEXT;
+
+      -- Replaces inventory_rule_state, which recorded one timestamp per
+      -- (rule, item) for the whole family. That could not express "Sam has been
+      -- told but Alex has not", so one person's bounce silenced everyone. This
+      -- keys the timestamp per recipient instead.
+      --
+      -- The old rows are dropped rather than migrated. They recorded a crossing
+      -- under the previous broadcast-only behaviour, and there is no way to
+      -- attribute them to a person. The cost is one digest after upgrade for
+      -- whatever happens to be firing at that moment, which is the honest
+      -- reading: nobody has been told about those yet.
+      DROP TABLE IF EXISTS inventory_rule_state;
+      CREATE TABLE IF NOT EXISTS inventory_rule_recipients (
+        rule_id         INTEGER NOT NULL,
+        item_id         INTEGER NOT NULL,
+        user_id         TEXT NOT NULL,
+        last_notified_at TEXT,
+        PRIMARY KEY (rule_id, item_id, user_id),
+        FOREIGN KEY (rule_id) REFERENCES inventory_rules(id) ON DELETE CASCADE
+      );
+    `,
+  },
+];
+
 // ---------------------------------------------------------------------------
 let registryClient: SqliteFacade | null = null;
 

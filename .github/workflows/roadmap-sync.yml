@@ -1,0 +1,55 @@
+name: Roadmap sync
+
+# ROADMAP.md carries a generated table of the GitHub Projects board. If someone
+# moves a card or closes an issue without re-running the sync, the published
+# roadmap quietly stops matching reality. This fails the build instead.
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "ROADMAP.md"
+      - "scripts/roadmap-sync.mjs"
+      - ".github/workflows/roadmap-sync.yml"
+  push:
+    branches: [main]
+    paths:
+      - "ROADMAP.md"
+      - "scripts/roadmap-sync.mjs"
+      - ".github/workflows/roadmap-sync.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  # Needed to read the project board the table is generated from.
+  project: read
+
+concurrency:
+  group: roadmap-sync
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      # The board is private to the owner today. GITHUB_TOKEN cannot read it, so
+      # a personal token is used when the secret exists. Without the secret the
+      # check reports what it could not verify rather than passing silently.
+      - name: Check ROADMAP.md against the board
+        env:
+          GH_TOKEN: ${{ secrets.ROADMAP_SYNC_TOKEN || github.token }}
+        run: |
+          if [ -z "${ROADMAP_SYNC_TOKEN:-}" ]; then
+            echo "::warning::ROADMAP_SYNC_TOKEN is not set; cannot verify ROADMAP.md against the board."
+            echo "Add it as an Actions secret with 'project' scope to enforce this check."
+            exit 0
+          fi
+          node scripts/roadmap-sync.mjs --check

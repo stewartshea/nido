@@ -10,6 +10,7 @@ export default {
 				surface2: 'rgb(var(--c-surface2) / <alpha-value>)',
 				ink: 'rgb(var(--c-ink) / <alpha-value>)',
 				'ink-soft': 'rgb(var(--c-ink-soft) / <alpha-value>)',
+				link: 'rgb(var(--c-link) / <alpha-value>)',
 				primary: 'rgb(var(--c-primary) / <alpha-value>)',
 				'primary-hover': 'rgb(var(--c-primary-hover) / <alpha-value>)',
 				'on-primary': 'rgb(var(--c-on-primary) / <alpha-value>)',

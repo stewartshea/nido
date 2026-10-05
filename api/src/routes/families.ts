@@ -467,6 +467,34 @@ async function handleCreateFamily(c: Context<AuthEnv>) {
 	}
 
 // GET /members — list members
+/**
+ * The caregivers in this family who actually have an account, which is the set a
+ * notification can be addressed to. `emailVerified` is included because picking
+ * someone who never confirmed their address would silently never be emailed, and
+ * that should be visible at the point of choosing rather than discovered later.
+ */
+async function handleGetAccounts(c: Context<AuthEnv>) {
+	const db = c.get('db');
+	const role = await familyAccess(c);
+	if (!role) return c.json({ error: 'No family access' }, 403);
+
+	const res = await db.execute({
+		sql: `SELECT u.id, u.first_name AS firstName, u.last_name AS lastName,
+		             u.email, u.email_verified AS emailVerified
+		      FROM users u JOIN user_households uh ON uh.user_id = u.id
+		      WHERE uh.household_id = ?
+		      ORDER BY u.first_name`,
+		args: [NAMESPACE_HOUSEHOLD_ID],
+	});
+	const accounts = (res.rows as any[]).map((r) => ({
+		id: String(r.id),
+		name: [r.firstName, r.lastName].filter(Boolean).join(' ').trim() || String(r.email),
+		email: String(r.email),
+		emailVerified: Number(r.emailVerified ?? 0) === 1,
+	}));
+	return c.json({ accounts });
+}
+
 async function handleGetMembers(c: Context<AuthEnv>) {
 	const db = c.get('db');
 
@@ -1195,6 +1223,7 @@ familyRoutes.post('/', handleCreateFamily);
 familyRoutes.post('/join', zValidator('json', joinSchema), handleJoinFamily);
 
 familyRoutes.get('/members', handleGetMembers);
+familyRoutes.get('/accounts', handleGetAccounts);
 familyRoutes.post('/members', zValidator('json', addMemberSchema), handleAddMember);
 familyRoutes.put('/members/:memberId{[0-9]+}', zValidator('json', updateMemberSchema), handleUpdateMember);
 familyRoutes.delete('/members/:memberId{[0-9]+}', handleDeleteMember);

@@ -86,6 +86,9 @@ function shape(r: any, ev: { overdue: boolean; since: number | null }) {
 		enabled: Number(r?.enabled ?? 1) === 1,
 		overdue: ev.overdue,
 		since: ev.since ? new Date(ev.since).toISOString() : null,
+		// Rules are family-wide, so the UI must be able to attribute them.
+		createdBy: r?.created_by ?? null,
+		createdByName: r?.creator_first_name ?? null,
 	};
 }
 
@@ -99,7 +102,9 @@ reminderRoutes.get('/', async (c) => {
 	const familyId = Number((fam as any).household_id);
 
 	const res = await db.execute({
-		sql: `SELECT * FROM reminders WHERE family_id = ? ORDER BY created_at`,
+		sql: `SELECT r.*, u.first_name AS creator_first_name FROM reminders r
+		      LEFT JOIN users u ON u.id = r.created_by
+		      WHERE r.family_id = ? ORDER BY r.created_at`,
 		args: [familyId],
 	});
 	const reminders: any[] = [];

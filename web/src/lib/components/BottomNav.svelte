@@ -1,17 +1,12 @@
 <script lang="ts">
 	import { page } from '$app/stores';
-	import { LayoutDashboard, Users, Home, Settings } from 'lucide-svelte';
+	import { BOTTOM_NAV } from '$lib/nav';
 
-	const navItems = [
-		{ id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, href: '/dashboard' },
-		{ id: 'family', label: 'Family', icon: Users, href: '/family' },
-		{ id: 'home', label: 'Home', icon: Home, href: '/home' },
-		{ id: 'settings', label: 'Settings', icon: Settings, href: '/settings' }
-	];
+	const navItems = BOTTOM_NAV;
 </script>
 
 <nav class="fixed bottom-0 left-0 right-0 z-40 bg-surface border-t border-line-soft pb-safe md:hidden">
-	<div class="grid grid-cols-4 h-20 px-1">
+	<div class="grid grid-cols-5 h-20 px-1">
 		{#each navItems as item}
 			{@const isActive = $page.url.pathname.startsWith(item.href)}
 			<a

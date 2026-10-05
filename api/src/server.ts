@@ -15,6 +15,7 @@ import { userRoutes } from './routes/user';
 import { babyRoutes } from './routes/baby';
 import { feedingRoutes } from './routes/feedings';
 import { diaperRoutes } from './routes/diapers';
+import inventoryRoutes from './routes/inventory';
 import { sleepRoutes } from './routes/sleep';
 import { growthRoutes } from './routes/growth';
 import { healthRoutes } from './routes/health';
@@ -28,6 +29,8 @@ import { settingsRoutes } from './routes/settings';
 import { moodRoutes } from './routes/moods';
 import { journalRoutes } from './routes/journal';
 import { reminderRoutes } from './routes/reminders';
+import { notificationStatusRoutes } from './routes/notification-status';
+import { startScheduler, stopScheduler } from './scheduler';
 import { bootstrapAdmin } from './authz';
 
 const app = new Hono<AuthEnv>();
@@ -64,6 +67,8 @@ app.route('/api/v1/users', userRoutes);
 app.route('/api/v1/babies', babyRoutes);
 app.route('/api/v1/feedings', feedingRoutes);
 app.route('/api/v1/diapers', diaperRoutes);
+app.route('/api/v1/inventory', inventoryRoutes);
+app.route('/api/v1/notifications', notificationStatusRoutes);
 app.route('/api/v1/sleep', sleepRoutes);
 app.route('/api/v1/growth', growthRoutes);
 app.route('/api/v1/health', healthRoutes);
@@ -108,6 +113,7 @@ if (process.env.NODE_ENV !== 'test') {
     try {
       await ensureRegistry();
       await bootstrapAdmin();
+      startScheduler();
     } catch (error) {
       log.error('registry database could not be opened — exiting', {
         event: 'boot_failed',
@@ -121,6 +127,14 @@ if (process.env.NODE_ENV !== 'test') {
       logBoot({ port: info.port, dataDir: process.env.NIDO_DATA_DIR ?? './data' });
     });
 
-    installSignalHandlers({ server, onShutdown: closeAllClients });
+    // The timer is stopped before the database handles it would use, so a sweep
+    // in flight cannot outlive the clients it is reading through.
+    installSignalHandlers({
+      server,
+      onShutdown: async () => {
+        stopScheduler();
+        closeAllClients();
+      },
+    });
   })();
 }

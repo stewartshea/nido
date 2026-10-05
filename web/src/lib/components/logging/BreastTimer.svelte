@@ -6,7 +6,7 @@
 		emptyBreastTimer, toggleSide, timerHasTime, timerIsRunning, sideTotals,
 		loadBreastTimer, saveBreastTimer, clearBreastTimer, type BreastTimerState, type Side,
 	} from '$lib/logging/timers';
-	import { buildTimerFeed, oppositeSide, type TimerFeedPayload } from '$lib/breast';
+	import { buildTimerFeed, type TimerFeedPayload } from '$lib/breast';
 	import { formatElapsed } from '$lib/logging/format';
 
 	export let storageKey: string;
@@ -100,7 +100,6 @@
 	{#if lastSide}
 		<span class="text-xs text-ink-soft">
 			last: {#if lastSide === 'left'}<ArrowLeft class="w-3 h-3 inline mr-1" /> left{:else}right <ArrowRight class="w-3 h-3 inline ml-1" />{/if}
-			· try {oppositeSide(lastSide)} next
 		</span>
 	{/if}
 </div>

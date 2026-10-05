@@ -110,11 +110,19 @@ export const babyAPI = {
 };
 
 // Family API functions — family-first model
+export interface FamilyAccount {
+	id: string;
+	name: string;
+	email: string;
+	emailVerified: boolean;
+}
+
 export const familiesAPI = {
   list: () => api.get('/families'),
   create: (data: { name: string; member?: { type: string; name: string; birthDate?: string; gender?: string; email?: string } }) =>
     api.post('/families', data),
   members: (familyId: string) => api.get(`/families/${familyId}/members`),
+  accounts: () => api.get<{ accounts: FamilyAccount[] }>('/families/accounts'),
   addMember: (familyId: string, data: { type?: string; name: string; birthDate?: string; gender?: string; email?: string; categories?: string[] }) =>
     api.post(`/families/${familyId}/members`, data),
   updateMember: (familyId: string, memberId: number, data: { type?: string; name?: string; birthDate?: string | null; gender?: string | null; email?: string | null; categories?: string[]; trackable?: boolean }) =>
@@ -332,8 +340,152 @@ export const settingsAPI = {
   test: () => api.post('/settings/test'),
 };
 
+export interface InventoryItem {
+	id: number;
+	memberId: number | null;
+	name: string;
+	category: string;
+	variant: string | null;
+	quantity: number;
+	unit: string;
+	packSize: number | null;
+	leadDays: number | null;
+	eventCategory: string | null;
+	decrementPerEvent: number | null;
+	active: boolean;
+	notes: string | null;
+	consumptionPerDay: number;
+	daysOfCover: number | null;
+	runoutAt: string | null;
+	lowConfidence: boolean;
+	/** True when a rule is firing for this item right now. */
+	alerting: boolean;
+	/** What the adjustment ledger says the count should be, or null with no history. */
+	ledgerQuantity: number | null;
+	/** ledgerQuantity minus quantity; non-zero means the two disagree. */
+	drift: number | null;
+	/** Days between automatic uses, for things consumed by the calendar. */
+	consumeIntervalDays: number | null;
+	consumeStartedAt: string | null;
+	/** Optional expiry date; drives the days_to_expiry signal. */
+	expiresAt: string | null;
+	/** Whole days until expiry, or null when unset or already past. */
+	daysToExpiry: number | null;
+	/** When the next automatic use falls due, once catch-up is settled. */
+	nextConsumptionAt: string | null;
+}
+
+export interface InventoryAlert {
+	ruleId: number;
+	itemId: number;
+	itemName: string;
+	signal: string;
+	signalLabel: string;
+	comparator: 'lt' | 'lte' | 'gt' | 'gte';
+	threshold: number;
+	value: number;
+	unit: string;
+	/** False once the family has already been told about this crossing. */
+	notified: boolean;
+	message: string;
+}
+
+export interface Audience {
+	kind: 'family' | 'users';
+	ids: string[];
+}
+
+export interface InventoryRule {
+	id: number;
+	itemId: number | null;
+	category: string | null;
+	signal: string;
+	comparator: 'lt' | 'lte' | 'gt' | 'gte';
+	threshold: number;
+	repeatDays: number | null;
+	enabled: boolean;
+	createdBy: string | null;
+	createdByName: string | null;
+	audienceKind: 'family' | 'users';
+	audienceIds: string[];
+}
+
+export interface Reminder {
+	id: number;
+	kind: 'inactivity' | 'interval';
+	category: string | null;
+	targetType: 'member' | 'home';
+	targetId: number | null;
+	label: string | null;
+	hours: number | null;
+	intervalDays: number | null;
+	lastAt: string | null;
+	enabled: boolean;
+	overdue: boolean;
+	since: string | null;
+	createdBy: string | null;
+	createdByName: string | null;
+}
+
+export const inventoryAPI = {
+	categories: () => api.get('/inventory/categories'),
+	list: () => api.get<{ items: InventoryItem[]; alerts: InventoryAlert[] }>('/inventory'),
+	categoriesInUse: () => api.get<{ categories: string[] }>('/inventory/categories'),
+	addCategory: (name: string) => api.post('/inventory/categories', { name }),
+	removeCategory: (name: string) => api.delete(`/inventory/categories/${encodeURIComponent(name)}`),
+	signals: () => api.get<{ signals: { name: string; label: string; unit: string; describe: string }[] }>('/inventory/signals'),
+	rules: () => api.get<{ rules: InventoryRule[] }>('/inventory/rules'),
+	createRule: (data: {
+		itemId?: number | null; category?: string | null; signal: string;
+		comparator?: 'lt' | 'lte' | 'gt' | 'gte'; threshold: number; repeatDays?: number | null;
+		audienceKind?: 'family' | 'users'; audienceIds?: string[];
+	}) => api.post('/inventory/rules', data),
+	deleteRule: (id: number) => api.delete(`/inventory/rules/${id}`),
+	recount: (id: number, quantity: number, note?: string | null) =>
+		api.post(`/inventory/${id}/recount`, { quantity, note: note ?? null }),
+	resetHistory: (id: number, quantity: number, note?: string | null) =>
+		api.post(`/inventory/${id}/reset-history`, { quantity, note: note ?? null }),
+	resetAll: () => api.post('/inventory/reset', { confirm: 'RESET' }),
+	notify: () => api.post<{ message: string; sent: number; alerts: number }>('/inventory/notify'),
+	create: (data: {
+		memberId?: number | null; name: string; category: string; variant?: string | null;
+		quantity?: number; unit?: string; packSize?: number | null; leadDays?: number | null;
+		eventCategory?: string | null; decrementPerEvent?: number | null; consumeIntervalDays?: number | null;
+		expiresAt?: string | null; notes?: string | null;
+	}) => api.post('/inventory', data),
+	update: (id: number, data: Partial<{
+		name: string; variant?: string | null; unit: string; packSize?: number | null;
+		leadDays?: number | null; eventCategory?: string | null; decrementPerEvent?: number | null;
+		consumeIntervalDays?: number | null; expiresAt?: string | null; notes?: string | null; active: boolean;
+	}>) => api.put(`/inventory/${id}`, data),
+	adjust: (id: number, data: { change: number; reason: 'purchase' | 'used' | 'manual' | 'correction'; note?: string | null }) =>
+		api.post(`/inventory/${id}/adjust`, data),
+	adjustments: (id: number) => api.get(`/inventory/${id}/adjustments`),
+	diaperSizes: (memberId: number) =>
+		api.get<{ sizes: any[]; signals: Record<string, number | null>; linkedItemId: number | null }>(
+			`/inventory/diaper-sizes?memberId=${memberId}`),
+	diaperSizePresets: () => api.get<{ presets: { size: string; weightBandKg: number }[] }>('/inventory/diaper-size-presets'),
+	preloadDiaperSizes: (data: { memberId: number; sizes?: { size: string; weightBandKg?: number | null }[]; itemId?: number | null }) =>
+		api.post('/inventory/diaper-sizes/preload', data),
+	addDiaperSize: (data: { memberId: number; size: string; itemId?: number | null; weightBandKg?: number | null }) =>
+		api.post('/inventory/diaper-sizes', data),
+	updateDiaperSize: (id: number, data: Partial<{ size: string; itemId?: number | null; active: boolean; weightBandKg?: number | null }>) =>
+		api.put(`/inventory/diaper-sizes/${id}`, data),
+	retireDiaperSize: (id: number) => api.delete(`/inventory/diaper-sizes/${id}`),
+};
+
+export interface NotifySchedule {
+	enabled: boolean;
+	running: boolean;
+	intervalMinutes: number;
+}
+
+export const notificationsAPI = {
+	status: () => api.get<NotifySchedule>('/notifications/status'),
+};
+
 export const remindersAPI = {
-  list: () => api.get('/reminders'),
+  list: () => api.get<{ reminders: Reminder[] }>('/reminders'),
   create: (data: { kind: 'inactivity' | 'interval'; category?: string; targetType?: 'member' | 'home'; targetId?: number; label?: string; hours?: number; intervalDays?: number }) =>
     api.post('/reminders', data),
   update: (id: number, data: Partial<{ kind: 'inactivity' | 'interval'; category?: string; targetType?: 'member' | 'home'; targetId?: number; label?: string; hours?: number; intervalDays?: number; enabled?: boolean }>) =>

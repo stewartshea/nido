@@ -1,15 +1,25 @@
 <script lang="ts">
 	import { createEventDispatcher } from 'svelte';
 	import { Milk, Baby, Moon } from 'lucide-svelte';
-	import { formatElapsed, formatTime } from '$lib/logging/format';
+	import { formatElapsed, formatRelative, formatTime } from '$lib/logging/format';
 
 	export let summary: any;
 	export let name = 'Selected';
 
 	const dispatch = createEventDispatcher<{ log: { kind: string } }>();
 
+	/**
+	 * The headline is how long ago, because that is the question being asked of
+	 * a "last seen" tile. The exact clock time sits underneath for when it matters.
+	 */
+	$: now = Date.now();
+
+	function ago(iso: string | null | undefined): string {
+		return formatRelative(iso, now);
+	}
+
 	function clock(iso: string | null | undefined): string {
-		if (!iso) return '—';
+		if (!iso) return '';
 		const t = formatTime(iso);
 		return t.split(', ')[1] || t;
 	}
@@ -35,8 +45,9 @@
 				<span class="shrink-0" aria-hidden="true"><Milk class="w-5 h-5" /></span>
 				<p class="text-xs text-ink-soft uppercase font-semibold tracking-wider">Last Feed</p>
 			</div>
-			<p class="text-2xl font-display font-semibold text-ink">{summary.latestFeeding ? clock(summary.latestFeeding.end_time || summary.latestFeeding.start_time) : '—'}</p>
-			<p class="text-sm text-ink-soft mt-1">{summary.latestFeeding?.type || 'no feed recorded'}</p>
+			<p class="text-2xl font-display font-semibold text-ink">{summary.latestFeeding ? ago(summary.latestFeeding.end_time || summary.latestFeeding.start_time) : '—'}</p>
+			<p class="text-xs text-ink-soft mt-1">{summary.latestFeeding ? clock(summary.latestFeeding.end_time || summary.latestFeeding.start_time) : ''}</p>
+			<p class="text-sm text-ink-soft mt-0.5">{summary.latestFeeding?.type || 'no feed recorded'}</p>
 			{#if by(summary.latestFeeding)}<p class="text-xs text-ink-soft mt-0.5">by {by(summary.latestFeeding)}</p>{/if}
 		</button>
 		<button type="button" on:click={() => dispatch('log', { kind: 'diapers' })} class="text-left bg-surface rounded-lg shadow-card p-4 border-l-4 border-accent hover:shadow-card focus:outline-none focus-visible:ring-2 focus-visible:ring-accent active:scale-[0.98] transition">
@@ -44,8 +55,9 @@
 				<span class="shrink-0" aria-hidden="true"><Baby class="w-5 h-5" /></span>
 				<p class="text-xs text-ink-soft uppercase font-semibold tracking-wider">Last Diaper</p>
 			</div>
-			<p class="text-2xl font-display font-semibold text-ink">{summary.latestDiaper ? clock(summary.latestDiaper.change_time) : '—'}</p>
-			<p class="text-sm text-ink-soft mt-1">{summary.latestDiaper?.type || 'no change recorded'}</p>
+			<p class="text-2xl font-display font-semibold text-ink">{summary.latestDiaper ? ago(summary.latestDiaper.change_time) : '—'}</p>
+			<p class="text-xs text-ink-soft mt-1">{summary.latestDiaper ? clock(summary.latestDiaper.change_time) : ''}</p>
+			<p class="text-sm text-ink-soft mt-0.5">{summary.latestDiaper?.type || 'no change recorded'}</p>
 			{#if by(summary.latestDiaper)}<p class="text-xs text-ink-soft mt-0.5">by {by(summary.latestDiaper)}</p>{/if}
 		</button>
 		<button type="button" on:click={() => dispatch('log', { kind: 'sleep' })} class="text-left bg-surface rounded-lg shadow-card p-4 border-l-4 border-ink hover:shadow-card focus:outline-none focus-visible:ring-2 focus-visible:ring-accent active:scale-[0.98] transition">
@@ -53,8 +65,9 @@
 				<span class="shrink-0" aria-hidden="true"><Moon class="w-5 h-5" /></span>
 				<p class="text-xs text-ink-soft uppercase font-semibold tracking-wider">Last Sleep</p>
 			</div>
-			<p class="text-2xl font-display font-semibold text-ink">{summary.latestSleep ? clock(summary.latestSleep.start_time) : '—'}</p>
-			<p class="text-sm text-ink-soft mt-1">{summary.latestSleep?.duration ? formatElapsed(summary.latestSleep.duration) : 'no sleep recorded'}</p>
+			<p class="text-2xl font-display font-semibold text-ink">{summary.latestSleep ? ago(summary.latestSleep.start_time) : '—'}</p>
+			<p class="text-xs text-ink-soft mt-1">{summary.latestSleep ? clock(summary.latestSleep.start_time) : ''}</p>
+			<p class="text-sm text-ink-soft mt-0.5">{summary.latestSleep?.duration ? formatElapsed(summary.latestSleep.duration) : 'no sleep recorded'}</p>
 			{#if by(summary.latestSleep)}<p class="text-xs text-ink-soft mt-0.5">by {by(summary.latestSleep)}</p>{/if}
 		</button>
 	</div>

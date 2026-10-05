@@ -30,6 +30,13 @@ LOG_LEVEL=info
 # json | pretty. Unset lets the API pick: json when stdout is a pipe (a
 # container), pretty when it is a terminal.
 # LOG_FORMAT=
+
+# --- Notification digests ---
+# The API sweeps every family on a timer and emails whatever newly matches.
+# Unset means enabled. When you run more than one API replica, set this to
+# false on all but one — see Docker.md.
+# NOTIFY_ENABLED=true
+# NOTIFY_INTERVAL_MINUTES=60
 ```
 
 ### Logging
@@ -186,6 +193,12 @@ Each exposes `GET /`, `POST /`, `PUT /:id`, `DELETE /:id`:
 - `PUT /api/v1/reminders/:id` — update
 - `DELETE /api/v1/reminders/:id` — delete
 - `POST /api/v1/reminders/:id/done` — mark done / snooze
+
+### Notifications
+- `GET /api/v1/notifications/status` — how the digest schedule is configured on
+  this instance: `enabled`, `running`, `intervalMinutes`
+- `POST /api/v1/inventory/notify` — email the calling family's newly firing
+  inventory alerts now, without waiting for the timer
 
 ### Formulas
 - `GET /api/v1/formulas` — list

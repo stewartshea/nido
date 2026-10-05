@@ -58,6 +58,14 @@ spec:
             # per line. `pretty` is for reading a local terminal.
             - name: LOG_FORMAT
               value: "json"
+            # Notification digests run on a timer inside the API. Set this to
+            # "false" on every replica except the one that should own the
+            # timer: replicas sharing this volume also coordinate through a
+            # lease in registry.db, but do not rely on that to pick a winner.
+            - name: NOTIFY_ENABLED
+              value: "true"
+            - name: NOTIFY_INTERVAL_MINUTES
+              value: "60"
           volumeMounts:
             - name: data
               mountPath: /data

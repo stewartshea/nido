@@ -12,6 +12,10 @@ services:
       - JWT_SECRET=${JWT_SECRET:?set JWT_SECRET in .env (openssl rand -hex 32)}
       - ADMIN_EMAIL=${ADMIN_EMAIL:-}
       - SIGNUP_ENABLED=${SIGNUP_ENABLED:-}
+      # Notification digests. On by default; set NOTIFY_ENABLED=false to stop
+      # the timer (e.g. when running a second API replica for the timer only).
+      - NOTIFY_ENABLED=${NOTIFY_ENABLED:-}
+      - NOTIFY_INTERVAL_MINUTES=${NOTIFY_INTERVAL_MINUTES:-60}
     volumes:
       # Host folder persists the encrypted namespace DBs (visible, backup-able)
       - ./data:/data

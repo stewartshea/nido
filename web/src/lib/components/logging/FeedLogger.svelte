@@ -6,7 +6,7 @@
 	import { feedTimerKey } from '$lib/logging/timers';
 	import { formatMinutes, localInputToIso, toLocalInput } from '$lib/logging/format';
 	import { loadRecentFeedings, apiError } from '$lib/logging/recent';
-	import { lastSide, oppositeSide, sideTotalMs, buildManualBreastFeed, type TimerFeedPayload } from '$lib/breast';
+	import { lastSide, sideTotalMs, buildManualBreastFeed, type TimerFeedPayload } from '$lib/breast';
 	import BreastTimer from './BreastTimer.svelte';
 	import BreastLogFields from './BreastLogFields.svelte';
 	import BottleFields from './BottleFields.svelte';
@@ -49,10 +49,15 @@
 		if (kind && (kind === 'breast' || kind === 'combo')) suggestSide();
 	}
 
+	/**
+	 * Pre-select the side last used. Deliberately not the opposite one: most people
+	 * start on the same side as last time and finish on the other, so defaulting
+	 * to the opposite fought the usual habit.
+	 */
 	function suggestSide() {
 		const last = lastSide(recent.filter((f) => f.type === 'breast'));
-		side = oppositeSide(last);
-		endsOn = last === 'right' ? 'left' : 'right';
+		side = last ?? 'left';
+		endsOn = last === 'left' ? 'right' : 'left';
 	}
 
 	function choose(next: Kind) {

@@ -2,7 +2,7 @@
 	import { onMount, onDestroy } from 'svelte';
 	import { browser } from '$app/environment';
 	import { goto } from '$app/navigation';
-	import { authAPI, userAPI, familiesAPI, feedingAPI, diaperAPI, sleepAPI, growthAPI, healthAPI, importsAPI, milestoneAPI, vaccinationAPI, settingsAPI, moodAPI, journalAPI, tokenExpired, remindersAPI, type PageOptions } from '$lib/api';
+	import { authAPI, userAPI, familiesAPI, feedingAPI, diaperAPI, sleepAPI, growthAPI, healthAPI, importsAPI, milestoneAPI, vaccinationAPI, settingsAPI, moodAPI, journalAPI, tokenExpired, type PageOptions } from '$lib/api';
 	import { authStore, authActions } from '$lib/stores/authStore';
 	import { uiStore, uiActions } from '$lib/stores/uiStore';
 	import PhotoStrip from '$lib/components/PhotoStrip.svelte';
@@ -11,15 +11,11 @@
 	import { loadListsCache, saveListsCache } from '$lib/cache';
 	import { flushOutbox } from '$lib/logging/outbox';
 	import MemberActivity from '$lib/components/logging/MemberActivity.svelte';
+	import StockGlance from '$lib/components/logging/StockGlance.svelte';
 	import LogDrawer from '$lib/components/logging/LogDrawer.svelte';
 	import { Users, Home, AlertCircle, Check } from 'lucide-svelte';
 
-
 	import { CATEGORIES, loadQuickLinks as loadSharedQuickLinks, saveQuickLinks as saveSharedQuickLinks } from '$lib/shared';
-
-
-
-
 
 	let sheetOpen = false;
 
@@ -58,14 +54,10 @@
 		saveSharedQuickLinks($authStore.user?.id ?? null, next);
 	}
 
-
 	// "Other" picker: every category the quick pills do not already cover, so
 	// no log target is ever more than one tap from the dashboard.
 	let otherOpen = false;
 	let allOpen = false;
-
-
-
 
 	function openLog(catId: string) {
 		activeTab = catId;
@@ -85,29 +77,11 @@
 	let defaultProfileId: number | null = null;
 	let summary: any = null;
 
-	// ----- Reminders (server-backed, family-scoped) -----
-	type ReminderRule = { id: number; kind: 'inactivity' | 'interval'; category: string; targetType: 'member' | 'home'; targetId: number | null; label: string | null; hours: number | null; intervalDays: number | null; overdue: boolean; since: string | null; enabled: boolean };
-	let reminderRules: ReminderRule[] = [];
-
-	async function loadReminders() {
-		try {
-			const res = await remindersAPI.list();
-			reminderRules = res.data.reminders ?? [];
-		} catch { reminderRules = []; }
-	}
-
-
-
-	$: overdueReminders = reminderRules.filter((r) => r.enabled && r.overdue);
-
-
-
 	// Categories enabled for the selected member.
 	let activeCategories: string[] = [];
 
 	// Family-scoped tracking settings (categories + per-category option lists).
 	let familySettings: { categories: string[] | null; categoryOptions: Record<string, Record<string, string[]>>; defaultCategoryOptions: Record<string, Record<string, string[]>> } | null = null;
-
 
 	// Family onboarding
 
@@ -124,9 +98,6 @@
 	// Milestone + vaccine manual forms
 	// Photos (toggle state only — the PhotoStrip component handles loading)
 	// Account
-
-
-
 
 	let feedings: any[] = [];
 	let diapers: any[] = [];
@@ -204,7 +175,6 @@
 
 	// Breast-feeding totals + last side, derived from loaded feedings.
 
-
 	function avg(a: number[]): number | null {
 		if (a.length === 0) return null;
 		return a.reduce((s, x) => s + x, 0) / a.length;
@@ -229,10 +199,6 @@
 			avgDur30d: avg(dur30d),
 		};
 	})();
-
-
-
-
 
 	async function refreshSummary() {
 		if (!selectedMemberId) return;
@@ -302,11 +268,7 @@
 		}
 	}
 
-
-
 	// Edit modal state
-
-
 
 	async function loadFamilies() {
 		try {
@@ -363,20 +325,12 @@
 		}
 	}
 
-
-
-
-
-
 	function handleLogout() {
 		authActions.logout();
 		isAuthenticated = false;
 		babies = [];
 		selectedMemberId = null;
 	}
-
-
-
 
 	async function loadInvitations() {
 		if (!activeFamilyId) {
@@ -391,9 +345,6 @@
 		}
 	}
 
-
-
-
 	async function loadImportRuns() {
 		try {
 			const res = await importsAPI.runs();
@@ -402,11 +353,6 @@
 			importRuns = [];
 		}
 	}
-
-
-
-
-
 
 	// Instance settings (Admin tab)
 	let appSettings: any = null;
@@ -434,7 +380,6 @@
 				isPanelAdmin = Number(u.is_platform_admin ?? 0) === 1;
 			}
 			loadQuickLinks();
-			loadReminders();
 		} catch {
 			isPanelAdmin = false;
 		}
@@ -455,11 +400,6 @@
 			appSettings = null;
 		}
 	}
-
-
-
-
-
 
 	async function selectMember(memberId: number) {
 		selectedMemberId = memberId;
@@ -483,19 +423,6 @@
 			console.error('Failed to load family settings:', err);
 		}
 	}
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 	
 
@@ -561,7 +488,6 @@
 		}
 	});
 
-
 	onDestroy(() => {
 		if (browser && outboxTimer) window.clearInterval(outboxTimer);
 	});
@@ -586,10 +512,10 @@
 					<section>
 						<div class="flex items-center justify-between mb-6">
 							<div class="flex items-center gap-3">
-								<span class="w-10 h-10 rounded-full border-2 border-primary text-primary flex items-center justify-center" aria-hidden="true"><Users class="w-5 h-5" /></span>
+								<span class="w-10 h-10 rounded-full border-2 border-link text-link flex items-center justify-center" aria-hidden="true"><Users class="w-5 h-5" /></span>
 								<h2 class="text-2xl font-display font-semibold">Family</h2>
 							</div>
-							<button type="button" on:click={() => goto('/family')} class="text-sm font-semibold text-primary hover:underline">Go to Family &rarr;</button>
+							<button type="button" on:click={() => goto('/family')} class="text-sm font-semibold text-link hover:underline">Go to Family &rarr;</button>
 						</div>
 						
 						{#if families.length === 0}
@@ -637,6 +563,10 @@
 								on:loadmore={loadMoreLists}
 								on:refresh={async () => { await refreshLists(); await refreshSummary(); }}
 							/>
+
+							<div class="mt-6">
+								<StockGlance />
+							</div>
 						{/if}
 					</section>
 

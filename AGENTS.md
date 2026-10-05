@@ -75,6 +75,18 @@
   inside a family DB because the file itself *is* the boundary — never open
   another family's DB file to answer a request; access control belongs in
   `authz.ts`, before `getFamilyClient()` is ever called.
+- **The notification sweep is the only code that may enumerate families, and it
+  must still open one database at a time.** `api/src/scheduler.ts` reads the
+  `families` table in the registry to learn which families exist, then calls
+  `runFamilyDigest(familyId)` per family (`api/src/notifications.ts`), which
+  reaches nothing outside the family it was handed. Never widen this into a
+  query that joins or aggregates across family databases — there is no join that
+  can span two encrypted files, and an `ATTACH`ed second family would defeat the
+  key-per-family isolation this project is built on. Reading the registry for
+  the *list* of families is not the same as reading across them; keep it that
+  way. Every entry point into a family's data takes a `familyId` and no user id
+  (see `api/src/inventory-eval.ts`, which reads scope from the family DB rather
+  than from a JWT), because a background job has no session.
 - **Key derivation**: each family DB is keyed by an HKDF-SHA256 subkey
   derived from a single `NIDO_MASTER_KEY` (`deriveKey()` in
   `api/src/db-core.ts`, salt = familyId, info = `'nido:db'`; the registry

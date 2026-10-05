@@ -36,7 +36,7 @@
 <div class="bg-surface rounded-lg shadow-card p-5 border border-line-soft" id="activities">
 	<div class="flex items-center justify-between mb-4">
 		<h3 class="text-lg font-display font-semibold">Activities</h3>
-		<button type="button" on:click={() => dispatch('log', { kind: firstQuick })} class="text-sm font-semibold text-primary hover:underline">Log activity +</button>
+		<button type="button" on:click={() => dispatch('log', { kind: firstQuick })} class="text-sm font-semibold text-link hover:underline">Log activity +</button>
 	</div>
 	<ActivityHistory
 		{feedings} {diapers} {sleeps} {growths}

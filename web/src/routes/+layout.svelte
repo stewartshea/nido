@@ -7,6 +7,7 @@
 	import { restoreThemeEarly } from '$lib/theme';
 	import ThemePicker from '$lib/components/ThemePicker.svelte';
 	import BottomNav from '$lib/components/BottomNav.svelte';
+	import { PRIMARY_NAV } from '$lib/nav';
 	import { authStore, authActions } from '$lib/stores/authStore';
 
 	// Apply saved theme early on the client (avoids a flash of the default palette)
@@ -53,16 +54,20 @@
 			</div>
 			<div class="flex items-center gap-4">
 				{#if $authStore.isAuthenticated}
-					<div class="hidden md:flex bg-surface2 rounded-md p-1">
-						<a href="/dashboard" class="{$page.url.pathname.startsWith('/dashboard') ? 'bg-primary text-on-primary shadow-sm' : 'text-ink-soft hover:text-ink'} px-4 py-1 rounded text-sm font-semibold transition-colors">Dashboard</a>
-						<a href="/family" class="{$page.url.pathname.startsWith('/family') ? 'bg-primary text-on-primary shadow-sm' : 'text-ink-soft hover:text-ink'} px-4 py-1 rounded text-sm font-semibold transition-colors">Family</a>
-						<a href="/home" class="{$page.url.pathname.startsWith('/home') ? 'bg-primary text-on-primary shadow-sm' : 'text-ink-soft hover:text-ink'} px-4 py-1 rounded text-sm font-semibold transition-colors">Home</a>
-					</div>
+					<nav aria-label="Main" class="hidden md:flex bg-surface2 rounded-md p-1">
+						{#each PRIMARY_NAV as item (item.id)}
+							<a
+								href={item.href}
+								aria-current={$page.url.pathname.startsWith(item.href) ? 'page' : undefined}
+								class="{item.href !== '/' && $page.url.pathname.startsWith(item.href) ? 'bg-primary text-on-primary shadow-sm' : 'text-ink-soft hover:text-ink'} px-4 py-1 rounded text-sm font-semibold transition-colors"
+							>{item.label}</a>
+						{/each}
+					</nav>
 				{/if}
 				<ThemePicker />
 				{#if $authStore.isAuthenticated}
 					<div class="relative">
-						<button type="button" on:click={() => (showAccountMenu = !showAccountMenu)} class="w-11 h-11 rounded-full bg-accent text-on-primary flex items-center justify-center font-semibold text-base">
+						<button type="button" on:click={() => (showAccountMenu = !showAccountMenu)} class="w-11 h-11 rounded-full bg-accent text-on-accent flex items-center justify-center font-semibold text-base">
 							{$authStore.user?.firstName?.[0] || 'U'}
 						</button>
 						{#if showAccountMenu}

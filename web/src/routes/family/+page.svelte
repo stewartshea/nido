@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
 	import { browser } from '$app/environment';
-	import { authAPI, userAPI, familiesAPI, feedingAPI, diaperAPI, sleepAPI, growthAPI, healthAPI, importsAPI, milestoneAPI, vaccinationAPI, settingsAPI, moodAPI, journalAPI, tokenExpired, remindersAPI, type PageOptions } from '$lib/api';
+	import { authAPI, userAPI, familiesAPI, feedingAPI, diaperAPI, sleepAPI, growthAPI, healthAPI, importsAPI, milestoneAPI, vaccinationAPI, settingsAPI, moodAPI, journalAPI, tokenExpired, remindersAPI, type PageOptions, type Reminder } from '$lib/api';
 	import { authStore, authActions } from '$lib/stores/authStore';
 	import { uiStore, uiActions } from '$lib/stores/uiStore';
 	import PhotoStrip from '$lib/components/PhotoStrip.svelte';
@@ -11,6 +11,7 @@
 	import { flushOutbox } from '$lib/logging/outbox';
 	import MemberActivity from '$lib/components/logging/MemberActivity.svelte';
 	import LogDrawer from '$lib/components/logging/LogDrawer.svelte';
+	import StockGlance from '$lib/components/logging/StockGlance.svelte';
 		import { CATEGORIES } from '$lib/shared';
 	import { Baby, Star, Users, Trash2, Mail, AlertCircle, Activity, Check } from 'lucide-svelte';
 
@@ -74,22 +75,16 @@
 	let defaultProfileId: number | null = null;
 	let summary: any = null;
 
-	// ----- Reminders (server-backed, family-scoped) -----
-	type ReminderRule = { id: number; kind: 'inactivity' | 'interval'; category: string; targetType: 'member' | 'home'; targetId: number | null; label: string | null; hours: number | null; intervalDays: number | null; overdue: boolean; since: string | null; enabled: boolean };
-	let reminderRules: ReminderRule[] = [];
+	// ----- Reminders (family-scoped; shared by every caregiver) -----
+	let reminderRules: Reminder[] = [];
 
 	async function loadReminders() {
 		try {
-			const res = await remindersAPI.list();
-			reminderRules = res.data.reminders ?? [];
+			reminderRules = (await remindersAPI.list()).data.reminders ?? [];
 		} catch { reminderRules = []; }
 	}
 
-
-
 	$: overdueReminders = reminderRules.filter((r) => r.enabled && r.overdue);
-
-
 
 	// Tracking categories — a member enables a subset; tabs render from it.
 	let activeCategories: string[] = [];
@@ -869,7 +864,7 @@
 							{/each}
 						</p>
 					</div>
-					<button type="button" on:click={() => (familyView = 'detail')} class="bg-danger text-danger-text px-3 py-2 rounded-md text-sm shrink-0">View</button>
+					<a href="/notifications" class="bg-danger text-danger-text px-3 py-2 rounded-md text-sm font-semibold shrink-0">View</a>
 				</div>
 			{/if}
 
@@ -935,6 +930,8 @@
 							</div>
 						</div>
 					</div>
+
+					<StockGlance />
 
 					<MemberActivity
 						memberName={babies.find((b) => Number(b.id) === selectedMemberId)?.name || 'Selected'}

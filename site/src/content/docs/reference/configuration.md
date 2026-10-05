@@ -56,6 +56,15 @@ lives on a different origin.
 | `ADMIN_EMAIL` | *(empty)* | Grants platform admin on first boot. Empty means the first registered user becomes admin. |
 | `SIGNUP_ENABLED` | *(empty — allowed)* | `false` blocks registration and locks the Admin panel toggle. |
 | `PUBLIC_URL` | `FRONTEND_URL` | Origin used in verification and password-reset emails. **Must be public, not `localhost`.** |
+| `NOTIFY_ENABLED` | *(empty — enabled)* | Runs the notification digest on a timer. Set `false` on all but one API replica. |
+| `NOTIFY_INTERVAL_MINUTES` | `60` | How often the digest checks every family. |
+
+:::caution[`NOTIFY_ENABLED` with more than one replica]
+The digest is a timer inside the API process. Two live replicas will each try to
+send, so keep it on exactly one. Replicas sharing a volume coordinate through a
+lease in `registry.db`; replicas on separate volumes cannot see each other at
+all, and the flag is the only thing stopping a duplicate send.
+:::
 
 :::caution[`PUBLIC_URL` behind a reverse proxy]
 Verification and reset links are built from this. Left at `localhost`, your
@@ -82,6 +91,10 @@ ALLOWED_HOSTS=nido.example.com
 ADMIN_EMAIL=you@example.com
 SIGNUP_ENABLED=false
 PUBLIC_URL=https://nido.example.com
+
+# --- notification digests (omit entirely for a single API container) ---
+# NOTIFY_ENABLED=true
+# NOTIFY_INTERVAL_MINUTES=60
 ```
 
 Generate the two secrets with:

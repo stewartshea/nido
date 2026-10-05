@@ -36,6 +36,8 @@ function layout(opts: {
 	preheader: string;
 	heading: string;
 	intro: string;
+	/** Pre-escaped bullet lines, for a digest rather than a single call to action. */
+	list?: string[];
 	cta?: { label: string; url: string };
 	footnote?: string;
 	closing: string;
@@ -61,6 +63,13 @@ function layout(opts: {
 			</p>`
 		: '';
 
+	const list = opts.list?.length
+		? `<ul style="margin:20px 0 0 0;padding:0;list-style:none;">
+			${opts.list.map((li) => `<li style="margin:0 0 10px 0;padding:12px 14px;background:${BRAND.cream};border-radius:10px;
+				font:400 14px/1.6 -apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:${BRAND.ink};">${li}</li>`).join('')}
+		</ul>`
+		: '';
+
 	const footnote = opts.footnote
 		? `<p style="margin:0 0 16px 0;font:400 13px/1.6 -apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:${BRAND.muted};">${esc(opts.footnote)}</p>`
 		: '';
@@ -80,6 +89,7 @@ function layout(opts: {
 					letter-spacing:0.14em;text-transform:uppercase;color:${BRAND.gold};">Nido</p>
 					<h1 style="margin:0 0 12px 0;font:600 24px/1.3 Georgia,'Times New Roman',serif;color:${BRAND.ink};">${esc(opts.heading)}</h1>
 					<p style="margin:0;font:400 15px/1.65 -apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:${BRAND.ink};">${esc(opts.intro)}</p>
+					${list}
 				</td></tr>
 				${button}
 				<tr><td style="padding:0 32px 32px 32px;">
@@ -213,6 +223,69 @@ export function renderAccountDeletedEmail(opts: { firstName?: string | null; fam
 			intro: `Your Nido account has been deleted. Because ${whatHappened}.`,
 			footnote: 'This cannot be undone. If you did not do this, contact whoever runs this Nido instance immediately.',
 			closing: 'Take care,',
+		}),
+	};
+}
+
+export interface InventoryAlertLine {
+	itemName: string;
+	signalLabel: string;
+	value: number;
+	threshold: number;
+	comparator: string;
+	unit: string;
+}
+
+/**
+ * One digest of every inventory rule currently matching. Grouped by item so an
+ * item needing two things says so once, and written as a prompt to look rather
+ * than an alarm, because most of these are early warnings rather than failures.
+ */
+export function renderInventoryAlertsEmail(opts: {
+	firstName?: string | null;
+	alerts: InventoryAlertLine[];
+	inventoryUrl: string;
+}): RenderedEmail {
+	const atOrUnder = (c: string) => c === 'lte' || c === 'lt';
+	const unit = (u: string) => (u === 'days' ? ' days' : ` ${u}`);
+	const byItem = new Map<string, InventoryAlertLine[]>();
+	for (const a of opts.alerts) {
+		const list = byItem.get(a.itemName) ?? [];
+		list.push(a);
+		byItem.set(a.itemName, list);
+	}
+
+	const lines = [...byItem.entries()].map(([name, list]) => {
+		const detail = list
+			.map((a) => `${a.signalLabel} is ${Math.round(a.value * 10) / 10}${unit(a.unit)}, ${atOrUnder(a.comparator) ? 'at or under' : 'at or over'} ${a.threshold}`)
+			.join('; ');
+		return `- ${name}: ${detail}`;
+	});
+
+	const n = opts.alerts.length;
+	return {
+		subject: `Nido — ${n} inventory ${n === 1 ? 'item needs' : 'items need'} a look`,
+		text: [
+			`Hi${opts.firstName ? ' ' + opts.firstName : ''},`,
+			'',
+			`${n} inventory ${n === 1 ? 'item matches' : 'items match'} a rule you set:`,
+			'',
+			...lines,
+			'',
+			`Review them here: ${opts.inventoryUrl}`,
+			'',
+			'Nothing needs doing if the count is right. If a count has drifted, correcting it keeps the forecasts honest.',
+			'',
+			'You get this when a rule first matches. It will not nag while the same thing stays true.',
+		].join('\n'),
+		html: layout({
+			preheader: 'Items matching your inventory rules.',
+			heading: n === 1 ? 'One item needs a look' : `${n} items need a look`,
+			intro: 'These match rules you set for your inventory. They are early warnings, not failures.',
+			list: lines.map((l) => esc(l)),
+			cta: { label: 'Review inventory', url: opts.inventoryUrl },
+			footnote: 'You only get this when a rule first matches, so an unchanged item will not keep emailing you.',
+			closing: 'Talk soon,',
 		}),
 	};
 }

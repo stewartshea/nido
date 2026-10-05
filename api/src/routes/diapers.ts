@@ -130,6 +130,38 @@ diaperRoutes.post('/', zValidator('json', createDiaperSchema), async (c) => {
       ]
     });
     
+    // A logged change is also a unit consumed. Decrement here so every client
+    // path benefits; the ledger insert is idempotent per diaper id, so a retry
+    // cannot count the same change twice.
+    const diaperId = Number(result.lastInsertRowid);
+    try {
+      const linked = await db.execute({
+        sql: `SELECT id, decrement_per_event FROM inventory_items
+              WHERE active = 1 AND event_category = 'diapers' AND baby_id = ?`,
+        args: [babyId],
+      });
+      for (const item of linked.rows as any[]) {
+        const per = item.decrement_per_event === null || item.decrement_per_event === undefined ? 1 : Number(item.decrement_per_event);
+        try {
+          await db.execute({
+            sql: `INSERT INTO inventory_adjustments (item_id, change, reason, ref_table, ref_id, created_by, created_at)
+                  VALUES (?, ?, 'used', 'diapers', ?, ?, ?)`,
+            args: [item.id, -per, diaperId, userId, new Date().toISOString()],
+          });
+        } catch {
+          continue;
+        }
+        await db.execute({
+          sql: 'UPDATE inventory_items SET quantity = MAX(0, quantity - ?), updated_at = ? WHERE id = ?',
+          args: [per, new Date().toISOString(), item.id],
+        });
+      }
+    } catch (err: any) {
+      // The diaper itself is already stored. Failing the request here would
+      // report a lost record that was in fact saved.
+      c.get('log').warn('inventory decrement failed', { err });
+    }
+
     // Return the created diaper
     const diaperResult = await db.execute({
       sql: `
@@ -137,7 +169,7 @@ diaperRoutes.post('/', zValidator('json', createDiaperSchema), async (c) => {
       FROM diapers
       WHERE id = ?
     `,
-      args: [Number(result.lastInsertRowid)]
+      args: [diaperId]
     });
     
     return c.json({ 
