@@ -138,30 +138,77 @@ request per image.
 
 ## Inventory
 
-A stock list for the physical things a household runs out of: diapers, wipes,
-formula, anything.
+A stock list for the things a household actually runs out of — and, unlike a
+shopping list, one that forecasts.
 
-- Items carry a **category**, a **quantity**, a **unit**, and an optional
-  expiry date.
-- Categories are yours to define; `diapers` ships as the default.
-- **Diaper stock auto-decrements.** A logged diaper change is one unit used,
-  so the count follows the log instead of being a second thing to maintain.
-- **Rules** can flag items at or under a limit, or over one, and raise
-  notifications.
-- Expiring items are surfaced for attention.
+- Items carry a **category**, **quantity**, **unit**, an optional **variant**
+  (a diaper size, a scent) and an optional **expiry date**. Categories are
+  yours to define; `diapers` ships as the default.
+- **Diaper stock counts itself.** A logged diaper change is one unit used, so
+  the count follows the log rather than being a second thing to maintain.
+- Items can also run on a **cadence** — eight a day — and deplete themselves
+  between logs, so wipes and nappies fall without anyone recording them.
+- Every item is **forecast**. Nido works out the recent rate of use and
+  reports days of cover and when the next unit falls due.
 
-## Reminders
+### Rules that reason about time, not just counts
 
-Two kinds, both scoped to a member or a home:
+A rule compares a **signal** against a threshold. Nido ships six, and each
+one is a different question:
+
+| Signal | The question it answers |
+| --- | --- |
+| Days of cover left | How long is the current stock good for, at the rate you are using it? |
+| Days until you run out | The same number, named for the consequence |
+| Amount on hand | "Tell me when I am down to one left" |
+| Days until this expires | Needs an expiry date; only reported while the date is still ahead |
+| Days since you recorded using this | Nudges you when *you* have not logged usage |
+| Days until this size is outgrown | When growth reaches the next size band |
+
+The last one earns its place. Give each diaper size a **weight band** and Nido
+fits a trend through your recorded weights — it needs at least two — then
+projects the day the next size is needed, instead of telling you at 2am that
+size 3 is gone.
+
+The "days since you recorded using this" signal deliberately **ignores**
+automated cadence rows, so it only rises when a person has not logged
+anything. It is the signal for stock nobody records: "check the wipes".
+
+Expired is also not "expiring soon". A past date stops raising the signal
+rather than counting negative days forever.
+
+## Notifications
+
+Everything that needs your attention is on one page, in four parts.
+
+### Needs attention now
+
+Rules currently firing, whichever kind they came from.
+
+### Tracking rules
+
+Reminders scoped to a member or a home, in two kinds:
 
 - **Inactivity** — nothing of a kind has been logged for N hours. The right
   tool for "no wet diaper in too long".
-- **Interval** — something is due every N days. The right tool for a
-  recurring task.
+- **Interval** — something is due every N days, for a recurring task.
 
-An interval reminder is a checklist item: mark it **done** to reset the clock.
-Reminders appear on the Notifications page with the last completion time, or
-"never done" if there isn't one.
+An interval reminder is a checklist item: mark it **done** to reset its
+clock. Each shows when it was last satisfied, or "never done" if it never has
+been.
+
+### Email
+
+Alerts can arrive as one email instead of being watched for in-app. **Send
+digest now** runs it on demand and reports how many went out.
+
+Automatic digests run on a server-wide interval — `NOTIFY_ENABLED` (on by
+default) and `NOTIFY_INTERVAL_MINUTES`, which defaults to 60. It is an
+instance-level timer that sweeps every family rather than a per-family cron,
+so with more than one API replica it is switched on for one of them only.
+When it is off, the page says so plainly instead of leaving you to wire up
+your own scheduler. See [Configuration →](../reference/configuration/) and
+[Architecture →](../reference/architecture/#notifications).
 
 ## Home
 

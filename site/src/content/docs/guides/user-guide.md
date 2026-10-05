@@ -141,26 +141,84 @@ A quick conversation beats a surprise.
 
 ## Inventory
 
-**Inventory** is the household stock list — the things you run out of.
+**Inventory** is the household stock list — the things you run out of. It is
+worth a little setup, because it forecasts rather than just counting.
 
-- Add an item with a **category**, **quantity**, **unit**, and optional
-  **expiry date**. `diapers` is the default category; add your own.
-- **Diaper stock counts itself.** A logged diaper change is one unit used,
-  so the diaper count follows the log.
-- **Rules** flag an item at or under a limit — or over one — and the
-  Notifications page tells you.
+### Adding stock
 
-## Reminders
+An item needs a **category**, a **quantity**, and a **unit**. Optionally it
+carries a **variant** (a diaper size, a scent) and an **expiry date**.
+`diapers` is the default category, and you can add your own under
+**Inventory**.
 
-**Notifications** holds two kinds of reminder, each scoped to a member or a
-home:
+### Two things that count themselves
 
-- **Inactivity** — nothing of a kind logged for N hours. For "no wet diaper
-  in too long", which is the question you actually have at 3am.
+- **Diaper stock follows the log.** A logged diaper change is one unit used,
+  so you never adjust the count by hand.
+- **Cadenced items deplete on their own.** Give an item a rate — eight a day
+  — and it falls between logs, so wipes and nappies are tracked even when
+  nobody records using them.
+
+Every item then shows **days of cover** and when the next unit is due,
+worked out from your recent rate of use.
+
+### Rules
+
+A rule compares a **signal** against a limit and raises an alert when it
+crosses. Pick the signal that matches the question you are asking:
+
+| If you want to know… | Use this signal |
+| --- | --- |
+| How long the stock lasts at this rate | Days of cover left |
+| When it will be gone | Days until you run out |
+| When you're nearly out, not nearly empty of days | Amount on hand |
+| What is about to expire | Days until this expires |
+| When you personally haven't logged usage | Days since you recorded using this |
+| When the baby outgrows this size | Days until this size is outgrown |
+
+Two are worth explaining. **Days since you recorded using this** ignores the
+automatic cadence rows on purpose, so it only climbs when a person has not
+logged anything — use it for stock nobody thinks to record. And **days until
+this expires** only counts down while the date is still ahead, so an expired
+item stops alerting instead of counting negative days.
+
+### Predicting a size change
+
+Set a **weight band** on each diaper size and Nido fits a trend through the
+weights you have recorded — it needs at least two — then projects the day
+the next size is needed. That is the difference between buying size 4 in
+advance and discovering at 2am that there are none left.
+
+## Notifications
+
+**Notifications** is one page in four parts: what needs attention now,
+tracking rules, inventory rules, and email.
+
+### Needs attention now
+
+Any rule currently firing. This is the page to check when something feels
+off, and the first place to look when you think a record is missing.
+
+### Tracking rules
+
+Reminders, scoped to a member or a home:
+
+- **Inactivity** — nothing of that kind logged for N hours. For "no wet
+  diaper in too long", which is the question you actually have at 3am.
 - **Interval** — something due every N days, for a recurring task.
 
 Each shows when it was last satisfied, or "never done". Marking an interval
 reminder **done** resets its clock.
+
+### Email
+
+Alerts can arrive as one email rather than being watched for. **Send digest
+now** delivers it immediately and tells you how many went out.
+
+Automatic digests are a server setting, not a per-family one — your operator
+controls them. If they are off, this section says so rather than leaving you
+guessing. Self-hosters: see
+[Configuration →](../reference/configuration/).
 
 ## Home
 
