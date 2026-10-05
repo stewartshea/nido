@@ -74,6 +74,7 @@ export default defineConfig({
 					label: 'Start here',
 					items: [
 						{ label: 'Overview', slug: 'index' },
+						{ label: 'Features', slug: 'features' },
 						{ label: 'Self-hosting', slug: 'self-host' },
 						{ label: 'My Nido (hosted)', slug: 'my-nido' },
 						{ label: 'Privacy policy', slug: 'privacy' },
@@ -84,6 +85,7 @@ export default defineConfig({
 				{
 					label: 'Guides',
 					items: [
+						{ label: 'User guide', slug: 'guides/user-guide' },
 						{ label: 'Backup & restore', slug: 'guides/backup-and-restore' },
 						{ label: 'Upgrading', slug: 'guides/upgrading' },
 						{ label: 'Reverse proxy & TLS', slug: 'guides/reverse-proxy-and-tls' },
