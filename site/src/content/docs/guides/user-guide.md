@@ -164,8 +164,8 @@ worked out from your recent rate of use.
 
 ### Rules
 
-A rule compares a **signal** against a limit and raises an alert when it
-crosses. Pick the signal that matches the question you are asking:
+A rule compares a **signal** against a limit, and the notification appears
+when it crosses. Pick the signal that matches the question you are asking:
 
 | If you want to know… | Use this signal |
 | --- | --- |
@@ -180,7 +180,7 @@ Two are worth explaining. **Days since you recorded using this** ignores the
 automatic cadence rows on purpose, so it only climbs when a person has not
 logged anything — use it for stock nobody thinks to record. And **days until
 this expires** only counts down while the date is still ahead, so an expired
-item stops alerting instead of counting negative days.
+item stops raising a notification instead of counting negative days.
 
 ### Predicting a size change
 
@@ -212,7 +212,8 @@ reminder **done** resets its clock.
 
 ### Email
 
-Alerts can arrive as one email rather than being watched for. **Send digest
+Notifications can arrive as one email rather than being watched for. **Send
+digest
 now** delivers it immediately and tells you how many went out.
 
 Automatic digests are a server setting, not a per-family one — your operator

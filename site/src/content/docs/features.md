@@ -165,6 +165,9 @@ one is a different question:
 | Days since you recorded using this | Nudges you when *you* have not logged usage |
 | Days until this size is outgrown | When growth reaches the next size band |
 
+A rule's notification lands on [Notifications →](#notifications) under
+**Needs attention now**, alongside anything else firing.
+
 The last one earns its place. Give each diaper size a **weight band** and Nido
 fits a trend through your recorded weights — it needs at least two — then
 projects the day the next size is needed, instead of telling you at 2am that
@@ -199,7 +202,8 @@ been.
 
 ### Email
 
-Alerts can arrive as one email instead of being watched for in-app. **Send
+Notifications can arrive as one email instead of being watched for in-app.
+**Send
 digest now** runs it on demand and reports how many went out.
 
 Automatic digests run on a server-wide interval — `NOTIFY_ENABLED` (on by
