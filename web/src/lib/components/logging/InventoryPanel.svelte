@@ -9,6 +9,16 @@
 
 	const dispatch = createEventDispatcher<{ refresh: void }>();
 
+	/** Stock that belongs to a specific child rather than to the household. */
+	const BABY_CATEGORIES = new Set(['diapers', 'formula', 'baby_care']);
+
+	// A logged-event link and a calendar cadence are mutually exclusive by design.
+	// Deriving it from the category, rather than trusting a flag left over from when
+	// the form opened: changing the category away from diapers hid the checkbox but
+	// left the flag set, so a household item saved both and the API rejected it.
+	$: linkedToLogs = category === 'diapers' && autoDecrement;
+	$: if (category !== 'diapers') autoDecrement = false;
+
 	const CATEGORY_LABELS: Record<string, string> = {
 		diapers: 'Diapers', formula: 'Formula', baby_care: 'Baby care', vitamins: 'Vitamins',
 		cleaning: 'Cleaning', filters: 'Filters', batteries: 'Batteries', household: 'Household', other: 'Other',
@@ -203,7 +213,7 @@
 
 	function openAdd() {
 		showAdd = true;
-		memberId = selectedMemberId;
+		memberId = BABY_CATEGORIES.has(category) ? selectedMemberId : null;
 		name = ''; variant = ''; quantity = ''; packSize = ''; leadDays = '';
 		// Diapers are the linked case: a logged change is one unit used.
 		autoDecrement = category === 'diapers';
@@ -226,8 +236,8 @@
 				unit,
 				packSize: packSize ? Number(packSize) : null,
 				leadDays: leadDays ? Number(leadDays) : null,
-				eventCategory: autoDecrement ? 'diapers' : null,
-				decrementPerEvent: autoDecrement ? 1 : null,
+				eventCategory: linkedToLogs ? 'diapers' : null,
+				decrementPerEvent: linkedToLogs ? 1 : null,
 				consumeIntervalDays: consumeEvery ? Number(consumeEvery) : null,
 				expiresAt: expiresAt ? new Date(expiresAt).toISOString() : null,
 			});
@@ -346,8 +356,14 @@
 				</div>
 				<div>
 					<label for="inv-consume" class="block text-sm font-medium text-ink-soft mb-1">Uses up on its own</label>
-					<input id="inv-consume" type="number" min="1" step="1" bind:value={consumeEvery} class="w-full px-3 py-2 border border-line rounded-md" placeholder="leave blank" />
-					<p class="text-xs text-ink-soft mt-1">For things used up by the calendar rather than by something you log: 1 for daily contacts, 14 for fortnightly. Nothing to log each time.</p>
+					<input id="inv-consume" type="number" min="1" step="1" bind:value={consumeEvery} disabled={linkedToLogs} class="w-full px-3 py-2 border border-line rounded-md disabled:opacity-50" placeholder="leave blank" />
+					<p class="text-xs text-ink-soft mt-1">
+						{#if linkedToLogs}
+							Unavailable while stock is subtracted from logged diaper changes. Use one or the other.
+						{:else}
+							For things used up by the calendar rather than by something you log: 1 for daily contacts, 14 for fortnightly. Nothing to log each time.
+						{/if}
+					</p>
 				</div>
 				<div>
 					<label for="inv-expiry" class="block text-sm font-medium text-ink-soft mb-1">Expires (optional)</label>
@@ -355,15 +371,13 @@
 					<p class="text-xs text-ink-soft mt-1">For anything with a shelf life. You can then set a rule to warn you before it goes.</p>
 				</div>
 			</div>
-			{#if members.length > 1}
-				<div>
-					<label for="inv-member" class="block text-sm font-medium text-ink-soft mb-1">For</label>
-					<select id="inv-member" bind:value={memberId} class="w-full px-3 py-2 border border-line rounded-md">
-						<option value={null}>Everyone (home)</option>
-						{#each members as m}<option value={Number(m.id)}>{m.name}</option>{/each}
-					</select>
-				</div>
-			{/if}
+			<div>
+				<label for="inv-member" class="block text-sm font-medium text-ink-soft mb-1">Belongs to</label>
+				<select id="inv-member" bind:value={memberId} class="w-full px-3 py-2 border border-line rounded-md">
+					<option value={null}>The whole home</option>
+					{#each members as m}<option value={Number(m.id)}>{m.name}</option>{/each}
+				</select>
+			</div>
 			{#if category === 'diapers'}
 				<label class="flex items-center gap-2 text-sm text-ink">
 					<input type="checkbox" bind:checked={autoDecrement} class="w-4 h-4 accent-[var(--color-primary)]" />
