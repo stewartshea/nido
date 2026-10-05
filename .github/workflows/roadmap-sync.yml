@@ -21,8 +21,10 @@ on:
 
 permissions:
   contents: read
-  # Needed to read the project board the table is generated from.
-  project: read
+  # Needed to read the project board the table is generated from. The scope is
+  # `repository-projects`; `project` is not a valid scope and GitHub rejects the
+  # whole file for it, so no job is ever created.
+  repository-projects: read
 
 concurrency:
   group: roadmap-sync
@@ -46,6 +48,10 @@ jobs:
       - name: Check ROADMAP.md against the board
         env:
           GH_TOKEN: ${{ secrets.ROADMAP_SYNC_TOKEN || github.token }}
+          # Also passed under its own name: the guard below needs to know whether
+          # the secret exists, and a variable only set inside an expression is not
+          # visible to the shell.
+          ROADMAP_SYNC_TOKEN: ${{ secrets.ROADMAP_SYNC_TOKEN }}
         run: |
           if [ -z "${ROADMAP_SYNC_TOKEN:-}" ]; then
             echo "::warning::ROADMAP_SYNC_TOKEN is not set; cannot verify ROADMAP.md against the board."

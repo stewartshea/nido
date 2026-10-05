@@ -99,12 +99,25 @@ for (const item of board) {
 	if (item.status === 'Done' && issue.state !== 'CLOSED') {
 		drift.push(`- **#${n}** is \`Done\` on the board but the issue is still ${issue.state.toLowerCase()}.`);
 	}
-	// The roadmap: planned label is the one that promises a build; a mismatch
-	// against the board means the README and the issue disagree with the board.
+	// The roadmap label mirrors the board's Status, as ROADMAP.md documents:
+	// candidate = proposed, planned = committed but not started, shipped =
+	// delivered. Mapping both In Progress and Done onto `planned` contradicted
+	// that table and let a finished feature keep promising a future build, so
+	// the mapping is one-to-one and a stale label is drift too.
+	const STAGE_LABEL = {
+		Todo: 'roadmap: candidate',
+		'In Progress': 'roadmap: planned',
+		Done: 'roadmap: shipped',
+	};
 	const labels = issue.labels;
-	const wantsLabel = item.status === 'In Progress' || item.status === 'Done' ? 'roadmap: planned' : null;
+	const wantsLabel = STAGE_LABEL[item.status] ?? null;
 	if (wantsLabel && !labels.includes(wantsLabel)) {
 		drift.push(`- **#${n}** is \`${item.status}\` on the board but is missing the \`${wantsLabel}\` label.`);
+	}
+	for (const stale of Object.values(STAGE_LABEL)) {
+		if (stale !== wantsLabel && labels.includes(stale)) {
+			drift.push(`- **#${n}** still carries \`${stale}\`, but the board says \`${item.status}\` (\`${wantsLabel}\`).`);
+		}
 	}
 }
 

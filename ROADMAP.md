@@ -14,7 +14,7 @@ that board by `scripts/roadmap-sync.mjs` so it cannot quietly disagree with them
 
 | Issue | Capability | Status | Priority | Area |
 | --- | --- | --- | --- | --- |
-| [11](https://github.com/stewartshea/nido/issues/11) | Feature: inventory management system (family + home categories) | In Progress | P2-Medium | Home and inventory |
+| [11](https://github.com/stewartshea/nido/issues/11) | Feature: inventory management system (family + home categories) | Done | P2-Medium | Home and inventory |
 | [13](https://github.com/stewartshea/nido/issues/13) | Feature: formal release strategy (versioning, changelog, tagging) | Todo | P3-Low | Platform |
 
 <!-- drift:start -->
