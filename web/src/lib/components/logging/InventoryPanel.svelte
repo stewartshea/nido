@@ -1,11 +1,12 @@
 <script lang="ts">
 	import { createEventDispatcher, onMount } from 'svelte';
-	import { inventoryAPI, type InventoryItem, type InventoryAlert } from '$lib/api';
+	import { inventoryAPI, type InventoryItem, type InventoryAlert, type DiaperBand } from '$lib/api';
+	import { defaultMemberId } from '$lib/shared';
 
-	export let members: { id: number | string; name: string }[] = [];
+	export let members: { id: number | string; name: string; trackable?: boolean }[] = [];
 
 	let selectedMemberId: number | null = null;
-	$: if (selectedMemberId === null && members.length > 0) selectedMemberId = Number(members[0].id);
+	$: if (selectedMemberId === null) selectedMemberId = defaultMemberId(members);
 
 	const dispatch = createEventDispatcher<{ refresh: void }>();
 
@@ -29,20 +30,26 @@
 	let sizes: any[] = [];
 	let signals: Record<string, number | null> = {};
 	let alertList: InventoryAlert[] = [];
+	let viewMode: 'cards' | 'table' = 'cards';
+	// A delivery is a box of 192 or a box of 90, and no two brands match, so the
+	// quantity is typed rather than tapped or learned from a per-item constant.
+	let qtyDraft: Record<number, string> = {};
 	let showCategories = false;
 	let newCategory = '';
 	let showAddSize = false;
 	let newSize = '';
-	let newBandKg = '';
+	let newBandMinKg = '';
+	let newBandMaxKg = '';
 	let newSizeItemId: number | null = null;
 	// 'current' is the size the child is in now; 'next' is known but not reached
 	// yet. Both count for forecasting, and only 'current' drives days of cover.
 	let newSizeState: 'current' | 'next' = 'current';
-	let presets: { size: string; weightBandKg: number }[] = [];
+	let presets: DiaperBand[] = [];
 	let chosenPresets: string[] = [];
 	let preloading = false;
 
 	let managingId: number | null = null;
+	$: managing = items.find((i) => i.id === managingId) ?? null;
 	let recountValue = '';
 	let recountNote = '';
 	let loadedSizesFor: number | null = null;
@@ -59,6 +66,7 @@
 	let packSize = '';
 	let leadDays = '';
 	let consumeEvery = '';
+	let consumeQty = '';
 	let expiresAt = '';
 	let memberId: number | null = null;
 	let autoDecrement = false;
@@ -163,12 +171,13 @@
 				memberId: selectedMemberId,
 				size: newSize.trim(),
 				itemId: newSizeItemId,
-				weightBandKg: newBandKg ? Number(newBandKg) : null,
+				weightBandMinKg: newBandMinKg ? Number(newBandMinKg) : null,
+				weightBandMaxKg: newBandMaxKg ? Number(newBandMaxKg) : null,
 			});
 			if (newSizeState === 'next' && added.data?.id) {
 				await inventoryAPI.retireDiaperSize(added.data.id);
 			}
-			newSize = ''; newBandKg = ''; newSizeItemId = null; showAddSize = false;
+			newSize = ''; newBandMinKg = ''; newBandMaxKg = ''; newSizeItemId = null; showAddSize = false;
 		consumeEvery = '';
 		expiresAt = '';
 			await loadSizes(selectedMemberId);
@@ -186,7 +195,7 @@
 			const picked = presets.filter((p) => chosenPresets.includes(p.size));
 			await inventoryAPI.preloadDiaperSizes({
 				memberId: selectedMemberId,
-				sizes: picked.map((p) => ({ size: p.size, weightBandKg: p.weightBandKg })),
+				sizes: picked.map((p) => ({ size: p.size, weightBandMinKg: p.weightBandMinKg, weightBandMaxKg: p.weightBandMaxKg })),
 			});
 			await loadSizes(selectedMemberId);
 			dispatch('refresh');
@@ -215,6 +224,7 @@
 		showAdd = true;
 		memberId = BABY_CATEGORIES.has(category) ? selectedMemberId : null;
 		name = ''; variant = ''; quantity = ''; packSize = ''; leadDays = '';
+		consumeQty = '';
 		// Diapers are the linked case: a logged change is one unit used.
 		autoDecrement = category === 'diapers';
 		error = '';
@@ -237,7 +247,7 @@
 				packSize: packSize ? Number(packSize) : null,
 				leadDays: leadDays ? Number(leadDays) : null,
 				eventCategory: linkedToLogs ? 'diapers' : null,
-				decrementPerEvent: linkedToLogs ? 1 : null,
+				decrementPerEvent: linkedToLogs ? 1 : (consumeQty ? Number(consumeQty) : null),
 				consumeIntervalDays: consumeEvery ? Number(consumeEvery) : null,
 				expiresAt: expiresAt ? new Date(expiresAt).toISOString() : null,
 			});
@@ -289,6 +299,46 @@
 		}
 	}
 
+	/** A weight band is a range. One end alone is a half-answer, so say which. */
+	function bandLabel(min: number | null | undefined, max: number | null | undefined): string {
+		if (min != null && max != null) return `${min}–${max} kg`;
+		if (max != null) return `up to ${max} kg`;
+		if (min != null) return `from ${min} kg`;
+		return 'no weight band set';
+	}
+
+	async function setQuantity(item: InventoryItem, raw: string) {
+		const next = Number(raw);
+		delete qtyDraft[item.id];
+		if (!Number.isFinite(next) || next < 0 || next === item.quantity) return;
+		error = '';
+		try {
+			await inventoryAPI.recount(item.id, next, 'Set from the table');
+			await load();
+			dispatch('refresh');
+		} catch (e: any) {
+			error = e?.response?.data?.error || 'Could not set that quantity.';
+		}
+	}
+
+	function commitQtyOnEnter(e: Event) {
+		const el = e.currentTarget as HTMLInputElement;
+		if ((e as KeyboardEvent).key === 'Enter') el.blur();
+	}
+
+	/** Most urgent first: needs attention, then least cover, unknown cover last. */
+	function byUrgency(list: InventoryItem[]): InventoryItem[] {
+		return [...list].sort((a, b) => {
+			if (a.alerting !== b.alerting) return a.alerting ? -1 : 1;
+			const da = a.daysOfCover;
+			const db = b.daysOfCover;
+			if (da === null && db === null) return a.name.localeCompare(b.name);
+			if (da === null) return 1;
+			if (db === null) return -1;
+			return da - db;
+		});
+	}
+
 	const grouped = () => {
 		const byCategory = new Map<string, InventoryItem[]>();
 		for (const item of items) {
@@ -313,7 +363,21 @@
 <div class="bg-surface rounded-lg shadow-card p-4 md:p-5 border border-line-soft mb-4">
 	<div class="flex items-center justify-between mb-3">
 		<h3 class="text-lg font-display font-semibold">Inventory</h3>
-		<button type="button" on:click={openAdd} class="px-3 py-2 rounded-md bg-primary text-on-primary text-sm font-semibold">Add item</button>
+		<div class="flex items-center gap-2">
+			<div class="flex bg-surface2 rounded-md p-1">
+				<button
+					type="button"
+					on:click={() => (viewMode = 'cards')}
+					class="{viewMode === 'cards' ? 'bg-surface text-ink' : 'text-ink-soft hover:text-ink'} h-8 px-3 rounded-md text-sm font-semibold transition-colors"
+				>Cards</button>
+				<button
+					type="button"
+					on:click={() => (viewMode = 'table')}
+					class="{viewMode === 'table' ? 'bg-surface text-ink' : 'text-ink-soft hover:text-ink'} h-8 px-3 rounded-md text-sm font-semibold transition-colors"
+				>Table</button>
+			</div>
+			<button type="button" on:click={openAdd} class="px-3 py-2 rounded-md bg-primary text-on-primary text-sm font-semibold">Add item</button>
+		</div>
 	</div>
 
 	{#if error}<p class="text-danger-text text-sm mb-2">{error}</p>{/if}
@@ -354,14 +418,26 @@
 					<label for="inv-lead" class="block text-sm font-medium text-ink-soft mb-1">Warn me this many days early</label>
 					<input id="inv-lead" type="number" min="0" step="1" bind:value={leadDays} class="w-full px-3 py-2 border border-line rounded-md" placeholder="7" />
 				</div>
-				<div>
-					<label for="inv-consume" class="block text-sm font-medium text-ink-soft mb-1">Uses up on its own</label>
-					<input id="inv-consume" type="number" min="1" step="1" bind:value={consumeEvery} disabled={linkedToLogs} class="w-full px-3 py-2 border border-line rounded-md disabled:opacity-50" placeholder="leave blank" />
+				<div class="sm:col-span-2">
+					<span class="block text-sm font-medium text-ink-soft mb-1">Uses up on its own</span>
+					<div class="flex items-center gap-2">
+						<div class="flex-1 min-w-[5rem]">
+							<label for="inv-consume-qty" class="sr-only">How many used up each time</label>
+							<input id="inv-consume-qty" type="number" min="1" step="1" bind:value={consumeQty} disabled={linkedToLogs} class="w-full px-3 py-2 border border-line rounded-md disabled:opacity-50" placeholder="1" />
+						</div>
+						<span class="text-sm text-ink-soft shrink-0">every</span>
+						<div class="flex-1 min-w-[5rem]">
+							<label for="inv-consume" class="sr-only">How many days between</label>
+							<input id="inv-consume" type="number" min="1" step="1" bind:value={consumeEvery} disabled={linkedToLogs} class="w-full px-3 py-2 border border-line rounded-md disabled:opacity-50" placeholder="1" />
+						</div>
+						<span class="text-sm text-ink-soft shrink-0">day{consumeEvery === '1' ? '' : 's'}</span>
+					</div>
 					<p class="text-xs text-ink-soft mt-1">
 						{#if linkedToLogs}
-							Unavailable while stock is subtracted from logged diaper changes. Use one or the other.
+							Unavailable while stock is subtracted from logged changes. Use one or the other.
 						{:else}
-							For things used up by the calendar rather than by something you log: 1 for daily contacts, 14 for fortnightly. Nothing to log each time.
+							For stock used up by the calendar rather than by something you log: 2 contacts every day,
+							1 every fortnight. Nothing to log each time.
 						{/if}
 					</p>
 				</div>
@@ -429,7 +505,7 @@
 							on:change={() => (chosenPresets = chosenPresets.includes(preset.size) ? chosenPresets.filter((z) => z !== preset.size) : [...chosenPresets, preset.size])}
 							class="w-3.5 h-3.5"
 						/>
-					{preset.size} · {preset.weightBandKg}kg
+					{preset.size} · {bandLabel(preset.weightBandMinKg, preset.weightBandMaxKg)}
 					</label>
 				{/each}
 			</div>
@@ -452,8 +528,12 @@
 						<input id="size-name" type="text" bind:value={newSize} required class="w-16 px-2 py-1.5 border border-line rounded-md" />
 					</div>
 					<div>
-						<label for="size-band" class="block text-xs text-ink-soft mb-1">Outgrown at (kg)</label>
-						<input id="size-band" type="number" step="0.1" min="0" bind:value={newBandKg} class="w-24 px-2 py-1.5 border border-line rounded-md" placeholder="7.5" />
+						<label for="size-band-min" class="block text-xs text-ink-soft mb-1">Starts at (kg)</label>
+						<input id="size-band-min" type="number" step="0.1" min="0" bind:value={newBandMinKg} class="w-20 px-2 py-1.5 border border-line rounded-md" placeholder="5.5" />
+					</div>
+					<div>
+						<label for="size-band-max" class="block text-xs text-ink-soft mb-1">Outgrown at (kg)</label>
+						<input id="size-band-max" type="number" step="0.1" min="0" bind:value={newBandMaxKg} class="w-20 px-2 py-1.5 border border-line rounded-md" placeholder="8.2" />
 					</div>
 					<div>
 						<label for="size-state" class="block text-xs text-ink-soft mb-1">Status</label>
@@ -482,7 +562,7 @@
 					{#each sizes as row (row.id)}
 						<li class="text-xs flex items-center gap-2 {row.active ? '' : 'opacity-50'}">
 							<span class="font-semibold text-ink">Size {row.size}</span>
-							{#if row.weightBandKg}<span class="text-ink-soft">outgrown at {row.weightBandKg}kg</span>{/if}
+							<span class="text-ink-soft">{bandLabel(row.weightBandMinKg, row.weightBandMaxKg)}</span>
 							{#if row.itemId}<span class="text-ink-soft">· linked stock</span>{/if}
 							{#if !row.active}<span class="text-ink-soft">· retired</span>{/if}
 							{#if row.active}
@@ -545,6 +625,69 @@
 	{:else if items.length === 0}
 		<p class="text-sm text-ink-soft py-4">Nothing tracked yet. Add diapers or a household item to see how long it will last.</p>
 	{:else}
+
+		{#if viewMode === 'table'}
+			<div class="overflow-x-auto -mx-1 px-1">
+				<table class="w-full text-sm" data-testid="inventory-table">
+					<thead>
+						<tr class="border-b border-line-soft text-xs uppercase tracking-wider text-ink-soft">
+							<th scope="col" class="text-left font-semibold py-2 pr-3">Item</th>
+							<th scope="col" class="text-left font-semibold py-2 pr-3 hidden md:table-cell">Category</th>
+							<th scope="col" class="text-right font-semibold py-2 pr-3 w-32">On hand</th>
+							<th scope="col" class="text-left font-semibold py-2 pr-3 hidden md:table-cell w-28">Cover</th>
+							<th scope="col" class="text-right font-semibold py-2 w-28"><span class="sr-only">Adjust</span></th>
+						</tr>
+					</thead>
+					<tbody class="divide-y divide-line-soft">
+						{#each byUrgency(items) as item (item.id)}
+							<tr data-testid="inventory-table-row">
+								<td class="py-2 pr-3 min-w-0">
+									<div class="flex items-center gap-2 min-w-0">
+										<span class="font-semibold text-ink truncate">{item.name}</span>
+										{#if item.alerting}<span class="shrink-0 text-xs font-semibold text-danger-text">needs attention</span>{/if}
+									</div>
+									<p class="text-xs text-ink-soft truncate">
+										{#if item.consumeIntervalDays}uses {item.decrementPerEvent ?? 1} every {item.consumeIntervalDays}d · {/if}
+										{#if item.expiresAt}expires {new Date(item.expiresAt).toLocaleDateString()} · {/if}
+										{item.unit}
+									</p>
+								</td>
+								<td class="py-2 pr-3 text-ink-soft hidden md:table-cell">{CATEGORY_LABELS[item.category] ?? item.category}</td>
+								<td class="py-2 pr-3">
+									<input
+										type="number"
+										min="0"
+										step="1"
+										value={qtyDraft[item.id] ?? item.quantity}
+										on:input={(e) => (qtyDraft[item.id] = e.currentTarget.value)}
+										on:blur={(e) => setQuantity(item, e.currentTarget.value)}
+										on:keydown={commitQtyOnEnter}
+										aria-label="On hand {item.name}"
+										data-testid="qty-input"
+										class="w-full px-2 py-1 text-right bg-surface2 border border-line-soft rounded-md tabular-nums"
+									/>
+								</td>
+								<td class="py-2 pr-3 hidden md:table-cell tabular-nums">
+									{#if item.daysOfCover === null}
+										<span class="text-ink-soft">&mdash;</span>
+									{:else}
+										<span class="text-ink">{item.daysOfCover}d</span>
+										{#if item.lowConfidence}<span class="text-xs text-ink-soft"> thin</span>{/if}
+									{/if}
+								</td>
+								<td class="py-2">
+									<div class="flex items-center justify-end gap-1">
+										<button type="button" on:click={() => adjust(item, -1, 'used')} aria-label="Record using one {item.name}" data-testid="record-use" class="px-2 py-1 rounded-md text-ink-soft hover:bg-surface2 tabular-nums">−1</button>
+										<button type="button" on:click={() => adjust(item, 1, 'purchase')} aria-label="Add one {item.name}" class="px-2 py-1 rounded-md text-accent hover:bg-surface2 tabular-nums">+1</button>
+										<button type="button" on:click={() => openManage(item)} aria-label="Manage {item.name}" data-testid="manage-item" class="px-2 py-1 rounded-md text-ink-soft hover:bg-surface2">&vellip;</button>
+									</div>
+								</td>
+							</tr>
+						{/each}
+					</tbody>
+				</table>
+			</div>
+		{:else}
 		{#each grouped() as [cat, catItems]}
 			<div class="mb-4">
 				<p class="text-xs font-semibold text-ink-soft uppercase tracking-wider mb-2">{CATEGORY_LABELS[cat] ?? cat}</p>
@@ -560,7 +703,7 @@
 									{item.quantity} {item.unit} · {cover(item)}
 									{#if item.lowConfidence} · based on very little usage{/if}
 									{#if item.consumeIntervalDays}
-										· uses 1 every {item.consumeIntervalDays} day{item.consumeIntervalDays === 1 ? '' : 's'}
+										· uses {item.decrementPerEvent ?? 1} every {item.consumeIntervalDays} day{item.consumeIntervalDays === 1 ? '' : 's'}
 										{#if item.nextConsumptionAt}· next {new Date(item.nextConsumptionAt).toLocaleDateString()}{/if}
 									{/if}
 									{#if item.expiresAt} · expires {new Date(item.expiresAt).toLocaleDateString()}{/if}
@@ -589,34 +732,36 @@
 									class="p-2 rounded-md text-ink-soft hover:bg-surface2"
 								>⋯</button>
 							</div>
-							{#if managingId === item.id}
-								<div class="mt-2 p-3 bg-surface2 border border-line-soft rounded-md space-y-2" data-testid="manage-panel">
-									<p class="text-xs text-ink-soft">
-										Counted amount{#if item.ledgerQuantity !== null} · ledger says {item.ledgerQuantity} {item.unit}{/if}
-									</p>
-									<div class="flex flex-wrap items-end gap-2">
-										<div>
-											<label for="recount-onhand" class="block text-xs text-ink-soft mb-1">On hand</label>
-											<input id="recount-onhand" type="number" min="0" step="0.5" bind:value={recountValue} class="w-20 px-2 py-1.5 border border-line rounded-md" />
-										</div>
-										<div class="flex-1 min-w-[8rem]">
-											<label for="recount-note" class="block text-xs text-ink-soft mb-1">Note</label>
-											<input id="recount-note" type="text" bind:value={recountNote} class="w-full px-2 py-1.5 border border-line rounded-md" placeholder="Counted the cupboard" />
-										</div>
-									</div>
-									<div class="flex flex-wrap gap-2">
-										<button type="button" on:click={() => recount(item)} class="px-2 py-1.5 rounded-md bg-primary text-on-primary text-xs font-semibold">Save count</button>
-										<button type="button" on:click={() => resetHistory(item)} class="px-2 py-1.5 rounded-md bg-surface text-ink-soft text-xs">Reset history</button>
-										<button type="button" on:click={() => hide(item)} class="px-2 py-1.5 rounded-md bg-surface text-ink-soft text-xs">Stop tracking</button>
-										<button type="button" on:click={() => (managingId = null)} class="px-2 py-1.5 rounded-md bg-surface text-ink-soft text-xs">Close</button>
-									</div>
-								</div>
-							{/if}
 						</li>
 					{/each}
 				</ul>
 			</div>
 		{/each}
+		{/if}
+		{#if managing}
+			<div class="p-3 bg-surface2 border border-line-soft rounded-md space-y-2" data-testid="manage-panel">
+								<p class="text-xs text-ink-soft">
+									Counted amount{#if managing.ledgerQuantity !== null} · ledger says {managing.ledgerQuantity} {managing.unit}{/if}
+								</p>
+								<div class="flex flex-wrap items-end gap-2">
+									<div>
+										<label for="recount-onhand" class="block text-xs text-ink-soft mb-1">On hand</label>
+										<input id="recount-onhand" type="number" min="0" step="0.5" bind:value={recountValue} class="w-20 px-2 py-1.5 border border-line rounded-md" />
+									</div>
+									<div class="flex-1 min-w-[8rem]">
+										<label for="recount-note" class="block text-xs text-ink-soft mb-1">Note</label>
+										<input id="recount-note" type="text" bind:value={recountNote} class="w-full px-2 py-1.5 border border-line rounded-md" placeholder="Counted the cupboard" />
+									</div>
+								</div>
+								<div class="flex flex-wrap gap-2">
+									<button type="button" on:click={() => recount(managing)} class="px-2 py-1.5 rounded-md bg-primary text-on-primary text-xs font-semibold">Save count</button>
+									<button type="button" on:click={() => resetHistory(managing)} class="px-2 py-1.5 rounded-md bg-surface text-ink-soft text-xs">Reset history</button>
+									<button type="button" on:click={() => hide(managing)} class="px-2 py-1.5 rounded-md bg-surface text-ink-soft text-xs">Stop tracking</button>
+									<button type="button" on:click={() => (managingId = null)} class="px-2 py-1.5 rounded-md bg-surface text-ink-soft text-xs">Close</button>
+								</div>
+			</div>
+		{/if}
+
 	{/if}
 
 	{#if items.length > 0}

@@ -427,6 +427,14 @@ export interface Reminder {
 	createdByName: string | null;
 }
 
+export interface DiaperBand {
+	size: string;
+	/** Weight at which the child moves into this size. */
+	weightBandMinKg: number | null;
+	/** Weight at which they grow out of it. Null when the size is open-ended. */
+	weightBandMaxKg: number | null;
+}
+
 export const inventoryAPI = {
 	categories: () => api.get('/inventory/categories'),
 	list: () => api.get<{ items: InventoryItem[]; alerts: InventoryAlert[] }>('/inventory'),
@@ -464,12 +472,12 @@ export const inventoryAPI = {
 	diaperSizes: (memberId: number) =>
 		api.get<{ sizes: any[]; signals: Record<string, number | null>; linkedItemId: number | null }>(
 			`/inventory/diaper-sizes?memberId=${memberId}`),
-	diaperSizePresets: () => api.get<{ presets: { size: string; weightBandKg: number }[] }>('/inventory/diaper-size-presets'),
-	preloadDiaperSizes: (data: { memberId: number; sizes?: { size: string; weightBandKg?: number | null }[]; itemId?: number | null }) =>
+	diaperSizePresets: () => api.get<{ presets: DiaperBand[] }>('/inventory/diaper-size-presets'),
+	preloadDiaperSizes: (data: { memberId: number; sizes?: { size: string; weightBandMinKg?: number | null; weightBandMaxKg?: number | null }[]; itemId?: number | null }) =>
 		api.post('/inventory/diaper-sizes/preload', data),
-	addDiaperSize: (data: { memberId: number; size: string; itemId?: number | null; weightBandKg?: number | null }) =>
+	addDiaperSize: (data: { memberId: number; size: string; itemId?: number | null; weightBandMinKg?: number | null; weightBandMaxKg?: number | null }) =>
 		api.post('/inventory/diaper-sizes', data),
-	updateDiaperSize: (id: number, data: Partial<{ size: string; itemId?: number | null; active: boolean; weightBandKg?: number | null }>) =>
+	updateDiaperSize: (id: number, data: Partial<{ size: string; itemId?: number | null; active: boolean; weightBandMinKg?: number | null; weightBandMaxKg?: number | null }>) =>
 		api.put(`/inventory/diaper-sizes/${id}`, data),
 	retireDiaperSize: (id: number) => api.delete(`/inventory/diaper-sizes/${id}`),
 };

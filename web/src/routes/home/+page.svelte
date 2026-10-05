@@ -6,7 +6,7 @@
 	import { uiStore, uiActions } from '$lib/stores/uiStore';
 	import PhotoStrip from '$lib/components/PhotoStrip.svelte';
 	import ToggleSwitch from '$lib/components/ToggleSwitch.svelte';
-	import { CATEGORIES } from '$lib/shared';
+	import { CATEGORIES, defaultMemberId } from '$lib/shared';
 	import { Home, Timer, AlertCircle, Check } from 'lucide-svelte';
 
 	$: if ($uiStore.accountPanelOpen) {
@@ -62,6 +62,8 @@
 	let activeTab = 'feeds';
 	let defaultProfileId: number | null = null;
 	let summary: any = null;
+	// Feeds, sleep, diapers and the rest only exist for a trackable profile.
+	let selectedIsTrackable = true;
 
 	// Tracking categories now live in $lib/shared.ts (single source of truth).
 	// Categories enabled for the selected member.
@@ -133,6 +135,13 @@
 
 	async function refreshSummary() {
 		if (!selectedMemberId) return;
+		if (!selectedIsTrackable) {
+			// Baby tracking only. The person who created the household is an adult
+			// member of it, so a household with no child yet would otherwise fire a
+			// request that is refused.
+			summary = null;
+			return;
+		}
 		try {
 			const res = await healthAPI.getSummary(selectedMemberId);
 			summary = res.data.summary;
@@ -143,6 +152,19 @@
 
 	async function refreshLists() {
 		if (!selectedMemberId) return;
+		if (!selectedIsTrackable) {
+			// Feeds, sleep, diapers, growth, moods and the rest belong to a baby
+			// profile, and the endpoints reject an adult one.
+			feedings = [];
+			diapers = [];
+			sleeps = [];
+			growths = [];
+			milestones = [];
+			vaccinations = [];
+			moods = [];
+			journalEntries = [];
+			return;
+		}
 		try {
 			const [f, d, s, g, m, v, mo, j] = await Promise.all([
 				feedingAPI.getAll(selectedMemberId),
@@ -204,12 +226,14 @@
 			if (babies.length > 0) {
 				const savedDefault = defaultProfileId ?? null;
 				const match = savedDefault ? babies.find((b) => Number(b.id) === savedDefault) : null;
-				selectedMemberId = match ? Number(match.id) : Number(babies[0].id);
+				selectedMemberId = match ? Number(match.id) : defaultMemberId(babies);
 				const selected = babies.find((b) => Number(b.id) === selectedMemberId);
+				selectedIsTrackable = selected ? selected.trackable !== false : false;
 				activeCategories = selected?.categories?.length ? selected.categories : CATEGORIES.map((c) => c.id);
 				if (!activeCategories.includes(activeTab)) activeTab = activeCategories[0] || 'feeds';
 			} else {
 				selectedMemberId = null;
+				selectedIsTrackable = false;
 				activeCategories = [];
 			}
 			await Promise.all([loadFamilySettings(), refreshLists(), refreshSummary(), loadInvitations(), loadImportRuns()]);

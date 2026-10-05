@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import jwt from 'jsonwebtoken';
 import { type AuthEnv, jwtSecret } from '../auth';
-import { NAMESPACE_HOUSEHOLD_ID } from '../db-core';
+import { NAMESPACE_HOUSEHOLD_ID, DEFAULT_CATEGORIES } from '../db-core';
 import { ensureRegistry, getFamilyClient } from '../db-namespaces';
 import { getAppSettings, sendMail, smtpConfigured, baseUrl } from '../mail';
 import { renderFamilyInviteEmail } from '../mail-templates';
@@ -83,7 +83,6 @@ function validateFamilyRef(c: Context<AuthEnv>): boolean {
 	return ref === registryFamilyId || ref === '1';
 }
 
-const DEFAULT_CATEGORIES = ['feeds', 'diapers', 'sleep', 'growth', 'pumping', 'routines', 'firsts', 'milestones', 'medical', 'vaccines', 'moods', 'journal'];
 
 const EXPORT_TABLES = ['feedings', 'diapers', 'sleep', 'growth', 'milestones', 'vaccinations', 'moods', 'journal_entries'] as const;
 
@@ -547,6 +546,36 @@ async function handleAddMember(c: Context<AuthEnv>) {
 	const { type, name, birthDate, gender, email, categories } = (c.req as any).valid('json');
 	const memberType = type || 'child';
 	const normalizedEmail = email ? String(email).trim().toLowerCase() : null;
+
+	// Adding a person who is already an account in this family must link that
+	// account, not mint a second profile beside it. Without this, the owner
+	// adding themselves got an unlinked duplicate while their real account sat
+	// invisible, and neither profile could receive anything.
+	if (normalizedEmail) {
+		const linked = await db.execute({
+			sql: `SELECT am.member_id FROM account_members am
+			      JOIN users u ON u.id = am.user_id
+			      WHERE lower(u.email) = ? LIMIT 1`,
+			args: [normalizedEmail],
+		});
+		const linkedId = linked.rows[0]?.member_id ? Number(linked.rows[0].member_id) : null;
+		if (linkedId) {
+			const shapeRes = await db.execute({
+				sql: `
+					SELECT fm.id, fm.legacy_baby_id, fm.trackable, fm.name, fm.birth_date, fm.gender, fm.member_type, fm.email, fm.avatar, fm.categories,
+					       CASE WHEN am.user_id IS NULL THEN 0 ELSE 1 END AS linked_account
+					FROM family_members fm
+					LEFT JOIN account_members am ON am.member_id = fm.id
+					WHERE fm.id = ?
+				`,
+				args: [linkedId],
+			});
+			return c.json({
+				message: 'Already a member of this family, and now linked to that account',
+				member: memberShape(shapeRes.rows[0]),
+			}, 200);
+		}
+	}
 
 	// Guard against accidental duplicates
 	const dup = await db.execute({

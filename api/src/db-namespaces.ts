@@ -681,6 +681,71 @@ ALTER TABLE inventory_adjustments ADD COLUMN source TEXT DEFAULT 'manual';
       );
     `,
   },
+  {
+    version: 20,
+    name: 'diaper-size-weight-band-max',
+    sql: `
+      -- A diaper size covers a *range* of weights, and the number that matters is
+      -- its ceiling: a child sizes out of Size 1 at 6.5kg, not at the 3.5kg where
+      -- they entered it. weight_band_kg was being stored as the floor and read as
+      -- if it were the ceiling, so the forecast fired about a size early.
+      --
+      -- Existing rows keep a null max and the forecast falls back to the next
+      -- size's floor, so nothing that already works changes behaviour.
+      ALTER TABLE diaper_sizes ADD COLUMN weight_band_max_kg REAL;
+    `,
+  },
+  {
+    version: 21,
+    name: 'owner-member-profile',
+    sql: `
+      -- An account that creates a family owns it, and is a member of it. Until
+      -- this existed, only an *invited* user gained a member profile (on accept),
+      -- so the person who signed up had an account but no profile at all: absent
+      -- from the member list, unpickable for anything, and adding themselves by
+      -- hand produced a second unlinked profile rather than linking the account
+      -- they already had.
+      --
+      -- One row per account, keyed on the household's owner, linked so the
+      -- account shows as connected. Accounts with no owner row, and accounts
+      -- already reachable through a linked member, are left alone.
+      INSERT OR IGNORE INTO family_members (
+        household_id, legacy_baby_id, trackable, name, member_type, email, categories, created_at, updated_at
+      )
+      SELECT
+        uh.household_id,
+        NULL,
+        0,
+        COALESCE(NULLIF(trim(u.first_name || ' ' || COALESCE(u.last_name, '')), ''), u.email),
+        'adult',
+        u.email,
+        NULL,
+        CURRENT_TIMESTAMP,
+        CURRENT_TIMESTAMP
+      FROM user_households uh
+      JOIN users u ON u.id = uh.user_id
+      WHERE uh.role = 'owner'
+        AND uh.household_id IS NOT NULL
+        AND NOT EXISTS (SELECT 1 FROM family_members fm WHERE fm.household_id = uh.household_id AND lower(fm.email) = lower(u.email))
+        AND NOT EXISTS (SELECT 1 FROM account_members am WHERE am.user_id = uh.user_id);
+
+      INSERT OR IGNORE INTO member_homes (member_id, home_id, relation, is_primary, created_at)
+      SELECT fm.id, h.id, 'resident', 1, CURRENT_TIMESTAMP
+      FROM family_members fm
+      JOIN homes h ON h.household_id = fm.household_id AND h.is_primary = 1
+      JOIN user_households uh ON uh.household_id = fm.household_id AND uh.role = 'owner'
+      JOIN users u ON u.id = uh.user_id AND lower(u.email) = lower(fm.email)
+      WHERE NOT EXISTS (SELECT 1 FROM member_homes mh WHERE mh.member_id = fm.id);
+
+      INSERT OR IGNORE INTO account_members (user_id, member_id, created_at)
+      SELECT u.id, fm.id, CURRENT_TIMESTAMP
+      FROM user_households uh
+      JOIN users u ON u.id = uh.user_id
+      JOIN family_members fm ON fm.household_id = uh.household_id AND lower(fm.email) = lower(u.email)
+      WHERE uh.role = 'owner'
+        AND NOT EXISTS (SELECT 1 FROM account_members am WHERE am.user_id = u.id);
+    `,
+  },
 ];
 
 // ---------------------------------------------------------------------------

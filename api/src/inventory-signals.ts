@@ -10,7 +10,7 @@
 // rather than a special-cased table, and the next rule someone invents needs no
 // code change at all.
 
-import { consumptionRate, coverForecast, weightTrendPerDay, MS_PER_DAY } from './inventory';
+import { consumptionRate, coverForecast, cadenceRate, weightTrendPerDay, MS_PER_DAY } from './inventory';
 
 export type Comparator = 'lt' | 'lte' | 'gt' | 'gte';
 
@@ -21,7 +21,15 @@ export interface AdjustmentLike {
 	/** 'scheduled' rows are the app's own cadence; anything else was told to us. */
 	source?: string | null;
 }
-export interface DiaperSizeLike { size: string; itemId: number | null; active: boolean; weightBandKg: number | null }
+export interface DiaperSizeLike {
+	size: string;
+	itemId: number | null;
+	active: boolean;
+	/** Weight at which this size begins. */
+	weightBandMinKg: number | null;
+	/** Weight at which the child grows out of it — the number the forecast wants. */
+	weightBandMaxKg: number | null;
+}
 export interface GrowthLike { date: string; weight: number | null }
 
 export interface SignalContext {
@@ -45,7 +53,7 @@ export interface SignalDefinition {
 }
 
 function daysOfCover(ctx: SignalContext): number | null {
-	const rate = consumptionRate(ctx.adjustments, ctx.nowMs);
+	const rate = cadenceRate(ctx.item, consumptionRate(ctx.adjustments, ctx.nowMs));
 	return coverForecast(rate, Number(ctx.item.quantity ?? 0), ctx.nowMs).daysOfCover;
 }
 
@@ -112,7 +120,7 @@ export const SIGNALS: SignalDefinition[] = [
 		unit: 'days',
 		higherIsWorse: false,
 		describe:
-			'Needs the size in use, a weight band on the next size, and at least two weight records. ' +
+			'Needs a size ladder with weight ranges, and at least two weight records. ' +
 			'Meant for size-based stock such as diapers.',
 		compute: (ctx) => {
 			const sizes = ctx.diaperSizes ?? [];
@@ -127,14 +135,31 @@ export const SIGNALS: SignalDefinition[] = [
 			const weight = weights.pop();
 			if (weight === undefined) return null;
 
-			const band = (s: DiaperSizeLike) => s.weightBandKg ?? null;
-			const sorted = [...sizes].filter((s) => band(s) !== null).sort((a, b) => band(a)! - band(b)!);
-			// The size in use is the largest band the child has already reached;
-			// the next one is the smallest band they have not.
-			const passed = sorted.filter((s) => band(s)! <= weight).pop();
-			const upcoming = sorted.find((s) => band(s)! > weight);
-			if (!passed || !upcoming) return null;
-			return Math.max(0, Math.round((band(upcoming)! - weight) / trend));
+			const sorted = [...sizes]
+				.filter((s) => s.weightBandMinKg !== null)
+				.sort((a, b) => a.weightBandMinKg! - b.weightBandMinKg!);
+			if (sorted.length === 0) return null;
+
+			// The size in use is the last one whose floor the child has reached, not
+			// the next one up. Below every floor — a very small baby — they are in
+			// the smallest size available.
+			let index = -1;
+			for (const [i, s] of sorted.entries()) {
+				if (s.weightBandMinKg! <= weight) index = i;
+			}
+			if (index === -1) index = 0;
+			const current = sorted[index];
+			if (!current) return null;
+
+			// Growing out of a size means reaching its ceiling. A ladder recorded
+			// before ceilings existed has none, so fall back to the next size's
+			// floor, which is how this behaved before and is correct when the
+			// bands are contiguous.
+			const next = sorted[index + 1];
+			const target = current.weightBandMaxKg ?? next?.weightBandMinKg ?? null;
+			if (target === null) return null;
+
+			return Math.max(0, Math.round((target - weight) / trend));
 		},
 	},
 ];

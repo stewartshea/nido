@@ -97,13 +97,14 @@ export async function signalContext(db: any, row: any, nowMs: number): Promise<S
 	let growth: any[] | undefined;
 	if (row.baby_id !== null && row.baby_id !== undefined && String(row.category) === 'diapers') {
 		diaperSizes = (await db.execute({
-			sql: 'SELECT size, item_id, active, weight_band_kg FROM diaper_sizes WHERE baby_id = ?',
+			sql: 'SELECT size, item_id, active, weight_band_kg, weight_band_max_kg FROM diaper_sizes WHERE baby_id = ?',
 			args: [row.baby_id],
 		})).rows.map((s: any) => ({
 			size: String(s.size),
 			itemId: s.item_id === null || s.item_id === undefined ? null : Number(s.item_id),
 			active: Number(s.active ?? 1) === 1,
-			weightBandKg: s.weight_band_kg === null || s.weight_band_kg === undefined ? null : Number(s.weight_band_kg),
+			weightBandMinKg: s.weight_band_kg === null || s.weight_band_kg === undefined ? null : Number(s.weight_band_kg),
+			weightBandMaxKg: s.weight_band_max_kg === null || s.weight_band_max_kg === undefined ? null : Number(s.weight_band_max_kg),
 		}));
 		growth = (await db.execute({
 			sql: 'SELECT measurement_date, weight FROM growth WHERE baby_id = ? AND weight IS NOT NULL ORDER BY measurement_date',

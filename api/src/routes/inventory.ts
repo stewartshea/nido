@@ -6,7 +6,7 @@ import { type AuthEnv } from '../auth';
 import { sendMail, getAppSettings, smtpConfigured, baseUrl } from '../mail';
 import { NAMESPACE_HOUSEHOLD_ID } from '../db-core';
 import { renderInventoryAlertsEmail } from '../mail-templates';
-import { consumptionRate, coverForecast, dueCycles, nextConsumptionAt, MS_PER_DAY, type AdjustmentRow } from '../inventory';
+import { consumptionRate, coverForecast, cadenceRate, dueCycles, nextConsumptionAt, MS_PER_DAY, type AdjustmentRow } from '../inventory';
 import { SIGNALS, signalByName } from '../inventory-signals';
 import {
 	applyScheduledConsumption, evaluateAlerts, loadRulesForFamily, signalContext,
@@ -65,14 +65,21 @@ const diaperSizeSchema = z.object({
 	size: z.string().min(1).max(10),
 	itemId: z.number().nullish(),
 	startDate: z.string().datetime().nullish(),
-	weightBandKg: z.number().positive().max(40).nullish(),
-});
+	weightBandMinKg: z.number().nonnegative().max(40).nullish(),
+	weightBandMaxKg: z.number().positive().max(40).nullish(),
+}).refine(
+	// A band with an inverted range would make the forecast meaningless, so it is
+	// refused at the edge rather than silently producing a negative answer.
+	(v) => v.weightBandMinKg == null || v.weightBandMaxKg == null || v.weightBandMinKg < v.weightBandMaxKg,
+	{ message: 'The upper weight must be above the lower weight', path: ['weightBandMaxKg'] },
+);
 
 const diaperSizeUpdateSchema = z.object({
 	size: z.string().min(1).max(10).optional(),
 	itemId: z.number().nullish(),
 	active: z.boolean().optional(),
-	weightBandKg: z.number().positive().max(40).nullish(),
+	weightBandMinKg: z.number().nonnegative().max(40).nullish(),
+	weightBandMaxKg: z.number().positive().max(40).nullish(),
 });
 
 async function resolveBabyId(db: any, memberId: number | null | undefined, userId: string): Promise<{ babyId: number | null; error?: string }> {
@@ -126,7 +133,7 @@ async function itemForecast(db: any, row: any, nowMs: number) {
 		sql: 'SELECT change, reason, created_at, source FROM inventory_adjustments WHERE item_id = ? ORDER BY created_at DESC LIMIT 500',
 		args: [row.id],
 	})).rows as AdjustmentRow[];
-	const rate = consumptionRate(adj, nowMs);
+	const rate = cadenceRate(row, consumptionRate(adj, nowMs));
 	const forecast = coverForecast(rate, Number(row.quantity), nowMs);
 	const ledgerQuantity = adj.length ? Math.round(adj.reduce((sum, a) => sum + Number(a.change), 0) * 1000) / 1000 : null;
 	return { forecast: { ...forecast, ledgerQuantity } };
@@ -383,14 +390,25 @@ inventoryRoutes.get('/:id{[0-9]+}/adjustments', async (c) => {
  * values a household can override per size rather than truth. NB is newborn.
  * Exposed so the size picker never asks someone to type a weight band by hand.
  */
-const STANDARD_DIAPER_SIZES: { size: string; weightBandKg: number }[] = [
-	{ size: 'NB', weightBandKg: 2.4 },
-	{ size: '1', weightBandKg: 3.5 },
-	{ size: '2', weightBandKg: 4.6 },
-	{ size: '3', weightBandKg: 6.4 },
-	{ size: '4', weightBandKg: 8.0 },
-	{ size: '5', weightBandKg: 10.0 },
-	{ size: '6', weightBandKg: 12.5 },
+// Weight ranges for a conventional diaper ladder.
+//
+// The ceiling is the number that matters: a child sizes out of Size 1 at 6.5kg,
+// not at the 3.5kg where they entered it. A single number per size cannot answer
+// "when do they grow out of this", which is why a floor and a ceiling are both
+// stored. Brands differ, so this is a starting point the family can edit.
+//
+// 5, 6 and 7 are open-ended on the charts this came from, so their ceiling is left
+// null rather than guessed — there is nothing to outgrow into at that point.
+const STANDARD_DIAPER_SIZES: { size: string; weightBandMinKg: number | null; weightBandMaxKg: number | null }[] = [
+	{ size: 'P', weightBandMinKg: 0, weightBandMaxKg: 2.7 },
+	{ size: 'NB', weightBandMinKg: 2.7, weightBandMaxKg: 4.5 },
+	{ size: '1', weightBandMinKg: 3.5, weightBandMaxKg: 6.5 },
+	{ size: '2', weightBandMinKg: 5.5, weightBandMaxKg: 8.2 },
+	{ size: '3', weightBandMinKg: 7.3, weightBandMaxKg: 12.7 },
+	{ size: '4', weightBandMinKg: 10.0, weightBandMaxKg: 16.8 },
+	{ size: '5', weightBandMinKg: 12.2, weightBandMaxKg: null },
+	{ size: '6', weightBandMinKg: 15.9, weightBandMaxKg: null },
+	{ size: '7', weightBandMinKg: 18.6, weightBandMaxKg: null },
 ];
 
 inventoryRoutes.get('/diaper-size-presets', (c) => c.json({ presets: STANDARD_DIAPER_SIZES }));
@@ -428,7 +446,8 @@ inventoryRoutes.get('/diaper-sizes', async (c) => {
 			itemId: s.item_id === null || s.item_id === undefined ? null : Number(s.item_id),
 			startDate: s.start_date ?? null,
 			active: Number(s.active ?? 1) === 1,
-			weightBandKg: s.weight_band_kg === null || s.weight_band_kg === undefined ? null : Number(s.weight_band_kg),
+			weightBandMinKg: s.weight_band_kg === null || s.weight_band_kg === undefined ? null : Number(s.weight_band_kg),
+			weightBandMaxKg: s.weight_band_max_kg === null || s.weight_band_max_kg === undefined ? null : Number(s.weight_band_max_kg),
 		})),
 		signals,
 		linkedItemId: diaperItem ? Number(diaperItem.id) : null,
@@ -442,8 +461,9 @@ inventoryRoutes.post('/diaper-sizes', zValidator('json', diaperSizeSchema), asyn
 	if (!scope) return c.json({ error: 'Member not found or access denied' }, 404);
 
 	const result = await db.execute({
-		sql: 'INSERT INTO diaper_sizes (baby_id, size, item_id, start_date, weight_band_kg) VALUES (?, ?, ?, ?, ?)',
-		args: [scope.babyId, body.size.trim(), body.itemId ?? null, body.startDate ?? new Date().toISOString(), body.weightBandKg ?? null],
+		sql: 'INSERT INTO diaper_sizes (baby_id, size, item_id, start_date, weight_band_kg, weight_band_max_kg) VALUES (?, ?, ?, ?, ?, ?)',
+		args: [scope.babyId, body.size.trim(), body.itemId ?? null, body.startDate ?? new Date().toISOString(),
+			body.weightBandMinKg ?? null, body.weightBandMaxKg ?? null],
 	});
 	return c.json({ message: 'Diaper size added', id: Number(result.lastInsertRowid) }, 201);
 });
@@ -455,7 +475,11 @@ inventoryRoutes.post('/diaper-sizes', zValidator('json', diaperSizeSchema), asyn
  */
 inventoryRoutes.post('/diaper-sizes/preload', zValidator('json', z.object({
 	memberId: z.number(),
-	sizes: z.array(z.object({ size: z.string().min(1).max(10), weightBandKg: z.number().positive().max(40).nullish() })).min(1).optional(),
+	sizes: z.array(z.object({
+		size: z.string().min(1).max(10),
+		weightBandMinKg: z.number().nonnegative().max(40).nullish(),
+		weightBandMaxKg: z.number().positive().max(40).nullish(),
+	})).min(1).optional(),
 	itemId: z.number().nullish(),
 })), async (c) => {
 	const db = c.get('db');
@@ -465,7 +489,8 @@ inventoryRoutes.post('/diaper-sizes/preload', zValidator('json', z.object({
 
 	const wanted = (body.sizes ?? STANDARD_DIAPER_SIZES).map((x) => ({
 		size: x.size.trim(),
-		weightBandKg: x.weightBandKg ?? null,
+		weightBandMinKg: x.weightBandMinKg ?? null,
+		weightBandMaxKg: x.weightBandMaxKg ?? null,
 	}));
 	const existing = (await db.execute({ sql: 'SELECT size FROM diaper_sizes WHERE baby_id = ?', args: [scope.babyId] }))
 		.rows.map((r: any) => String(r.size));
@@ -475,8 +500,8 @@ inventoryRoutes.post('/diaper-sizes/preload', zValidator('json', z.object({
 	for (const row of wanted) {
 		if (existing.includes(row.size)) continue;
 		await db.execute({
-			sql: 'INSERT INTO diaper_sizes (baby_id, size, item_id, start_date, weight_band_kg) VALUES (?, ?, ?, ?, ?)',
-			args: [scope.babyId, row.size, body.itemId ?? null, now, row.weightBandKg],
+			sql: 'INSERT INTO diaper_sizes (baby_id, size, item_id, start_date, weight_band_kg, weight_band_max_kg) VALUES (?, ?, ?, ?, ?, ?)',
+			args: [scope.babyId, row.size, body.itemId ?? null, now, row.weightBandMinKg, row.weightBandMaxKg],
 		});
 		added += 1;
 	}
@@ -492,7 +517,8 @@ inventoryRoutes.put('/diaper-sizes/:id{[0-9]+}', zValidator('json', diaperSizeUp
 	if (body.size !== undefined) { updates.push('size = ?'); params.push(body.size.trim()); }
 	if (body.itemId !== undefined) { updates.push('item_id = ?'); params.push(body.itemId); }
 	if (body.active !== undefined) { updates.push('active = ?'); params.push(body.active ? 1 : 0); }
-	if (body.weightBandKg !== undefined) { updates.push('weight_band_kg = ?'); params.push(body.weightBandKg); }
+	if (body.weightBandMinKg !== undefined) { updates.push('weight_band_kg = ?'); params.push(body.weightBandMinKg); }
+	if (body.weightBandMaxKg !== undefined) { updates.push('weight_band_max_kg = ?'); params.push(body.weightBandMaxKg); }
 	if (updates.length === 0) return c.json({ message: 'No updates provided' });
 	params.push(id);
 	const res = await db.execute({ sql: `UPDATE diaper_sizes SET ${updates.join(', ')} WHERE id = ?`, args: params });

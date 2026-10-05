@@ -22,6 +22,12 @@ dotenv.config();
 // every record hard-pins to this singleton household.
 export const NAMESPACE_HOUSEHOLD_ID = 1;
 
+/**
+ * Tracking categories a new profile starts with. Shared so a family owner and an
+ * invited adult are seeded identically, whichever route created the member row.
+ */
+export const DEFAULT_CATEGORIES = ['feeds', 'diapers', 'sleep', 'growth', 'pumping', 'routines', 'firsts', 'milestones', 'medical', 'vaccines', 'moods', 'journal'];
+
 // Opaque, server-generated family identifier carried in the JWT, used as the
 // DB filename and path parameter. Never derived from user input.
 export const FAMILY_ID_RE = /^[A-Za-z0-9-]{10,64}$/;

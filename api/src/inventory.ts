@@ -73,6 +73,23 @@ export function consumptionRate(
 	};
 }
 
+/**
+ * An item on a calendar cadence is decremented by the scheduler, not by anything
+ * a person logged, so its rate is defined by the cadence rather than observed
+ * from the ledger. Scheduled rows are stamped at the *end* of each cycle, which
+ * leaves the observed window one interval short: six units used across a
+ * two-day window reads as 3/day when the family configured 2/day. The cadence is
+ * the authority here; the ledger only speaks for event-linked items.
+ */
+export function cadenceRate(item: unknown, rate: ConsumptionRate): ConsumptionRate {
+	const row = (item ?? {}) as { consume_interval_days?: unknown; decrement_per_event?: unknown };
+	const interval = Number(row.consume_interval_days ?? 0);
+	if (!Number.isFinite(interval) || interval <= 0) return rate;
+	const per = row.decrement_per_event === null || row.decrement_per_event === undefined ? 1 : Number(row.decrement_per_event);
+	if (!Number.isFinite(per) || per <= 0) return rate;
+	return { ...rate, perDay: per / interval, windowDays: interval };
+}
+
 export interface CoverForecast {
 	perDay: number;
 	daysOfCover: number | null;

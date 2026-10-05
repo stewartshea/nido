@@ -75,14 +75,14 @@ async function addMember(token: string, familyId: string, overrides: Record<stri
 	};
 	const { status, body } = await postJson(token, `/api/v1/families/${familyId}/members`, payload);
 	expect(status).toBe(201);
-	return body.member as { id: number; name: string; type: string; categories: string[] };
+	return body.member as { id: number; name: string; type: string; categories: string[]; legacyBabyId: number | null };
 }
 
 describe('multi-tenancy isolation', () => {
 	let userA: { token: string; userId: string; familyId: string };
 	let userB: { token: string; userId: string; familyId: string };
-	let memberA: { id: number; name: string };
-	let memberB: { id: number; name: string };
+	let memberA: { id: number; name: string; legacyBabyId: number | null };
+	let memberB: { id: number; name: string; legacyBabyId: number | null };
 
 	it('provisions two isolated families', async () => {
 		userA = await register('mt-owner-a@example.com');
@@ -91,8 +91,8 @@ describe('multi-tenancy isolation', () => {
 	});
 
 	it('each family adds a trackable member', async () => {
-		memberA = await addMember(userA.token, userA.familyId);
-		memberB = await addMember(userB.token, userB.familyId);
+		memberA = await addMember(userA.token, userA.familyId, { name: 'Isolation-Child-A' });
+		memberB = await addMember(userB.token, userB.familyId, { name: 'Isolation-Child-B' });
 		expect(memberA.id).toBeGreaterThan(0);
 		expect(memberB.id).toBeGreaterThan(0);
 	});
@@ -121,7 +121,11 @@ describe('multi-tenancy isolation', () => {
 		expect(feedsA.status).toBe(200);
 		const listA = feedsA.body.feedings ?? [];
 		expect(listA.length).toBeGreaterThan(0);
-		for (const f of listA) expect(f.baby_id).toBe(memberA.id);
+		// feedings.baby_id is the babies row, which is reached through the member's
+		// legacy_baby_id. The two ids are not interchangeable once the household
+		// also holds adult profiles.
+		expect(memberA.legacyBabyId).toBeGreaterThan(0);
+		for (const f of listA) expect(f.baby_id).toBe(memberA.legacyBabyId);
 	});
 
 	it('second member in family A is hidden from family B', async () => {
@@ -147,8 +151,12 @@ describe('multi-tenancy isolation', () => {
 		const res = await getJson(userB.token, `/api/v1/families/${userB.familyId}/members`);
 		expect(res.status).toBe(200);
 		const members = res.body.members ?? [];
-		expect(members.length).toBe(1);
-		expect(members[0].id).toBe(memberB.id);
+		const names = members.map((m: any) => m.name);
+		// Names, not ids: member ids are per-namespace, so family A's id 2 and
+		// family B's id 2 are unrelated rows. Counting rows would also be brittle
+		// now that the account which created a family is a member of it.
+		expect(names).toContain('Isolation-Child-B');
+		expect(names).not.toContain('Isolation-Child-A');
 	});
 
 	it('adult member sees no feeds/diapers categories in settings', async () => {

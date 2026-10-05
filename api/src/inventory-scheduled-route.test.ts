@@ -112,4 +112,56 @@ describe('inventory: scheduled consumption', () => {
 		expect(row.consumeIntervalDays).toBeNull();
 		expect(row.quantity).toBe(10);
 	});
+
+	// Contacts are the case that forced the cadence to be "how many per how many
+	// days" rather than a flat one unit per N days. Both numbers are the family's
+	// to set, so nothing about them is a baby assumption.
+	it('uses up more than one per cycle when the family says so', async () => {
+		const made = await call('POST', token, '/api/v1/inventory', {
+			name: 'Contacts pair', category: 'baby_care', quantity: 90,
+			consumeIntervalDays: 1, decrementPerEvent: 2,
+		});
+		expect(made.status).toBe(201);
+		expect(made.body.item.decrementPerEvent).toBe(2);
+
+		const id = made.body.item.id;
+		await backdate(id, new Date(Date.now() - 3 * 86400000).toISOString(), 0);
+
+		const row = (await call('GET', token, '/api/v1/inventory')).body.items.find((i: any) => i.id === id);
+		expect(row.quantity).toBe(84);            // 3 days x 2, not 3 x 1
+		expect(row.ledgerQuantity).toBe(84);
+		expect(row.consumptionPerDay).toBeCloseTo(2, 1);
+	});
+
+	it('holds a multi-unit cadence to its own interval, not a day', async () => {
+		const made = await call('POST', token, '/api/v1/inventory', {
+			name: 'Filter twin pack', category: 'cleaning', quantity: 8,
+			consumeIntervalDays: 14, decrementPerEvent: 2,
+		});
+		const id = made.body.item.id;
+
+		// Nothing due yet, so a fortnightly item must not quietly drain a unit a day.
+		await backdate(id, new Date(Date.now() - 10 * 86400000).toISOString(), 0);
+		const early = (await call('GET', token, '/api/v1/inventory')).body.items.find((i: any) => i.id === id);
+		expect(early.quantity).toBe(8);
+
+		await backdate(id, new Date(Date.now() - 15 * 86400000).toISOString(), 0);
+		const row = (await call('GET', token, '/api/v1/inventory')).body.items.find((i: any) => i.id === id);
+		expect(row.quantity).toBe(6);            // one cycle of 2
+		expect(row.consumptionPerDay).toBeCloseTo(2 / 14, 2);
+	});
+
+	it('rejects a per-cycle amount that would zero out or run backwards', async () => {
+		const zero = await call('POST', token, '/api/v1/inventory', {
+			name: 'Broken cadence', category: 'cleaning', quantity: 10,
+			consumeIntervalDays: 1, decrementPerEvent: 0,
+		});
+		expect(zero.status).toBe(400);
+
+		const neg = await call('POST', token, '/api/v1/inventory', {
+			name: 'Broken cadence 2', category: 'cleaning', quantity: 10,
+			consumeIntervalDays: 1, decrementPerEvent: -2,
+		});
+		expect(neg.status).toBe(400);
+	});
 });

@@ -4,7 +4,7 @@ import { z } from 'zod';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { randomBytes, randomUUID } from 'node:crypto';
-import { NAMESPACE_HOUSEHOLD_ID } from '../db-core';
+import { NAMESPACE_HOUSEHOLD_ID, DEFAULT_CATEGORIES } from '../db-core';
 import {
   ensureRegistry,
   getFamilyClient,
@@ -104,6 +104,31 @@ authRoutes.post('/register', zValidator('json', registerSchema), async (c) => {
         sql: 'INSERT INTO user_households (user_id, household_id, role) VALUES (?, ?, ?)',
         args: [userId, NAMESPACE_HOUSEHOLD_ID, 'owner'],
       });
+
+      // Whoever signs up owns the household, so they are a member of it. Without
+      // this row the account exists but has no profile: it never appears in the
+      // member list, so the person cannot be picked for anything, and adding
+      // themselves later produced a second, unlinked profile instead of linking
+      // the account they already had. An invited user gets their row on accept,
+      // so this makes the owner match that path.
+      const ownerName = [firstName, lastName].filter(Boolean).join(' ') || email;
+      const ownerMember = await familyDb.execute({
+        sql: `INSERT INTO family_members (household_id, legacy_baby_id, trackable, name, member_type, email, categories, created_at, updated_at)
+              VALUES (?, NULL, 0, ?, 'adult', ?, ?, ?, ?)`,
+        args: [NAMESPACE_HOUSEHOLD_ID, ownerName, email, JSON.stringify(DEFAULT_CATEGORIES), now, now],
+      });
+      const ownerMemberId = Number(ownerMember.lastInsertRowid);
+      await familyDb.execute({
+        sql: `INSERT OR IGNORE INTO member_homes (member_id, home_id, relation, is_primary, created_at)
+              SELECT ?, h.id, 'resident', 1, ? FROM homes h
+              WHERE h.household_id = ? AND h.is_primary = 1`,
+        args: [ownerMemberId, now, NAMESPACE_HOUSEHOLD_ID],
+      });
+      await familyDb.execute({
+        sql: 'INSERT OR IGNORE INTO account_members (user_id, member_id, created_at) VALUES (?, ?, ?)',
+        args: [userId, ownerMemberId, now],
+      });
+
       await registry.execute({
         sql: `
           INSERT INTO user_routing (id, email, family_id, user_id, role, is_platform_admin, verification_token, verification_expires, created_at, updated_at)

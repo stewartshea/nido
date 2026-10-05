@@ -17,6 +17,21 @@ export const CATEGORIES = [
     { id: 'journal', label: 'Journal', icon: Book },
 ];
 
+/**
+ * The profile to open on when the family has not saved a default.
+ *
+ * Tracking categories (feeds, sleep, diapers) only apply to a trackable
+ * profile, and the account that created the household is an adult member of it
+ * now, so "the first member in the list" is routinely the parent rather than the
+ * baby. Prefer a trackable profile; fall back to anybody so an adult-only
+ * household still has something to select.
+ */
+export function defaultMemberId<T extends { id: number | string; trackable?: boolean }>(members: T[]): number | null {
+	if (!members.length) return null;
+	const trackable = members.find((m) => m.trackable !== false);
+	return Number((trackable ?? members[0]).id);
+}
+
 export const QUICK_LINK_DEFAULT = ['feeds', 'diapers', 'sleep'];
 
 export type MilestoneKind = 'milestones' | 'firsts' | 'routines' | 'medical';

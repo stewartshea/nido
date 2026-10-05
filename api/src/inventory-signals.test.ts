@@ -57,22 +57,52 @@ describe('signal registry', () => {
 		expect(SIGNALS.find((s) => s.name === 'size_up_in_days')!.compute(ctx())).toBeNull();
 	});
 
-	it('computes size-up from bands the child has passed and the next band they have not', () => {
+	it('forecasts growth-out at the ceiling of the size they are in, not the next floor', () => {
 		const value = SIGNALS.find((s) => s.name === 'size_up_in_days')!.compute(ctx({
-			// Bands are the weight at which a size is outgrown. At 6.3kg the
-			// child has passed size 3 (outgrown at 6.0) and has not reached size 4.
+			// 7.4kg is inside Size 3 (7.3-12.7). Growing out of it means reaching
+			// 12.7. Reading the next size's floor instead would say 10.0 and fire
+			// while the child is still comfortably in Size 3.
 			diaperSizes: [
-				{ size: '3', itemId: 10, active: true, weightBandKg: 6.0 },
-				{ size: '4', itemId: null, active: false, weightBandKg: 7.0 },
+				{ size: '3', itemId: 10, active: true, weightBandMinKg: 7.3, weightBandMaxKg: 12.7 },
+				{ size: '4', itemId: null, active: false, weightBandMinKg: 10.0, weightBandMaxKg: 16.8 },
+			],
+			growth: [
+				{ date: daysAgo(60), weight: 7.0 },
+				{ date: daysAgo(3), weight: 7.4 },
+			],
+		}));
+		const perDay = (7.4 - 7.0) / 57;
+		expect(value).toBe(Math.round((12.7 - 7.4) / perDay));
+	});
+
+	it('falls back to the next floor when a ladder has no ceilings recorded', () => {
+		const value = SIGNALS.find((s) => s.name === 'size_up_in_days')!.compute(ctx({
+			// Ladders recorded before ceilings existed must keep working unchanged.
+			diaperSizes: [
+				{ size: '3', itemId: 10, active: true, weightBandMinKg: 6.0, weightBandMaxKg: null },
+				{ size: '4', itemId: null, active: false, weightBandMinKg: 7.0, weightBandMaxKg: null },
 			],
 			growth: [
 				{ date: daysAgo(60), weight: 5.4 },
 				{ date: daysAgo(3), weight: 6.3 },
 			],
 		}));
-		// (7.0 - 6.3) / ~0.016kg per day ≈ 45 days
-		expect(value).toBeGreaterThan(20);
-		expect(value).toBeLessThan(120);
+		const perDay = (6.3 - 5.4) / 57;
+		expect(value).toBe(Math.round((7.0 - 6.3) / perDay));
+	});
+
+	it('reports nothing when the top size has no ceiling and nothing above it', () => {
+		const value = SIGNALS.find((s) => s.name === 'size_up_in_days')!.compute(ctx({
+			diaperSizes: [
+				{ size: '3', itemId: 10, active: true, weightBandMinKg: 7.3, weightBandMaxKg: 12.7 },
+				{ size: '4', itemId: null, active: false, weightBandMinKg: 10.0, weightBandMaxKg: null },
+			],
+			growth: [
+				{ date: daysAgo(60), weight: 10.5 },
+				{ date: daysAgo(3), weight: 11.0 },
+			],
+		}));
+		expect(value).toBeNull();
 	});
 });
 

@@ -45,7 +45,16 @@ export function formatRelative(iso: string | null | undefined, nowMs: number = D
 	if (mins < 1) return 'just now';
 	if (mins < 60) return `${mins} min ago`;
 	const hours = Math.floor(mins / 60);
-	if (hours < 24) return `${hours} hour${hours === 1 ? '' : 's'} ago`;
+	// Keep the leftover minutes. Flooring them made a feed 78 minutes old read as
+	// "1 hour ago", and one 119 minutes old read as "1 hour ago" too — a gap of
+	// nearly two hours reported as one, which is exactly when someone is deciding
+	// whether a feed is due. Rounding to the nearest hour would not help: 78
+	// minutes still lands on "1 hour".
+	if (hours < 24) {
+		const rem = mins % 60;
+		if (rem > 0) return `${hours} hr ${rem} min ago`;
+		return `${hours} hour${hours === 1 ? '' : 's'} ago`;
+	}
 	const days = Math.floor(hours / 24);
 	if (days === 1) return 'yesterday';
 	if (days < 7) return `${days} days ago`;

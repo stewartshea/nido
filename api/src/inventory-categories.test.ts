@@ -90,22 +90,24 @@ describe('standard diaper size presets', () => {
 
 		const presets = await call('GET', token, '/api/v1/inventory/diaper-size-presets');
 		const labels = presets.body.presets.map((p: any) => p.size);
-		expect(labels).toEqual(['NB', '1', '2', '3', '4', '5', '6']);
+		expect(labels).toEqual(['P', 'NB', '1', '2', '3', '4', '5', '6', '7']);
 		for (const p of presets.body.presets) {
-			expect(typeof p.weightBandKg).toBe('number');
-			expect(p.weightBandKg).toBeGreaterThan(0);
+			expect(typeof p.weightBandMinKg).toBe('number');
+			// 5, 6 and 7 are open-ended, so a null ceiling is expected there.
+			if (p.weightBandMaxKg !== null) expect(p.weightBandMaxKg).toBeGreaterThan(p.weightBandMinKg);
 		}
-		// Bands must increase, or "outgrown at" would be meaningless.
-		const bands = presets.body.presets.map((p: any) => p.weightBandKg);
-		expect([...bands].sort((a, b) => a - b)).toEqual(bands);
+		// Floors must increase, or "the size they have reached" is meaningless.
+		const floors = presets.body.presets.map((p: any) => p.weightBandMinKg);
+		expect([...floors].sort((a, b) => a - b)).toEqual(floors);
 
 		const pre = await call('POST', token, '/api/v1/inventory/diaper-sizes/preload', { memberId });
 		expect(pre.status).toBe(201);
-		expect(pre.body.added).toBe(7);
+		expect(pre.body.added).toBe(9);
 
 		const sizes = await call('GET', token, `/api/v1/inventory/diaper-sizes?memberId=${memberId}`);
-		expect(sizes.body.sizes.length).toBe(7);
-		expect(sizes.body.sizes.find((s: any) => s.size === '3').weightBandKg).toBe(6.4);
+		expect(sizes.body.sizes.length).toBe(9);
+		// Size 3 spans 7.3-12.7kg: the ceiling is the number that matters.
+		expect(sizes.body.sizes.find((s: any) => s.size === '3').weightBandMaxKg).toBe(12.7);
 
 		// Re-running must not duplicate what is already there.
 		const again = await call('POST', token, '/api/v1/inventory/diaper-sizes/preload', { memberId });
@@ -124,14 +126,18 @@ describe('standard diaper size presets', () => {
 		const memberId = member.body.member.id;
 
 		const res = await call('POST', token, '/api/v1/inventory/diaper-sizes/preload', {
-			memberId, sizes: [{ size: '3', weightBandKg: 5.5 }, { size: '4', weightBandKg: 7.2 }],
+			memberId, sizes: [
+				{ size: '3', weightBandMinKg: 6.0, weightBandMaxKg: 9.0 },
+				{ size: '4', weightBandMinKg: 9.0, weightBandMaxKg: 13.0 },
+			],
 		});
 		expect(res.body.added).toBe(2);
 
 		const sizes = await call('GET', token, `/api/v1/inventory/diaper-sizes?memberId=${memberId}`);
 		expect(sizes.body.sizes.map((s: any) => s.size)).toEqual(['3', '4']);
-		// The household's band wins over the default.
-		expect(sizes.body.sizes.find((s: any) => s.size === '3').weightBandKg).toBe(5.5);
+		// The household's own range wins over the default.
+		expect(sizes.body.sizes.find((s: any) => s.size === '3').weightBandMinKg).toBe(6.0);
+		expect(sizes.body.sizes.find((s: any) => s.size === '3').weightBandMaxKg).toBe(9.0);
 	});
 });
 

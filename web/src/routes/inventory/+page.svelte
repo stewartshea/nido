@@ -11,7 +11,7 @@
 
 	let notice = '';
 	let error = '';
-	let members: { id: number; name: string }[] = [];
+	let members: { id: number; name: string; trackable?: boolean }[] = [];
 	let loaded = false;
 	// Alerts belong here as much as on the dashboard: this is the page where you
 	// would come to act on one, so it should not be somewhere else entirely.
@@ -41,7 +41,7 @@
 			const familyId = localStorage.getItem('nido.defaultFamily') ?? families[0]?.familyId;
 			if (!familyId) { loaded = true; return; }
 			const babies = await familiesAPI.members(familyId);
-			members = (babies.data.babies ?? babies.data.members ?? []).map((b: any) => ({ id: Number(b.id), name: b.name }));
+			members = (babies.data.babies ?? babies.data.members ?? []).map((b: any) => ({ id: Number(b.id), name: b.name, trackable: b.trackable !== false }));
 			await loadAlerts();
 		} catch (e: any) {
 			if (e?.response?.status === 401) await goto('/login');

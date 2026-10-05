@@ -164,13 +164,25 @@ describe('inventory: the diaper journey', () => {
 		await call('POST', token, '/api/v1/inventory', {
 			memberId: childId, name: 'Diapers', category: 'diapers', quantity: 40, unit: 'count',
 		});
-		await call('POST', token, '/api/v1/inventory/diaper-sizes', { memberId: childId, size: '3', weightBandKg: 6.0 });
-		await call('POST', token, '/api/v1/inventory/diaper-sizes', { memberId: childId, size: '4', weightBandKg: 7.0 });
+		await call('POST', token, '/api/v1/inventory/diaper-sizes', { memberId: childId, size: '3', weightBandMinKg: 5.5, weightBandMaxKg: 7.0 });
+		// Size 4's floor is deliberately far above Size 3's ceiling. If the ceiling
+		// never reached the signal it would fall back to this floor and report a
+		// date roughly eight times further out, so the gap is what makes the
+		// assertion below meaningful.
+		await call('POST', token, '/api/v1/inventory/diaper-sizes', { memberId: childId, size: '4', weightBandMinKg: 12.0, weightBandMaxKg: 16.0 });
 
 		const res = await call('GET', token, `/api/v1/inventory/diaper-sizes?memberId=${childId}`);
 		expect(res.body.sizes.length).toBe(2);
-		expect(res.body.signals.size_up_in_days).toBeGreaterThan(0);
-		expect(res.body.sizes.find((x: any) => x.size === '4').weightBandKg).toBe(7.0);
+		expect(res.body.sizes.find((x: any) => x.size === '4').weightBandMaxKg).toBe(16.0);
+
+		// The child is 6.3kg, inside Size 3 (5.5-7.0), so growth-out is the 7.0kg
+		// ceiling. The trend is a regression over these records (~0.0077 kg/day),
+		// so the exact figure is brittle; what matters is that it lands near the
+		// ceiling and nowhere near Size 4's 12.0kg floor.
+		const days = res.body.signals.size_up_in_days;
+		const toCeiling = (7.0 - 6.3) / (0.9 / 117);
+		expect(days).toBeGreaterThan(toCeiling * 0.6);
+		expect(days).toBeLessThan(toCeiling * 1.6);
 	});
 
 	it('keeps reporting a firing rule, and reading it does not consume the notification', async () => {
@@ -251,8 +263,8 @@ it('does not fire a size-up rule on a member\'s non-diaper stock', async () => {
 		for (const s of (await call('GET', token, `/api/v1/inventory/diaper-sizes?memberId=${memberId}`)).body.sizes) {
 			await call('DELETE', token, `/api/v1/inventory/diaper-sizes/${s.id}`);
 		}
-		await call('POST', token, '/api/v1/inventory/diaper-sizes', { memberId, size: '3', weightBandKg: 6.0 });
-		await call('POST', token, '/api/v1/inventory/diaper-sizes', { memberId, size: '4', weightBandKg: 7.0 });
+		await call('POST', token, '/api/v1/inventory/diaper-sizes', { memberId, size: '3', weightBandMinKg: 5.5, weightBandMaxKg: 7.0 });
+		await call('POST', token, '/api/v1/inventory/diaper-sizes', { memberId, size: '4', weightBandMinKg: 7.0, weightBandMaxKg: 9.0 });
 
 		await call('POST', token, '/api/v1/inventory/rules', {
 			itemId: null, signal: 'size_up_in_days', comparator: 'lte', threshold: 60,
