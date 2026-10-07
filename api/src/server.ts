@@ -12,7 +12,7 @@ import { installProcessHandlers, installSignalHandlers, logBoot } from './lifecy
 
 import { authRoutes } from './routes/auth';
 import { userRoutes } from './routes/user';
-import { babyRoutes } from './routes/baby';
+import { subjectRoutes } from './routes/subjects';
 import { feedingRoutes } from './routes/feedings';
 import { diaperRoutes } from './routes/diapers';
 import inventoryRoutes from './routes/inventory';
@@ -23,7 +23,7 @@ import { milestoneRoutes } from './routes/milestones';
 import { vaccinationRoutes } from './routes/vaccinations';
 import { importRoutes } from './routes/imports';
 import { familyRoutes } from './routes/families';
-import { photoRoutes } from './routes/photos';
+import { attachmentRoutes } from './routes/attachments';
 import { formulaRoutes } from './routes/formulas';
 import { settingsRoutes } from './routes/settings';
 import { moodRoutes } from './routes/moods';
@@ -64,7 +64,7 @@ app.get('/ready', (c) => {
 // API routes
 app.route('/api/v1/auth', authRoutes);
 app.route('/api/v1/users', userRoutes);
-app.route('/api/v1/babies', babyRoutes);
+app.route('/api/v1/subjects', subjectRoutes);
 app.route('/api/v1/feedings', feedingRoutes);
 app.route('/api/v1/diapers', diaperRoutes);
 app.route('/api/v1/inventory', inventoryRoutes);
@@ -76,7 +76,7 @@ app.route('/api/v1/milestones', milestoneRoutes);
 app.route('/api/v1/vaccinations', vaccinationRoutes);
 app.route('/api/v1/imports', importRoutes);
 app.route('/api/v1/families', familyRoutes);
-app.route('/api/v1/photos', photoRoutes);
+app.route('/api/v1/attachments', attachmentRoutes);
 app.route('/api/v1/formulas', formulaRoutes);
 app.route('/api/v1/settings', settingsRoutes);
 app.route('/api/v1/moods', moodRoutes);

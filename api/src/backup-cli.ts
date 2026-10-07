@@ -52,7 +52,7 @@ async function main(): Promise<void> {
         log.info('restore verified and installed', {
           event: 'restore_cli_ok',
           databases: result.databases,
-          photos: result.photos,
+          blobs: result.blobs,
         });
         break;
       }

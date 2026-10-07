@@ -33,8 +33,8 @@ effect. See [Security model](./security/#the-master-key).
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `NIDO_DATA_DIR` | `/data` in Compose, `./data` locally | Root holding `registry.db`, `db/<familyId>.db` and `photos/` |
-| `PHOTO_DIR` | `/data/photos` | Photo storage |
+| `NIDO_DATA_DIR` | `/data` in Compose, `./data` locally | Root holding `registry.db`, `db/<familyId>.db` and `blobs/` |
+| `NIDO_BLOB_DIR` | `/data/blobs` | Photo storage |
 
 ## Networking
 
@@ -81,7 +81,7 @@ JWT_SECRET=…                  # openssl rand -hex 32
 
 # --- data ---
 NIDO_DATA_DIR=/data
-PHOTO_DIR=/data/photos
+NIDO_BLOB_DIR=/data/blobs
 
 # --- networking (single-origin behind a proxy) ---
 API_PROXY_TARGET=http://api:3000

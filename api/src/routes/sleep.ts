@@ -39,22 +39,22 @@ sleepRoutes.get('/', async (c) => {
     if (!scope) {
       return c.json({ error: 'Member not found or access denied' }, 404);
     }
-    const babyId = scope.babyId;
+    const subjectId = scope.subjectId;
     
     // Get sleep records for the baby
     const { limit, offset } = parsePaging((k) => c.req.query(k));
 
     const sleepResult = await db.execute({
       sql: `
-      SELECT id, baby_id, start_time, end_time, duration, location, notes, created_at, created_by
+      SELECT id, subject_id, start_time, end_time, duration, location, notes, created_at, created_by
       FROM sleep
-      WHERE baby_id = ?
+      WHERE subject_id = ?
       ORDER BY start_time DESC, id DESC
       LIMIT ? OFFSET ?
     `,
-      args: [babyId, limit, offset]
+      args: [subjectId, limit, offset]
     });
-    const total = await countMatching(db, 'sleep', [babyId]);
+    const total = await countMatching(db, 'sleep', [subjectId]);
     
     // Calculate duration if not already calculated
     const sleepRecords = (sleepResult.rows as unknown as SleepRow[])
@@ -86,9 +86,9 @@ sleepRoutes.get('/:id{[0-9]+}', async (c) => {
     // Verify user has access to this sleep record
     const sleepResult = await db.execute({
       sql: `
-      SELECT s.id, s.baby_id, s.start_time, s.end_time, s.duration, s.location, s.notes, s.created_at, s.created_by
+      SELECT s.id, s.subject_id, s.start_time, s.end_time, s.duration, s.location, s.notes, s.created_at, s.created_by
       FROM sleep s
-      JOIN babies b ON s.baby_id = b.id
+      JOIN subjects b ON s.subject_id = b.id
       JOIN households h ON b.household_id = h.id
       JOIN user_households uh ON h.id = uh.household_id
       WHERE s.id = ? AND uh.user_id = ?
@@ -128,7 +128,7 @@ sleepRoutes.post('/', zValidator('json', createSleepSchema), async (c) => {
     if (!scope) {
       return c.json({ error: 'Member not found or access denied' }, 404);
     }
-    const babyId = scope.babyId;
+    const subjectId = scope.subjectId;
     
     // Calculate duration if both start and end times are provided
     let duration = null;
@@ -142,11 +142,11 @@ sleepRoutes.post('/', zValidator('json', createSleepSchema), async (c) => {
     const result = await db.execute({
       sql: `
         INSERT INTO sleep (
-          baby_id, start_time, end_time, duration, location, notes, created_at, created_by
+          subject_id, start_time, end_time, duration, location, notes, created_at, created_by
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       `,
       args: [
-        babyId, 
+        subjectId, 
         startTime, 
         endTime || null, 
         duration, 
@@ -160,7 +160,7 @@ sleepRoutes.post('/', zValidator('json', createSleepSchema), async (c) => {
     // Return the created sleep record
     const sleepResult = await db.execute({
       sql: `
-      SELECT id, baby_id, start_time, end_time, duration, location, notes, created_at, created_by
+      SELECT id, subject_id, start_time, end_time, duration, location, notes, created_at, created_by
       FROM sleep
       WHERE id = ?
     `,
@@ -198,9 +198,9 @@ sleepRoutes.put('/:id{[0-9]+}', zValidator('json', updateSleepSchema), async (c)
     // Verify user has access to this sleep record
     const sleepCheck = await db.execute({
       sql: `
-      SELECT s.id, s.baby_id
+      SELECT s.id, s.subject_id
       FROM sleep s
-      JOIN babies b ON s.baby_id = b.id
+      JOIN subjects b ON s.subject_id = b.id
       JOIN households h ON b.household_id = h.id
       JOIN user_households uh ON h.id = uh.household_id
       WHERE s.id = ? AND uh.user_id = ?
@@ -276,7 +276,7 @@ sleepRoutes.put('/:id{[0-9]+}', zValidator('json', updateSleepSchema), async (c)
     // Return updated sleep record
     const updatedSleepResult = await db.execute({
       sql: `
-      SELECT id, baby_id, start_time, end_time, duration, location, notes, created_at, created_by
+      SELECT id, subject_id, start_time, end_time, duration, location, notes, created_at, created_by
       FROM sleep
       WHERE id = ?
     `,
@@ -315,7 +315,7 @@ sleepRoutes.delete('/:id{[0-9]+}', async (c) => {
       sql: `
       SELECT s.id
       FROM sleep s
-      JOIN babies b ON s.baby_id = b.id
+      JOIN subjects b ON s.subject_id = b.id
       JOIN households h ON b.household_id = h.id
       JOIN user_households uh ON h.id = uh.household_id
       WHERE s.id = ? AND uh.user_id = ?

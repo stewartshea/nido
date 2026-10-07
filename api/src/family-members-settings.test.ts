@@ -105,7 +105,7 @@ describe('family members + settings', () => {
 		expect(add.body.member.type).toBe('adult');
 		expect(add.body.member.trackable).toBe(false);
 		expect(add.body.member.linkedAccount).toBe(true);
-		expect(add.body.member.legacyBabyId).toBeNull();
+		expect(add.body.member.legacySubjectId).toBeNull();
 
 		const update = await requestJson('PUT', `/api/v1/families/${owner.familyId}/settings`, owner.token, {
 			shareAnonymizedDaily: true,

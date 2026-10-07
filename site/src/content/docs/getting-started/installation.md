@@ -100,7 +100,7 @@ Per-commit tags (`sha-<commit>`) are available if you would rather pin.
 | --- | --- | --- |
 | `api` | `3000` | Reads and writes the encrypted databases under `/data` |
 | `web` | `3001` | SvelteKit client; proxies `/api` to the API service |
-| volume | `/data` | `registry.db`, `db/<familyId>.db`, `photos/` |
+| volume | `/data` | `registry.db`, `db/<familyId>.db`, `blobs/` |
 
 The databases are **not** part of any image, so image builds and pulls never
 carry database state with them. A root `.dockerignore` also excludes `data/`,

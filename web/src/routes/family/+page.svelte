@@ -4,12 +4,12 @@
 	import { authAPI, userAPI, familiesAPI, feedingAPI, diaperAPI, sleepAPI, growthAPI, healthAPI, importsAPI, milestoneAPI, vaccinationAPI, settingsAPI, moodAPI, journalAPI, tokenExpired, remindersAPI, type PageOptions, type Reminder } from '$lib/api';
 	import { authStore, authActions } from '$lib/stores/authStore';
 	import { uiStore, uiActions } from '$lib/stores/uiStore';
-	import PhotoStrip from '$lib/components/PhotoStrip.svelte';
 	import ToggleSwitch from '$lib/components/ToggleSwitch.svelte';
 	import Avatar from '$lib/components/Avatar.svelte';
 	import { loadListsCache, saveListsCache } from '$lib/cache';
 	import { flushOutbox } from '$lib/logging/outbox';
 	import MemberActivity from '$lib/components/logging/MemberActivity.svelte';
+	import GrowthChart from '$lib/components/logging/GrowthChart.svelte';
 	import LogDrawer from '$lib/components/logging/LogDrawer.svelte';
 	import StockGlance from '$lib/components/logging/StockGlance.svelte';
 		import { CATEGORIES, defaultMemberId } from '$lib/shared';
@@ -42,31 +42,12 @@
 	let password = '';
 	let showForgot = false;
 	let pendingResetToken = '';
-	// Per-user mobile quick links (category ids), persisted in localStorage.
-	let quickLinks: string[] = [];
-	const QUICK_LINK_DEFAULT = ['feeds', 'diapers', 'sleep'];
-
-	function quickLinksKey(userId: number | null) {
-		return `nido.quicklinks.${userId ?? $authStore.user?.id}`;
-	}
-
-	function loadQuickLinks() {
-		const key = quickLinksKey($authStore.user?.id ?? null);
-		try {
-			const raw = localStorage.getItem(key);
-			const parsed = raw ? JSON.parse(raw) : null;
-			if (Array.isArray(parsed) && parsed.length > 0) quickLinks = parsed;
-			else quickLinks = [...QUICK_LINK_DEFAULT];
-		} catch {
-			quickLinks = [...QUICK_LINK_DEFAULT];
-		}
-	}
 
 
 
 	let loading = false;
 
-	let babies: any[] = [];
+	let profiles: any[] = [];
 	let families: any[] = [];
 	let activeFamily: any = null;
 	let activeFamilyId: string | null = null;
@@ -75,7 +56,18 @@
 	let defaultProfileId: number | null = null;
 	let summary: any = null;
 	// Feeds, sleep, diapers and the rest only exist for a trackable profile.
-	let selectedIsTrackable = true;
+	/**
+	 * Whether the selected person can be logged against.
+	 *
+	 * Computed here rather than from a `$:` flag: reactive statements are
+	 * scheduled, not synchronous, so selectMember() would call refreshLists()
+	 * before the flag had recomputed and fetch the baby endpoints for whoever was
+	 * selected previously.
+	 */
+	function currentIsTrackable(): boolean {
+		const m = profiles.find((b) => Number(b.id) === selectedMemberId);
+		return !!m && m.trackable !== false;
+	}
 
 	// ----- Reminders (family-scoped; shared by every caregiver) -----
 	let reminderRules: Reminder[] = [];
@@ -90,6 +82,7 @@
 
 	// Tracking categories — a member enables a subset; tabs render from it.
 	let activeCategories: string[] = [];
+	$: selectedMember = profiles.find((b) => Number(b.id) === selectedMemberId) ?? null;
 
 	// Family-scoped tracking settings (categories + per-category option lists).
 	let familySettings: { categories: string[] | null; categoryOptions: Record<string, Record<string, string[]>>; defaultCategoryOptions: Record<string, Record<string, string[]>> } | null = null;
@@ -114,7 +107,6 @@
 	// Import data (Narababy CSV)
 	let importRuns: any[] = [];
 
-	// Photos (toggle state only — the PhotoStrip component handles loading)
 	// Account
 
 	let feedings: any[] = [];
@@ -197,7 +189,7 @@
 	async function refreshSummary() {
 		if (!selectedMemberId) return;
 		if (!selectedMemberId) return;
-		if (!selectedIsTrackable) {
+		if (!currentIsTrackable()) {
 			summary = null;
 			return;
 		}
@@ -213,7 +205,7 @@
 	async function refreshLists() {
 		if (!selectedMemberId) return;
 		if (!selectedMemberId) return;
-		if (!selectedIsTrackable) {
+		if (!currentIsTrackable()) {
 			// Baby tracking only. The person who created the household is an adult
 			// member of it, so a household with no child yet would otherwise fire
 			// requests that are refused.
@@ -290,7 +282,7 @@
 			families = res.data.families;
 			if (families.length === 0) {
 				selectedMemberId = null;
-				babies = [];
+				profiles = [];
 				return;
 			}
 			// Prefer the saved default family, else the first.
@@ -302,7 +294,7 @@
 			const members = membersRes.data.members;
 			// Members are the profiles the tracker operates on (child/adult; "newborn"
 			// is a child with newborn categories enabled).
-			babies = members.map((m) => ({
+			profiles = members.map((m) => ({
 				id: m.id,
 				name: m.name,
 				birth_date: m.birthDate ?? '',
@@ -312,20 +304,22 @@
 				avatar: m.avatar ?? null,
 				categories: Array.isArray(m.categories) ? m.categories : [],
 				trackable: m.trackable !== false,
-				legacyBabyId: m.legacyBabyId ?? null,
+				stage: m.stage ?? null,
+				quickLinks: Array.isArray(m.quickLinks) ? m.quickLinks : null,
+				legacySubjectId: m.legacySubjectId ?? null,
 			}));
 
-			if (babies.length > 0) {
+			if (profiles.length > 0) {
 				const savedDefault = defaultProfileId ?? null;
-				const match = savedDefault ? babies.find((b) => Number(b.id) === savedDefault) : null;
-				selectedMemberId = match ? Number(match.id) : defaultMemberId(babies);
-				const selected = babies.find((b) => Number(b.id) === selectedMemberId);
-				selectedIsTrackable = selected ? selected.trackable !== false : false;
-				activeCategories = selected?.categories?.length ? selected.categories : CATEGORIES.map((c) => c.id);
+				const match = savedDefault ? profiles.find((b) => Number(b.id) === savedDefault) : null;
+				selectedMemberId = match ? Number(match.id) : defaultMemberId(profiles);
+				const selected = profiles.find((b) => Number(b.id) === selectedMemberId);
+				// The API resolves this to the member's own set, constrained by their
+				// stage. An empty list is a real answer, not a prompt to show everything.
+				activeCategories = selected?.categories ?? [];
 				if (!activeCategories.includes(activeTab)) activeTab = activeCategories[0] || 'feeds';
 			} else {
 				selectedMemberId = null;
-				selectedIsTrackable = false;
 				activeCategories = [];
 			}
 			await Promise.all([loadFamilySettings(), refreshLists(), refreshSummary(), loadInvitations(), loadImportRuns()]);
@@ -361,7 +355,7 @@
 	function handleLogout() {
 		authActions.logout();
 		isAuthenticated = false;
-		babies = [];
+		profiles = [];
 		selectedMemberId = null;
 	}
 
@@ -482,7 +476,6 @@
 				});
 				isPanelAdmin = Number(u.is_platform_admin ?? 0) === 1;
 			}
-			loadQuickLinks();
 			loadReminders();
 		} catch {
 			isPanelAdmin = false;
@@ -512,11 +505,29 @@
 
 	async function selectMember(memberId: number) {
 		selectedMemberId = memberId;
-		const selected = babies.find((b) => Number(b.id) === memberId);
-		activeCategories = selected?.categories?.length ? selected.categories : CATEGORIES.map((c) => c.id);
+		const selected = profiles.find((b) => Number(b.id) === memberId);
+		// The API resolves this to the member's own set, constrained by their
+				// stage. An empty list is a real answer, not a prompt to show everything.
+				activeCategories = selected?.categories ?? [];
 		if (!activeCategories.includes(activeTab)) activeTab = activeCategories[0] || 'feeds';
 		await refreshLists();
 		await refreshSummary();
+	}
+
+	/** Pin or unpin a tile for the selected person; stored on the member. */
+	async function setQuickLink(kind: string, pin: boolean) {
+		if (!activeFamilyId || !selectedMember) return;
+		const current: string[] = selectedMember.quickLinks?.length ? selectedMember.quickLinks : activeCategories.slice(0, 4);
+		const next = pin
+			? current.includes(kind) ? current : [...current, kind]
+			: current.filter((k) => k !== kind);
+		try {
+			await familiesAPI.updateMember(activeFamilyId, Number(selectedMember.id), { quickLinks: next });
+			selectedMember.quickLinks = next;
+			profiles = profiles;
+		} catch (err: any) {
+			console.error('Failed to update quick links', err);
+		}
 	}
 
 	async function loadFamilySettings() {
@@ -776,7 +787,7 @@
 					</button>
 				</form>
 			</div>
-		{:else if babies.length === 0}
+		{:else if profiles.length === 0}
 			<!-- DASHBOARD (family exists, no members yet): add a member first -->
 			<div class="flex items-center justify-between mb-6">
 				<div>
@@ -842,10 +853,10 @@
 					{/if}
 
 					<div class="flex items-center gap-3">
-						{#if babies.length > 1}
+						{#if profiles.length > 1}
 							<div class="flex-1 overflow-x-auto no-scrollbar">
 								<div class="flex gap-2">
-									{#each babies as baby}
+									{#each profiles as baby}
 										<button type="button" on:click={() => selectMember(Number(baby.id))} class="{selectedMemberId === Number(baby.id) ? 'bg-accent text-on-accent border-accent' : 'bg-surface2 text-ink-soft border-line-soft'} h-11 px-4 rounded-full text-sm border flex items-center gap-2 whitespace-nowrap font-semibold transition-colors">
 											<Avatar familyId={activeFamilyId} memberId={baby.id} avatar={baby.avatar} alt={baby.name} class="w-5 h-5 rounded-full object-cover">
 												<Baby class="w-4 h-4" />
@@ -863,10 +874,10 @@
 							>
 								<Star class="w-5 h-5 {defaultProfileId === selectedMemberId ? 'text-accent' : 'text-ink-soft opacity-50'}" aria-hidden="true" />
 							</button>
-						{:else if babies.length === 1}
+						{:else if profiles.length === 1}
 							<h2 class="text-xl md:text-2xl font-display font-semibold text-ink flex items-center gap-2">
-								<Avatar familyId={activeFamilyId} memberId={babies[0].id} avatar={babies[0].avatar} alt={babies[0].name} class="w-8 h-8 rounded-full object-cover" />
-								{babies[0].name}
+								<Avatar familyId={activeFamilyId} memberId={profiles[0].id} avatar={profiles[0].avatar} alt={profiles[0].name} class="w-8 h-8 rounded-full object-cover" />
+								{profiles[0].name}
 							</h2>
 						{/if}
 					</div>
@@ -899,7 +910,7 @@
 					<h2 class="text-2xl font-display font-semibold mb-4">Family Overview</h2>
 					
 					<div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
-						{#each babies as baby}
+						{#each profiles as baby}
 							<div class="bg-surface rounded-lg shadow-card p-5 border border-line-soft flex items-center justify-between">
 								<div class="flex items-center gap-4">
 									<div class="w-12 h-12 rounded-full bg-accent text-on-accent flex items-center justify-center font-display text-xl overflow-hidden">
@@ -960,10 +971,11 @@
 					<StockGlance />
 
 					<MemberActivity
-						memberName={babies.find((b) => Number(b.id) === selectedMemberId)?.name || 'Selected'}
-						{quickLinks}
+						memberName={selectedMember?.name || 'Selected'}
 						{summary}
 						{activeCategories}
+						quickLinks={selectedMember?.quickLinks ?? null}
+						stage={selectedMember?.stage ?? null}
 						{feedings} {diapers} {sleeps} {growths}
 						{milestones} {vaccinations} {moods} {journalEntries}
 						totals={listTotals}
@@ -971,18 +983,27 @@
 						on:log={(e) => openLog(e.detail.kind)}
 						on:loadmore={loadMoreLists}
 						on:refresh={async () => { await refreshLists(); await refreshSummary(); }}
+						on:pin={(e) => setQuickLink(e.detail.kind, true)}
+						on:unpin={(e) => setQuickLink(e.detail.kind, false)}
 					/>
+
+					<!-- The selected person's own reports. WHO percentiles are child
+					     reference data, so this is a child who tracks growth. -->
+					{#if selectedMember && (selectedMember.stage === 'infant' || selectedMember.stage === 'child') && activeCategories.includes('growth')}
+						<GrowthChart memberId={Number(selectedMember.id)} memberName={selectedMember.name} />
+					{/if}
 				</div>
 			{:else}
 				<button type="button" on:click={() => (familyView = 'dashboard')} class="mb-2 text-ink-soft hover:text-ink flex items-center gap-1 text-sm font-semibold">
-					<span aria-hidden="true">‹</span> {activeFamily?.name || 'Family'} <span class="text-ink-soft" aria-hidden="true">/</span> <span class="text-ink">{babies.find((b) => Number(b.id) === selectedMemberId)?.name || 'Baby'}</span>
+					<span aria-hidden="true">‹</span> {activeFamily?.name || 'Family'} <span class="text-ink-soft" aria-hidden="true">/</span> <span class="text-ink">{profiles.find((b) => Number(b.id) === selectedMemberId)?.name || 'Baby'}</span>
 				</button>
 
 				<MemberActivity
-					memberName={babies.find((b) => Number(b.id) === selectedMemberId)?.name || 'Selected'}
-					{quickLinks}
+					memberName={selectedMember?.name || 'Selected'}
 					{summary}
 					{activeCategories}
+					quickLinks={selectedMember?.quickLinks ?? null}
+					stage={selectedMember?.stage ?? null}
 					{feedings} {diapers} {sleeps} {growths}
 					{milestones} {vaccinations} {moods} {journalEntries}
 					totals={listTotals}
@@ -990,7 +1011,17 @@
 					on:log={(e) => openLog(e.detail.kind)}
 					on:loadmore={loadMoreLists}
 					on:refresh={async () => { await refreshLists(); await refreshSummary(); }}
+					on:pin={(e) => setQuickLink(e.detail.kind, true)}
+					on:unpin={(e) => setQuickLink(e.detail.kind, false)}
 				/>
+
+				<!--
+					Growth percentiles are WHO child reference data, so this only makes
+					sense for a child who tracks growth — not an adult, and not a pet.
+				-->
+				{#if selectedMember && (selectedMember.stage === 'infant' || selectedMember.stage === 'child') && activeCategories.includes('growth')}
+					<GrowthChart memberId={Number(selectedMember.id)} memberName={selectedMember.name} />
+				{/if}
 			{/if}
 		{/if}
 
@@ -1052,7 +1083,7 @@
 	kind={activeTab}
 	familyId={activeFamilyId}
 	memberId={selectedMemberId}
-	members={babies}
+	members={profiles}
 	on:saved={onLogged}
 	on:error={(e) => (error = e.detail.message)}
 	on:notice={(e) => (notice = e.detail.message)}

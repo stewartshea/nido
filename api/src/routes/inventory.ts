@@ -82,11 +82,11 @@ const diaperSizeUpdateSchema = z.object({
 	weightBandMaxKg: z.number().positive().max(40).nullish(),
 });
 
-async function resolveBabyId(db: any, memberId: number | null | undefined, userId: string): Promise<{ babyId: number | null; error?: string }> {
-	if (memberId === null || memberId === undefined) return { babyId: null };
+async function resolveBabyId(db: any, memberId: number | null | undefined, userId: string): Promise<{ subjectId: number | null; error?: string }> {
+	if (memberId === null || memberId === undefined) return { subjectId: null };
 	const scope: MemberScope | null = await resolveTrackableMember(db, userId, memberId);
-	if (!scope) return { babyId: null, error: 'Member not found or access denied' };
-	return { babyId: scope.babyId };
+	if (!scope) return { subjectId: null, error: 'Member not found or access denied' };
+	return { subjectId: scope.subjectId };
 }
 
 type ItemForecast = ReturnType<typeof coverForecast> & { ledgerQuantity: number | null };
@@ -94,7 +94,7 @@ type ItemForecast = ReturnType<typeof coverForecast> & { ledgerQuantity: number 
 function shapeItem(row: any, forecast: ItemForecast, firing: boolean) {
 	return {
 		id: Number(row.id),
-		memberId: row.baby_id === null || row.baby_id === undefined ? null : Number(row.baby_id),
+		memberId: row.subject_id === null || row.subject_id === undefined ? null : Number(row.subject_id),
 		name: row.name,
 		category: row.category,
 		variant: row.variant ?? null,
@@ -260,18 +260,18 @@ inventoryRoutes.post('/', zValidator('json', createItemSchema), async (c) => {
 	const userId = c.get('userId');
 	const body = c.req.valid('json');
 
-	const { babyId, error } = await resolveBabyId(db, body.memberId, userId);
+	const { subjectId, error } = await resolveBabyId(db, body.memberId, userId);
 	if (error) return c.json({ error }, 404);
 
 	const now = new Date().toISOString();
 	const result = await db.execute({
 		sql: `INSERT INTO inventory_items
-		      (baby_id, name, category, variant, quantity, unit, pack_size, lead_days,
+		      (subject_id, name, category, variant, quantity, unit, pack_size, lead_days,
 		       event_category, decrement_per_event, consume_interval_days, consume_started_at,
 		       expires_at, notes, created_at, updated_at)
 		      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		args: [
-			babyId, body.name.trim(), body.category, body.variant ?? null, body.quantity, body.unit,
+			subjectId, body.name.trim(), body.category, body.variant ?? null, body.quantity, body.unit,
 			body.packSize ?? null, body.leadDays ?? null, body.eventCategory ?? null,
 			body.decrementPerEvent ?? null,
 			// A cadence only means anything with an anchor to count from, so
@@ -424,13 +424,13 @@ inventoryRoutes.get('/diaper-sizes', async (c) => {
 	if (!scope) return c.json({ error: 'Member not found or access denied' }, 404);
 
 	const sizes = (await db.execute({
-		sql: 'SELECT * FROM diaper_sizes WHERE baby_id = ? ORDER BY id',
-		args: [scope.babyId],
+		sql: 'SELECT * FROM diaper_sizes WHERE subject_id = ? ORDER BY id',
+		args: [scope.subjectId],
 	})).rows as any[];
 
 	const diaperItem = (await db.execute({
-		sql: "SELECT * FROM inventory_items WHERE baby_id = ? AND active = 1 AND category = 'diapers' LIMIT 1",
-		args: [scope.babyId],
+		sql: "SELECT * FROM inventory_items WHERE subject_id = ? AND active = 1 AND category = 'diapers' LIMIT 1",
+		args: [scope.subjectId],
 	})).rows[0] as any | undefined;
 
 	const ctx = diaperItem ? await signalContext(db, diaperItem, Date.now()) : null;
@@ -461,8 +461,8 @@ inventoryRoutes.post('/diaper-sizes', zValidator('json', diaperSizeSchema), asyn
 	if (!scope) return c.json({ error: 'Member not found or access denied' }, 404);
 
 	const result = await db.execute({
-		sql: 'INSERT INTO diaper_sizes (baby_id, size, item_id, start_date, weight_band_kg, weight_band_max_kg) VALUES (?, ?, ?, ?, ?, ?)',
-		args: [scope.babyId, body.size.trim(), body.itemId ?? null, body.startDate ?? new Date().toISOString(),
+		sql: 'INSERT INTO diaper_sizes (subject_id, size, item_id, start_date, weight_band_kg, weight_band_max_kg) VALUES (?, ?, ?, ?, ?, ?)',
+		args: [scope.subjectId, body.size.trim(), body.itemId ?? null, body.startDate ?? new Date().toISOString(),
 			body.weightBandMinKg ?? null, body.weightBandMaxKg ?? null],
 	});
 	return c.json({ message: 'Diaper size added', id: Number(result.lastInsertRowid) }, 201);
@@ -492,7 +492,7 @@ inventoryRoutes.post('/diaper-sizes/preload', zValidator('json', z.object({
 		weightBandMinKg: x.weightBandMinKg ?? null,
 		weightBandMaxKg: x.weightBandMaxKg ?? null,
 	}));
-	const existing = (await db.execute({ sql: 'SELECT size FROM diaper_sizes WHERE baby_id = ?', args: [scope.babyId] }))
+	const existing = (await db.execute({ sql: 'SELECT size FROM diaper_sizes WHERE subject_id = ?', args: [scope.subjectId] }))
 		.rows.map((r: any) => String(r.size));
 
 	let added = 0;
@@ -500,8 +500,8 @@ inventoryRoutes.post('/diaper-sizes/preload', zValidator('json', z.object({
 	for (const row of wanted) {
 		if (existing.includes(row.size)) continue;
 		await db.execute({
-			sql: 'INSERT INTO diaper_sizes (baby_id, size, item_id, start_date, weight_band_kg, weight_band_max_kg) VALUES (?, ?, ?, ?, ?, ?)',
-			args: [scope.babyId, row.size, body.itemId ?? null, now, row.weightBandMinKg, row.weightBandMaxKg],
+			sql: 'INSERT INTO diaper_sizes (subject_id, size, item_id, start_date, weight_band_kg, weight_band_max_kg) VALUES (?, ?, ?, ?, ?, ?)',
+			args: [scope.subjectId, row.size, body.itemId ?? null, now, row.weightBandMinKg, row.weightBandMaxKg],
 		});
 		added += 1;
 	}
@@ -752,8 +752,8 @@ inventoryRoutes.post('/consume', zValidator('json', z.object({
 
 	const linked = (await db.execute({
 		sql: `SELECT * FROM inventory_items
-		      WHERE active = 1 AND event_category = ? AND baby_id = ?`,
-		args: [body.refTable, scope.babyId],
+		      WHERE active = 1 AND event_category = ? AND subject_id = ?`,
+		args: [body.refTable, scope.subjectId],
 	})).rows as any[];
 
 	const applied: string[] = [];

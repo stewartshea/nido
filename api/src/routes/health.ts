@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import type { BabyRow, SleepAggRow, DiaperAggRow, FeedingAggRow } from '../db-types';
+import type { SubjectRow, SleepAggRow, DiaperAggRow, FeedingAggRow } from '../db-types';
 import { resolveTrackableMember, attachCreatedBy } from '../member-scope';
 import { type AuthEnv } from '../auth';
 
@@ -16,24 +16,24 @@ healthRoutes.get('/summary/:memberId{[0-9]+}', async (c) => {
     if (!scope) {
       return c.json({ error: 'Member not found or access denied' }, 404);
     }
-    const babyId = scope.babyId;
+    const subjectId = scope.subjectId;
 
     const babyRes = await db.execute({
-      sql: `SELECT id, name, birth_date, gender FROM babies WHERE id = ? LIMIT 1`,
-      args: [babyId],
+      sql: `SELECT id, name, birth_date, gender FROM subjects WHERE id = ? LIMIT 1`,
+      args: [subjectId],
     });
-    const baby = babyRes.rows[0] as unknown as BabyRow;
+    const baby = babyRes.rows[0] as unknown as SubjectRow;
     
     // Get latest feeding
     const latestFeeding = await db.execute({
       sql: `
       SELECT start_time, end_time, duration, amount, type, side, created_by
       FROM feedings
-      WHERE baby_id = ?
+      WHERE subject_id = ?
       ORDER BY start_time DESC
       LIMIT 1
     `,
-      args: [babyId]
+      args: [subjectId]
     });
     
     // Get latest diaper
@@ -41,11 +41,11 @@ healthRoutes.get('/summary/:memberId{[0-9]+}', async (c) => {
       sql: `
       SELECT change_time, type, color, consistency, created_by
       FROM diapers
-      WHERE baby_id = ?
+      WHERE subject_id = ?
       ORDER BY change_time DESC
       LIMIT 1
     `,
-      args: [babyId]
+      args: [subjectId]
     });
     
     // Get latest sleep
@@ -53,11 +53,11 @@ healthRoutes.get('/summary/:memberId{[0-9]+}', async (c) => {
       sql: `
       SELECT start_time, end_time, duration, location, created_by
       FROM sleep
-      WHERE baby_id = ?
+      WHERE subject_id = ?
       ORDER BY start_time DESC
       LIMIT 1
     `,
-      args: [babyId]
+      args: [subjectId]
     });
     
     // Get latest growth
@@ -65,11 +65,11 @@ healthRoutes.get('/summary/:memberId{[0-9]+}', async (c) => {
       sql: `
       SELECT measurement_date, weight, height, head_circumference, bmi
       FROM growth
-      WHERE baby_id = ?
+      WHERE subject_id = ?
       ORDER BY measurement_date DESC
       LIMIT 1
     `,
-      args: [babyId]
+      args: [subjectId]
     });
     
     // Get latest milestones
@@ -77,11 +77,11 @@ healthRoutes.get('/summary/:memberId{[0-9]+}', async (c) => {
       sql: `
       SELECT title, description, achieved_date, category
       FROM milestones
-      WHERE baby_id = ?
+      WHERE subject_id = ?
       ORDER BY achieved_date DESC
       LIMIT 5
     `,
-      args: [babyId]
+      args: [subjectId]
     });
     
     // Get upcoming vaccinations
@@ -89,11 +89,11 @@ healthRoutes.get('/summary/:memberId{[0-9]+}', async (c) => {
       sql: `
       SELECT name, next_due_date, notes
       FROM vaccinations
-      WHERE baby_id = ? AND next_due_date IS NOT NULL
+      WHERE subject_id = ? AND next_due_date IS NOT NULL
       ORDER BY next_due_date ASC
       LIMIT 5
     `,
-      args: [babyId]
+      args: [subjectId]
     });
     
     // Calculate age in weeks
@@ -142,7 +142,7 @@ healthRoutes.get('/insights/:memberId{[0-9]+}', async (c) => {
     if (!scope) {
       return c.json({ error: 'Member not found or access denied' }, 404);
     }
-    const babyId = scope.babyId;
+    const subjectId = scope.subjectId;
     
     // Get feeding patterns (last 7 days)
     const weekAgo = new Date();
@@ -158,9 +158,9 @@ healthRoutes.get('/insights/:memberId{[0-9]+}', async (c) => {
         SUM(CASE WHEN type = 'formula' THEN 1 ELSE 0 END) as formula_feedings,
         SUM(CASE WHEN type = 'solid' THEN 1 ELSE 0 END) as solid_feedings
       FROM feedings
-      WHERE baby_id = ? AND start_time >= ?
+      WHERE subject_id = ? AND start_time >= ?
     `,
-      args: [babyId, weekAgo.toISOString()]
+      args: [subjectId, weekAgo.toISOString()]
     });
     
     // Get sleep patterns (last 7 days)
@@ -171,9 +171,9 @@ healthRoutes.get('/insights/:memberId{[0-9]+}', async (c) => {
         AVG(CASE WHEN duration IS NOT NULL THEN duration ELSE 0 END) as avg_duration,
         SUM(CASE WHEN duration IS NOT NULL THEN duration ELSE 0 END) as total_duration
       FROM sleep
-      WHERE baby_id = ? AND start_time >= ?
+      WHERE subject_id = ? AND start_time >= ?
     `,
-      args: [babyId, weekAgo.toISOString()]
+      args: [subjectId, weekAgo.toISOString()]
     });
     
     // Get diaper patterns (last 7 days)
@@ -185,9 +185,9 @@ healthRoutes.get('/insights/:memberId{[0-9]+}', async (c) => {
         SUM(CASE WHEN type = 'dirty' THEN 1 ELSE 0 END) as dirty_changes,
         SUM(CASE WHEN type = 'both' THEN 1 ELSE 0 END) as both_changes
       FROM diapers
-      WHERE baby_id = ? AND change_time >= ?
+      WHERE subject_id = ? AND change_time >= ?
     `,
-      args: [babyId, weekAgo.toISOString()]
+      args: [subjectId, weekAgo.toISOString()]
     });
     
     const insights = {

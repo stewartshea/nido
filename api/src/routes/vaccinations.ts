@@ -40,22 +40,22 @@ vaccinationRoutes.get('/', async (c) => {
     if (!scope) {
       return c.json({ error: 'Member not found or access denied' }, 404);
     }
-    const babyId = scope.babyId;
+    const subjectId = scope.subjectId;
     
     // Get vaccinations for the baby
     const { limit, offset } = parsePaging((k) => c.req.query(k));
 
     const vaccinationsResult = await db.execute({
       sql: `
-      SELECT id, baby_id, name, date_given, next_due_date, administered_by, notes, created_at, created_by
+      SELECT id, subject_id, name, date_given, next_due_date, administered_by, notes, created_at, created_by
       FROM vaccinations
-      WHERE baby_id = ?
+      WHERE subject_id = ?
       ORDER BY date_given DESC, next_due_date ASC, id DESC
       LIMIT ? OFFSET ?
     `,
-      args: [babyId, limit, offset]
+      args: [subjectId, limit, offset]
     });
-    const total = await countMatching(db, 'vaccinations', [babyId]);
+    const total = await countMatching(db, 'vaccinations', [subjectId]);
 
     await attachCreatedBy(db, vaccinationsResult.rows as any[]);
     return c.json({ vaccinations: vaccinationsResult.rows, total });
@@ -75,9 +75,9 @@ vaccinationRoutes.get('/:id{[0-9]+}', async (c) => {
     // Verify user has access to this vaccination
     const vaccinationResult = await db.execute({
       sql: `
-      SELECT v.id, v.baby_id, v.name, v.date_given, v.next_due_date, v.administered_by, v.notes, v.created_at, v.created_by
+      SELECT v.id, v.subject_id, v.name, v.date_given, v.next_due_date, v.administered_by, v.notes, v.created_at, v.created_by
       FROM vaccinations v
-      JOIN babies b ON v.baby_id = b.id
+      JOIN subjects b ON v.subject_id = b.id
       JOIN households h ON b.household_id = h.id
       JOIN user_households uh ON h.id = uh.household_id
       WHERE v.id = ? AND uh.user_id = ?
@@ -107,17 +107,17 @@ vaccinationRoutes.post('/', zValidator('json', createVaccinationSchema), async (
     if (!scope) {
       return c.json({ error: 'Member not found or access denied' }, 404);
     }
-    const babyId = scope.babyId;
+    const subjectId = scope.subjectId;
     
     // Insert new vaccination
     const result = await db.execute({
       sql: `
         INSERT INTO vaccinations (
-          baby_id, name, date_given, next_due_date, administered_by, notes, created_at, created_by
+          subject_id, name, date_given, next_due_date, administered_by, notes, created_at, created_by
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       `,
       args: [
-        babyId, 
+        subjectId, 
         name, 
         dateGiven || null, 
         nextDueDate || null, 
@@ -131,7 +131,7 @@ vaccinationRoutes.post('/', zValidator('json', createVaccinationSchema), async (
     // Return the created vaccination
     const vaccinationResult = await db.execute({
       sql: `
-      SELECT id, baby_id, name, date_given, next_due_date, administered_by, notes, created_at, created_by
+      SELECT id, subject_id, name, date_given, next_due_date, administered_by, notes, created_at, created_by
       FROM vaccinations
       WHERE id = ?
     `,
@@ -159,9 +159,9 @@ vaccinationRoutes.put('/:id{[0-9]+}', zValidator('json', updateVaccinationSchema
     // Verify user has access to this vaccination
     const vaccinationCheck = await db.execute({
       sql: `
-      SELECT v.id, v.baby_id
+      SELECT v.id, v.subject_id
       FROM vaccinations v
-      JOIN babies b ON v.baby_id = b.id
+      JOIN subjects b ON v.subject_id = b.id
       JOIN households h ON b.household_id = h.id
       JOIN user_households uh ON h.id = uh.household_id
       WHERE v.id = ? AND uh.user_id = ?
@@ -218,7 +218,7 @@ vaccinationRoutes.put('/:id{[0-9]+}', zValidator('json', updateVaccinationSchema
     // Return updated vaccination
     const updatedVaccinationResult = await db.execute({
       sql: `
-      SELECT id, baby_id, name, date_given, next_due_date, administered_by, notes, created_at, created_by
+      SELECT id, subject_id, name, date_given, next_due_date, administered_by, notes, created_at, created_by
       FROM vaccinations
       WHERE id = ?
     `,
@@ -247,7 +247,7 @@ vaccinationRoutes.delete('/:id{[0-9]+}', async (c) => {
       sql: `
       SELECT v.id
       FROM vaccinations v
-      JOIN babies b ON v.baby_id = b.id
+      JOIN subjects b ON v.subject_id = b.id
       JOIN households h ON b.household_id = h.id
       JOIN user_households uh ON h.id = uh.household_id
       WHERE v.id = ? AND uh.user_id = ?

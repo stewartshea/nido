@@ -14,7 +14,7 @@ export interface HouseholdRow {
   created_at: string;
 }
 
-export interface BabyRow {
+export interface SubjectRow {
   id: number;
   household_id: number;
   name: string;
@@ -26,7 +26,7 @@ export interface BabyRow {
 
 export interface FeedingRow {
   id: number;
-  baby_id: number;
+  subject_id: number;
   start_time: string;
   end_time: string | null;
   duration: number | null;
@@ -45,7 +45,7 @@ export interface FeedingRow {
 
 export interface DiaperRow {
   id: number;
-  baby_id: number;
+  subject_id: number;
   change_time: string;
   type: string;
   color: string | null;
@@ -56,7 +56,7 @@ export interface DiaperRow {
 
 export interface SleepRow {
   id: number;
-  baby_id: number;
+  subject_id: number;
   start_time: string;
   end_time: string | null;
   duration: number | null;
@@ -67,7 +67,7 @@ export interface SleepRow {
 
 export interface GrowthRow {
   id: number;
-  baby_id: number;
+  subject_id: number;
   measurement_date: string;
   weight: number | null;
   height: number | null;
@@ -80,7 +80,7 @@ export interface GrowthRow {
 
 export interface MilestoneRow {
   id: number;
-  baby_id: number;
+  subject_id: number;
   title: string;
   description: string | null;
   achieved_date: string;
@@ -91,7 +91,7 @@ export interface MilestoneRow {
 
 export interface VaccinationRow {
   id: number;
-  baby_id: number;
+  subject_id: number;
   name: string;
   date_given: string | null;
   next_due_date: string | null;
@@ -122,14 +122,14 @@ export interface DiaperAggRow {
   both_changes: number;
 }
 
-export type GrowthWithBabyRow = GrowthRow & {
+export type GrowthWithSubjectRow = GrowthRow & {
   birth_date: string;
   gender: string | null;
 };
 
 export interface MoodRow {
   id: number;
-  baby_id: number;
+  subject_id: number;
   mood: string;
   recorded_at: string;
   notes: string | null;
@@ -138,7 +138,7 @@ export interface MoodRow {
 
 export interface JournalEntryRow {
   id: number;
-  baby_id: number;
+  subject_id: number;
   title: string | null;
   body: string | null;
   entry_date: string | null;

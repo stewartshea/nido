@@ -34,7 +34,7 @@ kubectl apply -k deploy/kubernetes/multi-pod
 ## Shared across both
 - `namespace.yaml` — the `nido` namespace.
 - `secret.yaml` — `JWT_SECRET` (change the placeholder!).
-- `pvc.yaml` — `nido-data`, 1Gi for the SQLite DB + photos.
+- `pvc.yaml` — `nido-data`, 1Gi for the SQLite DBs + encrypted blobs.
 - `ingress.yaml` — optional (multi-pod); uncomment in its `kustomization.yaml`.
 
 The `namespace.yaml`, `secret.yaml`, and `pvc.yaml` files are duplicated into
@@ -139,9 +139,36 @@ Two layers, because they protect against different losses:
    family's records. Good for moving data between installs; not a server
    backup.
 2. **Volume backup — `nido-backup` CronJob** ([`backup-cronjob.yaml`](backup-cronjob.yaml)):
-   snapshots every encrypted database plus the `photos/` directory into a
+   snapshots every encrypted database plus the `blobs/` directory into a
    gzipped tar on a **separate `nido-backups` PVC**, keeps the newest 14, and
    verifies each restored database before writing it back.
+
+Three manifests do the same snapshot with different destinations:
+
+| File | Shape | Writes to |
+| --- | --- | --- |
+| [`backup-cronjob.yaml`](backup-cronjob.yaml) | CronJob, nightly | a `nido-backups` PVC |
+| [`backup-job.yaml`](backup-job.yaml) | Job, one-shot | a `nido-backups` PVC |
+| [`backup-job-s3.yaml`](backup-job-s3.yaml) | Job, one-shot | an S3 bucket |
+
+The two Jobs are the same work in a runnable-now form. `backup-job.yaml` is
+there for "back up before I do something risky"; `backup-job-s3.yaml` gets the
+archive off the cluster, which is the only kind of backup that survives losing
+the cluster.
+
+```bash
+kubectl apply -n nido -f backup-job.yaml        # to the backups PVC
+kubectl apply -n nido -f backup-job-s3.yaml     # to S3
+kubectl -n nido logs -f job/nido-backup-now     # watch it
+```
+
+`backup-job-s3.yaml` sequences itself without a controller: an **init
+container** runs the snapshot into an `emptyDir`, and the main container
+uploads from there. Init containers finish before the main one starts, so
+there is nothing to coordinate. It uses `rclone` rather than the AWS CLI so the
+same manifest works against MinIO, Wasabi or Backblaze — change the remote in
+the secret, not the YAML. Credentials live in an `nido-backup-s3` secret, and
+an IAM role on the pod needs no key at all.
 
 ### Why not `kubectl cp` the volume?
 The databases are WAL-mode SQLCipher files. Recent commits live in a `-wal`
@@ -161,7 +188,7 @@ the same image from a host cron:
 # Docker / host cron — same snapshot semantics, no controller required
 docker run --rm -it \
   -e NIDO_MASTER_KEY=$(kubectl -n nido get secret nido -o jsonpath='{.NIDO_MASTER_KEY}') \
-  -e NIDO_DATA_DIR=/data -e PHOTO_DIR=/data/photos \
+  -e NIDO_DATA_DIR=/data -e NIDO_BLOB_DIR=/data/blobs \
   -e NIDO_BACKUP_DIR=/backups \
   -v nido-data:/data -v nido-backups:/backups \
   nido/api:latest node dist/backup-cli.js backup --keep 14
@@ -198,10 +225,12 @@ docker run --rm -it \
 Stop the API first, and back up the current live volume before overwriting.
 
 ### Encryption and shipping off-cluster
-The databases are already encrypted, but `photos/` are not. Set
-`NIDO_BACKUP_PASSPHRASE` in the `nido` secret to AES-256-GCM-encrypt the whole
-archive so it is safe to `rclone sync` / S3 / Backblaze off-cluster. Treat
-unencrypted archives as private.
+The databases are already SQLCipher-encrypted and the `blobs/` (avatars and
+attachments) are encrypted too, so the archive is not plaintext. What it is
+*not* is keyed separately: whoever holds `NIDO_MASTER_KEY` can read all of it.
+Set `NIDO_BACKUP_PASSPHRASE` in the `nido` secret to AES-256-GCM-encrypt the
+whole archive as well, which is what makes it safe to `rclone sync` / S3 /
+Backblaze off-cluster with credentials that are not the master key.
 
 ### A CronJob on the same cluster is not disaster recovery
 If the node (or cluster) dies, a second PVC on that node can die with it. The

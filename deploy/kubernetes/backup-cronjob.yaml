@@ -36,8 +36,8 @@ spec:
               env:
                 - name: NIDO_DATA_DIR
                   value: "/data"
-                - name: PHOTO_DIR
-                  value: "/data/photos"
+                - name: NIDO_BLOB_DIR
+                  value: "/data/blobs"
                 - name: NIDO_MASTER_KEY
                   valueFrom:
                     secretKeyRef:

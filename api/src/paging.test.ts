@@ -35,7 +35,7 @@ describe('list route paging', () => {
 	let token = '';
 	let familyId = '';
 	let memberId = 0;
-	let babyId = 0;
+	let subjectId = 0;
 
 	beforeAll(async () => {
 		const reg = await postJson('', '/api/v1/auth/register', {
@@ -59,16 +59,16 @@ describe('list route paging', () => {
 		const db = getFamilyClient(familyId);
 		const scope = await db.execute({
 			sql: `
-				SELECT COALESCE(fm.legacy_baby_id, aligned.id) AS baby_id
+				SELECT COALESCE(fm.legacy_subject_id, aligned.id) AS subject_id
 				FROM family_members fm
-				LEFT JOIN babies aligned ON aligned.id = fm.id AND aligned.household_id = fm.household_id
+				LEFT JOIN subjects aligned ON aligned.id = fm.id AND aligned.household_id = fm.household_id
 				WHERE fm.id = ?
 				LIMIT 1
 			`,
 			args: [memberId],
 		});
-		babyId = Number((scope.rows[0] as any).baby_id);
-		expect(babyId).toBeGreaterThan(0);
+		subjectId = Number((scope.rows[0] as any).subject_id);
+		expect(subjectId).toBeGreaterThan(0);
 
 		// Seeded straight into the database: the point under test is the list
 		// route, and 300 HTTP round trips would dominate the suite runtime.
@@ -78,18 +78,18 @@ describe('list route paging', () => {
 		const diaperArgs: unknown[] = [];
 		for (let i = 0; i < SEED_COUNT; i++) {
 			const at = new Date(BASE_MS + i * 60_000).toISOString();
-			feedArgs.push(babyId, at, 'bottle');
-			diaperArgs.push(babyId, at, 'wet');
+			feedArgs.push(subjectId, at, 'bottle');
+			diaperArgs.push(subjectId, at, 'wet');
 		}
 		const placeholders = (rows: number, cols: number) =>
 			Array.from({ length: rows }, () => `(${Array.from({ length: cols }, () => '?').join(', ')})`).join(', ');
 
 		await db.execute({
-			sql: `INSERT INTO feedings (baby_id, start_time, type) VALUES ${placeholders(SEED_COUNT, 3)}`,
+			sql: `INSERT INTO feedings (subject_id, start_time, type) VALUES ${placeholders(SEED_COUNT, 3)}`,
 			args: feedArgs,
 		});
 		await db.execute({
-			sql: `INSERT INTO diapers (baby_id, change_time, type) VALUES ${placeholders(SEED_COUNT, 3)}`,
+			sql: `INSERT INTO diapers (subject_id, change_time, type) VALUES ${placeholders(SEED_COUNT, 3)}`,
 			args: diaperArgs,
 		});
 	});

@@ -3,7 +3,7 @@ import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 import { type AuthEnv } from '../auth';
 
-const babyRoutes = new Hono<AuthEnv>();
+const subjectRoutes = new Hono<AuthEnv>();
 
 // Zod schemas for validation
 const createBabySchema = z.object({
@@ -19,8 +19,8 @@ const updateBabySchema = z.object({
   gender: z.enum(['male', 'female', 'other']).optional(),
 });
 
-// Get all babies for a household
-babyRoutes.get('/', async (c) => {
+// Get all subjects for a household
+subjectRoutes.get('/', async (c) => {
   try {
     // In a real implementation, this would come from JWT middleware
     const userId = c.get('userId');
@@ -38,39 +38,39 @@ babyRoutes.get('/', async (c) => {
     });
     
     if (householdResult.rows.length === 0) {
-      return c.json({ babies: [] }); // No household found
+      return c.json({ subjects: [] }); // No household found
     }
     
     const householdRow = householdResult.rows[0];
     
     if (!householdRow) {
-      return c.json({ babies: [] });
+      return c.json({ subjects: [] });
     }
     
     const householdId = Number(householdRow.household_id);
     
-    // Get babies in the household
-    const babiesResult = await db.execute({
+    // Get subjects in the household
+    const subjectsResult = await db.execute({
       sql: `
         SELECT id, name, birth_date, gender, created_at, updated_at 
-        FROM babies 
+        FROM subjects 
         WHERE household_id = ?
         ORDER BY created_at DESC
       `,
       args: [householdId]
     });
     
-    return c.json({ babies: babiesResult.rows });
+    return c.json({ subjects: subjectsResult.rows });
   } catch (error) {
-    c.get('log').error('get babies failed', { err: error });
-    return c.json({ error: 'Failed to fetch babies' }, 500);
+    c.get('log').error('get subjects failed', { err: error });
+    return c.json({ error: 'Failed to fetch subjects' }, 500);
   }
 });
 
 // Get a specific baby
-babyRoutes.get('/:id{[0-9]+}', async (c) => {
+subjectRoutes.get('/:id{[0-9]+}', async (c) => {
   try {
-    const babyId = parseInt(c.req.param('id'));
+    const subjectId = parseInt(c.req.param('id'));
     const userId = c.get('userId');
     const db = c.get('db');
     
@@ -78,12 +78,12 @@ babyRoutes.get('/:id{[0-9]+}', async (c) => {
     const babyResult = await db.execute({
       sql: `
         SELECT b.id, b.name, b.birth_date, b.gender, b.created_at, b.updated_at, h.id as household_id
-        FROM babies b
+        FROM subjects b
         JOIN households h ON b.household_id = h.id
         JOIN user_households uh ON h.id = uh.household_id
         WHERE b.id = ? AND uh.user_id = ?
       `,
-      args: [babyId, userId]
+      args: [subjectId, userId]
     });
     
     if (babyResult.rows.length === 0) {
@@ -98,7 +98,7 @@ babyRoutes.get('/:id{[0-9]+}', async (c) => {
 });
 
 // Create a new baby
-babyRoutes.post('/', zValidator('json', createBabySchema), async (c) => {
+subjectRoutes.post('/', zValidator('json', createBabySchema), async (c) => {
   try {
     const { name, birthDate, gender, householdId } = c.req.valid('json');
     const userId = c.get('userId');
@@ -119,7 +119,7 @@ babyRoutes.post('/', zValidator('json', createBabySchema), async (c) => {
     // Insert new baby
     const result = await db.execute({
       sql: `
-        INSERT INTO babies (name, birth_date, gender, household_id, created_at, updated_at)
+        INSERT INTO subjects (name, birth_date, gender, household_id, created_at, updated_at)
         VALUES (?, ?, ?, ?, ?, ?)
       `,
       args: [name, birthDate, gender || null, householdId, new Date().toISOString(), new Date().toISOString()]
@@ -129,7 +129,7 @@ babyRoutes.post('/', zValidator('json', createBabySchema), async (c) => {
     const babyResult = await db.execute({
       sql: `
         SELECT id, name, birth_date, gender, created_at, updated_at 
-        FROM babies 
+        FROM subjects 
         WHERE id = ?
       `,
       args: [Number(result.lastInsertRowid)]
@@ -146,9 +146,9 @@ babyRoutes.post('/', zValidator('json', createBabySchema), async (c) => {
 });
 
 // Update a baby
-babyRoutes.put('/:id{[0-9]+}', zValidator('json', updateBabySchema), async (c) => {
+subjectRoutes.put('/:id{[0-9]+}', zValidator('json', updateBabySchema), async (c) => {
   try {
-    const babyId = parseInt(c.req.param('id'));
+    const subjectId = parseInt(c.req.param('id'));
     const { name, birthDate, gender } = c.req.valid('json');
     const userId = c.get('userId');
     const db = c.get('db');
@@ -157,12 +157,12 @@ babyRoutes.put('/:id{[0-9]+}', zValidator('json', updateBabySchema), async (c) =
     const babyResult = await db.execute({
       sql: `
         SELECT b.id, h.id as household_id
-        FROM babies b
+        FROM subjects b
         JOIN households h ON b.household_id = h.id
         JOIN user_households uh ON h.id = uh.household_id
         WHERE b.id = ? AND uh.user_id = ?
       `,
-      args: [babyId, userId]
+      args: [subjectId, userId]
     });
     
     if (babyResult.rows.length === 0) {
@@ -195,9 +195,9 @@ babyRoutes.put('/:id{[0-9]+}', zValidator('json', updateBabySchema), async (c) =
     // Add updated_at timestamp
     updates.push('updated_at = ?');
     params.push(new Date().toISOString());
-    params.push(babyId); // For WHERE clause
+    params.push(subjectId); // For WHERE clause
     
-    const query = `UPDATE babies SET ${updates.join(', ')} WHERE id = ?`;
+    const query = `UPDATE subjects SET ${updates.join(', ')} WHERE id = ?`;
     
     await db.execute({
       sql: query,
@@ -208,10 +208,10 @@ babyRoutes.put('/:id{[0-9]+}', zValidator('json', updateBabySchema), async (c) =
     const updatedBabyResult = await db.execute({
       sql: `
         SELECT id, name, birth_date, gender, created_at, updated_at 
-        FROM babies 
+        FROM subjects 
         WHERE id = ?
       `,
-      args: [babyId]
+      args: [subjectId]
     });
     
     return c.json({ 
@@ -224,4 +224,4 @@ babyRoutes.put('/:id{[0-9]+}', zValidator('json', updateBabySchema), async (c) =
   }
 });
 
-export { babyRoutes };
+export { subjectRoutes };

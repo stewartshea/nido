@@ -11,6 +11,8 @@
 // This module is a dependency leaf: db-namespaces.ts (registry + family
 // clients) imports from here.
 import Database from 'better-sqlite3-multiple-ciphers';
+// The tracking vocabulary lives in vocabulary.ts, which is the only place it is
+// defined. Nothing here should restate it.
 import { hkdfSync } from 'node:crypto';
 import dotenv from 'dotenv';
 import { log } from './logger';
@@ -22,11 +24,6 @@ dotenv.config();
 // every record hard-pins to this singleton household.
 export const NAMESPACE_HOUSEHOLD_ID = 1;
 
-/**
- * Tracking categories a new profile starts with. Shared so a family owner and an
- * invited adult are seeded identically, whichever route created the member row.
- */
-export const DEFAULT_CATEGORIES = ['feeds', 'diapers', 'sleep', 'growth', 'pumping', 'routines', 'firsts', 'milestones', 'medical', 'vaccines', 'moods', 'journal'];
 
 // Opaque, server-generated family identifier carried in the JWT, used as the
 // DB filename and path parameter. Never derived from user input.

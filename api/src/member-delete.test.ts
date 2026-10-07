@@ -53,7 +53,7 @@ describe('deleting a member that has records', () => {
 		expect(del.status).toBe(200);
 
 		const list = await call('GET', token, `/api/v1/families/${familyId}/members`);
-		const ids = (list.body.members ?? list.body.babies ?? []).map((m: any) => m.id);
+		const ids = (list.body.members ?? list.body.subjects ?? []).map((m: any) => m.id);
 		expect(ids).not.toContain(memberId);
 	});
 });

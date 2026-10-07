@@ -746,6 +746,129 @@ ALTER TABLE inventory_adjustments ADD COLUMN source TEXT DEFAULT 'manual';
         AND NOT EXISTS (SELECT 1 FROM account_members am WHERE am.user_id = u.id);
     `,
   },
+  {
+    version: 22,
+    name: 'member-stage',
+    sql: `
+      -- The life stage that decides which categories a profile starts with.
+      -- Stored rather than inferred: a two-year-old and a twenty-year-old need
+      -- different categories and age cannot distinguish them, and a pet has no
+      -- birth date to infer from.
+      --
+      -- Existing members are only backfilled where the stage is unambiguous. A
+      -- child is left NULL because an infant and a ten-year-old are both
+      -- children, and guessing would silently change what half of them track.
+      -- Their category lists are not touched either way.
+      ALTER TABLE family_members ADD COLUMN stage TEXT;
+
+      UPDATE family_members SET stage = 'adult' WHERE member_type = 'adult' AND stage IS NULL;
+      UPDATE family_members SET stage = 'pet'   WHERE member_type = 'pet'   AND stage IS NULL;
+    `,
+  },
+  {
+    version: 23,
+    name: 'family-stage-categories',
+    sql: `
+      -- A family's own version of a stage template. The built-in STAGE_CATEGORIES
+      -- are a starting point, not a rule: a household that does not track moods
+      -- for its dog should be able to say so once, for the stage, rather than
+      -- turning it off on every pet they add. Null means "use the built-in set".
+      ALTER TABLE family_settings ADD COLUMN stage_categories TEXT;
+    `,
+  },
+  {
+    version: 24,
+    name: 'member-quick-links',
+    sql: `
+      -- The few things a person logs most, pinned as tiles.
+      --
+      -- Per member rather than per account, because the whole point is that the
+      -- tiles follow the person: switching from a baby to yourself should change
+      -- what is one tap away. Stored here rather than in a browser so the choice
+      -- follows the person across devices.
+      ALTER TABLE family_members ADD COLUMN quick_links TEXT;
+    `,
+  },
+  {
+    version: 25,
+    name: 'subject-vocabulary',
+    sql: `
+      -- The thing a log hangs off is not always a baby. It is a child, an adult
+      -- or a pet, and the table holding them was named for one kind of them.
+      --
+      -- Deliberately NOT renamed to 'members': family_members.id is already
+      -- called member_id everywhere it is referenced (account_members.member_id,
+      -- member_homes.member_id), and that is a different row that only sometimes
+      -- coincides. Calling this member_id would let two ids be confused in a
+      -- query that still runs, which is the worst kind of rename.
+      ALTER TABLE babies RENAME TO subjects;
+
+      ALTER TABLE feedings       RENAME COLUMN baby_id TO subject_id;
+      ALTER TABLE diapers        RENAME COLUMN baby_id TO subject_id;
+      ALTER TABLE sleep          RENAME COLUMN baby_id TO subject_id;
+      ALTER TABLE growth         RENAME COLUMN baby_id TO subject_id;
+      ALTER TABLE milestones     RENAME COLUMN baby_id TO subject_id;
+      ALTER TABLE vaccinations   RENAME COLUMN baby_id TO subject_id;
+      ALTER TABLE moods          RENAME COLUMN baby_id TO subject_id;
+      ALTER TABLE journal_entries RENAME COLUMN baby_id TO subject_id;
+      ALTER TABLE import_log     RENAME COLUMN baby_id TO subject_id;
+      ALTER TABLE import_runs    RENAME COLUMN baby_id TO subject_id;
+      ALTER TABLE inventory_items RENAME COLUMN baby_id TO subject_id;
+      ALTER TABLE diaper_sizes   RENAME COLUMN baby_id TO subject_id;
+      ALTER TABLE family_members RENAME COLUMN legacy_baby_id TO legacy_subject_id;
+
+      -- Column renames carry the indexes with them, but an index name that says
+      -- 'baby' outlives the column it was named for.
+      DROP INDEX IF EXISTS idx_inventory_items_baby;
+      CREATE INDEX IF NOT EXISTS idx_inventory_items_subject ON inventory_items(subject_id, active);
+      DROP INDEX IF EXISTS idx_diaper_sizes_baby;
+      CREATE INDEX IF NOT EXISTS idx_diaper_sizes_subject ON diaper_sizes(subject_id, active);
+    `,
+  },
+  {
+    version: 26,
+    name: 'attachments',
+    sql: `
+      -- A file attached to a record: a vet's vaccination report against the
+      -- appointment, a photo of a rash against the feeding.
+      --
+      -- Bytes live in the encrypted blob store, not here; this row is the link
+      -- and the metadata. The blob key is stored so a reader does not have to
+      -- re-derive the date fan-out from created_at, and so a moved blob is
+      -- detectable rather than silently missing.
+      --
+      -- ref_type is the table the row hangs off, not the tracking category: an
+      -- appointment is a milestone row, so it is ref_type='milestone'.
+      CREATE TABLE IF NOT EXISTS attachments (
+        id           INTEGER PRIMARY KEY AUTOINCREMENT,
+        subject_id   INTEGER,
+        ref_type     TEXT NOT NULL,
+        ref_id       INTEGER NOT NULL,
+        blob_id      TEXT NOT NULL,
+        storage_key  TEXT NOT NULL,
+        filename     TEXT,
+        content_type TEXT NOT NULL,
+        size         INTEGER NOT NULL,
+        created_at   TEXT DEFAULT CURRENT_TIMESTAMP,
+        created_by   TEXT,
+        FOREIGN KEY (subject_id) REFERENCES subjects(id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_attachments_ref ON attachments(ref_type, ref_id);
+      CREATE INDEX IF NOT EXISTS idx_attachments_subject ON attachments(subject_id);
+    `,
+  },
+  {
+    version: 27,
+    name: 'drop-dead-photos',
+    sql: `
+      -- The record-photo mechanism is gone: its only UI was a component that
+      -- nothing rendered, and it stored files unencrypted on disk. Avatars moved
+      -- onto the encrypted blob store as subject attachments, so nothing reads
+      -- this table and nothing writes it. Leaving it would be a second file
+      -- mechanism to reason about for no benefit.
+      DROP TABLE IF EXISTS photos;
+    `,
+  },
 ];
 
 // ---------------------------------------------------------------------------

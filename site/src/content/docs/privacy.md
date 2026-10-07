@@ -15,7 +15,7 @@ It is written to be read, not to hide behind. If anything here is unclear,
 - **Your account** — an email address and a password hash. The password itself
   is never stored.
 - **Your family's records** — everything you log: feeds, diapers, sleep,
-  growth, milestones, vaccinations, journal entries, and the photos you upload.
+  growth, milestones, vaccinations, journal entries, and the blobs you upload.
 - **Very little else.** There is no analytics, no telemetry, no tracking
   pixels, and no advertising. There is nothing to "improve the product" with,
   because nothing reports back.
@@ -26,7 +26,7 @@ My Nido runs on hardware in **Canada**, and your data stays there. Each
 family's records live in their own encrypted database file — see the
 [security model](./reference/security/) for exactly what is encrypted and what
 is not. (The short honest version: databases are encrypted at rest; uploaded
-photos are not, yet.)
+blobs are not, yet.)
 
 ## The only emails you will ever get
 

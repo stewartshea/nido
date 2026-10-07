@@ -26,16 +26,16 @@ export interface BackupOptions {
   /** Where the archive is written. Created if absent. */
   destinationDir: string;
   dataDir?: string;
-  photoDir?: string;
+  blobDir?: string;
   masterKeyHex?: string;
-  /** Encrypts the finished archive; without it, photos ship in plaintext. */
+  /** Encrypts the finished archive. Blobs inside it are already encrypted. */
   passphrase?: string;
   now?: Date;
 }
 
 export interface ManifestEntry {
   path: string;
-  kind: 'database' | 'photo';
+  kind: 'database' | 'blob';
   bytes: number;
   sha256: string;
   familyId?: string;
@@ -47,7 +47,7 @@ export interface BackupManifest {
   manifestVersion: 1;
   createdAt: string;
   encrypted: boolean;
-  totals: { databases: number; photos: number; bytes: number };
+  totals: { databases: number; blobs: number; bytes: number };
   entries: ManifestEntry[];
 }
 
@@ -178,7 +178,7 @@ export function decryptFile(source: string, dest: string, passphrase: string): v
 
 export interface RestoreOptions {
   archivePath: string;
-  /** Where registry.db, db/ and photos/ land after extraction. */
+  /** Where registry.db, db/ and blobs/ land after extraction. */
   restoreDir: string;
   masterKeyHex?: string;
   passphrase?: string;
@@ -186,7 +186,7 @@ export interface RestoreOptions {
 
 export interface RestoreResult {
   databases: number;
-  photos: number;
+  blobs: number;
   entries: ManifestEntry[];
 }
 
@@ -246,11 +246,11 @@ export async function restoreBackup(options: RestoreOptions): Promise<RestoreRes
     }
 
     const databases = manifest.entries.filter((e) => e.kind === 'database').length;
-    const photos = manifest.entries.filter((e) => e.kind === 'photo').length;
+    const blobs = manifest.entries.filter((e) => e.kind === 'blob').length;
     log.info('restore verified', {
       event: 'restore_verified',
       databases,
-      photos,
+      blobs,
       durationMs: Date.now() - started,
     });
 
@@ -260,20 +260,20 @@ export async function restoreBackup(options: RestoreOptions): Promise<RestoreRes
     fs.rmSync(finalDataDir, { recursive: true, force: true });
     fs.renameSync(staged, finalDataDir);
 
-    return { databases, photos, entries: manifest.entries };
+    return { databases, blobs, entries: manifest.entries };
   } finally {
     fs.rmSync(workDir, { recursive: true, force: true });
   }
 }
 
 /**
- * Back up every database and photo under the data directory into a single
+ * Back up every database and blob under the data directory into a single
  * gzipped tar. The archive is self-describing via an embedded MANIFEST.json.
  */
 export async function backupDataDir(options: BackupOptions): Promise<BackupResult> {
   const started = Date.now();
   const dataDir = options.dataDir ?? getDataDir();
-  const photoDir = options.photoDir ?? process.env.PHOTO_DIR ?? '/data/photos';
+  const blobDir = options.blobDir ?? process.env.NIDO_BLOB_DIR ?? path.join(dataDir, 'blobs');
   const masterKeyHex = options.masterKeyHex ?? getMasterKeyHex();
   const now = options.now ?? new Date();
   const stamp = now.toISOString().replace(/[:.]/g, '-');
@@ -326,15 +326,17 @@ export async function backupDataDir(options: BackupOptions): Promise<BackupResul
       tarEntries.push({ name: rel, sourcePath: dest, size: fs.statSync(dest).size });
     }
 
-    // Photos are plain files on the same volume, so they are copied as-is.
-    for (const file of collectFiles(photoDir)) {
-      const rel = `photos/${path.relative(photoDir, file).split(path.sep).join('/')}`;
+    // Blobs are the encrypted bytes behind every attachment and avatar. They are
+    // already encrypted under the master key, so they are copied as-is — the
+    // archive's own encryption is a second layer, not a replacement.
+    for (const file of collectFiles(blobDir)) {
+      const rel = `blobs/${path.relative(blobDir, file).split(path.sep).join('/')}`;
       const dest = path.join(stageDir, rel);
       fs.mkdirSync(path.dirname(dest), { recursive: true });
       fs.copyFileSync(file, dest);
       entries.push({
         path: rel,
-        kind: 'photo',
+        kind: 'blob',
         bytes: fs.statSync(dest).size,
         sha256: await sha256File(dest),
       });
@@ -347,7 +349,7 @@ export async function backupDataDir(options: BackupOptions): Promise<BackupResul
       encrypted: Boolean(options.passphrase),
       totals: {
         databases: entries.filter((e) => e.kind === 'database').length,
-        photos: entries.filter((e) => e.kind === 'photo').length,
+        blobs: entries.filter((e) => e.kind === 'blob').length,
         bytes: entries.reduce((sum, e) => sum + e.bytes, 0),
       },
       entries,
@@ -372,7 +374,7 @@ export async function backupDataDir(options: BackupOptions): Promise<BackupResul
       event: 'backup_complete',
       archivePath,
       databases: manifest.totals.databases,
-      photos: manifest.totals.photos,
+      blobs: manifest.totals.blobs,
       bytes: manifest.totals.bytes,
       encrypted: manifest.encrypted,
       durationMs: Date.now() - started,

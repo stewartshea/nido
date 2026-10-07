@@ -1,0 +1,138 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: nido-backup-to-s3
+  namespace: nido
+  labels:
+    app: nido-backup
+spec:
+  backoffLimit: 1
+  ttlSecondsAfterFinished: 86400
+  template:
+    spec:
+      restartPolicy: Never
+      # The two steps are sequenced by container type: init containers run to
+      # completion, in order, before the main container starts. So the snapshot
+      # is finished and on disk before anything tries to upload it — no polling,
+      # no readiness dance, no second image containing the API.
+      initContainers:
+        - name: snapshot
+          image: nido/api:latest
+          imagePullPolicy: IfNotPresent
+          command:
+            - node
+            - dist/backup-cli.js
+            - backup
+            - --dest
+            - /backups
+            # Keep one archive in the staging dir — the retention that matters is
+            # on the bucket, which is what --delete below enforces. Pruning here
+            # would only ever see the emptyDir it is writing to.
+            - --keep
+            - "1"
+          env:
+            - name: NIDO_DATA_DIR
+              value: "/data"
+            - name: NIDO_BLOB_DIR
+              value: "/data/blobs"
+            - name: NIDO_MASTER_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: nido
+                  key: NIDO_MASTER_KEY
+            - name: NIDO_BACKUP_PASSPHRASE
+              valueFrom:
+                secretKeyRef:
+                  name: nido
+                  key: NIDO_BACKUP_PASSPHRASE
+                  optional: true
+          volumeMounts:
+            - name: data
+              mountPath: /data
+              readOnly: true
+            - name: staging
+              mountPath: /backups
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+      containers:
+        - name: upload
+          # rclone rather than the AWS CLI so the same spec works against
+          # S3-compatible endpoints — MinIO, Wasabi, Backblaze — by changing the
+          # remote in the secret, not the manifest.
+          image: rclone/rclone:1.68
+          command:
+            - sh
+            - -c
+            - |
+              set -eu
+              echo "uploading $(ls /backups | wc -l) archive(s) to ${S3_REMOTE}:${S3_BUCKET}/${S3_PREFIX}"
+              rclone copy /backups "${S3_REMOTE}:${S3_BUCKET}/${S3_PREFIX}" \
+                --s3-no-check-bucket \
+                --create-empty-src-dirs \
+                --verbose
+              # The bucket is the durable side, so retention belongs here.
+              # `--min-age 14d` keeps a fortnight and is the one line to change.
+              rclone delete "${S3_REMOTE}:${S3_BUCKET}/${S3_PREFIX}" \
+                --min-age 14d \
+                --rmdirs \
+                --verbose
+          env:
+            # The remote name comes from the secret's rclone.conf. Everything
+            # else is ordinary configuration.
+            - name: S3_REMOTE
+              value: "nido-s3"
+            - name: S3_BUCKET
+              value: "REPLACE-WITH-YOUR-BUCKET"
+            - name: S3_PREFIX
+              value: "nido"
+            # Lets rclone find the mounted config.
+            - name: RCLONE_CONFIG
+              value: "/config/rclone/rclone.conf"
+          volumeMounts:
+            - name: staging
+              mountPath: /backups
+              readOnly: true
+            - name: rclone-config
+              mountPath: /config/rclone
+              readOnly: true
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 300m
+              memory: 256Mi
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: nido-data
+        # Scratch space for the archive between the two steps. No PVC: if the
+        # upload fails the snapshot is worthless and the Job retries.
+        - name: staging
+          emptyDir: {}
+        - name: rclone-config
+          secret:
+            secretName: nido-backup-s3
+---
+# Credentials, kept out of the manifest and out of the container arguments.
+#
+#   kubectl -n nido create secret generic nido-backup-s3 \
+#     --from-file=rclone.conf=./rclone.conf
+#
+# with an rclone.conf like:
+#
+#   [nido-s3]
+#   type = s3
+#   provider = AWS            # or Minio, Wasabi, Backblaze, ...
+#   access_key_id = ...
+#   secret_access_key = ...
+#   region = ca-central-1
+#   # endpoint = https://s3.example.com   # required for anything not AWS
+#
+# An IAM role on the pod (IRSA / Workload Identity) needs no key at all: leave
+# access_key_id and secret_access_key out and the SDK picks up the role.

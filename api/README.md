@@ -21,7 +21,7 @@ SQLite file. Create a `.env` file in the repository root:
 # Unset in development only: the API logs a loud warning and falls back to a
 # hardcoded key that is public in this repo.
 NIDO_MASTER_KEY=""
-# Where registry.db, db/<familyId>.db and photos/ live
+# Where registry.db, db/<familyId>.db and blobs/ live
 NIDO_DATA_DIR="./data"
 JWT_SECRET="your-super-secret-jwt-key"
 # Log verbosity: debug | info | warn | error | silent (default info).
@@ -120,7 +120,7 @@ Most read/write routes accept a `?babyId=` query parameter, except where a
 - `PUT /api/v1/families/members/:memberId` — update a member (including
   `trackable`: flagging off keeps the profile and its records)
 - `DELETE /api/v1/families/members/:memberId` — delete a member (cascades to
-  records, photos, avatar, reminders, and any member account linked to it; an
+  records, blobs, avatar, reminders, and any member account linked to it; an
   owner's own account is never removed this way)
 - `GET /api/v1/families/members/:memberId/avatar` — fetch a member's avatar
 - `POST /api/v1/families/members/:memberId/avatar` — upload a member's avatar
@@ -146,7 +146,7 @@ from the path instead of the JWT. Prefer the flat form.
 
 > **Note:** there is no baby DELETE route. Deletion is handled through
 > `DELETE /api/v1/families/members/:memberId`, which also cascades to the
-> member's records, photos, avatar and reminders.
+> member's records, blobs, avatar and reminders.
 
 ### Feeding, diaper, and sleep records
 Each of these exposes the same five routes:
@@ -207,10 +207,10 @@ Each exposes `GET /`, `POST /`, `PUT /:id`, `DELETE /:id`:
 - `DELETE /api/v1/formulas/:id` — delete
 
 ### Photos
-- `GET /api/v1/photos` — list
-- `POST /api/v1/photos` — upload
-- `GET /api/v1/photos/:id/file` — stream the file
-- `DELETE /api/v1/photos/:id` — delete
+- `GET /api/v1/blobs` — list
+- `POST /api/v1/blobs` — upload
+- `GET /api/v1/blobs/:id/file` — stream the file
+- `DELETE /api/v1/blobs/:id` — delete
 
 ### Settings
 - `GET /api/v1/settings` — instance settings

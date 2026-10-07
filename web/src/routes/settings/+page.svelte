@@ -5,7 +5,6 @@
 	import { authAPI, userAPI, familiesAPI, feedingAPI, diaperAPI, sleepAPI, growthAPI, healthAPI, importsAPI, familyAdminAPI, accountAPI, milestoneAPI, vaccinationAPI, settingsAPI, moodAPI, journalAPI, tokenExpired } from '$lib/api';
 	import { authStore, authActions } from '$lib/stores/authStore';
 	import { uiStore, uiActions } from '$lib/stores/uiStore';
-	import PhotoStrip from '$lib/components/PhotoStrip.svelte';
 	import ToggleSwitch from '$lib/components/ToggleSwitch.svelte';
 	import { CATEGORIES, defaultMemberId } from '$lib/shared';
 	import { Users, Home, Trash2, Timer, AlertCircle, Settings, Check, ChevronRight, User, Shield, Upload, Download } from 'lucide-svelte';
@@ -36,49 +35,26 @@
 	let showForgot = false;
 	let pendingResetToken = '';
 	// Per-user mobile quick links (category ids), persisted in localStorage.
-	let quickLinks: string[] = [];
-	const QUICK_LINK_DEFAULT = ['feeds', 'diapers', 'sleep'];
-
-	function quickLinksKey(userId: number | null) {
-		return `nido.quicklinks.${userId ?? $authStore.user?.id}`;
-	}
-
-	function loadQuickLinks() {
-		const key = quickLinksKey($authStore.user?.id ?? null);
-		try {
-			const raw = localStorage.getItem(key);
-			const parsed = raw ? JSON.parse(raw) : null;
-			if (Array.isArray(parsed) && parsed.length > 0) quickLinks = parsed;
-			else quickLinks = [...QUICK_LINK_DEFAULT];
-		} catch {
-			quickLinks = [...QUICK_LINK_DEFAULT];
-		}
-	}
-
-	function saveQuickLinks(next: string[]) {
-		quickLinks = next;
-		try {
-			localStorage.setItem(quickLinksKey($authStore.user?.id ?? null), JSON.stringify(next));
-		} catch {}
-	}
-
-	function toggleQuickLink(catId: string) {
-		const next = quickLinks.includes(catId)
-			? quickLinks.filter((c) => c !== catId)
-			: [...quickLinks, catId];
-		saveQuickLinks(next);
-		notice = 'Mobile quick links updated.';
-	}
-
 	let loading = false;
 
-	let babies: any[] = [];
+	let profiles: any[] = [];
 	let families: any[] = [];
 	let activeFamily: any = null;
 	let activeFamilyId: string | null = null;
 	let selectedMemberId: number | null = null;
 	// Feeds, sleep, diapers and the rest only exist for a trackable profile.
-	let selectedIsTrackable = true;
+	/**
+	 * Whether the selected person can be logged against.
+	 *
+	 * Computed here rather than from a `$:` flag: reactive statements are
+	 * scheduled, not synchronous, so selectMember() would call refreshLists()
+	 * before the flag had recomputed and fetch the baby endpoints for whoever was
+	 * selected previously.
+	 */
+	function currentIsTrackable(): boolean {
+		const m = profiles.find((b) => Number(b.id) === selectedMemberId);
+		return !!m && m.trackable !== false;
+	}
 	let activeTab = 'feeds';
 	let defaultProfileId: number | null = null;
 	let summary: any = null;
@@ -89,7 +65,11 @@
 
 	// Family-scoped tracking settings (categories + per-category option lists).
 	let settingsTab: 'profile' | 'family' | 'import' | 'members' | 'backup' | 'admin' | null = null;
-	let familySettings: { categories: string[] | null; categoryOptions: Record<string, Record<string, string[]>>; defaultCategoryOptions: Record<string, Record<string, string[]>>; shareAnonymizedDaily?: boolean } | null = null;
+	let familySettings: { categories: string[] | null; categoryOptions: Record<string, Record<string, string[]>>; defaultCategoryOptions: Record<string, Record<string, string[]>>; stageCategories?: Record<string, string[]> | null; defaultStageCategories?: Record<string, string[]>; shareAnonymizedDaily?: boolean } | null = null;
+	// The stage whose category set is being edited, and a local mirror so toggles
+	// feel instant before the round trip lands.
+	let stageEditor: string | null = null;
+	let stageDraft: Record<string, string[]> = {};
 	// What the family tracks, as opposed to `activeCategories`, which is the
 	// selected member's own set. They shared one variable, so this tab showed
 	// one member's categories while writing a family-wide setting.
@@ -107,6 +87,9 @@
 	// Family onboarding
 	let familyName = '';
 	let memberType = 'child';
+	// Only meaningful for a child: an infant and a ten-year-old are both children
+	// but track different things. Pets and adults imply their own stage.
+	let memberStage = 'child';
 	let newMemberName = '';
 	let newMemberEmail = '';
 	let newBabyBirthDate = '';
@@ -132,7 +115,6 @@
 	// Diaper detail form
 	// Sleep + growth backdated
 	// Milestone + vaccine manual forms
-	// Photos (toggle state only — the PhotoStrip component handles loading)
 	// Account
 	let curPw = '';
 	let newPw = '';
@@ -201,7 +183,7 @@
 
 	async function refreshSummary() {
 		if (!selectedMemberId) return;
-		if (!selectedIsTrackable) {
+		if (!currentIsTrackable()) {
 			// Health summary is baby tracking; an adult profile has none and the
 			// endpoint refuses it, so don't ask and report nothing.
 			summary = null;
@@ -217,7 +199,7 @@
 
 	async function refreshLists() {
 		if (!selectedMemberId) return;
-		if (!selectedIsTrackable) {
+		if (!currentIsTrackable()) {
 			// Feeds, sleep, diapers, growth, moods and the rest belong to a baby
 			// profile. The person who created the household is now an adult member
 			// of it, so a household with no child yet would otherwise fire eight
@@ -269,7 +251,7 @@
 			families = res.data.families;
 			if (families.length === 0) {
 				selectedMemberId = null;
-				babies = [];
+				profiles = [];
 				return;
 			}
 			// Prefer the saved default family, else the first.
@@ -281,7 +263,7 @@
 			const members = membersRes.data.members;
 			// Members are the profiles the tracker operates on (child/adult; "newborn"
 			// is a child with newborn categories enabled).
-			babies = members.map((m) => ({
+			profiles = members.map((m) => ({
 				id: m.id,
 				name: m.name,
 				birth_date: m.birthDate ?? '',
@@ -291,23 +273,23 @@
 				avatar: m.avatar ?? null,
 				categories: Array.isArray(m.categories) ? m.categories : [],
 				trackable: m.trackable !== false,
-				legacyBabyId: m.legacyBabyId ?? null,
+				legacySubjectId: m.legacySubjectId ?? null,
 				// The badge below reads this, and it was never carried across from
 				// the API, so every profile claimed to have no account.
 				linkedAccount: m.linkedAccount === true,
 			}));
 
-			if (babies.length > 0) {
+			if (profiles.length > 0) {
 				const savedDefault = defaultProfileId ?? null;
-				const match = savedDefault ? babies.find((b) => Number(b.id) === savedDefault) : null;
-				selectedMemberId = match ? Number(match.id) : defaultMemberId(babies);
-				const selected = babies.find((b) => Number(b.id) === selectedMemberId);
-				selectedIsTrackable = selected ? selected.trackable !== false : false;
-				activeCategories = selected?.categories?.length ? selected.categories : CATEGORIES.map((c) => c.id);
+				const match = savedDefault ? profiles.find((b) => Number(b.id) === savedDefault) : null;
+				selectedMemberId = match ? Number(match.id) : defaultMemberId(profiles);
+				const selected = profiles.find((b) => Number(b.id) === selectedMemberId);
+				// The API resolves this to the member's own set, constrained by their
+				// stage. An empty list is a real answer, not a prompt to show everything.
+				activeCategories = selected?.categories ?? [];
 				if (!activeCategories.includes(activeTab)) activeTab = activeCategories[0] || 'feeds';
 			} else {
 				selectedMemberId = null;
-				selectedIsTrackable = false;
 				activeCategories = [];
 			}
 			await Promise.all([loadFamilySettings(), refreshLists(), refreshSummary(), loadInvitations(), loadImportRuns()]);
@@ -331,7 +313,7 @@
 	function handleLogout() {
 		authActions.logout();
 		isAuthenticated = false;
-		babies = [];
+		profiles = [];
 		selectedMemberId = null;
 		feedStartedAt = null;
 		leftStartedAt = null;
@@ -359,6 +341,8 @@
 				birthDate: newBabyBirthDate ? new Date(newBabyBirthDate).toISOString() : undefined,
 				gender: newBabyGender,
 				email: newMemberEmail.trim() || undefined,
+				// Only a child needs the family to choose; the API implies the rest.
+				stage: memberType === 'child' ? memberStage : undefined,
 			});
 			notice = `${res.data.member.name} added to the family.`;
 			newMemberName = '';
@@ -564,7 +548,6 @@
 				});
 				isPanelAdmin = Number(u.is_platform_admin ?? 0) === 1;
 			}
-			loadQuickLinks();
 		} catch {
 			isPanelAdmin = false;
 		}
@@ -682,6 +665,44 @@
 			error = err.response?.data?.error || 'Failed to load anonymized preview.';
 		} finally {
 			loadingAnonymizedPreview = false;
+		}
+	}
+
+	/**
+	 * A stage's categories: the in-flight edit first so a toggle lands instantly,
+	 * then this family's saved version, then the built-in set.
+	 */
+	function stageSetFor(stage: string | null): string[] {
+		if (!stage) return [];
+		return stageDraft[stage]
+			?? familySettings?.stageCategories?.[stage]
+			?? familySettings?.defaultStageCategories?.[stage]
+			?? [];
+	}
+
+	/**
+	 * Turn a category on or off for a whole stage.
+	 *
+	 * Family-level because doing it per pet or per child is the same decision
+	 * repeated; a household that does not track moods for its dog should not have
+	 * to say so on every dog. Existing members keep their own lists — this sets
+	 * what a *new* profile of that stage starts with.
+	 */
+	async function toggleStageCategory(stage: string | null, catId: string) {
+		if (!activeFamilyId || !stage) return;
+		const cur = stageSetFor(stage);
+		const on = cur.includes(catId);
+		const nextSet = on ? cur.filter((c) => c !== catId) : [...cur, catId];
+		// Keep the vocabulary's order, so the template's sense of "most important
+		// first" survives a toggle and Quick Actions stay sensible.
+		const ordered = CATEGORIES.map((c) => c.id).filter((id) => nextSet.includes(id));
+		stageDraft = { ...stageDraft, [stage]: ordered };
+		const merged = { ...(familySettings?.stageCategories ?? {}), [stage]: ordered };
+		try {
+			await familiesAPI.updateSettings(activeFamilyId, { stageCategories: merged });
+			if (familySettings) familySettings.stageCategories = merged;
+		} catch (err: any) {
+			error = err.response?.data?.error || 'Could not update the stage.';
 		}
 	}
 
@@ -1057,16 +1078,6 @@
 									</button>
 								</div>
 								<div class="border-t border-line-soft pt-4">
-									<h4 class="font-display font-semibold mb-3">Mobile quick links</h4>
-									<p class="text-xs text-ink-soft mb-2">Choose which tracking items appear in the bottom quick row on your phone.</p>
-									<div class="flex flex-wrap gap-2">
-										{#each CATEGORIES as cat}
-											<button type="button" on:click={() => toggleQuickLink(cat.id)} class="{quickLinks.includes(cat.id) ? 'bg-accent text-on-accent' : 'bg-surface2 text-ink-soft'} px-3 py-1 rounded-full text-sm border"><svelte:component this={cat.icon} class="w-4 h-4 inline mr-1" /> {cat.label}</button>
-										{/each}
-									</div>
-									<p class="text-xs text-ink-soft mt-2">{quickLinks.length} selected</p>
-								</div>
-								<div class="border-t border-line-soft pt-4">
 									<h4 class="font-display font-semibold mb-3">Family</h4>
 									<p class="text-sm text-ink-soft mb-2">Family: <span class="text-ink font-medium">{activeFamily?.name} <span class="text-accent font-mono text-sm">({activeFamily?.familyCode})</span></span></p>
 									<p class="text-sm text-ink-soft mb-2">Your role: <span class="text-ink font-medium">{activeFamily?.role || 'member'}</span></p>
@@ -1098,6 +1109,35 @@
 										{/each}
 									</div>
 								</div>
+								{#if familySettings}
+									<div class="border-t border-line-soft pt-4 mt-5">
+										<h4 class="font-display font-semibold text-sm mb-1">Categories by stage</h4>
+										<p class="text-sm text-ink-soft mb-3">
+											What a <em>new</em> profile starts with. An infant, a child, an adult and a pet do not track the same things.
+											Say it once here for the whole family; people you have already added keep their own choices.
+										</p>
+										<div class="flex flex-wrap gap-2 mb-3">
+											{#each Object.keys(familySettings.defaultStageCategories ?? {}) as stage}
+												<button
+													type="button"
+													on:click={() => (stageEditor = stageEditor === stage ? null : stage)}
+													class="px-3 py-1.5 rounded-full text-sm font-semibold border {stageEditor === stage ? 'bg-primary text-on-primary border-primary' : 'bg-surface2 text-ink-soft border-line-soft hover:text-ink'}"
+												>{stage}</button>
+											{/each}
+										</div>
+										{#if stageEditor}
+											<div class="flex flex-col gap-2">
+												{#each CATEGORIES as cat}
+													<ToggleSwitch
+														checked={stageSetFor(stageEditor).includes(cat.id)}
+														label={cat.label}
+														onToggle={() => toggleStageCategory(stageEditor, cat.id)}
+													/>
+												{/each}
+											</div>
+										{/if}
+									</div>
+								{/if}
 								{#if familySettings}
 									<div class="border-t border-line-soft pt-4">
 										<h4 class="font-display font-semibold text-sm mb-1">Choices when logging</h4>
@@ -1176,11 +1216,11 @@
 							<div class="bg-surface rounded-lg shadow-card p-4 md:p-6 border border-line-soft mb-4">
 								<h3 class="text-lg font-display font-semibold mb-2">People in {activeFamily?.name}</h3>
 								<p class="text-sm text-ink-soft mb-3">Family members are people in the household (children and adults). Accounts are optional and can be linked through invitations.</p>
-								{#if babies.length === 0}
+								{#if profiles.length === 0}
 									<p class="text-sm text-ink-soft">No members yet.</p>
 								{:else}
 									<ul class="divide-y divide-line-soft">
-										{#each babies as baby}
+										{#each profiles as baby}
 											<li class="py-2 flex items-start justify-between gap-3">
 												<div>
 													<p class="text-sm font-semibold text-ink">{baby.name}</p>
@@ -1213,15 +1253,26 @@
 							</div>
 							<div class="bg-surface rounded-lg shadow-card p-4 md:p-6 border border-line-soft">
 								<h3 class="text-lg font-display font-semibold mb-3">Add a family member</h3>
-								<p class="text-xs text-ink-soft mb-3">Adults can exist without accounts. Add an email and invite them later. Children create a trackable profile for feeds/sleep/diapers.</p>
+								<p class="text-xs text-ink-soft mb-3">Adults can exist without accounts. Add an email and invite them later. Children and pets get a profile you can log against.</p>
 								<form on:submit={addFamilyMember}>
 									<div class="mb-2">
 										<label for="member-type-x" class="block text-sm font-medium text-ink-soft mb-1">Member Type</label>
 										<select id="member-type-x" bind:value={memberType} class="w-full px-3 py-2 border border-line rounded-md">
 											<option value="child" selected>Child</option>
 											<option value="adult">Adult</option>
+											<option value="pet">Pet</option>
 										</select>
 									</div>
+									{#if memberType === 'child'}
+										<div class="mb-2">
+											<label for="member-stage-x" class="block text-sm font-medium text-ink-soft mb-1">Stage</label>
+											<select id="member-stage-x" bind:value={memberStage} class="w-full px-3 py-2 border border-line rounded-md">
+												<option value="infant">Infant</option>
+												<option value="child">Child</option>
+											</select>
+											<p class="text-xs text-ink-soft mt-1">Sets which categories start switched on.</p>
+										</div>
+									{/if}
 									<div class="mb-2">
 										<label for="member-name-x" class="block text-sm font-medium text-ink-soft mb-1">Name</label>
 										<input id="member-name-x" bind:value={newMemberName} required class="w-full px-3 py-2 border border-line rounded-md" placeholder="Name" />
@@ -1304,7 +1355,7 @@
 										<label for="import-target" class="block text-sm font-medium text-ink-soft mb-1">Assign to family member</label>
 										<select id="import-target" bind:value={importTargetBabyId} class="w-full px-3 py-2 border border-line rounded-md bg-surface text-ink">
 											<option value={null}>— choose a member —</option>
-											{#each babies as baby}
+											{#each profiles as baby}
 												<option value={baby.id}>{baby.name}</option>
 											{/each}
 										</select>

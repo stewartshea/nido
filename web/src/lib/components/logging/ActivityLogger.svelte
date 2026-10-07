@@ -8,6 +8,7 @@
 	import VaccineLogger from './VaccineLogger.svelte';
 	import MoodLogger from './MoodLogger.svelte';
 	import JournalLogger from './JournalLogger.svelte';
+	import { isMilestoneKind } from '$lib/shared';
 
 	/** The one place every log action goes through, whichever page opened it. */
 	export let kind: string;
@@ -27,7 +28,10 @@
 		<SleepLogger {memberId} on:saved on:error />
 	{:else if kind === 'growth'}
 		<GrowthLogger {memberId} on:saved on:error />
-	{:else if kind === 'milestones' || kind === 'firsts' || kind === 'routines' || kind === 'medical'}
+	{:else if isMilestoneKind(kind)}
+		<!-- Every milestone-backed kind renders here. Listing them by hand is what
+		     left medication, vitamins, appointments and grooming with no form at
+		     all: they were simply not in the list. -->
 		<MilestoneLogger {kind} {familyId} {memberId} on:saved on:error />
 	{:else if kind === 'vaccines'}
 		<VaccineLogger {memberId} on:saved on:error />

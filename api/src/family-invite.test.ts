@@ -143,7 +143,7 @@ describe('family invitations', () => {
 			const token = await seedInvitation(owner.familyId, guest.email, owner.userId, 'tok-data');
 			const guestDb = getFamilyClient(guest.familyId);
 			await guestDb.execute({
-				sql: 'INSERT INTO babies (household_id, name) VALUES (?, ?)',
+				sql: 'INSERT INTO subjects (household_id, name) VALUES (?, ?)',
 				args: [NAMESPACE_HOUSEHOLD_ID, 'Charlie'],
 			});
 

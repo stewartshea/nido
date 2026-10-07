@@ -25,7 +25,7 @@ what makes `docker compose up -d` a safe upgrade.
 /data
 ├── registry.db            # email → family routing, app settings
 ├── db/<familyId>.db        # one encrypted file per family
-└── photos/                # uploads
+└── blobs/                # uploads
 ```
 
 `api/Dockerfile` copies only source (`src`, `tsconfig.json`, manifests) and
@@ -45,7 +45,7 @@ build daemon or be baked into an image, regardless of which Compose file or
 | `docker-compose.yml` (root) | `./data` bind mount | Development — data as plain, inspectable host files |
 | `deploy/docker-compose/docker-compose.yml` | `nido-data` named volume | Single-host deployment |
 
-The root file bind-mounts the host folder so the databases and photos live as
+The root file bind-mounts the host folder so the databases and blobs live as
 ordinary files you can inspect and back up with `tar`. The deploy file uses a
 named volume, which needs a `docker run --rm -v …` incantation to archive.
 

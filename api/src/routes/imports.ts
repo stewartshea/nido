@@ -26,33 +26,33 @@ async function getHouseholdId(db: SqliteFacade, userId: string): Promise<number 
 async function resolveBaby(db: SqliteFacade, userId: string, name: string, gender: string, birthDate: string, targetMemberId?: number | null) {
 	if (targetMemberId) {
 		const scope = await resolveTrackableMember(db, userId, targetMemberId);
-		if (!scope) return { householdId: null, babyId: null };
-		const hh = await db.execute({ sql: 'SELECT household_id AS householdId FROM babies WHERE id = ? LIMIT 1', args: [scope.babyId] });
-		return { householdId: Number(hh.rows[0]?.householdId ?? 0), babyId: scope.babyId };
+		if (!scope) return { householdId: null, subjectId: null };
+		const hh = await db.execute({ sql: 'SELECT household_id AS householdId FROM subjects WHERE id = ? LIMIT 1', args: [scope.subjectId] });
+		return { householdId: Number(hh.rows[0]?.householdId ?? 0), subjectId: scope.subjectId };
 	}
 
 	const householdId = await getHouseholdId(db, userId);
-	if (!householdId) return { householdId, babyId: null };
+	if (!householdId) return { householdId, subjectId: null };
 
 	const existing = await db.execute({
-		sql: 'SELECT legacy_baby_id FROM family_members WHERE household_id = ? AND name = ? AND legacy_baby_id IS NOT NULL LIMIT 1',
+		sql: 'SELECT legacy_subject_id FROM family_members WHERE household_id = ? AND name = ? AND legacy_subject_id IS NOT NULL LIMIT 1',
 		args: [householdId, name],
 	});
-	const existingBaby = existing.rows[0]?.legacy_baby_id;
-	if (existingBaby) return { householdId, babyId: Number(existingBaby) };
+	const existingBaby = existing.rows[0]?.legacy_subject_id;
+	if (existingBaby) return { householdId, subjectId: Number(existingBaby) };
 
 	const ins = await db.execute({
-		sql: `INSERT INTO babies (household_id, name, birth_date, gender, type, created_at, updated_at)
+		sql: `INSERT INTO subjects (household_id, name, birth_date, gender, type, created_at, updated_at)
 		      VALUES (?, ?, ?, ?, 'child', ?, ?)`,
 		args: [householdId, name, birthDate || null, gender || null, isoNow(), isoNow()],
 	});
-	const babyId = Number(ins.lastInsertRowid);
+	const subjectId = Number(ins.lastInsertRowid);
 	await db.execute({
-		sql: `INSERT INTO family_members (household_id, legacy_baby_id, trackable, name, member_type, birth_date, gender, categories, created_at, updated_at)
+		sql: `INSERT INTO family_members (household_id, legacy_subject_id, trackable, name, member_type, birth_date, gender, categories, created_at, updated_at)
 		      VALUES (?, ?, 1, ?, 'child', ?, ?, ?, ?, ?)`,
-		args: [householdId, babyId, name, birthDate || null, gender || null, JSON.stringify(['feeds', 'diapers', 'sleep', 'growth']), isoNow(), isoNow()],
+		args: [householdId, subjectId, name, birthDate || null, gender || null, JSON.stringify(['feeds', 'diapers', 'sleep', 'growth']), isoNow(), isoNow()],
 	});
-	return { householdId, babyId };
+	return { householdId, subjectId };
 }
 
 // The import writes thousands of rows. In file mode the shared client is the
@@ -67,7 +67,7 @@ importRoutes.post('/narababy', async (c) => {
 	const file = form.get('file');
 	if (!file) return c.json({ error: 'Missing CSV file' }, 400);
 	if (typeof file === 'string') return c.json({ error: 'Expected multipart file upload' }, 400);
-	const targetBabyId = form.get('babyId') ? Number(form.get('babyId')) : null;
+	const targetBabyId = form.get('subjectId') ? Number(form.get('subjectId')) : null;
 	const importType = String(form.get('importType') ?? 'narababy');
 	const filename = typeof file === 'object' && 'name' in file ? String((file as any).name) : 'import.csv';
 
@@ -84,7 +84,7 @@ importRoutes.post('/narababy', async (c) => {
 		return c.json({ error: parsed.errors.join('; '), notes: parsed.notes }, 422);
 	}
 
-	const { babyId, householdId } = await resolveBaby(
+	const { subjectId, householdId } = await resolveBaby(
 		db,
 		userId,
 		parsed.baby?.name ?? 'Baby',
@@ -92,7 +92,7 @@ importRoutes.post('/narababy', async (c) => {
 		parsed.baby?.birthDate ?? '',
 		targetBabyId,
 	);
-	if (!babyId) {
+	if (!subjectId) {
 		return c.json({ error: targetBabyId ? 'Target family member not found or not accessible' : 'No household found for this user — register completes onboarding first' }, 409);
 	}
 
@@ -108,8 +108,8 @@ importRoutes.post('/narababy', async (c) => {
 	if (all.length > 0) {
 		const placeholders = all.map(() => '?').join(',');
 		const res = await db.execute({
-			sql: `SELECT activity_key FROM import_log WHERE baby_id = ? AND activity_key IN (${placeholders})`,
-			args: [babyId, ...all],
+			sql: `SELECT activity_key FROM import_log WHERE subject_id = ? AND activity_key IN (${placeholders})`,
+			args: [subjectId, ...all],
 		});
 		for (const r of res.rows) {
 			if (r !== undefined) existingKeys.add(String(r.activity_key ?? ''));
@@ -148,17 +148,17 @@ const now = isoNow();
 		const durationMs = f.durationSeconds ? Math.round(f.durationSeconds * 1000) : null;
 		const end = durationMs ? new Date(new Date(f.startTime).getTime() + durationMs).toISOString() : null;
 		await insert(
-			`INSERT INTO feedings (baby_id, start_time, end_time, duration, amount, type, side, notes, created_at, created_by)
+			`INSERT INTO feedings (subject_id, start_time, end_time, duration, amount, type, side, notes, created_at, created_by)
 			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			[babyId, f.startTime, end, durationMs, opt(f.amount), f.type, opt(f.side), opt(f.notes), now, userId],
+			[subjectId, f.startTime, end, durationMs, opt(f.amount), f.type, opt(f.side), opt(f.notes), now, userId],
 			'feedings', f.activityKey,
 		);
 	}
 	for (const d of diapers) {
 		await insert(
-			`INSERT INTO diapers (baby_id, change_time, type, color, consistency, notes, created_at, created_by)
+			`INSERT INTO diapers (subject_id, change_time, type, color, consistency, notes, created_at, created_by)
 			 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-			[babyId, d.changeTime, d.type, opt(d.color), opt(d.consistency), opt(d.notes), now, userId],
+			[subjectId, d.changeTime, d.type, opt(d.color), opt(d.consistency), opt(d.notes), now, userId],
 			'diapers', d.activityKey,
 		);
 	}
@@ -166,25 +166,25 @@ const now = isoNow();
 		const durationMs = s.durationSeconds ? Math.round(s.durationSeconds * 1000) : null;
 		const end = durationMs ? new Date(new Date(s.startTime).getTime() + durationMs).toISOString() : null;
 		await insert(
-			`INSERT INTO sleep (baby_id, start_time, end_time, duration, location, notes, created_at, created_by)
+			`INSERT INTO sleep (subject_id, start_time, end_time, duration, location, notes, created_at, created_by)
 			 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-			[babyId, s.startTime, end, durationMs, null, opt(s.notes), now, userId],
+			[subjectId, s.startTime, end, durationMs, null, opt(s.notes), now, userId],
 			'sleep', s.activityKey,
 		);
 	}
 	for (const g of growths) {
 		await insert(
-			`INSERT INTO growth (baby_id, measurement_date, weight, height, head_circumference, unit_system, notes, created_at, created_by)
+			`INSERT INTO growth (subject_id, measurement_date, weight, height, head_circumference, unit_system, notes, created_at, created_by)
 			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			[babyId, g.measurementDate, opt(g.weight), opt(g.height), opt(g.headCircumference), g.unitSystem, opt(g.notes), now, userId],
+			[subjectId, g.measurementDate, opt(g.weight), opt(g.height), opt(g.headCircumference), g.unitSystem, opt(g.notes), now, userId],
 			'growth', g.activityKey,
 		);
 	}
 	for (const m of milestones) {
 		await insert(
-			`INSERT INTO milestones (baby_id, title, description, achieved_date, category, created_at, created_by)
+			`INSERT INTO milestones (subject_id, title, description, achieved_date, category, created_at, created_by)
 			 VALUES (?, ?, ?, ?, ?, ?, ?)`,
-			[babyId, m.title, null, m.achievedDate, m.category, now, userId],
+			[subjectId, m.title, null, m.achievedDate, m.category, now, userId],
 			'milestones', m.activityKey,
 		);
 	}
@@ -193,9 +193,9 @@ const now = isoNow();
 	let runId: number | null = null;
 	if (totalInserted > 0) {
 		const runRes = await db.execute({
-			sql: `INSERT INTO import_runs (family_id, baby_id, importer_user_id, import_type, filename, created_at, counts)
+			sql: `INSERT INTO import_runs (family_id, subject_id, importer_user_id, import_type, filename, created_at, counts)
 			      VALUES (?, ?, ?, ?, ?, ?, ?)`,
-			args: [householdId, babyId, userId, importType, filename, now, JSON.stringify({
+			args: [householdId, subjectId, userId, importType, filename, now, JSON.stringify({
 				feedings: feedings.length, diapers: diapers.length, sleep: sleeps.length, growth: growths.length, milestones: milestones.length,
 			})],
 		});
@@ -210,8 +210,8 @@ const now = isoNow();
 		for (const item of insertedIds[kind]) {
 			try {
 				await db.execute({
-					sql: 'INSERT INTO import_log (activity_key, kind, baby_id, run_id, record_id, record_table, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
-					args: [item.activityKey, tableForKind[kind], babyId, runId, item.id, kind, now],
+					sql: 'INSERT INTO import_log (activity_key, kind, subject_id, run_id, record_id, record_table, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+					args: [item.activityKey, tableForKind[kind], subjectId, runId, item.id, kind, now],
 				});
 			} catch {
 				// idempotency race — already recorded
@@ -222,7 +222,7 @@ const now = isoNow();
 	return c.json({
 		message: 'Import complete',
 		runId,
-		babyId,
+		subjectId,
 		householdId,
 		created,
 		skippedDuplicate,
@@ -239,8 +239,8 @@ importRoutes.get('/summary', async (c) => {
 
 	const res = await db.execute({
 		sql: `SELECT kind, COUNT(*) AS n FROM import_log
-		      JOIN babies ON babies.id = import_log.baby_id
-		      WHERE babies.household_id = ?
+		      JOIN subjects ON subjects.id = import_log.subject_id
+		      WHERE subjects.household_id = ?
 		      GROUP BY kind`,
 		args: [householdId],
 	});
@@ -251,13 +251,13 @@ importRoutes.get('/summary', async (c) => {
 	return c.json({ imported: res.rows.length, perKind });
 });
 
-async function familyScopeOfBaby(db: SqliteFacade, userId: string, babyId: number | null) {
-	if (babyId) {
+async function familyScopeOfBaby(db: SqliteFacade, userId: string, subjectId: number | null) {
+	if (subjectId) {
 		const res = await db.execute({
-			sql: `SELECT b.household_id AS family_id FROM babies b
+			sql: `SELECT b.household_id AS family_id FROM subjects b
 			      JOIN user_households uh ON uh.household_id = b.household_id
 			      WHERE b.id = ? AND uh.user_id = ? LIMIT 1`,
-			args: [babyId, userId],
+			args: [subjectId, userId],
 		});
 		const row = res.rows[0];
 		if (row) return Number(row.family_id);
@@ -270,21 +270,21 @@ async function familyScopeOfBaby(db: SqliteFacade, userId: string, babyId: numbe
 importRoutes.get('/runs', async (c) => {
 	const userId = c.get('userId');
 	const db = c.get('db');
-	const babyId = c.req.query('babyId') ? Number(c.req.query('babyId')) : null;
+	const subjectId = c.req.query('subjectId') ? Number(c.req.query('subjectId')) : null;
 
-	const familyId = await familyScopeOfBaby(db, userId, babyId);
+	const familyId = await familyScopeOfBaby(db, userId, subjectId);
 	if (!familyId) return c.json({ error: 'Not a member of this family' }, 403);
 
 	const res = await db.execute({
-		sql: `SELECT id, family_id, baby_id, importer_user_id, import_type, filename, created_at, counts
+		sql: `SELECT id, family_id, subject_id, importer_user_id, import_type, filename, created_at, counts
 		      FROM import_runs
-		      WHERE family_id = ? ${babyId ? 'AND baby_id = ?' : ''}
+		      WHERE family_id = ? ${subjectId ? 'AND subject_id = ?' : ''}
 		      ORDER BY created_at DESC`,
-		args: babyId ? [familyId, babyId] : [familyId],
+		args: subjectId ? [familyId, subjectId] : [familyId],
 	});
 	const runs = res.rows.map((r: any) => ({
 		id: Number(r.id),
-		babyId: r.baby_id ? Number(r.baby_id) : null,
+		subjectId: r.subject_id ? Number(r.subject_id) : null,
 		importerUserId: r.importer_user_id ? String(r.importer_user_id) : null,
 		importType: r.import_type,
 		filename: r.filename,
@@ -300,7 +300,7 @@ importRoutes.post('/runs/:runId{[0-9]+}/undo', async (c) => {
 	const runId = parseInt(c.req.param('runId'));
 
 	const runRes = await db.execute({
-		sql: `SELECT id, family_id, baby_id FROM import_runs WHERE id = ? LIMIT 1`,
+		sql: `SELECT id, family_id, subject_id FROM import_runs WHERE id = ? LIMIT 1`,
 		args: [runId],
 	});
 	const run = runRes.rows[0] as any;
@@ -329,13 +329,13 @@ importRoutes.post('/runs/:runId{[0-9]+}/undo', async (c) => {
 		deleted[key]++;
 	}
 
-	if (run.baby_id) {
+	if (run.subject_id) {
 		const keysRes = await db.execute({
 			sql: `SELECT activity_key FROM import_log WHERE run_id = ?`,
 			args: [runId],
 		});
 		for (const r of keysRes.rows as any[]) {
-			await db.execute({ sql: 'DELETE FROM import_log WHERE activity_key = ? AND baby_id = ?', args: [String(r.activity_key), Number(run.baby_id)] });
+			await db.execute({ sql: 'DELETE FROM import_log WHERE activity_key = ? AND subject_id = ?', args: [String(r.activity_key), Number(run.subject_id)] });
 		}
 	}
 	await db.execute({ sql: "UPDATE import_runs SET counts = ? WHERE id = ?", args: [JSON.stringify({ ...deleted, undone: true }), runId] });

@@ -69,7 +69,7 @@ server {
 		proxy_set_header X-Forwarded-Proto $scheme;
 	}
 
-	# photos can be large; the default 1m is a common surprise
+	# blobs can be large; the default 1m is a common surprise
 	client_max_body_size 25m;
 }
 ```

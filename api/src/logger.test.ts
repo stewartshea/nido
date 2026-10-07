@@ -104,7 +104,7 @@ describe('level filtering', () => {
 describe('record shape', () => {
   it('writes one JSON object per line with a stable envelope', () => {
     const { logger, lines, records } = harness({ base: { service: 'nido-api' } });
-    logger.info('baby created', { babyId: 7 });
+    logger.info('baby created', { subjectId: 7 });
 
     expect(lines).toHaveLength(1);
     expect(lines[0].endsWith('\n')).toBe(true);
@@ -113,7 +113,7 @@ describe('record shape', () => {
       level: 'info',
       msg: 'baby created',
       service: 'nido-api',
-      babyId: 7,
+      subjectId: 7,
     });
   });
 

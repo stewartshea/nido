@@ -1,7 +1,7 @@
 # Nido — Docker Compose
 
 A self-contained Compose deployment: the API and the web client behind the
-same network, with the SQLite DB + uploaded photos persisted on a named volume.
+same network, with the SQLite DB + encrypted uploads persisted on a named volume.
 
 ## Quick start
 
@@ -22,7 +22,7 @@ docker compose up -d --build
 
 ## What this does
 
-- **api** — Hono API; binds `3000`. Persists the SQLite database and photos
+- **api** — Hono API; binds `3000`. Persists the SQLite databases and encrypted blobs
   on the `nido-data` named volume mounted at `/data`.
 - **web** — SvelteKit client; binds `3001`. The web server proxies `/api`
   to the api service via the `API_PROXY_TARGET` you set in `.env`.

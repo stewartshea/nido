@@ -64,7 +64,7 @@ failure to diagnose.
 ## Registry vs family data
 
 `registry.db` only maps email → family id and holds instance-wide settings
-(`app_settings`). Per-family application data — records, photos, settings —
+(`app_settings`). Per-family application data — records, blobs, settings —
 belongs in the family namespace and must never be written to the registry.
 
 ## API conventions
@@ -74,7 +74,7 @@ belongs in the family namespace and must never be written to the registry.
 | Auth | JWT with a 24h expiry, carrying `userId`, `email`, `familyId`, `role`. Never mint a token without an expiry; never trust a `familyId` from anywhere but a verified JWT. |
 | Query construction | Parameterized only. Every route uses `execute({ sql: '…', args: [...] })`. |
 | Body validation | Every mutating request body goes through `zod` before it touches the database. |
-| Uploads | MIME-validated (`mime.startsWith('image/')`) and scoped by `photos.family_id`. Never trust a client-supplied filename or path. |
+| Uploads | MIME-validated (`mime.startsWith('image/')`) and scoped by `blobs.family_id`. Never trust a client-supplied filename or path. |
 | Bulk movement | `GET /families/:id/export` and `POST /families/:id/restore`, owner/admin-gated. Extend these rather than adding a parallel import path. |
 
 ## Client-side
@@ -139,7 +139,7 @@ seam a future queue would slot into, is in
 ├── registry.db              # email → family routing, app settings
 ├── db/
 │   └── <familyId>.db        # one encrypted file per family
-└── photos/                  # uploads (not encrypted at rest)
+└── blobs/                  # encrypted uploads (avatars + attachments)
 ```
 
 The databases are never part of an image, so image builds and pulls carry no

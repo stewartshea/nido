@@ -4,11 +4,15 @@ import { z } from 'zod';
 import { resolveTrackableMember, attachCreatedBy } from '../member-scope';
 import { parsePaging, countMatching } from '../paging';
 import { type AuthEnv } from '../auth';
+import { MILESTONE_CATEGORY_IDS } from '../vocabulary';
 
 const milestoneRoutes = new Hono<AuthEnv>();
 
 // Zod schemas for validation
-const MILESTONE_KINDS = ['milestones', 'firsts', 'routines', 'medical'] as const;
+// The kinds that share this entity are the milestone-backed categories, defined
+// once in vocabulary.ts. Deriving rather than listing is the point: a category
+// added there is loggable here without anyone remembering to come back.
+const MILESTONE_KINDS = MILESTONE_CATEGORY_IDS;
 
 const createMilestoneSchema = z.object({
   memberId: z.number(),
@@ -44,22 +48,22 @@ milestoneRoutes.get('/', async (c) => {
     if (!scope) {
       return c.json({ error: 'Member not found or access denied' }, 404);
     }
-    const babyId = scope.babyId;
+    const subjectId = scope.subjectId;
     
     // Get milestones for the baby
     const { limit, offset } = parsePaging((k) => c.req.query(k));
 
     const milestonesResult = await db.execute({
       sql: `
-      SELECT id, baby_id, title, description, achieved_date, kind, category, tags, created_at, created_by
+      SELECT id, subject_id, title, description, achieved_date, kind, category, tags, created_at, created_by
       FROM milestones
-      WHERE baby_id = ?
+      WHERE subject_id = ?
       ORDER BY achieved_date DESC, id DESC
       LIMIT ? OFFSET ?
     `,
-      args: [babyId, limit, offset]
+      args: [subjectId, limit, offset]
     });
-    const total = await countMatching(db, 'milestones', [babyId]);
+    const total = await countMatching(db, 'milestones', [subjectId]);
 
     const milestones = milestonesResult.rows as any[];
 
@@ -81,9 +85,9 @@ milestoneRoutes.get('/:id{[0-9]+}', async (c) => {
     // Verify user has access to this milestone
     const milestoneResult = await db.execute({
       sql: `
-      SELECT m.id, m.baby_id, m.title, m.description, m.achieved_date, m.kind, m.category, m.created_at, m.created_by
+      SELECT m.id, m.subject_id, m.title, m.description, m.achieved_date, m.kind, m.category, m.created_at, m.created_by
       FROM milestones m
-      JOIN babies b ON m.baby_id = b.id
+      JOIN subjects b ON m.subject_id = b.id
       JOIN households h ON b.household_id = h.id
       JOIN user_households uh ON h.id = uh.household_id
       WHERE m.id = ? AND uh.user_id = ?
@@ -113,7 +117,7 @@ milestoneRoutes.post('/', zValidator('json', createMilestoneSchema), async (c) =
     if (!scope) {
       return c.json({ error: 'Member not found or access denied' }, 404);
     }
-    const babyId = scope.babyId;
+    const subjectId = scope.subjectId;
     
     const tagsJson = tags?.length ? JSON.stringify(tags) : null;
 
@@ -121,11 +125,11 @@ milestoneRoutes.post('/', zValidator('json', createMilestoneSchema), async (c) =
     const result = await db.execute({
       sql: `
         INSERT INTO milestones (
-          baby_id, title, description, achieved_date, kind, category, tags, created_at, created_by
+          subject_id, title, description, achieved_date, kind, category, tags, created_at, created_by
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
       args: [
-        babyId, 
+        subjectId, 
         title, 
         description || null, 
         achievedDate, 
@@ -140,7 +144,7 @@ milestoneRoutes.post('/', zValidator('json', createMilestoneSchema), async (c) =
     // Return the created milestone
     const milestoneResult = await db.execute({
       sql: `
-      SELECT id, baby_id, title, description, achieved_date, kind, category, created_at, created_by
+      SELECT id, subject_id, title, description, achieved_date, kind, category, created_at, created_by
       FROM milestones
       WHERE id = ?
     `,
@@ -168,9 +172,9 @@ milestoneRoutes.put('/:id{[0-9]+}', zValidator('json', updateMilestoneSchema), a
     // Verify user has access to this milestone
     const milestoneCheck = await db.execute({
       sql: `
-      SELECT m.id, m.baby_id
+      SELECT m.id, m.subject_id
       FROM milestones m
-      JOIN babies b ON m.baby_id = b.id
+      JOIN subjects b ON m.subject_id = b.id
       JOIN households h ON b.household_id = h.id
       JOIN user_households uh ON h.id = uh.household_id
       WHERE m.id = ? AND uh.user_id = ?
@@ -232,7 +236,7 @@ milestoneRoutes.put('/:id{[0-9]+}', zValidator('json', updateMilestoneSchema), a
     // Return updated milestone
     const updatedMilestoneResult = await db.execute({
       sql: `
-      SELECT id, baby_id, title, description, achieved_date, kind, category, created_at, created_by
+      SELECT id, subject_id, title, description, achieved_date, kind, category, created_at, created_by
       FROM milestones
       WHERE id = ?
     `,
@@ -261,7 +265,7 @@ milestoneRoutes.delete('/:id{[0-9]+}', async (c) => {
       sql: `
       SELECT m.id
       FROM milestones m
-      JOIN babies b ON m.baby_id = b.id
+      JOIN subjects b ON m.subject_id = b.id
       JOIN households h ON b.household_id = h.id
       JOIN user_households uh ON h.id = uh.household_id
       WHERE m.id = ? AND uh.user_id = ?
@@ -294,7 +298,7 @@ milestoneRoutes.get('/categories', async (c) => {
     const res = await db.execute({
       sql: `
       SELECT DISTINCT category FROM milestones m
-      JOIN babies b ON m.baby_id = b.id
+      JOIN subjects b ON m.subject_id = b.id
       JOIN households h ON b.household_id = h.id
       JOIN user_households uh ON h.id = uh.household_id
       WHERE uh.user_id = ? AND m.category IS NOT NULL AND trim(m.category) <> ''
@@ -325,12 +329,12 @@ milestoneRoutes.get('/trends', async (c) => {
 
     const scope = await resolveTrackableMember(db, userId, memberId);
     if (!scope) return c.json({ error: 'Member not found or access denied' }, 404);
-    const babyId = scope.babyId;
+    const subjectId = scope.subjectId;
 
     const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
 
-    let sql = 'SELECT category, COUNT(*) as count FROM milestones WHERE baby_id = ? AND achieved_date >= ?';
-    const args: any[] = [babyId, since];
+    let sql = 'SELECT category, COUNT(*) as count FROM milestones WHERE subject_id = ? AND achieved_date >= ?';
+    const args: any[] = [subjectId, since];
     if (category) { sql += ' AND category = ?'; args.push(category); }
     sql += ' GROUP BY category ORDER BY count DESC';
 

@@ -4,7 +4,6 @@
 	import { authAPI, userAPI, familiesAPI, feedingAPI, diaperAPI, sleepAPI, growthAPI, healthAPI, importsAPI, milestoneAPI, vaccinationAPI, settingsAPI, moodAPI, journalAPI, tokenExpired } from '$lib/api';
 	import { authStore, authActions } from '$lib/stores/authStore';
 	import { uiStore, uiActions } from '$lib/stores/uiStore';
-	import PhotoStrip from '$lib/components/PhotoStrip.svelte';
 	import ToggleSwitch from '$lib/components/ToggleSwitch.svelte';
 	import { CATEGORIES, defaultMemberId } from '$lib/shared';
 	import { Home, Timer, AlertCircle, Check } from 'lucide-svelte';
@@ -32,29 +31,9 @@
 	let password = '';
 	let showForgot = false;
 	let pendingResetToken = '';
-	// Per-user mobile quick links (category ids), persisted in localStorage.
-	let quickLinks: string[] = [];
-	const QUICK_LINK_DEFAULT = ['feeds', 'diapers', 'sleep'];
-
-	function quickLinksKey(userId: number | null) {
-		return `nido.quicklinks.${userId ?? $authStore.user?.id}`;
-	}
-
-	function loadQuickLinks() {
-		const key = quickLinksKey($authStore.user?.id ?? null);
-		try {
-			const raw = localStorage.getItem(key);
-			const parsed = raw ? JSON.parse(raw) : null;
-			if (Array.isArray(parsed) && parsed.length > 0) quickLinks = parsed;
-			else quickLinks = [...QUICK_LINK_DEFAULT];
-		} catch {
-			quickLinks = [...QUICK_LINK_DEFAULT];
-		}
-	}
-
 	let loading = false;
 
-	let babies: any[] = [];
+	let profiles: any[] = [];
 	let families: any[] = [];
 	let activeFamily: any = null;
 	let activeFamilyId: string | null = null;
@@ -63,7 +42,18 @@
 	let defaultProfileId: number | null = null;
 	let summary: any = null;
 	// Feeds, sleep, diapers and the rest only exist for a trackable profile.
-	let selectedIsTrackable = true;
+	/**
+	 * Whether the selected person can be logged against.
+	 *
+	 * Computed here rather than from a `$:` flag: reactive statements are
+	 * scheduled, not synchronous, so selectMember() would call refreshLists()
+	 * before the flag had recomputed and fetch the baby endpoints for whoever was
+	 * selected previously.
+	 */
+	function currentIsTrackable(): boolean {
+		const m = profiles.find((b) => Number(b.id) === selectedMemberId);
+		return !!m && m.trackable !== false;
+	}
 
 	// Tracking categories now live in $lib/shared.ts (single source of truth).
 	// Categories enabled for the selected member.
@@ -85,7 +75,6 @@
 	// Diaper detail form
 	// Sleep + growth backdated
 	// Milestone + vaccine manual forms
-	// Photos (toggle state only — the PhotoStrip component handles loading)
 	// Account
 
 	let feedStartedAt: number | null = null;
@@ -135,7 +124,7 @@
 
 	async function refreshSummary() {
 		if (!selectedMemberId) return;
-		if (!selectedIsTrackable) {
+		if (!currentIsTrackable()) {
 			// Baby tracking only. The person who created the household is an adult
 			// member of it, so a household with no child yet would otherwise fire a
 			// request that is refused.
@@ -152,7 +141,7 @@
 
 	async function refreshLists() {
 		if (!selectedMemberId) return;
-		if (!selectedIsTrackable) {
+		if (!currentIsTrackable()) {
 			// Feeds, sleep, diapers, growth, moods and the rest belong to a baby
 			// profile, and the endpoints reject an adult one.
 			feedings = [];
@@ -198,7 +187,7 @@
 			families = res.data.families;
 			if (families.length === 0) {
 				selectedMemberId = null;
-				babies = [];
+				profiles = [];
 				return;
 			}
 			// Prefer the saved default family, else the first.
@@ -210,7 +199,7 @@
 			const members = membersRes.data.members;
 			// Members are the profiles the tracker operates on (child/adult; "newborn"
 			// is a child with newborn categories enabled).
-			babies = members.map((m) => ({
+			profiles = members.map((m) => ({
 				id: m.id,
 				name: m.name,
 				birth_date: m.birthDate ?? '',
@@ -220,20 +209,20 @@
 				avatar: m.avatar ?? null,
 				categories: Array.isArray(m.categories) ? m.categories : [],
 				trackable: m.trackable !== false,
-				legacyBabyId: m.legacyBabyId ?? null,
+				legacySubjectId: m.legacySubjectId ?? null,
 			}));
 
-			if (babies.length > 0) {
+			if (profiles.length > 0) {
 				const savedDefault = defaultProfileId ?? null;
-				const match = savedDefault ? babies.find((b) => Number(b.id) === savedDefault) : null;
-				selectedMemberId = match ? Number(match.id) : defaultMemberId(babies);
-				const selected = babies.find((b) => Number(b.id) === selectedMemberId);
-				selectedIsTrackable = selected ? selected.trackable !== false : false;
-				activeCategories = selected?.categories?.length ? selected.categories : CATEGORIES.map((c) => c.id);
+				const match = savedDefault ? profiles.find((b) => Number(b.id) === savedDefault) : null;
+				selectedMemberId = match ? Number(match.id) : defaultMemberId(profiles);
+				const selected = profiles.find((b) => Number(b.id) === selectedMemberId);
+				// The API resolves this to the member's own set, constrained by their
+				// stage. An empty list is a real answer, not a prompt to show everything.
+				activeCategories = selected?.categories ?? [];
 				if (!activeCategories.includes(activeTab)) activeTab = activeCategories[0] || 'feeds';
 			} else {
 				selectedMemberId = null;
-				selectedIsTrackable = false;
 				activeCategories = [];
 			}
 			await Promise.all([loadFamilySettings(), refreshLists(), refreshSummary(), loadInvitations(), loadImportRuns()]);
@@ -252,7 +241,7 @@
 	function handleLogout() {
 		authActions.logout();
 		isAuthenticated = false;
-		babies = [];
+		profiles = [];
 		selectedMemberId = null;
 		feedStartedAt = null;
 		leftStartedAt = null;
@@ -310,7 +299,6 @@
 				});
 				isPanelAdmin = Number(u.is_platform_admin ?? 0) === 1;
 			}
-			loadQuickLinks();
 		} catch {
 			isPanelAdmin = false;
 		}
@@ -414,7 +402,7 @@
 					</div>
 				</div>
 
-				{#if babies.length > 0}
+				{#if profiles.length > 0}
 					<div class="bg-surface rounded-lg shadow-card p-4 md:p-6 mb-6">
 						<h3 class="text-xl font-display font-semibold mb-3">Homes</h3>
 						<p class="text-ink-soft mb-4">

@@ -5,7 +5,7 @@ description: Back up the Nido data volume and the master key, and restore from e
 
 A Nido backup is **two things**, and they are useless apart:
 
-1. The data volume — `registry.db`, `db/<familyId>.db`, `photos/`
+1. The data volume — `registry.db`, `db/<familyId>.db`, `blobs/`
 2. The `NIDO_MASTER_KEY` that keys it
 
 The volume alone is ciphertext. The key alone is nothing. A backup of one
@@ -59,11 +59,11 @@ tar czf ~/nido-data-$(date +%F).tgz -C ./data .
 kubectl -n nido exec deploy/nido -- tar czf - -C /data . > nido-data-$(date +%F).tgz
 ```
 
-## 3. Back up photos
+## 3. Back up blobs
 
-Photos live in the same volume under `/data/photos`, so the volume archive
-already contains them. Know this, because it means photos are usually the bulk
-of the backup — a few years of daily photos will dwarf every database Nido
+Photos live in the same volume under `/data/blobs`, so the volume archive
+already contains them. Know this, because it means blobs are usually the bulk
+of the backup — a few years of daily blobs will dwarf every database Nido
 writes.
 
 ## Automate it

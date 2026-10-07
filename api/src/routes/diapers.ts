@@ -40,22 +40,22 @@ diaperRoutes.get('/', async (c) => {
     if (!scope) {
       return c.json({ error: 'Member not found or access denied' }, 404);
     }
-    const babyId = scope.babyId;
+    const subjectId = scope.subjectId;
     
     // Get diapers for the baby
     const { limit, offset } = parsePaging((k) => c.req.query(k));
 
     const diapersResult = await db.execute({
       sql: `
-      SELECT id, baby_id, change_time, type, color, consistency, notes, created_at, created_by
+      SELECT id, subject_id, change_time, type, color, consistency, notes, created_at, created_by
       FROM diapers
-      WHERE baby_id = ?
+      WHERE subject_id = ?
       ORDER BY change_time DESC, id DESC
       LIMIT ? OFFSET ?
     `,
-      args: [babyId, limit, offset]
+      args: [subjectId, limit, offset]
     });
-    const total = await countMatching(db, 'diapers', [babyId]);
+    const total = await countMatching(db, 'diapers', [subjectId]);
 
     const diapers = diapersResult.rows as any[];
 
@@ -77,9 +77,9 @@ diaperRoutes.get('/:id{[0-9]+}', async (c) => {
     // Verify user has access to this diaper
     const diaperResult = await db.execute({
       sql: `
-      SELECT d.id, d.baby_id, d.change_time, d.type, d.color, d.consistency, d.notes, d.created_at, d.created_by
+      SELECT d.id, d.subject_id, d.change_time, d.type, d.color, d.consistency, d.notes, d.created_at, d.created_by
       FROM diapers d
-      JOIN babies b ON d.baby_id = b.id
+      JOIN subjects b ON d.subject_id = b.id
       JOIN households h ON b.household_id = h.id
       JOIN user_households uh ON h.id = uh.household_id
       WHERE d.id = ? AND uh.user_id = ?
@@ -109,17 +109,17 @@ diaperRoutes.post('/', zValidator('json', createDiaperSchema), async (c) => {
     if (!scope) {
       return c.json({ error: 'Member not found or access denied' }, 404);
     }
-    const babyId = scope.babyId;
+    const subjectId = scope.subjectId;
     
     // Insert new diaper
     const result = await db.execute({
       sql: `
         INSERT INTO diapers (
-          baby_id, change_time, type, color, consistency, notes, created_at, created_by
+          subject_id, change_time, type, color, consistency, notes, created_at, created_by
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       `,
       args: [
-        babyId, 
+        subjectId, 
         changeTime, 
         type, 
         color || null, 
@@ -137,8 +137,8 @@ diaperRoutes.post('/', zValidator('json', createDiaperSchema), async (c) => {
     try {
       const linked = await db.execute({
         sql: `SELECT id, decrement_per_event FROM inventory_items
-              WHERE active = 1 AND event_category = 'diapers' AND baby_id = ?`,
-        args: [babyId],
+              WHERE active = 1 AND event_category = 'diapers' AND subject_id = ?`,
+        args: [subjectId],
       });
       for (const item of linked.rows as any[]) {
         const per = item.decrement_per_event === null || item.decrement_per_event === undefined ? 1 : Number(item.decrement_per_event);
@@ -165,7 +165,7 @@ diaperRoutes.post('/', zValidator('json', createDiaperSchema), async (c) => {
     // Return the created diaper
     const diaperResult = await db.execute({
       sql: `
-      SELECT id, baby_id, change_time, type, color, consistency, notes, created_at, created_by
+      SELECT id, subject_id, change_time, type, color, consistency, notes, created_at, created_by
       FROM diapers
       WHERE id = ?
     `,
@@ -193,9 +193,9 @@ diaperRoutes.put('/:id{[0-9]+}', zValidator('json', updateDiaperSchema), async (
     // Verify user has access to this diaper
     const diaperCheck = await db.execute({
       sql: `
-      SELECT d.id, d.baby_id
+      SELECT d.id, d.subject_id
       FROM diapers d
-      JOIN babies b ON d.baby_id = b.id
+      JOIN subjects b ON d.subject_id = b.id
       JOIN households h ON b.household_id = h.id
       JOIN user_households uh ON h.id = uh.household_id
       WHERE d.id = ? AND uh.user_id = ?
@@ -252,7 +252,7 @@ diaperRoutes.put('/:id{[0-9]+}', zValidator('json', updateDiaperSchema), async (
     // Return updated diaper
     const updatedDiaperResult = await db.execute({
       sql: `
-      SELECT id, baby_id, change_time, type, color, consistency, notes, created_at, created_by
+      SELECT id, subject_id, change_time, type, color, consistency, notes, created_at, created_by
       FROM diapers
       WHERE id = ?
     `,
@@ -281,7 +281,7 @@ diaperRoutes.delete('/:id{[0-9]+}', async (c) => {
       sql: `
       SELECT d.id
       FROM diapers d
-      JOIN babies b ON d.baby_id = b.id
+      JOIN subjects b ON d.subject_id = b.id
       JOIN households h ON b.household_id = h.id
       JOIN user_households uh ON h.id = uh.household_id
       WHERE d.id = ? AND uh.user_id = ?

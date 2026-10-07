@@ -49,7 +49,7 @@ filter inside a family database because there is no need for one — see
 :::caution[Photos are stored unencrypted]
 Photo uploads are written to disk in the clear and are protected only by
 authenticated, family-scoped routes. If the underlying disk is not encrypted,
-anyone who can read that disk can read the photos.
+anyone who can read that disk can read the blobs.
 
 Include them in an encrypted-at-rest backup, or encrypt the volume.
 :::
@@ -74,7 +74,7 @@ the gap until the limit lands.
 | Authorization | Lives in `authz.ts`, **before** `getFamilyClient()`. Not in a query, not after. |
 | SQL | Parameterized only. No request-derived string is ever concatenated into SQL. |
 | Request bodies | Validated with `zod` before any database access. |
-| Files | MIME-validated and scoped by `photos.family_id`. Client-supplied filenames and paths are never trusted. |
+| Files | MIME-validated and scoped by `blobs.family_id`. Client-supplied filenames and paths are never trusted. |
 
 ## Deployment checklist
 

@@ -60,3 +60,40 @@ export function formatRelative(iso: string | null | undefined, nowMs: number = D
 	if (days < 7) return `${days} days ago`;
 	return formatTime(iso);
 }
+
+export interface AgeParts {
+	value: string;
+	unit: string;
+}
+
+/** Mean Gregorian month. Months are irregular, so there is no exact answer. */
+const DAYS_PER_MONTH = 30.4375;
+
+/**
+ * A child's age in the unit that stays readable as they grow.
+ *
+ * Weeks stop being useful fast — nobody says a two-year-old is 108 weeks old —
+ * but months stop being useful too, and "27 months" is a puzzle for a parent at
+ * a playground. So: weeks while that reads naturally, months up to two years,
+ * then years with the leftover months.
+ */
+export function formatAge(birthDate: string | null | undefined, nowMs: number = Date.now()): AgeParts | null {
+	if (!birthDate) return null;
+	const born = new Date(birthDate).getTime();
+	if (!Number.isFinite(born)) return null;
+	const days = Math.floor((nowMs - born) / 86_400_000);
+	if (days < 0) return null;
+
+	const months = Math.floor(days / DAYS_PER_MONTH);
+	if (months < 3) {
+		const weeks = Math.floor(days / 7);
+		return { value: String(weeks), unit: weeks === 1 ? 'week' : 'weeks' };
+	}
+	if (months < 24) {
+		return { value: String(months), unit: months === 1 ? 'month' : 'months' };
+	}
+	const years = Math.floor(months / 12);
+	const rest = months % 12;
+	if (rest === 0) return { value: String(years), unit: years === 1 ? 'year' : 'years' };
+	return { value: `${years}y ${rest}m`, unit: '' };
+}

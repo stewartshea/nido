@@ -43,11 +43,11 @@ async function latestFor(db: any, familyId: number, category: string, targetId: 
 
   let sql = '';
   if (category === 'feeds' || category === 'pumping' || category === 'feed') {
-    sql = `SELECT MAX(f.start_time) AS t FROM feedings f JOIN babies b ON b.id = f.baby_id WHERE ${memberWhere} AND f.type ${category === 'pumping' ? "='pump'" : "!='pump'"}`;
+    sql = `SELECT MAX(f.start_time) AS t FROM feedings f JOIN subjects b ON b.id = f.subject_id WHERE ${memberWhere} AND f.type ${category === 'pumping' ? "='pump'" : "!='pump'"}`;
   } else if (category === 'diapers') {
-    sql = `SELECT MAX(d.change_time) AS t FROM diapers d JOIN babies b ON b.id = d.baby_id WHERE ${memberWhere}`;
+    sql = `SELECT MAX(d.change_time) AS t FROM diapers d JOIN subjects b ON b.id = d.subject_id WHERE ${memberWhere}`;
   } else if (category === 'sleep') {
-    sql = `SELECT MAX(s.start_time) AS t FROM sleep s JOIN babies b ON b.id = s.baby_id WHERE ${memberWhere}`;
+    sql = `SELECT MAX(s.start_time) AS t FROM sleep s JOIN subjects b ON b.id = s.subject_id WHERE ${memberWhere}`;
   } else {
     return null;
   }

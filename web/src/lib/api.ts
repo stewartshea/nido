@@ -1,5 +1,6 @@
 // src/lib/api.ts
 import axios from 'axios';
+import type { MilestoneKind } from '$lib/shared';
 
 // Same-origin (relative /api/v1); Vite proxies /api to the API. PUBLIC_ prefix
 // is the only one exposed to the client (vite config envPrefix).
@@ -99,14 +100,14 @@ export const userAPI = {
 };
 
 // Baby API functions — family MEMBERS (baby is the first supported type)
-export const babyAPI = {
-  getAll: () => api.get('/babies'),
-  getById: (id: number) => api.get(`/babies/${id}`),
+export const subjectAPI = {
+  getAll: () => api.get('/profiles'),
+  getById: (id: number) => api.get(`/profiles/${id}`),
   create: (memberData: { name: string; birthDate: string; gender?: string; householdId: number }) => 
-    api.post('/babies', memberData),
+    api.post('/profiles', memberData),
   update: (id: number, memberData: Partial<{ name: string; birthDate: string; gender?: string }>) => 
-    api.put(`/babies/${id}`, memberData),
-  delete: (id: number) => api.delete(`/babies/${id}`),
+    api.put(`/profiles/${id}`, memberData),
+  delete: (id: number) => api.delete(`/profiles/${id}`),
 };
 
 // Family API functions — family-first model
@@ -123,9 +124,9 @@ export const familiesAPI = {
     api.post('/families', data),
   members: (familyId: string) => api.get(`/families/${familyId}/members`),
   accounts: () => api.get<{ accounts: FamilyAccount[] }>('/families/accounts'),
-  addMember: (familyId: string, data: { type?: string; name: string; birthDate?: string; gender?: string; email?: string; categories?: string[] }) =>
+  addMember: (familyId: string, data: { type?: string; name: string; birthDate?: string; gender?: string; email?: string; categories?: string[]; stage?: string; trackable?: boolean }) =>
     api.post(`/families/${familyId}/members`, data),
-  updateMember: (familyId: string, memberId: number, data: { type?: string; name?: string; birthDate?: string | null; gender?: string | null; email?: string | null; categories?: string[]; trackable?: boolean }) =>
+  updateMember: (familyId: string, memberId: number, data: { type?: string; name?: string; birthDate?: string | null; gender?: string | null; email?: string | null; categories?: string[]; stage?: string | null; quickLinks?: string[] | null; trackable?: boolean }) =>
     api.put(`/families/${familyId}/members/${memberId}`, data),
   removeMember: (familyId: string, memberId: number) =>
     api.delete(`/families/${familyId}/members/${memberId}`),
@@ -146,7 +147,7 @@ export const familiesAPI = {
     });
   },
   getSettings: (familyId: string) => api.get(`/families/${familyId}/settings`),
-  updateSettings: (familyId: string, data: { categories?: string[]; categoryOptions?: Record<string, Record<string, string[]>>; shareAnonymizedDaily?: boolean }) =>
+  updateSettings: (familyId: string, data: { categories?: string[]; categoryOptions?: Record<string, Record<string, string[]>>; stageCategories?: Record<string, string[]> | null; shareAnonymizedDaily?: boolean }) =>
     api.put(`/families/${familyId}/settings`, data),
   getAnonymizedPreview: (familyId: string) => api.get(`/families/${familyId}/settings/anonymized-preview`),
 };
@@ -204,6 +205,33 @@ export const sleepAPI = {
 };
 
 // Growth API functions
+/**
+ * Files attached to a record. Bytes live in the family's encrypted blob store;
+ * this is the link and the metadata.
+ */
+export const attachmentsAPI = {
+  upload: (refType: string, refId: number, file: File) => {
+    const form = new FormData();
+    form.set('refType', refType);
+    form.set('refId', String(refId));
+    form.set('file', file);
+    // Content-Type must be unset so the browser adds the multipart boundary;
+    // the instance default of application/json makes the API reject the body.
+    return api.post<{ attachment: { id: number; filename: string | null; contentType: string; size: number; url: string } }>(
+      '/attachments',
+      form,
+      { headers: { 'Content-Type': undefined } },
+    );
+  },
+  list: (refType: string, refId: number) =>
+    api.get<{ attachments: { id: number; filename: string | null; contentType: string; size: number; url: string }[] }>(
+      `/attachments?refType=${encodeURIComponent(refType)}&refId=${refId}`,
+    ),
+  remove: (id: number) => api.delete(`/attachments/${id}`),
+  /** Same-origin URL for the decrypted bytes. */
+  fileUrl: (id: number) => `/api/v1/attachments/${id}/file`,
+};
+
 export const growthAPI = {
   getAll: (memberId: number) => api.get(`/growth?memberId=${memberId}`),
   getPage: (memberId: number, opts?: PageOptions) =>
@@ -226,9 +254,9 @@ export const milestoneAPI = {
   getCategories: () => api.get('/milestones/categories'),
   getTrends: (memberId: number, opts?: { category?: string; days?: number }) =>
     api.get(`/milestones/trends?memberId=${memberId}${opts?.category ? `&category=${opts.category}` : ''}${opts?.days ? `&days=${opts.days}` : ''}`),
-  create: (milestoneData: { memberId: number; title: string; description?: string; achievedDate: string; kind?: 'milestones' | 'firsts' | 'routines' | 'medical'; category?: string; tags?: string[] }) => 
+  create: (milestoneData: { memberId: number; title: string; description?: string; achievedDate: string; kind?: MilestoneKind; category?: string; tags?: string[] }) => 
     api.post('/milestones', milestoneData),
-  update: (id: number, milestoneData: Partial<{ title: string; description?: string; achievedDate: string; kind: 'milestones' | 'firsts' | 'routines' | 'medical'; category?: string }>) => 
+  update: (id: number, milestoneData: Partial<{ title: string; description?: string; achievedDate: string; kind: MilestoneKind; category?: string }>) => 
     api.put(`/milestones/${id}`, milestoneData),
   delete: (id: number) => api.delete(`/milestones/${id}`),
 };
@@ -277,38 +305,21 @@ export const healthAPI = {
 
 // Import API functions (Narababy CSV upload + per-family summary)
 export const importsAPI = {
-  narababy: (file: File, babyId?: number | null, importType?: string) => {
+  narababy: (file: File, subjectId?: number | null, importType?: string) => {
     const form = new FormData();
     form.append('file', file, file.name);
-    if (babyId) form.append('babyId', String(babyId));
+    if (subjectId) form.append('subjectId', String(subjectId));
     if (importType) form.append('importType', importType);
     return api.post('/imports/narababy', form, {
       headers: { 'Content-Type': undefined },
     });
   },
-  runs: (babyId?: number | null) => api.get(`/imports/runs${babyId ? `?memberId=${babyId}` : ''}`),
+  runs: (subjectId?: number | null) => api.get(`/imports/runs${subjectId ? `?memberId=${subjectId}` : ''}`),
   undoRun: (runId: number) => api.post(`/imports/runs/${runId}/undo`),
   summary: () => api.get('/imports/summary'),
 };
 
 // Photos API — multi-tenant: every photo is family-scoped server-side.
-export const photosAPI = {
-  list: (parentType: string, parentId: number) =>
-    api.get(`/photos?parentType=${parentType}&parentId=${parentId}`),
-  upload: (parentType: string, parentId: number, file: File) => {
-    const form = new FormData();
-    form.append('parentType', parentType);
-    form.append('parentId', String(parentId));
-    form.append('file', file, file.name);
-    return api.post('/photos', form, { headers: { 'Content-Type': undefined } });
-  },
-  // Fetch image bytes with auth (plain <img> can't carry the JWT).
-  file: (id: number) =>
-    api.get(`/photos/${id}/file`, { responseType: 'blob' }),
-  url: (id: number) => `/api/v1/photos/${id}/file`,
-  remove: (id: number) => api.delete(`/photos/${id}`),
-};
-
 // Formulas API — family-scoped formula catalog.
 export const formulasAPI = {
   list: (familyId: string) => api.get(`/formulas?familyId=${familyId}`),

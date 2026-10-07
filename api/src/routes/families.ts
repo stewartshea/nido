@@ -1,17 +1,33 @@
 import { Hono, type Context } from 'hono';
 import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
-import { readFile, writeFile, mkdir, rm } from 'node:fs/promises';
+import { rm } from 'node:fs/promises';
+import { Readable } from 'node:stream';
 import { join } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import jwt from 'jsonwebtoken';
 import { type AuthEnv, jwtSecret } from '../auth';
-import { NAMESPACE_HOUSEHOLD_ID, DEFAULT_CATEGORIES } from '../db-core';
+import { NAMESPACE_HOUSEHOLD_ID } from '../db-core';
+import { CATEGORY_OPTIONS, DEFAULT_CATEGORIES, STAGES, STAGE_CATEGORIES, defaultStage, categoryTemplate, isStage } from '../vocabulary';
 import { ensureRegistry, getFamilyClient } from '../db-namespaces';
+import { EncryptedBlobStore } from '../blob-store';
 import { getAppSettings, sendMail, smtpConfigured, baseUrl } from '../mail';
 import { renderFamilyInviteEmail } from '../mail-templates';
 
-const AVATAR_DIR = process.env.PHOTO_DIR || '/data/photos';
+/**
+ * Avatars are attachments.
+ *
+ * They used to be plaintext files in PHOTO_DIR, which is where the (dead)
+ * record-photo mechanism also wrote. Now there is one place a file can live —
+ * the encrypted blob store — and one table that links it to something. The
+ * `avatar` column keeps holding a value the UI can test for truthiness; it is
+ * the attachment id now rather than a filename.
+ */
+let avatarBlobs: EncryptedBlobStore | null = null;
+function avatarStore(): EncryptedBlobStore {
+	if (!avatarBlobs) avatarBlobs = EncryptedBlobStore.fromEnv();
+	return avatarBlobs;
+}
 
 // Avatar files are stored without an extension (see handleUploadAvatar), and
 // no mime column exists to round-trip the upload's claimed type, so serving
@@ -29,7 +45,7 @@ function sniffImageMime(buf: Buffer): string {
 
 const familyRoutes = new Hono<AuthEnv>();
 
-const MEMBER_TYPES = ['child', 'adult'];
+const MEMBER_TYPES = ['child', 'adult', 'pet'];
 
 function isoNow(): string {
 	return new Date().toISOString();
@@ -44,8 +60,40 @@ function parseJson<T>(value: unknown, fallback: T): T {
 	}
 }
 
-// Maps a babies-family_members row to its REST shape.
-function memberShape(row: any) {
+// Maps a subjects-family_members row to its REST shape.
+/**
+ * The categories a member actually tracks.
+ *
+ * An explicit list is kept as it is. What this fixes is the *absent* list: it
+ * used to fall through to the browser's "then show everything", which is why
+ * every account owner — backfilled by the owner-member migration with a null
+ * list — was offered feeds and nappies. Absent now means "the stage decides",
+ * and only a profile with no stage at all falls back to the original default.
+ *
+ * Deliberately not an intersection with the stage template. A family that has
+ * enabled something for one person should not have it silently taken away
+ * because the template for that stage happens not to list it.
+ */
+function resolveCategories(
+	stored: string[] | null,
+	stage: string | null,
+	familyStages?: Record<string, string[]> | null,
+): string[] {
+	if (stored && stored.length > 0) return stored;
+	const template = stage && isStage(stage) ? familyStages?.[stage] ?? STAGE_CATEGORIES[stage] : null;
+	return template ? [...template] : [...DEFAULT_CATEGORIES];
+}
+
+/** This family's own version of each stage template, or null if untouched. */
+async function familyStageCategories(db: ReturnType<typeof getFamilyClient>): Promise<Record<string, string[]> | null> {
+	const row = (await db.execute({
+		sql: 'SELECT stage_categories FROM family_settings WHERE family_id = ? LIMIT 1',
+		args: [NAMESPACE_HOUSEHOLD_ID],
+	})).rows[0];
+	return parseJson<Record<string, string[]> | null>((row as any)?.stage_categories, null);
+}
+
+function memberShape(row: any, familyStages?: Record<string, string[]> | null) {
 	return {
 		id: Number(row.id),
 		name: row.name,
@@ -54,10 +102,12 @@ function memberShape(row: any) {
 		type: row.member_type || row.type || 'child',
 		email: row.email || null,
 		avatar: row.avatar || null,
-		legacyBabyId: row.legacy_baby_id ? Number(row.legacy_baby_id) : null,
-		trackable: Number(row.trackable ?? (row.legacy_baby_id ? 1 : 0)) === 1,
+		legacySubjectId: row.legacy_subject_id ? Number(row.legacy_subject_id) : null,
+		trackable: Number(row.trackable ?? (row.legacy_subject_id ? 1 : 0)) === 1,
 		linkedAccount: Number(row.linked_account || 0) === 1,
-		categories: parseJson<string[]>(row.categories, []),
+		stage: row.stage ?? null,
+		quickLinks: parseJson<string[] | null>(row.quick_links, null),
+		categories: resolveCategories(parseJson<string[] | null>(row.categories, null), row.stage ?? null, familyStages),
 	};
 }
 
@@ -86,51 +136,14 @@ function validateFamilyRef(c: Context<AuthEnv>): boolean {
 
 const EXPORT_TABLES = ['feedings', 'diapers', 'sleep', 'growth', 'milestones', 'vaccinations', 'moods', 'journal_entries'] as const;
 
-const PHOTO_PARENT_TYPES: Record<string, string> = { feedings: 'feeding', diapers: 'diaper', sleep: 'sleep', growth: 'growth', milestones: 'milestone' };
-
-const DEFAULT_CATEGORY_OPTIONS = {
-	feeds: {
-		type: ['breast', 'formula', 'bottle', 'pump', 'solid'],
-		side: ['left', 'right', 'both'],
-	},
-	diapers: {
-		consistency: ['mushy', 'runny', 'formed', 'soft', 'blowout', 'other'],
-		color: ['yellow', 'brown', 'green', 'black', 'red'],
-	},
-	sleep: {
-		location: ['crib', 'bassinet', 'stroller', 'carrier', 'other'],
-	},
-	growth: {
-		unit: ['metric', 'imperial'],
-	},
-	pumping: {
-		type: ['left', 'right', 'both'],
-	},
-	routines: {
-		type: ['tummy time', 'bath', 'story time', 'walk', 'other'],
-	},
-	firsts: {
-		type: ['smile', 'roll over', 'crawl', 'first step', 'tooth', 'other'],
-	},
-	milestones: {
-		category: ['physical', 'social', 'language', 'cognitive', 'other'],
-	},
-	medical: {
-		visitType: ['wellness', 'sick visit', 'follow-up', 'other'],
-	},
-	vaccines: {
-		route: ['oral', 'intramuscular', 'subcutaneous', 'dermal'],
-	},
-	moods: {
-		mood: ['happy', 'fussy', 'sleepy', 'unwell', 'content', 'unsettled'],
-	},
-};
-
 function settingsShape(row: any) {
 	return {
 		categories: parseJson<string[] | null>(row?.categories, null),
 		categoryOptions: parseJson<Record<string, unknown>>(row?.category_options, {}),
 		shareAnonymizedDaily: Number(row?.share_anonymized_daily ?? 0) === 1,
+		// Per-stage category sets this family has customised, or null where the
+		// built-in STAGE_CATEGORIES still applies.
+		stageCategories: parseJson<Record<string, string[]> | null>(row?.stage_categories, null),
 	};
 }
 
@@ -143,6 +156,9 @@ const addMemberSchema = z.object({
 	gender: z.string().max(20).optional(),
 	email: z.string().email().optional(),
 	categories: z.array(z.string()).optional(),
+	stage: z.enum(STAGES).optional(),
+	/** Defaults come from the type: children and pets are logged against, adults are not unless asked. */
+	trackable: z.boolean().optional(),
 });
 
 const inviteSchema = z.object({ email: z.string().email() });
@@ -159,8 +175,8 @@ const joinSchema = z.object({
 // excluded: its default catalog is seeded automatically, so a non-empty table
 // is never a sign the account owner recorded anything.
 const FAMILY_CONTENT_TABLES = [
-	'babies', 'feedings', 'diapers', 'sleep', 'growth', 'milestones',
-	'vaccinations', 'moods', 'journal_entries', 'photos', 'reminders',
+	'subjects', 'feedings', 'diapers', 'sleep', 'growth', 'milestones',
+	'vaccinations', 'moods', 'journal_entries', 'attachments', 'reminders',
 ] as const;
 
 async function familyHasContent(db: ReturnType<typeof getFamilyClient>): Promise<boolean> {
@@ -178,12 +194,15 @@ const updateMemberSchema = z.object({
 	gender: z.string().max(20).nullable().optional(),
 	email: z.string().email().nullable().optional(),
 	categories: z.array(z.string()).optional(),
+	stage: z.enum(STAGES).nullable().optional(),
+	quickLinks: z.array(z.string()).nullable().optional(),
 	trackable: z.boolean().optional(),
 });
 
 const settingsSchema = z.object({
 	categories: z.array(z.string()).optional(),
 	categoryOptions: z.record(z.string(), z.record(z.string(), z.array(z.string()))).optional(),
+	stageCategories: z.record(z.enum(STAGES), z.array(z.string())).nullable().optional(),
 	shareAnonymizedDaily: z.boolean().optional(),
 });
 
@@ -217,7 +236,7 @@ async function buildAnonymizedDailyPreview(db: ReturnType<typeof getFamilyClient
 		sql: `
 			SELECT
 				(SELECT COUNT(*) FROM family_members WHERE household_id = ?) AS members,
-				(SELECT COUNT(*) FROM babies WHERE household_id = ?) AS trackable_members,
+				(SELECT COUNT(*) FROM subjects WHERE household_id = ?) AS trackable_members,
 				(SELECT COUNT(*) FROM feedings WHERE created_at >= ?) AS feedings,
 				(SELECT COUNT(*) FROM diapers WHERE created_at >= ?) AS diapers,
 				(SELECT COUNT(*) FROM sleep WHERE created_at >= ?) AS sleep,
@@ -426,7 +445,7 @@ async function handleCreateFamily(c: Context<AuthEnv>) {
 		let memberId = existingMember.rows[0]?.id ? Number(existingMember.rows[0]?.id) : null;
 		if (!memberId) {
 			const insMember = await target.execute({
-				sql: `INSERT INTO family_members (household_id, legacy_baby_id, trackable, name, member_type, email, categories, created_at, updated_at)
+				sql: `INSERT INTO family_members (household_id, legacy_subject_id, trackable, name, member_type, email, categories, created_at, updated_at)
 				      VALUES (?, NULL, 0, ?, 'adult', ?, ?, ?, ?)`,
 				args: [NAMESPACE_HOUSEHOLD_ID, row.first_name || me.email, me.email, JSON.stringify(DEFAULT_CATEGORIES), now, now],
 			});
@@ -515,7 +534,7 @@ async function handleGetMembers(c: Context<AuthEnv>) {
 		sql: `
 			SELECT
 				fm.id,
-				fm.legacy_baby_id,
+				fm.legacy_subject_id,
 				fm.trackable,
 				fm.name,
 				fm.birth_date,
@@ -523,6 +542,8 @@ async function handleGetMembers(c: Context<AuthEnv>) {
 				fm.member_type,
 				fm.email,
 				fm.avatar,
+				fm.stage,
+				fm.quick_links,
 				fm.categories,
 				CASE WHEN am.user_id IS NULL THEN 0 ELSE 1 END AS linked_account
 			FROM family_members fm
@@ -532,7 +553,8 @@ async function handleGetMembers(c: Context<AuthEnv>) {
 		`,
 		args: [NAMESPACE_HOUSEHOLD_ID],
 	});
-	return c.json({ members: res.rows.map(memberShape) });
+	const familyStages = await familyStageCategories(db);
+	return c.json({ members: res.rows.map((row: any) => memberShape(row, familyStages)) });
 }
 
 // POST /members — add a member
@@ -543,9 +565,28 @@ async function handleAddMember(c: Context<AuthEnv>) {
 	if (!role) return c.json({ error: 'No family access' }, 403);
 	await ensureDefaultHome(db);
 
-	const { type, name, birthDate, gender, email, categories } = (c.req as any).valid('json');
+	const { type, name, birthDate, gender, email, categories, trackable: wantTrackable } = (c.req as any).valid('json');
 	const memberType = type || 'child';
 	const normalizedEmail = email ? String(email).trim().toLowerCase() : null;
+
+	// A pet or a child is logged against by default; an adult is not, because an
+	// adult is usually the person doing the logging rather than the subject of
+	// it. `trackable` is how a family opts an adult in.
+	const stage = (c.req as any).valid('json').stage ?? defaultStage(memberType);
+	const trackable = wantTrackable ?? memberType !== 'adult';
+	// The categories a new profile starts with, in order of preference: what the
+	// caller asked for, then this family's own version of the stage, then the
+	// built-in template. No stage means DEFAULT_CATEGORIES, so a child member
+	// behaves exactly as it did before stages existed.
+	let memberCategories = categories;
+	if (!memberCategories) {
+		const settingsRow = (await db.execute({
+			sql: 'SELECT stage_categories FROM family_settings WHERE family_id = ? LIMIT 1',
+			args: [NAMESPACE_HOUSEHOLD_ID],
+		})).rows[0];
+		const familyStages = parseJson<Record<string, string[]> | null>((settingsRow as any)?.stage_categories, null);
+		memberCategories = (stage && familyStages?.[stage]?.length ? familyStages[stage] : null) ?? categoryTemplate(stage);
+	}
 
 	// Adding a person who is already an account in this family must link that
 	// account, not mint a second profile beside it. Without this, the owner
@@ -562,7 +603,7 @@ async function handleAddMember(c: Context<AuthEnv>) {
 		if (linkedId) {
 			const shapeRes = await db.execute({
 				sql: `
-					SELECT fm.id, fm.legacy_baby_id, fm.trackable, fm.name, fm.birth_date, fm.gender, fm.member_type, fm.email, fm.avatar, fm.categories,
+					SELECT fm.id, fm.legacy_subject_id, fm.trackable, fm.name, fm.birth_date, fm.gender, fm.member_type, fm.email, fm.avatar, fm.stage, fm.quick_links, fm.categories,
 					       CASE WHEN am.user_id IS NULL THEN 0 ELSE 1 END AS linked_account
 					FROM family_members fm
 					LEFT JOIN account_members am ON am.member_id = fm.id
@@ -586,21 +627,24 @@ async function handleAddMember(c: Context<AuthEnv>) {
 		return c.json({ error: `${name} is already in this family (same name and birth date).` }, 409);
 	}
 
-	const memberCategories = categories ?? DEFAULT_CATEGORIES;
-	let legacyBabyId: number | null = null;
-	if (memberType === 'child') {
+	let legacySubjectId: number | null = null;
+	// Anything logged against needs a profile row to hang the logs off, which is
+	// what "a baby" always was. Pets and tracked adults need one too, and until
+	// this existed a pet could be listed as a member but had nowhere to record a
+	// vaccination.
+	if (trackable) {
 		const childInsert = await db.execute({
-			sql: `INSERT INTO babies (household_id, name, birth_date, gender, type, email, categories, created_at, updated_at)
+			sql: `INSERT INTO subjects (household_id, name, birth_date, gender, type, email, categories, created_at, updated_at)
 			      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			args: [NAMESPACE_HOUSEHOLD_ID, name, birthDate || null, gender || null, 'child', normalizedEmail, JSON.stringify(memberCategories), isoNow(), isoNow()],
 		});
-		legacyBabyId = Number(childInsert.lastInsertRowid);
+		legacySubjectId = Number(childInsert.lastInsertRowid);
 	}
 
 	const ins = await db.execute({
-		sql: `INSERT INTO family_members (household_id, legacy_baby_id, trackable, name, birth_date, gender, member_type, email, categories, created_at, updated_at)
-		      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		args: [NAMESPACE_HOUSEHOLD_ID, legacyBabyId, memberType === 'child' ? 1 : 0, name, birthDate || null, gender || null, memberType, normalizedEmail, JSON.stringify(memberCategories), isoNow(), isoNow()],
+		sql: `INSERT INTO family_members (household_id, legacy_subject_id, trackable, name, birth_date, gender, member_type, email, categories, stage, created_at, updated_at)
+		      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		args: [NAMESPACE_HOUSEHOLD_ID, legacySubjectId, trackable ? 1 : 0, name, birthDate || null, gender || null, memberType, normalizedEmail, JSON.stringify(memberCategories), stage ?? null, isoNow(), isoNow()],
 	});
 	const memberId = Number(ins.lastInsertRowid);
 	await db.execute({
@@ -611,7 +655,7 @@ async function handleAddMember(c: Context<AuthEnv>) {
 
 	const rowRes = await db.execute({
 		sql: `
-			SELECT fm.id, fm.legacy_baby_id, fm.trackable, fm.name, fm.birth_date, fm.gender, fm.member_type, fm.email, fm.avatar, fm.categories,
+			SELECT fm.id, fm.legacy_subject_id, fm.trackable, fm.name, fm.birth_date, fm.gender, fm.member_type, fm.email, fm.avatar, fm.stage, fm.quick_links, fm.categories,
 			       CASE WHEN am.user_id IS NULL THEN 0 ELSE 1 END AS linked_account
 			FROM family_members fm
 			LEFT JOIN account_members am ON am.member_id = fm.id
@@ -632,13 +676,13 @@ async function handleUpdateMember(c: Context<AuthEnv>) {
 	if (!role) return c.json({ error: 'No family access' }, 403);
 
 	const rowRes = await db.execute({
-		sql: 'SELECT id, legacy_baby_id, member_type FROM family_members WHERE id = ? AND household_id = ? LIMIT 1',
+		sql: 'SELECT id, legacy_subject_id, member_type FROM family_members WHERE id = ? AND household_id = ? LIMIT 1',
 		args: [memberId, NAMESPACE_HOUSEHOLD_ID],
 	});
 	if (rowRes.rows.length === 0) return c.json({ error: 'Member not found' }, 404);
 	const existing = rowRes.rows[0] as any;
 
-	const { type, name, birthDate, gender, email, categories, trackable } = (c.req as any).valid('json');
+	const { type, name, birthDate, gender, email, categories, stage, quickLinks, trackable } = (c.req as any).valid('json');
 	const nextMemberType = type || String(existing.member_type || 'child');
 	const normalizedEmail = email === undefined ? undefined : (email === null ? null : String(email).trim().toLowerCase());
 	const updates: string[] = [];
@@ -649,20 +693,25 @@ async function handleUpdateMember(c: Context<AuthEnv>) {
 	if (gender !== undefined) { updates.push('gender = ?'); params.push(gender); }
 	if (normalizedEmail !== undefined) { updates.push('email = ?'); params.push(normalizedEmail); }
 	if (categories) { updates.push('categories = ?'); params.push(JSON.stringify(categories)); }
+	// Changing stage on its own never rewrites an existing category list: it only
+	// records what the profile is. A family that deliberately turned something
+	// off must not have it switched back on by an age change.
+	if (stage !== undefined) { updates.push('stage = ?'); params.push(stage); }
+	if (quickLinks !== undefined) { updates.push('quick_links = ?'); params.push(quickLinks ? JSON.stringify(quickLinks) : null); }
 
-	let legacyBabyId = existing.legacy_baby_id ? Number(existing.legacy_baby_id) : null;
+	let legacySubjectId = existing.legacy_subject_id ? Number(existing.legacy_subject_id) : null;
 	// Flagging a member off is non-destructive: the profile and its records are kept.
-	let nextTrackable = Number(existing.trackable ?? (legacyBabyId ? 1 : 0)) === 1;
+	let nextTrackable = Number(existing.trackable ?? (legacySubjectId ? 1 : 0)) === 1;
 	if (trackable !== undefined) nextTrackable = trackable;
-	else if (nextMemberType === 'child' && !legacyBabyId) nextTrackable = true;
+	else if (nextMemberType === 'child' && !legacySubjectId) nextTrackable = true;
 
-	if (trackable !== undefined || (nextTrackable && !legacyBabyId)) {
+	if (trackable !== undefined || (nextTrackable && !legacySubjectId)) {
 		updates.push('trackable = ?'); params.push(nextTrackable ? 1 : 0);
 	}
 
-	if (nextTrackable && !legacyBabyId) {
+	if (nextTrackable && !legacySubjectId) {
 		const childInsert = await db.execute({
-			sql: `INSERT INTO babies (household_id, name, birth_date, gender, type, email, categories, created_at, updated_at)
+			sql: `INSERT INTO subjects (household_id, name, birth_date, gender, type, email, categories, created_at, updated_at)
 			      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			args: [
 				NAMESPACE_HOUSEHOLD_ID,
@@ -676,9 +725,9 @@ async function handleUpdateMember(c: Context<AuthEnv>) {
 				isoNow(),
 			],
 		});
-		legacyBabyId = Number(childInsert.lastInsertRowid);
-		updates.push('legacy_baby_id = ?');
-		params.push(legacyBabyId);
+		legacySubjectId = Number(childInsert.lastInsertRowid);
+		updates.push('legacy_subject_id = ?');
+		params.push(legacySubjectId);
 	}
 
 	if (updates.length === 0) return c.json({ error: 'Nothing to update' }, 400);
@@ -688,7 +737,7 @@ async function handleUpdateMember(c: Context<AuthEnv>) {
 
 	await db.execute({ sql: `UPDATE family_members SET ${updates.join(', ')} WHERE id = ? AND household_id = ?`, args: params });
 
-	if (legacyBabyId) {
+	if (legacySubjectId) {
 		const babyUpdates: string[] = [];
 		const babyParams: Array<string | number | null> = [];
 		if (name !== undefined) { babyUpdates.push('name = ?'); babyParams.push(name); }
@@ -701,8 +750,8 @@ async function handleUpdateMember(c: Context<AuthEnv>) {
 			babyParams.push(nextMemberType === 'adult' ? 'adult' : 'child');
 			babyUpdates.push('updated_at = ?');
 			babyParams.push(isoNow());
-			babyParams.push(legacyBabyId, NAMESPACE_HOUSEHOLD_ID);
-			await db.execute({ sql: `UPDATE babies SET ${babyUpdates.join(', ')} WHERE id = ? AND household_id = ?`, args: babyParams });
+			babyParams.push(legacySubjectId, NAMESPACE_HOUSEHOLD_ID);
+			await db.execute({ sql: `UPDATE subjects SET ${babyUpdates.join(', ')} WHERE id = ? AND household_id = ?`, args: babyParams });
 		}
 	}
 
@@ -713,7 +762,7 @@ async function handleUpdateMember(c: Context<AuthEnv>) {
 
 	const memRes = await db.execute({
 		sql: `
-			SELECT fm.id, fm.legacy_baby_id, fm.trackable, fm.name, fm.birth_date, fm.gender, fm.member_type, fm.email, fm.avatar, fm.categories,
+			SELECT fm.id, fm.legacy_subject_id, fm.trackable, fm.name, fm.birth_date, fm.gender, fm.member_type, fm.email, fm.avatar, fm.stage, fm.quick_links, fm.categories,
 			       CASE WHEN am.user_id IS NULL THEN 0 ELSE 1 END AS linked_account
 			FROM family_members fm
 			LEFT JOIN account_members am ON am.member_id = fm.id
@@ -734,41 +783,42 @@ async function handleDeleteMember(c: Context<AuthEnv>) {
 	if (!role) return c.json({ error: 'No family access' }, 403);
 
 	const memRes = await db.execute({
-		sql: 'SELECT id, legacy_baby_id, avatar FROM family_members WHERE id = ? AND household_id = ? LIMIT 1',
+		sql: 'SELECT id, legacy_subject_id, avatar FROM family_members WHERE id = ? AND household_id = ? LIMIT 1',
 		args: [memberId, NAMESPACE_HOUSEHOLD_ID],
 	});
 	if (memRes.rows.length === 0) return c.json({ error: 'Member not found' }, 404);
 	const avatar = memRes.rows[0]?.avatar;
-	const legacyBabyId = memRes.rows[0]?.legacy_baby_id ? Number(memRes.rows[0]?.legacy_baby_id) : null;
+	const legacySubjectId = memRes.rows[0]?.legacy_subject_id ? Number(memRes.rows[0]?.legacy_subject_id) : null;
 
-	// Photo cleanup: collect record ids per parent type, then delete photos
-	if (legacyBabyId) {
-		for (const [table, parentType] of Object.entries(PHOTO_PARENT_TYPES)) {
-			const ids = (await db.execute({ sql: `SELECT id FROM ${table} WHERE baby_id = ?`, args: [legacyBabyId] })).rows.map((r: any) => Number(r.id));
-			if (ids.length > 0) {
-				const placeholders = ids.map(() => '?').join(',');
-				await db.execute({
-					sql: `DELETE FROM photos WHERE family_id = ? AND parent_type = ? AND parent_id IN (${placeholders})`,
-					args: [NAMESPACE_HOUSEHOLD_ID, parentType, ...ids],
-				});
-			}
+	if (legacySubjectId !== null) {
+		// Every attachment for this subject — on their records and on the profile
+		// itself — goes with them, bytes included. Deleting only the rows would
+		// leave encrypted blobs behind that nothing can ever reach.
+		const attachmentIds = (await db.execute({
+			sql: 'SELECT id FROM attachments WHERE subject_id = ?',
+			args: [legacySubjectId],
+		})).rows.map((r: any) => Number(r.id));
+		for (const attachmentId of attachmentIds) {
+			await deleteAttachment(db, c.get('familyId'), attachmentId).catch(() => {});
 		}
 
 		for (const table of EXPORT_TABLES) {
-			await db.execute({ sql: `DELETE FROM ${table} WHERE baby_id = ?`, args: [legacyBabyId] });
+			await db.execute({ sql: `DELETE FROM ${table} WHERE subject_id = ?`, args: [legacySubjectId] });
 		}
-		await db.execute({ sql: 'DELETE FROM import_log WHERE baby_id = ?', args: [legacyBabyId] });
+		await db.execute({ sql: 'DELETE FROM import_log WHERE subject_id = ?', args: [legacySubjectId] });
 		await db.execute({
 			sql: `DELETE FROM reminders WHERE target_type = 'member' AND target_id = ?`,
-			args: [legacyBabyId],
+			args: [legacySubjectId],
 		});
-		// family_members.legacy_baby_id references babies(id), so unlink it first.
-		await db.execute({ sql: 'UPDATE family_members SET legacy_baby_id = NULL WHERE legacy_baby_id = ?', args: [legacyBabyId] });
-		await db.execute({ sql: 'DELETE FROM babies WHERE id = ? AND household_id = ?', args: [legacyBabyId, NAMESPACE_HOUSEHOLD_ID] });
+		// family_members.legacy_subject_id references subjects(id), so unlink it first.
+		await db.execute({ sql: 'UPDATE family_members SET legacy_subject_id = NULL WHERE legacy_subject_id = ?', args: [legacySubjectId] });
+		await db.execute({ sql: 'DELETE FROM subjects WHERE id = ? AND household_id = ?', args: [legacySubjectId, NAMESPACE_HOUSEHOLD_ID] });
 	}
 
-	if (avatar) {
-		try { await rm(join(AVATAR_DIR, String(avatar)), { force: true }); } catch { /* already gone */ }
+	if (avatar && /^[0-9]+$/.test(String(avatar))) {
+		// The avatar is an attachment now, so removing the member removes the row
+		// and the encrypted bytes together.
+		await deleteAttachment(db, c.get('familyId'), Number(avatar)).catch(() => {});
 	}
 
 	await db.execute({ sql: 'BEGIN IMMEDIATE' });
@@ -787,6 +837,8 @@ async function handleDeleteMember(c: Context<AuthEnv>) {
 // POST /members/:memberId/avatar — upload avatar
 async function handleUploadAvatar(c: Context<AuthEnv>) {
 	const db = c.get('db');
+	const familyId = c.get('familyId');
+	const userId = c.get('userId');
 	const memberId = Number(c.req.param('memberId'));
 
 	const role = await familyAccess(c);
@@ -796,50 +848,85 @@ async function handleUploadAvatar(c: Context<AuthEnv>) {
 	const file = form.get('file');
 	if (!file || typeof file === 'string') return c.json({ error: 'Missing image file' }, 400);
 
-	const memCheck = await db.execute({
-		sql: 'SELECT id, legacy_baby_id FROM family_members WHERE id = ? AND household_id = ? LIMIT 1',
-		args: [memberId, NAMESPACE_HOUSEHOLD_ID],
-	});
-	if (memCheck.rows.length === 0) return c.json({ error: 'Member not found' }, 404);
-    const legacyBabyId = memCheck.rows[0]?.legacy_baby_id ? Number(memCheck.rows[0]?.legacy_baby_id) : null;
-
-	const buf = Buffer.from(await file.arrayBuffer());
 	const mime = file.type || 'application/octet-stream';
 	if (!mime.startsWith('image/')) return c.json({ error: 'Only image uploads are allowed' }, 400);
 
-	await mkdir(AVATAR_DIR, { recursive: true });
-	const avatarName = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-	await writeFile(join(AVATAR_DIR, avatarName), buf);
+	const memCheck = await db.execute({
+		sql: 'SELECT id, legacy_subject_id, avatar FROM family_members WHERE id = ? AND household_id = ? LIMIT 1',
+		args: [memberId, NAMESPACE_HOUSEHOLD_ID],
+	});
+	const member = memCheck.rows[0] as unknown as { id: number; legacy_subject_id: number | null; avatar: string | null } | undefined;
+	if (!member) return c.json({ error: 'Member not found' }, 404);
+	const legacySubjectId = member.legacy_subject_id === null ? null : Number(member.legacy_subject_id);
 
-	await db.execute({ sql: 'UPDATE family_members SET avatar = ?, updated_at = ? WHERE id = ? AND household_id = ?', args: [avatarName, isoNow(), memberId, NAMESPACE_HOUSEHOLD_ID] });
-	if (legacyBabyId) {
-		await db.execute({ sql: 'UPDATE babies SET avatar = ?, updated_at = ? WHERE id = ? AND household_id = ?', args: [avatarName, isoNow(), legacyBabyId, NAMESPACE_HOUSEHOLD_ID] });
+	let attachmentId: number;
+	try {
+		const put = await avatarStore().put(familyId, Readable.fromWeb(file.stream() as any));
+		const ins = await db.execute({
+			sql: `INSERT INTO attachments (subject_id, ref_type, ref_id, blob_id, storage_key, filename, content_type, size, created_at, created_by)
+			      VALUES (?, 'subject', ?, ?, ?, ?, ?, ?, ?, ?)`,
+			args: [legacySubjectId, memberId, put.blobId, put.storageKey, file.name || null, mime, put.size, isoNow(), userId],
+		});
+		attachmentId = Number(ins.lastInsertRowid);
+	} catch {
+		return c.json({ error: 'Could not store that image' }, 500);
 	}
 
-	return c.json({ message: 'Avatar uploaded', avatar: avatarName });
+	// Replace rather than accumulate: the previous avatar is one row and one
+	// blob, and leaving it behind would leak storage nobody can reach.
+	if (member.avatar && /^[0-9]+$/.test(member.avatar)) {
+		await deleteAttachment(db, familyId, Number(member.avatar));
+	}
+
+	const marker = String(attachmentId);
+	await db.execute({ sql: 'UPDATE family_members SET avatar = ?, updated_at = ? WHERE id = ? AND household_id = ?', args: [marker, isoNow(), memberId, NAMESPACE_HOUSEHOLD_ID] });
+	if (legacySubjectId !== null) {
+		await db.execute({ sql: 'UPDATE subjects SET avatar = ?, updated_at = ? WHERE id = ? AND household_id = ?', args: [marker, isoNow(), legacySubjectId, NAMESPACE_HOUSEHOLD_ID] });
+	}
+
+	return c.json({ message: 'Avatar uploaded', avatar: marker });
+}
+
+/** Drop an attachment row and its blob together, so neither is orphaned. */
+async function deleteAttachment(db: ReturnType<typeof getFamilyClient>, familyId: string, attachmentId: number): Promise<void> {
+	const row = (await db.execute({ sql: 'SELECT blob_id, created_at FROM attachments WHERE id = ? LIMIT 1', args: [attachmentId] })).rows[0] as any;
+	if (!row) return;
+	await avatarStore().remove(familyId, String(row.blob_id), new Date(String(row.created_at))).catch(() => {});
+	await db.execute({ sql: 'DELETE FROM attachments WHERE id = ?', args: [attachmentId] });
 }
 
 // GET /members/:memberId/avatar — fetch avatar
 async function handleGetAvatar(c: Context<AuthEnv>) {
 	const db = c.get('db');
+	const familyId = c.get('familyId');
 	const memberId = Number(c.req.param('memberId'));
 
 	const role = await familyAccess(c);
 	if (!role) return c.json({ error: 'No family access' }, 403);
 
-	const memCheck = await db.execute({
-		sql: 'SELECT id FROM family_members WHERE id = ? AND household_id = ? LIMIT 1',
+	const res = await db.execute({
+		sql: 'SELECT avatar FROM family_members WHERE id = ? AND household_id = ? LIMIT 1',
 		args: [memberId, NAMESPACE_HOUSEHOLD_ID],
 	});
-	if (memCheck.rows.length === 0) return c.json({ error: 'Member not found' }, 404);
-
-	const res = await db.execute({ sql: 'SELECT avatar FROM family_members WHERE id = ? AND household_id = ? LIMIT 1', args: [memberId, NAMESPACE_HOUSEHOLD_ID] });
 	const avatar = res.rows[0]?.avatar;
 	if (!avatar) return c.json({ error: 'No avatar' }, 404);
 
+	// A non-numeric value is a pre-migration filename whose file no longer
+	// exists, so it reads as "no avatar" rather than a 500.
+	if (!/^[0-9]+$/.test(String(avatar))) return c.json({ error: 'No avatar' }, 404);
+
+	const att = (await db.execute({
+		sql: 'SELECT blob_id, content_type, created_at FROM attachments WHERE id = ? LIMIT 1',
+		args: [Number(avatar)],
+	})).rows[0] as any;
+	if (!att) return c.json({ error: 'No avatar' }, 404);
+
 	try {
-		const data = await readFile(join(AVATAR_DIR, String(avatar)));
-		return new Response(data, { status: 200, headers: { 'Content-Type': sniffImageMime(data), 'Cache-Control': 'private, max-age=31536000' } });
+		const stream = await avatarStore().open(familyId, String(att.blob_id), new Date(String(att.created_at)));
+		return new Response(Readable.toWeb(stream) as any, {
+			status: 200,
+			headers: { 'Content-Type': String(att.content_type), 'Cache-Control': 'private, max-age=31536000' },
+		});
 	} catch {
 		return c.json({ error: 'Avatar file missing' }, 404);
 	}
@@ -965,11 +1052,11 @@ async function handleGetSettings(c: Context<AuthEnv>) {
 	if (!role) return c.json({ error: 'No family access' }, 403);
 
 	const res = await db.execute({
-		sql: 'SELECT categories, category_options, share_anonymized_daily FROM family_settings WHERE family_id = ? LIMIT 1',
+		sql: 'SELECT categories, category_options, share_anonymized_daily, stage_categories FROM family_settings WHERE family_id = ? LIMIT 1',
 		args: [NAMESPACE_HOUSEHOLD_ID],
 	});
 	const row = res.rows[0] || null;
-	return c.json({ settings: { ...settingsShape(row), defaultCategoryOptions: DEFAULT_CATEGORY_OPTIONS }, anonymizedPreview: await buildAnonymizedDailyPreview(db) });
+	return c.json({ settings: { ...settingsShape(row), defaultCategoryOptions: CATEGORY_OPTIONS, defaultStageCategories: STAGE_CATEGORIES }, anonymizedPreview: await buildAnonymizedDailyPreview(db) });
 }
 
 // PUT /settings — update family settings
@@ -984,34 +1071,35 @@ async function handleUpdateSettings(c: Context<AuthEnv>) {
 	const role = await familyAccess(c);
 	if (!role) return c.json({ error: 'No family access' }, 403);
 
-	const { categories, categoryOptions, shareAnonymizedDaily } = (c.req as any).valid('json');
+	const { categories, categoryOptions, stageCategories, shareAnonymizedDaily } = (c.req as any).valid('json');
 	if (shareAnonymizedDaily !== undefined && !(await familyAccess(c, ['owner', 'admin']))) {
 		return c.json({ error: 'Only an owner or admin can change anonymized sharing' }, 403);
 	}
 
 	const existing = await db.execute({
-		sql: 'SELECT categories, category_options, share_anonymized_daily FROM family_settings WHERE family_id = ?',
+		sql: 'SELECT categories, category_options, share_anonymized_daily, stage_categories FROM family_settings WHERE family_id = ?',
 		args: [NAMESPACE_HOUSEHOLD_ID],
 	});
 
 	if (existing.rows.length === 0) {
 		await db.execute({
-			sql: 'INSERT INTO family_settings (family_id, categories, category_options, share_anonymized_daily) VALUES (?, ?, ?, ?)',
-			args: [NAMESPACE_HOUSEHOLD_ID, categories ? JSON.stringify(categories) : null, categoryOptions ? JSON.stringify(categoryOptions) : JSON.stringify({}), shareAnonymizedDaily ? 1 : 0],
+			sql: 'INSERT INTO family_settings (family_id, categories, category_options, stage_categories, share_anonymized_daily) VALUES (?, ?, ?, ?, ?)',
+			args: [NAMESPACE_HOUSEHOLD_ID, categories ? JSON.stringify(categories) : null, categoryOptions ? JSON.stringify(categoryOptions) : JSON.stringify({}), stageCategories ? JSON.stringify(stageCategories) : null, shareAnonymizedDaily ? 1 : 0],
 		});
 	} else {
 		const cur = settingsShape(existing.rows[0]);
 		const nextCategories = categories !== undefined ? categories : cur.categories;
 		const nextOptions = categoryOptions !== undefined ? categoryOptions : cur.categoryOptions;
 		const nextShare = shareAnonymizedDaily !== undefined ? shareAnonymizedDaily : cur.shareAnonymizedDaily;
+		const nextStageCategories = stageCategories !== undefined ? stageCategories : cur.stageCategories;
 		await db.execute({
-			sql: 'UPDATE family_settings SET categories = ?, category_options = ?, share_anonymized_daily = ?, updated_at = ? WHERE family_id = ?',
-			args: [nextCategories ? JSON.stringify(nextCategories) : null, JSON.stringify(nextOptions ?? {}), nextShare ? 1 : 0, isoNow(), NAMESPACE_HOUSEHOLD_ID],
+			sql: 'UPDATE family_settings SET categories = ?, category_options = ?, stage_categories = ?, share_anonymized_daily = ?, updated_at = ? WHERE family_id = ?',
+			args: [nextCategories ? JSON.stringify(nextCategories) : null, JSON.stringify(nextOptions ?? {}), nextStageCategories ? JSON.stringify(nextStageCategories) : null, nextShare ? 1 : 0, isoNow(), NAMESPACE_HOUSEHOLD_ID],
 		});
 	}
 
 	const fres = await db.execute({
-		sql: 'SELECT categories, category_options, share_anonymized_daily FROM family_settings WHERE family_id = ?',
+		sql: 'SELECT categories, category_options, share_anonymized_daily, stage_categories FROM family_settings WHERE family_id = ?',
 		args: [NAMESPACE_HOUSEHOLD_ID],
 	});
 	return c.json({ message: 'Settings updated', settings: settingsShape(fres.rows[0]), anonymizedPreview: await buildAnonymizedDailyPreview(db) });
@@ -1035,7 +1123,7 @@ async function handleExportFamily(c: Context<AuthEnv>) {
 
 	const members = (await db.execute({
 		sql: `
-			SELECT fm.id, fm.legacy_baby_id, fm.trackable, fm.name, fm.birth_date, fm.gender, fm.member_type, fm.email, fm.avatar, fm.categories,
+			SELECT fm.id, fm.legacy_subject_id, fm.trackable, fm.name, fm.birth_date, fm.gender, fm.member_type, fm.email, fm.avatar, fm.stage, fm.quick_links, fm.categories,
 			       CASE WHEN am.user_id IS NULL THEN 0 ELSE 1 END AS linked_account
 			FROM family_members fm
 			LEFT JOIN account_members am ON am.member_id = fm.id
@@ -1043,7 +1131,7 @@ async function handleExportFamily(c: Context<AuthEnv>) {
 			ORDER BY fm.created_at
 		`,
 		args: [NAMESPACE_HOUSEHOLD_ID],
-	})).rows.map(memberShape);
+	})).rows.map((row: any) => memberShape(row));
 
 	const formulas = (await db.execute({
 		sql: 'SELECT id, name, brand FROM formulas WHERE family_id = ? ORDER BY name',
@@ -1068,25 +1156,25 @@ async function handleExportFamily(c: Context<AuthEnv>) {
 		records: {},
 	};
 	const trackedIds = members
-		.map((m: any) => Number(m.legacyBabyId || 0))
+		.map((m: any) => Number(m.legacySubjectId || 0))
 		.filter((id: number) => Number.isFinite(id) && id > 0);
 	if (trackedIds.length > 0) {
 		const ids = trackedIds.join(',');
 		for (const table of EXPORT_TABLES) {
-			const cols = table === 'milestones' ? 'id, baby_id, title, description, achieved_date, kind, category, created_at, created_by'
-				: table === 'growth' ? 'id, baby_id, measurement_date, weight, height, head_circumference, unit_system, notes, created_at, created_by'
-				: table === 'sleep' ? 'id, baby_id, start_time, end_time, duration, location, notes, created_at, created_by'
-				: table === 'diapers' ? 'id, baby_id, change_time, type, color, consistency, notes, created_at, created_by'
-				: table === 'vaccinations' ? 'id, baby_id, name, date_given, next_due_date, administered_by, notes, created_at, created_by'
-				: table === 'moods' ? 'id, baby_id, mood, recorded_at, notes, created_at, created_by'
-				: table === 'journal_entries' ? 'id, baby_id, title, body, entry_date, created_at, created_by'
-				: 'id, baby_id, start_time, end_time, duration, amount, amount_unit, type, side, left_breast_at, right_breast_at, left_duration, right_duration, formula_id, notes, created_at, created_by';
-			const rows = await db.execute({ sql: `SELECT ${cols} FROM ${table} WHERE baby_id IN (${ids})`, args: [] });
+			const cols = table === 'milestones' ? 'id, subject_id, title, description, achieved_date, kind, category, created_at, created_by'
+				: table === 'growth' ? 'id, subject_id, measurement_date, weight, height, head_circumference, unit_system, notes, created_at, created_by'
+				: table === 'sleep' ? 'id, subject_id, start_time, end_time, duration, location, notes, created_at, created_by'
+				: table === 'diapers' ? 'id, subject_id, change_time, type, color, consistency, notes, created_at, created_by'
+				: table === 'vaccinations' ? 'id, subject_id, name, date_given, next_due_date, administered_by, notes, created_at, created_by'
+				: table === 'moods' ? 'id, subject_id, mood, recorded_at, notes, created_at, created_by'
+				: table === 'journal_entries' ? 'id, subject_id, title, body, entry_date, created_at, created_by'
+				: 'id, subject_id, start_time, end_time, duration, amount, amount_unit, type, side, left_breast_at, right_breast_at, left_duration, right_duration, formula_id, notes, created_at, created_by';
+			const rows = await db.execute({ sql: `SELECT ${cols} FROM ${table} WHERE subject_id IN (${ids})`, args: [] });
 			exportData.records[table] = rows.rows;
 		}
 	}
 
-	const familySettingsRow = (await db.execute({ sql: 'SELECT categories, category_options, share_anonymized_daily FROM family_settings WHERE family_id = ?', args: [NAMESPACE_HOUSEHOLD_ID] })).rows[0];
+	const familySettingsRow = (await db.execute({ sql: 'SELECT categories, category_options, share_anonymized_daily, stage_categories FROM family_settings WHERE family_id = ?', args: [NAMESPACE_HOUSEHOLD_ID] })).rows[0];
 	const invitations = (await db.execute({
 		sql: 'SELECT email, status, created_at FROM family_invitations WHERE family_id = ? ORDER BY created_at',
 		args: [NAMESPACE_HOUSEHOLD_ID],
@@ -1117,7 +1205,7 @@ async function handleRestoreFamily(c: Context<AuthEnv>) {
 
 	// Resolve existing members by name so restores are idempotent.
 	const existing = (await db.execute({
-		sql: 'SELECT id, name FROM babies WHERE household_id = ?',
+		sql: 'SELECT id, name FROM subjects WHERE household_id = ?',
 		args: [NAMESPACE_HOUSEHOLD_ID],
 	})).rows;
 	const byName: Record<string, number> = {};
@@ -1137,13 +1225,13 @@ async function handleRestoreFamily(c: Context<AuthEnv>) {
 		}
 		const catRes = Array.isArray(m.categories) ? JSON.stringify(m.categories) : null;
 		const ins = await db.execute({
-			sql: `INSERT INTO babies (household_id, name, birth_date, gender, type, email, categories, created_at, updated_at)
+			sql: `INSERT INTO subjects (household_id, name, birth_date, gender, type, email, categories, created_at, updated_at)
 			      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			args: [NAMESPACE_HOUSEHOLD_ID, name, m.birthDate || null, m.gender || null, m.type || 'child', m.email || null, catRes, isoNow(), isoNow()],
 		});
 		const newId = Number(ins.lastInsertRowid);
 		const fmIns = await db.execute({
-			sql: `INSERT INTO family_members (household_id, legacy_baby_id, trackable, name, member_type, birth_date, gender, email, avatar, categories, created_at, updated_at)
+			sql: `INSERT INTO family_members (household_id, legacy_subject_id, trackable, name, member_type, birth_date, gender, email, avatar, categories, created_at, updated_at)
 			      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			args: [NAMESPACE_HOUSEHOLD_ID, newId, (m.type || 'child') === 'child' ? 1 : 0, name, m.type || 'child', m.birthDate || null, m.gender || null, m.email || null, m.avatar || null, catRes, isoNow(), isoNow()],
 		});
@@ -1188,27 +1276,27 @@ async function handleRestoreFamily(c: Context<AuthEnv>) {
 		const rows = records[table] ?? [];
 		let count = 0;
 		for (const rec of rows) {
-			const oldBaby = Number(rec?.baby_id);
-			const babyId = memberIdMap[oldBaby] ?? oldBaby;
+			const oldBaby = Number(rec?.subject_id);
+			const subjectId = memberIdMap[oldBaby] ?? oldBaby;
 			try {
 				if (table === 'feedings') {
 					const mappedFormulaId = rec.formula_id == null ? null : (formulaIdMap[Number(rec.formula_id)] ?? null);
-await db.execute({ sql: `INSERT INTO feedings (baby_id, start_time, end_time, duration, amount, amount_unit, type, side, left_breast_at, right_breast_at, left_duration, right_duration, formula_id, notes, created_at, created_by)
-                                        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, args: [babyId, rec.start_time, rec.end_time, rec.duration, rec.amount, rec.amount_unit ?? 'oz', rec.type, rec.side, rec.left_breast_at ?? null, rec.right_breast_at ?? null, rec.left_duration ?? null, rec.right_duration ?? null, mappedFormulaId, rec.notes, rec.created_at ?? isoNow(), rec.created_by ?? userId] });
+await db.execute({ sql: `INSERT INTO feedings (subject_id, start_time, end_time, duration, amount, amount_unit, type, side, left_breast_at, right_breast_at, left_duration, right_duration, formula_id, notes, created_at, created_by)
+                                        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, args: [subjectId, rec.start_time, rec.end_time, rec.duration, rec.amount, rec.amount_unit ?? 'oz', rec.type, rec.side, rec.left_breast_at ?? null, rec.right_breast_at ?? null, rec.left_duration ?? null, rec.right_duration ?? null, mappedFormulaId, rec.notes, rec.created_at ?? isoNow(), rec.created_by ?? userId] });
 				} else if (table === 'diapers') {
-					await db.execute({ sql: `INSERT INTO diapers (baby_id, change_time, type, color, consistency, notes, created_at, created_by) VALUES (?,?,?,?,?,?,?,?)`, args: [babyId, rec.change_time, rec.type, rec.color, rec.consistency, rec.notes, rec.created_at ?? isoNow(), rec.created_by ?? userId] });
+					await db.execute({ sql: `INSERT INTO diapers (subject_id, change_time, type, color, consistency, notes, created_at, created_by) VALUES (?,?,?,?,?,?,?,?)`, args: [subjectId, rec.change_time, rec.type, rec.color, rec.consistency, rec.notes, rec.created_at ?? isoNow(), rec.created_by ?? userId] });
 				} else if (table === 'sleep') {
-					await db.execute({ sql: `INSERT INTO sleep (baby_id, start_time, end_time, duration, location, notes, created_at, created_by) VALUES (?,?,?,?,?,?,?,?)`, args: [babyId, rec.start_time, rec.end_time, rec.duration, rec.location, rec.notes, rec.created_at ?? isoNow(), rec.created_by ?? userId] });
+					await db.execute({ sql: `INSERT INTO sleep (subject_id, start_time, end_time, duration, location, notes, created_at, created_by) VALUES (?,?,?,?,?,?,?,?)`, args: [subjectId, rec.start_time, rec.end_time, rec.duration, rec.location, rec.notes, rec.created_at ?? isoNow(), rec.created_by ?? userId] });
 				} else if (table === 'growth') {
-					await db.execute({ sql: `INSERT INTO growth (baby_id, measurement_date, weight, height, head_circumference, unit_system, notes, created_at, created_by) VALUES (?,?,?,?,?,?,?,?,?)`, args: [babyId, rec.measurement_date, rec.weight, rec.height, rec.head_circumference, rec.unit_system, rec.notes, rec.created_at ?? isoNow(), rec.created_by ?? userId] });
+					await db.execute({ sql: `INSERT INTO growth (subject_id, measurement_date, weight, height, head_circumference, unit_system, notes, created_at, created_by) VALUES (?,?,?,?,?,?,?,?,?)`, args: [subjectId, rec.measurement_date, rec.weight, rec.height, rec.head_circumference, rec.unit_system, rec.notes, rec.created_at ?? isoNow(), rec.created_by ?? userId] });
 				} else if (table === 'milestones') {
-					await db.execute({ sql: `INSERT INTO milestones (baby_id, title, description, achieved_date, kind, category, created_at, created_by) VALUES (?,?,?,?,?,?,?,?)`, args: [babyId, rec.title, rec.description, rec.achieved_date, rec.kind ?? 'milestones', rec.category, rec.created_at ?? isoNow(), rec.created_by ?? userId] });
+					await db.execute({ sql: `INSERT INTO milestones (subject_id, title, description, achieved_date, kind, category, created_at, created_by) VALUES (?,?,?,?,?,?,?,?)`, args: [subjectId, rec.title, rec.description, rec.achieved_date, rec.kind ?? 'milestones', rec.category, rec.created_at ?? isoNow(), rec.created_by ?? userId] });
 				} else if (table === 'vaccinations') {
-					await db.execute({ sql: `INSERT INTO vaccinations (baby_id, name, date_given, next_due_date, administered_by, notes, created_at, created_by) VALUES (?,?,?,?,?,?,?,?)`, args: [babyId, rec.name, rec.date_given, rec.next_due_date ?? rec.nextDueDate, rec.administered_by, rec.notes, rec.created_at ?? isoNow(), rec.created_by ?? userId] });
+					await db.execute({ sql: `INSERT INTO vaccinations (subject_id, name, date_given, next_due_date, administered_by, notes, created_at, created_by) VALUES (?,?,?,?,?,?,?,?)`, args: [subjectId, rec.name, rec.date_given, rec.next_due_date ?? rec.nextDueDate, rec.administered_by, rec.notes, rec.created_at ?? isoNow(), rec.created_by ?? userId] });
 				} else if (table === 'moods') {
-					await db.execute({ sql: `INSERT INTO moods (baby_id, mood, recorded_at, notes, created_at, created_by) VALUES (?,?,?,?,?,?)`, args: [babyId, rec.mood, rec.recorded_at ?? rec.recordedAt ?? isoNow(), rec.notes, rec.created_at ?? isoNow(), rec.created_by ?? userId] });
+					await db.execute({ sql: `INSERT INTO moods (subject_id, mood, recorded_at, notes, created_at, created_by) VALUES (?,?,?,?,?,?)`, args: [subjectId, rec.mood, rec.recorded_at ?? rec.recordedAt ?? isoNow(), rec.notes, rec.created_at ?? isoNow(), rec.created_by ?? userId] });
 				} else if (table === 'journal_entries') {
-					await db.execute({ sql: `INSERT INTO journal_entries (baby_id, title, body, entry_date, created_at, created_by) VALUES (?,?,?,?,?,?)`, args: [babyId, rec.title, rec.body, rec.entry_date ?? rec.entryDate ?? isoNow(), rec.created_at ?? isoNow(), rec.created_by ?? userId] });
+					await db.execute({ sql: `INSERT INTO journal_entries (subject_id, title, body, entry_date, created_at, created_by) VALUES (?,?,?,?,?,?)`, args: [subjectId, rec.title, rec.body, rec.entry_date ?? rec.entryDate ?? isoNow(), rec.created_at ?? isoNow(), rec.created_by ?? userId] });
 				}
 				count++;
 			} catch (e) {
@@ -1238,7 +1326,7 @@ await db.execute({ sql: `INSERT INTO feedings (baby_id, start_time, end_time, du
 	const RESTORE_IMPORT_TYPE = 'nido_restore';
 	const RESTORE_FILENAME = 'nido-backup.json';
 	await db.execute({
-		sql: 'INSERT INTO import_runs (family_id, baby_id, importer_user_id, import_type, filename, counts) VALUES (?, ?, ?, ?, ?, ?)',
+		sql: 'INSERT INTO import_runs (family_id, subject_id, importer_user_id, import_type, filename, counts) VALUES (?, ?, ?, ?, ?, ?)',
 		args: [NAMESPACE_HOUSEHOLD_ID, null, userId, RESTORE_IMPORT_TYPE, RESTORE_FILENAME, JSON.stringify(recordCounts)],
 	});
 

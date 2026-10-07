@@ -1,21 +1,44 @@
-import { Milk, Baby, Moon, TrendingUp, Calendar, Star, Trophy, Stethoscope, Syringe, Smile, Book } from 'lucide-svelte';
+import { Milk, Baby, Moon, TrendingUp, Calendar, Star, Trophy, Stethoscope, Syringe, Smile, Book, Pill, Scissors, CalendarClock, Sparkles } from 'lucide-svelte';
 import { authStore } from '$lib/stores/authStore';
 import { get } from 'svelte/store';
 
-export const CATEGORIES = [
-    { id: 'feeds', label: 'Feeds', icon: Milk },
-    { id: 'diapers', label: 'Diapers', icon: Baby },
-    { id: 'sleep', label: 'Sleep', icon: Moon },
-    { id: 'growth', label: 'Growth', icon: TrendingUp },
-    { id: 'pumping', label: 'Pumping', icon: Milk },
-    { id: 'routines', label: 'Routines', icon: Calendar },
-    { id: 'firsts', label: 'Firsts', icon: Star },
-    { id: 'milestones', label: 'Milestones', icon: Trophy },
-    { id: 'medical', label: 'Medical', icon: Stethoscope },
-    { id: 'vaccines', label: 'Vaccines', icon: Syringe },
-    { id: 'moods', label: 'Moods', icon: Smile },
-    { id: 'journal', label: 'Journal', icon: Book },
-];
+import {
+	CATEGORY_IDS,
+	MILESTONE_CATEGORY_IDS,
+	CATEGORY_OPTION_KEY,
+	CATEGORY_OPTIONS,
+	type CategoryId,
+	type MilestoneCategoryId,
+} from './vocabulary.generated';
+
+/**
+ * How each category is shown. The vocabulary — which categories exist — comes
+ * from vocabulary.generated.ts, which comes from api/src/vocabulary.ts.
+ *
+ * This map is keyed by that union, so adding a category there fails to compile
+ * here until it has a label and an icon. That is deliberate: the failure used to
+ * be silent, and surfaced as a log form with no fields.
+ */
+const PRESENTATION: Record<CategoryId, { label: string; icon: typeof Milk }> = {
+	feeds: { label: 'Feeds', icon: Milk },
+	diapers: { label: 'Diapers', icon: Baby },
+	sleep: { label: 'Sleep', icon: Moon },
+	growth: { label: 'Growth', icon: TrendingUp },
+	pumping: { label: 'Pumping', icon: Milk },
+	routines: { label: 'Routines', icon: Calendar },
+	firsts: { label: 'Firsts', icon: Star },
+	milestones: { label: 'Milestones', icon: Trophy },
+	medical: { label: 'Medical', icon: Stethoscope },
+	vaccines: { label: 'Vaccines', icon: Syringe },
+	moods: { label: 'Moods', icon: Smile },
+	journal: { label: 'Journal', icon: Book },
+	medication: { label: 'Medication', icon: Pill },
+	vitamins: { label: 'Vitamins', icon: Sparkles },
+	appointments: { label: 'Appointments', icon: CalendarClock },
+	grooming: { label: 'Grooming', icon: Scissors },
+};
+
+export const CATEGORIES = CATEGORY_IDS.map((id) => ({ id, ...PRESENTATION[id] }));
 
 /**
  * The profile to open on when the family has not saved a default.
@@ -32,36 +55,26 @@ export function defaultMemberId<T extends { id: number | string; trackable?: boo
 	return Number((trackable ?? members[0]).id);
 }
 
-export const QUICK_LINK_DEFAULT = ['feeds', 'diapers', 'sleep'];
 
-export type MilestoneKind = 'milestones' | 'firsts' | 'routines' | 'medical';
+/** Categories stored as milestone rows. Defined in api/src/vocabulary.ts. */
+export type MilestoneKind = MilestoneCategoryId;
 
 /**
  * Per-kind category vocabularies. The logger and the edit dialog both draw
  * their choices from here, so a category is always one of a known set and can
  * be reported on. These mirror DEFAULT_CATEGORY_OPTIONS on the API.
  */
-export const DEFAULT_CATEGORY_OPTIONS: Record<string, Record<string, string[]>> = {
-    feeds: { type: ['breast', 'formula', 'bottle', 'pump', 'solid'], side: ['left', 'right', 'both'] },
-    diapers: { consistency: ['mushy', 'runny', 'formed', 'soft', 'blowout', 'other'], color: ['yellow', 'brown', 'green', 'black', 'red'] },
-    sleep: { location: ['crib', 'bassinet', 'stroller', 'carrier', 'other'] },
-    growth: { unit: ['metric', 'imperial'] },
-    pumping: { type: ['left', 'right', 'both'] },
-    routines: { type: ['tummy time', 'bath', 'story time', 'walk', 'other'] },
-    firsts: { type: ['smile', 'roll over', 'crawl', 'first step', 'tooth', 'other'] },
-    milestones: { category: ['physical', 'social', 'language', 'cognitive', 'other'] },
-    medical: { visitType: ['wellness', 'sick visit', 'follow-up', 'other'] },
-    vaccines: { route: ['oral', 'intramuscular', 'subcutaneous', 'dermal'] },
-    moods: { mood: ['happy', 'fussy', 'sleepy', 'unwell', 'content', 'unsettled'] },
-};
+export const DEFAULT_CATEGORY_OPTIONS: Record<string, Record<string, string[]>> = CATEGORY_OPTIONS;
 
 /** Which option list holds a kind's categories. */
+export const MILESTONE_KIND_IDS = MILESTONE_CATEGORY_IDS;
+
 export function milestoneCategoryKey(kind: MilestoneKind): string {
-    return kind === 'milestones' ? 'category' : kind === 'medical' ? 'visitType' : 'type';
+    return CATEGORY_OPTION_KEY[kind] ?? 'type';
 }
 
 export function isMilestoneKind(value: string): value is MilestoneKind {
-    return value === 'milestones' || value === 'firsts' || value === 'routines' || value === 'medical';
+    return (MILESTONE_KIND_IDS as readonly string[]).includes(value);
 }
 
 /**
@@ -79,26 +92,3 @@ export function milestoneCategory(r: { kind?: string | null; category?: string |
     return 'milestones';
 }
 
-export function quickLinksKey(userId: number | null) {
-    // DO NOT CHANGE the 'nido.' prefix — see note in lib/theme.ts. Quick links
-    // are browser-persisted with no migration, so a rename drops them silently.
-    return `nido.quicklinks.${userId}`;
-}
-
-export function loadQuickLinks(userId: number | null): string[] {
-    const key = quickLinksKey(userId);
-    try {
-        const raw = localStorage.getItem(key);
-        const parsed = raw ? JSON.parse(raw) : null;
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-        return [...QUICK_LINK_DEFAULT];
-    } catch {
-        return [...QUICK_LINK_DEFAULT];
-    }
-}
-
-export function saveQuickLinks(userId: number | null, next: string[]) {
-    try {
-        localStorage.setItem(quickLinksKey(userId), JSON.stringify(next));
-    } catch {}
-}

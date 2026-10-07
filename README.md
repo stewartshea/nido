@@ -24,7 +24,7 @@ codebase with the same features.
 - **Sleep** — start/stop with live duration
 - **Growth** — weight, height and head circumference against WHO/CDC percentiles
 - **Milestones & vaccinations** — logging plus schedule
-- **Photos** — per-member avatars and photo uploads (MIME-validated)
+- **Photos & attachments** — avatars and file uploads on any log entry, encrypted
 - **Journal & mood** — free-form notes per day
 - **Shared family access** — invite caregivers, owner/admin/member roles
 - **Reminders** — inactivity and interval nudges
@@ -74,7 +74,7 @@ the data volume.
 | `ADMIN_EMAIL` | no | Grants platform admin on first boot |
 | `SIGNUP_ENABLED` | no | Set to enable open registration |
 | `PUBLIC_URL` | no | Origin used in verification/reset emails |
-| `PHOTO_DIR` | no | Photo storage. Default `/data/photos` |
+| `NIDO_BLOB_DIR` | no | Encrypted file storage for avatars and attachments. Default `<data>/blobs`. Point at a shared mount to scale out |
 | `API_PROXY_TARGET` | no | Where the web server forwards `/api` |
 | `LOG_LEVEL` | no | API log verbosity: `debug`, `info` (default), `warn`, `error`, `silent` |
 | `LOG_FORMAT` | no | API log format: `json` or `pretty`. Defaults to `json` when stdout is a pipe, `pretty` on a terminal |
@@ -180,10 +180,13 @@ A few things worth knowing before deploying:
 - Choose `NIDO_MASTER_KEY` once, before any real data exists. It cannot be
   rotated later: every family's key is derived from it, and there is no
   recovery path without a backup of both the key and the data.
-- Photos are stored unencrypted on disk and are served only through
-  authenticated, family-scoped routes. A photo's original EXIF (including GPS)
-  is preserved — strip it before uploading anything you would rather not keep.
-- There is currently no maximum file-size check on photo uploads.
+- Avatars and attachments are stored encrypted, inside each family's own
+  boundary: the content key is derived from the family and the file's address is
+  authenticated, so a file copied into another family's directory will not open.
+  They are served only through authenticated, family-scoped routes.
+- An uploaded image's original EXIF (including GPS) is preserved — strip it
+  before uploading anything you would rather not keep.
+- Uploads are capped at 25 MiB.
 
 ## Contributing
 

@@ -10,7 +10,7 @@ const REGISTRY_INFO = 'nido:registry';
 
 let root: string;
 let dataDir: string;
-let photoDir: string;
+let blobDir: string;
 let destDir: string;
 
 function keyedRegistry() {
@@ -37,10 +37,10 @@ describe('backupDataDir + restoreBackup', () => {
   beforeAll(() => {
     root = mkdtempSync('nido-backup-test-');
     dataDir = path.join(root, 'data');
-    photoDir = path.join(root, 'photos');
+    blobDir = path.join(root, 'blobs');
     destDir = path.join(root, 'backups');
     mkdirSync(dataDir, { recursive: true });
-    mkdirSync(photoDir, { recursive: true });
+    mkdirSync(blobDir, { recursive: true });
     mkdirSync(destDir, { recursive: true });
 
     // A real registry: encrypted, WAL, a table + row.
@@ -55,21 +55,21 @@ describe('backupDataDir + restoreBackup', () => {
     rmSync(root, { recursive: true, force: true });
   });
 
-  it('captures WAL-only rows, photos, and a valid manifest in a tar.gz', async () => {
+  it('captures WAL-only rows, blobs, and a valid manifest in a tar.gz', async () => {
     // Open family DBs and keep them open: their recent rows live only in the
     // -wal file until the connection checkpoints or closes.
     const famA = buildFamilyDb('fam-aaaalphanumeric000001', 5, 5);
     const famB = buildFamilyDb('fam-bbbalphanumeric000001', 0, 3);
 
-    const photoBytes = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3]);
-    writeFileSync(path.join(photoDir, 'one.jpg'), photoBytes);
-    const nested = path.join(photoDir, 'events');
+    const blobBytes = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3]);
+    writeFileSync(path.join(blobDir, 'one.jpg'), blobBytes);
+    const nested = path.join(blobDir, 'events');
     mkdirSync(nested, { recursive: true });
     writeFileSync(path.join(nested, 'two.jpg'), Buffer.alloc(4096, 0xaa));
 
     const result = await backupDataDir({
       dataDir,
-      photoDir,
+      blobDir,
       destinationDir: destDir,
       masterKeyHex: MASTER,
       now: new Date('2026-01-02T03:04:05Z'),
@@ -79,14 +79,14 @@ describe('backupDataDir + restoreBackup', () => {
     const head = readFileSync(result.archivePath).subarray(0, 2);
     expect([head[0], head[1]]).toEqual([0x1f, 0x8b]);
 
-    // The manifest and photos are in the archive.
+    // The manifest and blobs are in the archive.
     const dbEntries = result.manifest.entries.filter((e) => e.kind === 'database');
-    const photoEntries = result.manifest.entries.filter((e) => e.kind === 'photo');
+    const blobEntries = result.manifest.entries.filter((e) => e.kind === 'blob');
     expect(dbEntries.map((e) => e.path).sort()).toEqual(
       ['db/fam-aaaalphanumeric000001.db', 'db/fam-bbbalphanumeric000001.db', 'registry.db'].sort(),
     );
-    expect(photoEntries.map((e) => e.path).sort()).toEqual(['photos/events/two.jpg', 'photos/one.jpg'].sort());
-    expect(result.manifest.totals.photos).toBe(2);
+    expect(blobEntries.map((e) => e.path).sort()).toEqual(['blobs/events/two.jpg', 'blobs/one.jpg'].sort());
+    expect(result.manifest.totals.blobs).toBe(2);
     expect(result.manifest.totals.databases).toBe(3);
 
     // No secret material in the manifest.
@@ -109,7 +109,7 @@ describe('backupDataDir + restoreBackup', () => {
       masterKeyHex: MASTER,
     });
     expect(restored.databases).toBe(3);
-    expect(restored.photos).toBe(2);
+    expect(restored.blobs).toBe(2);
 
     const a = openDb(path.join(restoreDir, 'data', 'db', 'fam-aaaalphanumeric000001.db'), keyedFamily('fam-aaaalphanumeric000001'), {
       fileMustExist: true,
@@ -124,12 +124,12 @@ describe('backupDataDir + restoreBackup', () => {
     a.close();
     b.close();
 
-    const restoredPhoto = path.join(restoreDir, 'data', 'photos', 'one.jpg');
-    expect(Buffer.from(readFileSync(restoredPhoto))).toEqual(Buffer.from(photoBytes));
+    const restoredBlob = path.join(restoreDir, 'data', 'blobs', 'one.jpg');
+    expect(Buffer.from(readFileSync(restoredBlob))).toEqual(Buffer.from(blobBytes));
 
     // The restore dir now has data/, and index entries match the archive list.
     const restoredPaths = restored.entries.map((e) => `data/${e.path}`).sort();
-    expect(restoredPaths.length).toBe(dbEntries.length + photoEntries.length);
+    expect(restoredPaths.length).toBe(dbEntries.length + blobEntries.length);
 
     famA.close();
     famB.close();
@@ -140,7 +140,7 @@ describe('backupDataDir + restoreBackup', () => {
 
     const plain = await backupDataDir({
       dataDir,
-      photoDir,
+      blobDir,
       destinationDir: destDir,
       masterKeyHex: MASTER,
       now: new Date('2026-02-03T04:05:06Z'),
@@ -148,7 +148,7 @@ describe('backupDataDir + restoreBackup', () => {
 
     const ciphered = await backupDataDir({
       dataDir,
-      photoDir,
+      blobDir,
       destinationDir: destDir,
       masterKeyHex: MASTER,
       passphrase: 'correct horse battery staple',

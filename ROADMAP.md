@@ -14,7 +14,13 @@ that board by `scripts/roadmap-sync.mjs` so it cannot quietly disagree with them
 
 | Issue | Capability | Status | Priority | Area |
 | --- | --- | --- | --- | --- |
+| [17](https://github.com/stewartshea/nido/issues/17) | Feature: quick-select which person the dashboard is showing | Todo | P1-High | Family tracking |
+| [20](https://github.com/stewartshea/nido/issues/20) | Feature: tracking templates per life stage (infant, child, adult) | Todo | P1-High | Family tracking |
+| [22](https://github.com/stewartshea/nido/issues/22) | Feature: high availability for the data tier (survive node loss and rolling deploys) | Todo | P1-High | Platform |
 | [11](https://github.com/stewartshea/nido/issues/11) | Feature: inventory management system (family + home categories) | Done | P2-Medium | Home and inventory |
+| [18](https://github.com/stewartshea/nido/issues/18) | Feature: pet tracking (grooming, vet visits, vaccinations, medication) | Todo | P2-Medium | Family tracking |
+| [19](https://github.com/stewartshea/nido/issues/19) | Feature: attachments on records and profiles | Todo | P2-Medium | Platform |
+| [21](https://github.com/stewartshea/nido/issues/21) | Feature: adult tracking (medication, appointments, immunisations, vitals) | Todo | P2-Medium | Family tracking |
 | [13](https://github.com/stewartshea/nido/issues/13) | Feature: formal release strategy (versioning, changelog, tagging) | Todo | P3-Low | Platform |
 
 <!-- drift:start -->

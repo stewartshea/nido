@@ -23,8 +23,8 @@ spec:
           ports:
             - containerPort: 3000
           env:
-            - name: PHOTO_DIR
-              value: "/data/photos"
+            - name: NIDO_BLOB_DIR
+              value: "/data/blobs"
             # Runtime data directory (registry DB + per-family DBs). Defaults
             # to ./data when unset; pinned to the PVC mount here.
             - name: NIDO_DATA_DIR

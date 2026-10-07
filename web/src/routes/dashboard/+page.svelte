@@ -5,17 +5,17 @@
 	import { authAPI, userAPI, familiesAPI, feedingAPI, diaperAPI, sleepAPI, growthAPI, healthAPI, importsAPI, milestoneAPI, vaccinationAPI, settingsAPI, moodAPI, journalAPI, tokenExpired, type PageOptions } from '$lib/api';
 	import { authStore, authActions } from '$lib/stores/authStore';
 	import { uiStore, uiActions } from '$lib/stores/uiStore';
-	import PhotoStrip from '$lib/components/PhotoStrip.svelte';
 	import ToggleSwitch from '$lib/components/ToggleSwitch.svelte';
 	import Avatar from '$lib/components/Avatar.svelte';
 	import { loadListsCache, saveListsCache } from '$lib/cache';
 	import { flushOutbox } from '$lib/logging/outbox';
 	import MemberActivity from '$lib/components/logging/MemberActivity.svelte';
+	import MemberSwitcher from '$lib/components/logging/MemberSwitcher.svelte';
 	import StockGlance from '$lib/components/logging/StockGlance.svelte';
 	import LogDrawer from '$lib/components/logging/LogDrawer.svelte';
 	import { Users, Home, AlertCircle, Check } from 'lucide-svelte';
 
-	import { CATEGORIES, loadQuickLinks as loadSharedQuickLinks, saveQuickLinks as saveSharedQuickLinks, defaultMemberId } from '$lib/shared';
+	import { CATEGORIES, defaultMemberId } from '$lib/shared';
 
 	let sheetOpen = false;
 
@@ -42,17 +42,6 @@
 	let password = '';
 	let showForgot = false;
 	let pendingResetToken = '';
-	// Per-user mobile quick links (category ids), persisted in localStorage.
-	let quickLinks: string[] = [];
-
-	function loadQuickLinks() {
-		quickLinks = loadSharedQuickLinks($authStore.user?.id ?? null);
-	}
-
-	function saveQuickLinks(next: string[]) {
-		quickLinks = next;
-		saveSharedQuickLinks($authStore.user?.id ?? null, next);
-	}
 
 	// "Other" picker: every category the quick pills do not already cover, so
 	// no log target is ever more than one tap from the dashboard.
@@ -68,16 +57,35 @@
 
 	let loading = false;
 
-	let babies: any[] = [];
+	let profiles: any[] = [];
 	let families: any[] = [];
 	let activeFamily: any = null;
 	let activeFamilyId: string | null = null;
 	let selectedMemberId: number | null = null;
+	// The selected member's own pins and stage, so every surface agrees on what
+	// this person can log.
+	$: selectedMember = profiles.find((b) => Number(b.id) === selectedMemberId) ?? null;
+	$: selectedQuickLinks = selectedMember?.quickLinks ?? null;
+	$: selectedStage = selectedMember?.stage ?? null;
+	// The person the page opens on. Stored per family, because a household that
+	// mostly records against one child should not have to re-pick them each visit.
+	let starredMemberId: number | null = null;
 	let activeTab = 'feeds';
 	let defaultProfileId: number | null = null;
 	let summary: any = null;
 	// Feeds, sleep, diapers and the rest only exist for a trackable profile.
-	let selectedIsTrackable = true;
+	/**
+	 * Whether the selected person can be logged against.
+	 *
+	 * Computed here rather than from a `$:` flag: reactive statements are
+	 * scheduled, not synchronous, so selectMember() would call refreshLists()
+	 * before the flag had recomputed and fetch the baby endpoints for whoever was
+	 * selected previously.
+	 */
+	function currentIsTrackable(): boolean {
+		const m = profiles.find((b) => Number(b.id) === selectedMemberId);
+		return !!m && m.trackable !== false;
+	}
 
 	// Categories enabled for the selected member.
 	let activeCategories: string[] = [];
@@ -98,7 +106,6 @@
 	// Diaper detail form
 	// Sleep + growth backdated
 	// Milestone + vaccine manual forms
-	// Photos (toggle state only — the PhotoStrip component handles loading)
 	// Account
 
 	let feedings: any[] = [];
@@ -205,7 +212,7 @@
 	async function refreshSummary() {
 		if (!selectedMemberId) return;
 		if (!selectedMemberId) return;
-		if (!selectedIsTrackable) {
+		if (!currentIsTrackable()) {
 			summary = null;
 			return;
 		}
@@ -221,7 +228,7 @@
 	async function refreshLists() {
 		if (!selectedMemberId) return;
 		if (!selectedMemberId) return;
-		if (!selectedIsTrackable) {
+		if (!currentIsTrackable()) {
 			// Baby tracking only. The person who created the household is an adult
 			// member of it, so a household with no child yet would otherwise fire
 			// requests that are refused.
@@ -300,7 +307,7 @@
 			families = res.data.families;
 			if (families.length === 0) {
 				selectedMemberId = null;
-				babies = [];
+				profiles = [];
 				return;
 			}
 			// Prefer the saved default family, else the first.
@@ -308,11 +315,12 @@
 			activeFamily = families.find((f) => f.familyId === savedFamily) ?? families[0];
 				activeFamilyId = activeFamily?.familyId ?? null;
 
+			loadStarred();
 			const membersRes = await familiesAPI.members(activeFamilyId);
 			const members = membersRes.data.members;
 			// Members are the profiles the tracker operates on (child/adult; "newborn"
 			// is a child with newborn categories enabled).
-			babies = members.map((m) => ({
+			profiles = members.map((m) => ({
 				id: m.id,
 				name: m.name,
 				birth_date: m.birthDate ?? '',
@@ -322,20 +330,27 @@
 				avatar: m.avatar ?? null,
 				categories: Array.isArray(m.categories) ? m.categories : [],
 				trackable: m.trackable !== false,
-				legacyBabyId: m.legacyBabyId ?? null,
+				legacySubjectId: m.legacySubjectId ?? null,
+				stage: m.stage ?? null,
+				quickLinks: Array.isArray(m.quickLinks) ? m.quickLinks : null,
 			}));
 
-			if (babies.length > 0) {
+			if (profiles.length > 0) {
+				// Starred first: it is the person this household records against most,
+				// so the page should open there rather than on whoever happens to sort
+				// first.
+				const starred = profiles.find((b) => Number(b.id) === starredMemberId);
 				const savedDefault = defaultProfileId ?? null;
-				const match = savedDefault ? babies.find((b) => Number(b.id) === savedDefault) : null;
-				selectedMemberId = match ? Number(match.id) : defaultMemberId(babies);
-				const selected = babies.find((b) => Number(b.id) === selectedMemberId);
-				selectedIsTrackable = selected ? selected.trackable !== false : false;
-				activeCategories = selected?.categories?.length ? selected.categories : CATEGORIES.map((c) => c.id);
+				const match = savedDefault ? profiles.find((b) => Number(b.id) === savedDefault) : null;
+				selectedMemberId = starred ? Number(starred.id) : match ? Number(match.id) : defaultMemberId(profiles);
+
+				const selected = profiles.find((b) => Number(b.id) === selectedMemberId);
+				// The API resolves this to the member's own set, constrained by their
+				// stage. An empty list is a real answer, not a prompt to show everything.
+				activeCategories = selected?.categories ?? [];
 				if (!activeCategories.includes(activeTab)) activeTab = activeCategories[0] || 'feeds';
 			} else {
 				selectedMemberId = null;
-				selectedIsTrackable = false;
 				activeCategories = [];
 			}
 			await Promise.all([loadFamilySettings(), refreshLists(), refreshSummary(), loadInvitations(), loadImportRuns()]);
@@ -354,7 +369,7 @@
 	function handleLogout() {
 		authActions.logout();
 		isAuthenticated = false;
-		babies = [];
+		profiles = [];
 		selectedMemberId = null;
 	}
 
@@ -405,7 +420,6 @@
 				});
 				isPanelAdmin = Number(u.is_platform_admin ?? 0) === 1;
 			}
-			loadQuickLinks();
 		} catch {
 			isPanelAdmin = false;
 		}
@@ -429,11 +443,55 @@
 
 	async function selectMember(memberId: number) {
 		selectedMemberId = memberId;
-		const selected = babies.find((b) => Number(b.id) === memberId);
-		activeCategories = selected?.categories?.length ? selected.categories : CATEGORIES.map((c) => c.id);
+		const selected = profiles.find((b) => Number(b.id) === memberId);
+		// The API resolves this to the member's own set, constrained by their
+				// stage. An empty list is a real answer, not a prompt to show everything.
+				activeCategories = selected?.categories ?? [];
 		if (!activeCategories.includes(activeTab)) activeTab = activeCategories[0] || 'feeds';
 		await refreshLists();
 		await refreshSummary();
+	}
+
+	function starredKey(): string {
+		return `nido.starred.${activeFamilyId ?? 'none'}`;
+	}
+
+	function loadStarred() {
+		try {
+			const raw = localStorage.getItem(starredKey());
+			starredMemberId = raw ? Number(raw) : null;
+		} catch {
+			starredMemberId = null;
+		}
+	}
+
+	function setStarred(memberId: number) {
+		starredMemberId = memberId;
+		try { localStorage.setItem(starredKey(), String(memberId)); } catch { /* private mode */ }
+	}
+
+	/**
+	 * Pin or unpin a tile for the selected person.
+	 *
+	 * Stored on the member so it follows them between devices, and so switching
+	 * to yourself brings back what *you* log rather than the baby's tiles.
+	 */
+	async function setQuickLink(kind: string, pin: boolean) {
+		if (!activeFamilyId || !selectedMember) return;
+		// The implicit set is the member's leading categories, which is what the
+		// tiles show before anything has been pinned — pinning must extend that
+		// rather than replace it with a single tile.
+		const current: string[] = selectedMember.quickLinks?.length ? selectedMember.quickLinks : activeCategories.slice(0, 4);
+		const next = pin
+			? current.includes(kind) ? current : [...current, kind]
+			: current.filter((k) => k !== kind);
+		try {
+			await familiesAPI.updateMember(activeFamilyId, Number(selectedMember.id), { quickLinks: next });
+			selectedMember.quickLinks = next;
+			profiles = profiles;
+		} catch (err: any) {
+			console.error('Failed to update quick links', err);
+		}
 	}
 
 	async function loadFamilySettings() {
@@ -549,38 +607,29 @@
 								<p class="text-ink-soft mb-4">You haven't set up a family yet.</p>
 								<button type="button" on:click={() => goto('/family')} class="bg-primary text-on-primary px-4 py-2 rounded-md hover:bg-primary">Build your family</button>
 							</div>
-						{:else if babies.length === 0}
+						{:else if profiles.length === 0}
 							<div class="bg-surface rounded-lg shadow-card p-4 md:p-6 text-center border border-line-soft">
 								<p class="text-ink-soft mb-4">Your family has no members yet.</p>
 								<button type="button" on:click={() => goto('/family')} class="bg-primary text-on-primary px-4 py-2 rounded-md hover:bg-primary">Add a member</button>
 							</div>
 						{:else}
-							<div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-								{#each babies as baby}
-									<div class="bg-surface rounded-lg shadow-card p-5 border border-line-soft flex items-center justify-between">
-										<div class="flex items-center gap-4">
-											<div class="w-12 h-12 rounded-full bg-accent text-on-accent flex items-center justify-center font-display text-xl overflow-hidden">
-												<Avatar familyId={activeFamilyId} memberId={baby.id} avatar={baby.avatar} alt={baby.name} class="w-full h-full object-cover">
-													{baby.name[0]}
-												</Avatar>
-											</div>
-											<div>
-												<h3 class="font-display font-semibold text-lg">{baby.name}</h3>
-												<p class="text-sm text-ink-soft">Born {baby.birth_date.slice(0, 10)}</p>
-											</div>
-										</div>
-										<button type="button" on:click={() => { selectMember(baby.id); document.getElementById('activities')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }} class="px-4 py-2 bg-surface2 text-ink-soft hover:text-ink rounded-md text-sm font-semibold">
-											Activities &rarr;
-										</button>
-									</div>
-								{/each}
+							<div class="mb-6">
+								<MemberSwitcher
+									members={profiles.map((b) => ({ id: Number(b.id), name: b.name, avatar: b.avatar, stage: b.stage }))}
+									selectedId={selectedMemberId}
+									starredId={starredMemberId}
+									familyId={activeFamilyId}
+									on:select={(e) => selectMember(e.detail.memberId)}
+									on:star={(e) => { setStarred(e.detail.memberId); selectMember(e.detail.memberId); }}
+								/>
 							</div>
 
 							<MemberActivity
-								memberName={babies.find((b) => b.id === selectedMemberId)?.name || 'Selected'}
-								{quickLinks}
+								memberName={selectedMember?.name || 'Selected'}
 								{summary}
 								{activeCategories}
+								quickLinks={selectedQuickLinks}
+								stage={selectedStage}
 								{feedings} {diapers} {sleeps} {growths}
 								{milestones} {vaccinations} {moods} {journalEntries}
 								totals={listTotals}
@@ -588,6 +637,8 @@
 								on:log={(e) => openLog(e.detail.kind)}
 								on:loadmore={loadMoreLists}
 								on:refresh={async () => { await refreshLists(); await refreshSummary(); }}
+								on:pin={(e) => setQuickLink(e.detail.kind, true)}
+								on:unpin={(e) => setQuickLink(e.detail.kind, false)}
 							/>
 
 							<div class="mt-6">
@@ -605,7 +656,7 @@
 							<button type="button" on:click={() => goto('/home')} class="text-sm font-semibold text-accent hover:underline">Go to Home &rarr;</button>
 						</div>
 
-						{#if babies.length > 0}
+						{#if profiles.length > 0}
 							<div class="bg-surface rounded-lg shadow-card p-4 md:p-6 mb-6">
 								<h3 class="text-xl font-display font-semibold mb-3">Homes</h3>
 								<p class="text-ink-soft mb-4">
@@ -641,7 +692,7 @@
 	kind={activeTab}
 	familyId={activeFamilyId}
 	memberId={selectedMemberId}
-	members={babies}
+	members={profiles}
 	on:saved={onLogged}
 	on:error={(e) => (error = e.detail.message)}
 	on:notice={(e) => (notice = e.detail.message)}

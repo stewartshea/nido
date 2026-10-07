@@ -55,20 +55,20 @@ feedingRoutes.get('/', async (c) => {
     if (!scope) {
       return c.json({ error: 'Member not found or access denied' }, 404);
     }
-    const babyId = scope.babyId;
+    const subjectId = scope.subjectId;
     const { limit, offset } = parsePaging((k) => c.req.query(k));
 
     const feedingsResult = await db.execute({
       sql: `
-      SELECT id, baby_id, start_time, end_time, duration, amount, amount_unit, type, side, left_breast_at, right_breast_at, left_duration, right_duration, formula_id, notes, created_at, created_by
+      SELECT id, subject_id, start_time, end_time, duration, amount, amount_unit, type, side, left_breast_at, right_breast_at, left_duration, right_duration, formula_id, notes, created_at, created_by
       FROM feedings
-      WHERE baby_id = ?
+      WHERE subject_id = ?
       ORDER BY start_time DESC, id DESC
       LIMIT ? OFFSET ?
     `,
-      args: [babyId, limit, offset]
+      args: [subjectId, limit, offset]
     });
-    const total = await countMatching(db, 'feedings', [babyId]);
+    const total = await countMatching(db, 'feedings', [subjectId]);
     
     // Calculate duration if not already calculated
     const feedings = (feedingsResult.rows as unknown as FeedingRow[])
@@ -100,9 +100,9 @@ feedingRoutes.get('/:id{[0-9]+}', async (c) => {
     // Verify user has access to this feeding
     const feedingResult = await db.execute({
       sql: `
-      SELECT f.id, f.baby_id, f.start_time, f.end_time, f.duration, f.amount, f.amount_unit, f.type, f.side, f.left_breast_at, f.right_breast_at, f.left_duration, f.right_duration, f.formula_id, f.notes, f.created_at, f.created_by
+      SELECT f.id, f.subject_id, f.start_time, f.end_time, f.duration, f.amount, f.amount_unit, f.type, f.side, f.left_breast_at, f.right_breast_at, f.left_duration, f.right_duration, f.formula_id, f.notes, f.created_at, f.created_by
       FROM feedings f
-      JOIN babies b ON f.baby_id = b.id
+      JOIN subjects b ON f.subject_id = b.id
       JOIN households h ON b.household_id = h.id
       JOIN user_households uh ON h.id = uh.household_id
       WHERE f.id = ? AND uh.user_id = ?
@@ -155,11 +155,11 @@ feedingRoutes.post('/', zValidator('json', createFeedingSchema), async (c) => {
     const result = await db.execute({
       sql: `
         INSERT INTO feedings (
-          baby_id, start_time, end_time, duration, amount, amount_unit, type, side, left_breast_at, right_breast_at, left_duration, right_duration, formula_id, notes, created_at, created_by
+          subject_id, start_time, end_time, duration, amount, amount_unit, type, side, left_breast_at, right_breast_at, left_duration, right_duration, formula_id, notes, created_at, created_by
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
       args: [
-        scope.babyId, 
+        scope.subjectId, 
         startTime, 
         endTime || null, 
         duration, 
@@ -181,7 +181,7 @@ feedingRoutes.post('/', zValidator('json', createFeedingSchema), async (c) => {
     // Return the created feeding
     const feedingResult = await db.execute({
       sql: `
-      SELECT id, baby_id, start_time, end_time, duration, amount, amount_unit, type, side, left_breast_at, right_breast_at, left_duration, right_duration, formula_id, notes, created_at, created_by
+      SELECT id, subject_id, start_time, end_time, duration, amount, amount_unit, type, side, left_breast_at, right_breast_at, left_duration, right_duration, formula_id, notes, created_at, created_by
       FROM feedings
       WHERE id = ?
     `,
@@ -209,9 +209,9 @@ feedingRoutes.put('/:id{[0-9]+}', zValidator('json', updateFeedingSchema), async
     // Verify user has access to this feeding
     const feedingCheck = await db.execute({
       sql: `
-      SELECT f.id, f.baby_id
+      SELECT f.id, f.subject_id
       FROM feedings f
-      JOIN babies b ON f.baby_id = b.id
+      JOIN subjects b ON f.subject_id = b.id
       JOIN households h ON b.household_id = h.id
       JOIN user_households uh ON h.id = uh.household_id
       WHERE f.id = ? AND uh.user_id = ?
@@ -327,7 +327,7 @@ feedingRoutes.put('/:id{[0-9]+}', zValidator('json', updateFeedingSchema), async
     // Return updated feeding
     const updatedFeedingResult = await db.execute({
       sql: `
-      SELECT id, baby_id, start_time, end_time, duration, amount, amount_unit, type, side, left_breast_at, right_breast_at, left_duration, right_duration, formula_id, notes, created_at, created_by
+      SELECT id, subject_id, start_time, end_time, duration, amount, amount_unit, type, side, left_breast_at, right_breast_at, left_duration, right_duration, formula_id, notes, created_at, created_by
       FROM feedings
       WHERE id = ?
     `,
@@ -366,7 +366,7 @@ feedingRoutes.delete('/:id{[0-9]+}', async (c) => {
       sql: `
       SELECT f.id
       FROM feedings f
-      JOIN babies b ON f.baby_id = b.id
+      JOIN subjects b ON f.subject_id = b.id
       JOIN households h ON b.household_id = h.id
       JOIN user_households uh ON h.id = uh.household_id
       WHERE f.id = ? AND uh.user_id = ?

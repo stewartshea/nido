@@ -3,8 +3,9 @@ import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 import { resolveTrackableMember, attachCreatedBy } from '../member-scope';
 import { parsePaging, countMatching } from '../paging';
+import { bandsAtAge, percentileFor } from '../growth-percentile';
 import { type AuthEnv } from '../auth';
-import type { BabyRow, GrowthRow, GrowthWithBabyRow } from '../db-types';
+import type { SubjectRow, GrowthRow, GrowthWithSubjectRow } from '../db-types';
 
 const growthRoutes = new Hono<AuthEnv>();
 
@@ -111,29 +112,57 @@ function calculateAgeInWeeks(birthDate: string, measurementDate: string): number
   return diffWeeks;
 }
 
-// Helper function to find percentile for a measurement
-function findPercentile(value: number, standardData: Array<{age_weeks: number, p3: number, p15: number, p50: number, p85: number, p97: number}>): number {
-  if (standardData.length === 0) return 50;
-  
-  let closestData = standardData[0];
-  if (!closestData) return 50;
-  
-  let minDiff = Math.abs(closestData.age_weeks - 0);
-  
-  for (const data of standardData) {
-    if (Math.abs(data.age_weeks) < minDiff) {
-      minDiff = Math.abs(data.age_weeks);
-      closestData = data;
-    }
-  }
-  
-  // Simple interpolation to find approximate percentile
-  if (value <= closestData.p3) return 3;
-  if (value <= closestData.p15) return 15;
-  if (value <= closestData.p50) return 50;
-  if (value <= closestData.p85) return 85;
-  if (value <= closestData.p97) return 97;
-  return 99; // Above 97th percentile
+/**
+ * The WHO reference tables are metric (kg, cm). A record stores what was typed
+ * plus the unit it was typed in, and `imperial` is the default on both the API
+ * schema and the column — so comparing a raw value against these tables read a
+ * 12 lb baby as 12 kg and reported the 99th percentile. Everything compared to
+ * a standard must be converted first.
+ */
+function metricWeight(record: { weight?: number | null; unit_system?: string | null }): number {
+  const w = Number(record.weight);
+  return record.unit_system === 'imperial' ? w * 0.453592 : w;
+}
+
+function metricHeight(record: { height?: number | null; unit_system?: string | null }): number {
+  const h = Number(record.height);
+  return record.unit_system === 'imperial' ? h * 2.54 : h;
+}
+
+/** The same conversion, for anything that needs both at once. */
+function toMetric(record: { weight?: number | null; height?: number | null; head_circumference?: number | null; unit_system?: string | null }) {
+  const imperial = record.unit_system === 'imperial';
+  const f = (v: number | null | undefined, factor: number) => (v == null ? null : imperial ? v * factor : v);
+  return {
+    weightKg: f(record.weight, 0.453592),
+    heightCm: f(record.height, 2.54),
+    headCm: f(record.head_circumference, 2.54),
+  };
+}
+
+/**
+ * Continuous percentile for a record against the WHO table for its age.
+ *
+ * One implementation for every comparison site: weight and height, all four
+ * read paths. Returns null when there is nothing to compare.
+ */
+function percentileForRecord(
+  record: { unit_system?: string | null; weight?: number | null; height?: number | null },
+  gender: string,
+  ageInWeeks: number,
+  kind: 'weight' | 'height',
+): number | null {
+  const table = kind === 'weight'
+    ? WHO_STANDARDS.weight_for_age[gender as 'male' | 'female']
+    : WHO_STANDARDS.height_for_age[gender as 'male' | 'female'];
+  if (!table) return null;
+  const value = kind === 'weight' ? metricWeight(record) : metricHeight(record);
+  if (!Number.isFinite(value)) return null;
+  const bands = bandsAtAge(table as any, ageInWeeks);
+  if (!bands) return null;
+  // One decimal: a growth chart is not more precise than that, and it keeps
+  // "8.3rd percentile" from turning into a float with six digits in the UI.
+  return Math.round(percentileFor(value, bands) * 10) / 10;
 }
 
 // Get all growth records for a baby with WHO/CDC comparisons
@@ -151,24 +180,24 @@ growthRoutes.get('/', async (c) => {
     if (!scope) {
       return c.json({ error: 'Member not found or access denied' }, 404);
     }
-    const babyId = scope.babyId;
-    const babyRes = await db.execute({ sql: 'SELECT id, birth_date, gender FROM babies WHERE id = ? LIMIT 1', args: [babyId] });
-    const baby = babyRes.rows[0] as unknown as BabyRow;
+    const subjectId = scope.subjectId;
+    const babyRes = await db.execute({ sql: 'SELECT id, birth_date, gender FROM subjects WHERE id = ? LIMIT 1', args: [subjectId] });
+    const baby = babyRes.rows[0] as unknown as SubjectRow;
     
     // Get growth records for the baby
     const { limit, offset } = parsePaging((k) => c.req.query(k));
 
     const growthResult = await db.execute({
       sql: `
-      SELECT id, baby_id, measurement_date, weight, height, head_circumference, bmi, unit_system, notes, created_at, created_by
+      SELECT id, subject_id, measurement_date, weight, height, head_circumference, bmi, unit_system, notes, created_at, created_by
       FROM growth
-      WHERE baby_id = ?
+      WHERE subject_id = ?
       ORDER BY measurement_date DESC, id DESC
       LIMIT ? OFFSET ?
     `,
-      args: [babyId, limit, offset]
+      args: [subjectId, limit, offset]
     });
-    const total = await countMatching(db, 'growth', [babyId]);
+    const total = await countMatching(db, 'growth', [subjectId]);
     
     // Calculate WHO/CDC comparisons for each record
     const growthWithComparisons = (growthResult.rows as unknown as GrowthRow[])
@@ -180,30 +209,11 @@ growthRoutes.get('/', async (c) => {
       let heightPercentile = null;
       
       if (record.weight) {
-        const weightStandard = WHO_STANDARDS.weight_for_age[gender as 'male' | 'female'];
-        if (weightStandard) {
-          // Simplified calculation - in reality would need interpolation between data points
-          const closestData = weightStandard.reduce((prev, curr) => 
-            Math.abs(curr.age_weeks - ageInWeeks) < Math.abs(prev.age_weeks - ageInWeeks) ? curr : prev
-          );
-          
-          if (closestData) {
-            weightPercentile = findPercentile(record.weight, [closestData]);
-          }
-        }
+        weightPercentile = percentileForRecord(record, gender, ageInWeeks, 'weight');
       }
       
       if (record.height) {
-        const heightStandard = WHO_STANDARDS.height_for_age[gender as 'male' | 'female'];
-        if (heightStandard) {
-          const closestData = heightStandard.reduce((prev, curr) => 
-            Math.abs(curr.age_weeks - ageInWeeks) < Math.abs(prev.age_weeks - ageInWeeks) ? curr : prev
-          );
-          
-          if (closestData) {
-            heightPercentile = findPercentile(record.height, [closestData]);
-          }
-        }
+        heightPercentile = percentileForRecord(record, gender, ageInWeeks, 'height');
       }
       
       return {
@@ -212,8 +222,8 @@ growthRoutes.get('/', async (c) => {
         weight_percentile: weightPercentile,
         height_percentile: heightPercentile,
         comparisons: {
-          weight: weightPercentile ? `At ${weightPercentile}th percentile for age` : 'No comparison available',
-          height: heightPercentile ? `At ${heightPercentile}th percentile for age` : 'No comparison available'
+          weight: weightPercentile ? `At ${Math.round(weightPercentile)}th percentile for age` : 'No comparison available',
+          height: heightPercentile ? `At ${Math.round(heightPercentile)}th percentile for age` : 'No comparison available'
         }
       };
     });
@@ -236,10 +246,10 @@ growthRoutes.get('/:id{[0-9]+}', async (c) => {
     // Verify user has access to this growth record
     const growthResult = await db.execute({
       sql: `
-      SELECT g.id, g.baby_id, g.measurement_date, g.weight, g.height, g.head_circumference, g.bmi, g.unit_system, g.notes, g.created_at, g.created_by,
+      SELECT g.id, g.subject_id, g.measurement_date, g.weight, g.height, g.head_circumference, g.bmi, g.unit_system, g.notes, g.created_at, g.created_by,
              b.birth_date, b.gender
       FROM growth g
-      JOIN babies b ON g.baby_id = b.id
+      JOIN subjects b ON g.subject_id = b.id
       JOIN households h ON b.household_id = h.id
       JOIN user_households uh ON h.id = uh.household_id
       WHERE g.id = ? AND uh.user_id = ?
@@ -251,7 +261,7 @@ growthRoutes.get('/:id{[0-9]+}', async (c) => {
       return c.json({ error: 'Growth record not found or access denied' }, 404);
     }
     
-    const record = growthResult.rows[0] as unknown as GrowthWithBabyRow;
+    const record = growthResult.rows[0] as unknown as GrowthWithSubjectRow;
     const ageInWeeks = calculateAgeInWeeks(record.birth_date, record.measurement_date);
     const gender = record.gender || 'male';
     
@@ -259,30 +269,12 @@ growthRoutes.get('/:id{[0-9]+}', async (c) => {
     let heightPercentile = null;
     
     if (record.weight) {
-      const weightStandard = WHO_STANDARDS.weight_for_age[gender as 'male' | 'female'];
-      if (weightStandard) {
-        const closestData = weightStandard.reduce((prev, curr) => 
-          Math.abs(curr.age_weeks - ageInWeeks) < Math.abs(prev.age_weeks - ageInWeeks) ? curr : prev
-        );
-        
-        if (closestData) {
-          weightPercentile = findPercentile(record.weight, [closestData]);
-        }
+        weightPercentile = percentileForRecord(record, gender, ageInWeeks, 'weight');
       }
-    }
     
     if (record.height) {
-      const heightStandard = WHO_STANDARDS.height_for_age[gender as 'male' | 'female'];
-      if (heightStandard) {
-        const closestData = heightStandard.reduce((prev, curr) => 
-          Math.abs(curr.age_weeks - ageInWeeks) < Math.abs(prev.age_weeks - ageInWeeks) ? curr : prev
-        );
-        
-        if (closestData) {
-          heightPercentile = findPercentile(record.height, [closestData]);
-        }
+        heightPercentile = percentileForRecord(record, gender, ageInWeeks, 'height');
       }
-    }
     
     const growthRecord = {
       ...record,
@@ -290,8 +282,8 @@ growthRoutes.get('/:id{[0-9]+}', async (c) => {
       weight_percentile: weightPercentile,
       height_percentile: heightPercentile,
       comparisons: {
-        weight: weightPercentile ? `At ${weightPercentile}th percentile for age` : 'No comparison available',
-        height: heightPercentile ? `At ${heightPercentile}th percentile for age` : 'No comparison available'
+        weight: weightPercentile ? `At ${Math.round(weightPercentile)}th percentile for age` : 'No comparison available',
+        height: heightPercentile ? `At ${Math.round(heightPercentile)}th percentile for age` : 'No comparison available'
       }
     };
     
@@ -313,9 +305,9 @@ growthRoutes.post('/', zValidator('json', createGrowthSchema), async (c) => {
     if (!scope) {
       return c.json({ error: 'Member not found or access denied' }, 404);
     }
-    const babyId = scope.babyId;
-    const babyRes = await db.execute({ sql: 'SELECT id, birth_date, gender FROM babies WHERE id = ? LIMIT 1', args: [babyId] });
-    const baby = babyRes.rows[0] as unknown as BabyRow;
+    const subjectId = scope.subjectId;
+    const babyRes = await db.execute({ sql: 'SELECT id, birth_date, gender FROM subjects WHERE id = ? LIMIT 1', args: [subjectId] });
+    const baby = babyRes.rows[0] as unknown as SubjectRow;
     
     // Calculate BMI if not provided and we have weight and height
     let calculatedBmi = bmi;
@@ -339,11 +331,11 @@ growthRoutes.post('/', zValidator('json', createGrowthSchema), async (c) => {
     const result = await db.execute({
       sql: `
         INSERT INTO growth (
-          baby_id, measurement_date, weight, height, head_circumference, bmi, unit_system, notes, created_at, created_by
+          subject_id, measurement_date, weight, height, head_circumference, bmi, unit_system, notes, created_at, created_by
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
       args: [
-        babyId, 
+        subjectId, 
         measurementDate, 
         weight || null, 
         height || null, 
@@ -359,7 +351,7 @@ growthRoutes.post('/', zValidator('json', createGrowthSchema), async (c) => {
     // Return the created growth record with WHO/CDC comparisons
     const growthResult = await db.execute({
       sql: `
-      SELECT id, baby_id, measurement_date, weight, height, head_circumference, bmi, unit_system, notes, created_at, created_by
+      SELECT id, subject_id, measurement_date, weight, height, head_circumference, bmi, unit_system, notes, created_at, created_by
       FROM growth
       WHERE id = ?
     `,
@@ -374,30 +366,12 @@ growthRoutes.post('/', zValidator('json', createGrowthSchema), async (c) => {
     let heightPercentile = null;
     
     if (record.weight) {
-      const weightStandard = WHO_STANDARDS.weight_for_age[gender as 'male' | 'female'];
-      if (weightStandard) {
-        const closestData = weightStandard.reduce((prev, curr) => 
-          Math.abs(curr.age_weeks - ageInWeeks) < Math.abs(prev.age_weeks - ageInWeeks) ? curr : prev
-        );
-        
-        if (closestData) {
-          weightPercentile = findPercentile(record.weight, [closestData]);
-        }
+        weightPercentile = percentileForRecord(record, gender, ageInWeeks, 'weight');
       }
-    }
     
     if (record.height) {
-      const heightStandard = WHO_STANDARDS.height_for_age[gender as 'male' | 'female'];
-      if (heightStandard) {
-        const closestData = heightStandard.reduce((prev, curr) => 
-          Math.abs(curr.age_weeks - ageInWeeks) < Math.abs(prev.age_weeks - ageInWeeks) ? curr : prev
-        );
-        
-        if (closestData) {
-          heightPercentile = findPercentile(record.height, [closestData]);
-        }
+        heightPercentile = percentileForRecord(record, gender, ageInWeeks, 'height');
       }
-    }
     
     const growthRecord = {
       ...record,
@@ -405,8 +379,8 @@ growthRoutes.post('/', zValidator('json', createGrowthSchema), async (c) => {
       weight_percentile: weightPercentile,
       height_percentile: heightPercentile,
       comparisons: {
-        weight: weightPercentile ? `At ${weightPercentile}th percentile for age` : 'No comparison available',
-        height: heightPercentile ? `At ${heightPercentile}th percentile for age` : 'No comparison available'
+        weight: weightPercentile ? `At ${Math.round(weightPercentile)}th percentile for age` : 'No comparison available',
+        height: heightPercentile ? `At ${Math.round(heightPercentile)}th percentile for age` : 'No comparison available'
       }
     };
     
@@ -431,10 +405,10 @@ growthRoutes.put('/:id{[0-9]+}', zValidator('json', updateGrowthSchema), async (
     // Verify user has access to this growth record
     const growthCheck = await db.execute({
       sql: `
-      SELECT g.id, g.baby_id, g.measurement_date, g.weight, g.height, g.head_circumference, g.bmi, g.unit_system, g.created_by,
+      SELECT g.id, g.subject_id, g.measurement_date, g.weight, g.height, g.head_circumference, g.bmi, g.unit_system, g.created_by,
              b.birth_date, b.gender
       FROM growth g
-      JOIN babies b ON g.baby_id = b.id
+      JOIN subjects b ON g.subject_id = b.id
       JOIN households h ON b.household_id = h.id
       JOIN user_households uh ON h.id = uh.household_id
       WHERE g.id = ? AND uh.user_id = ?
@@ -446,7 +420,7 @@ growthRoutes.put('/:id{[0-9]+}', zValidator('json', updateGrowthSchema), async (
       return c.json({ error: 'Growth record not found or access denied' }, 404);
     }
     
-    const existingRecord = growthCheck.rows[0] as unknown as GrowthWithBabyRow;
+    const existingRecord = growthCheck.rows[0] as unknown as GrowthWithSubjectRow;
     
     // Build dynamic update query
     const updates = [];
@@ -530,7 +504,7 @@ growthRoutes.put('/:id{[0-9]+}', zValidator('json', updateGrowthSchema), async (
     // Return updated growth record with WHO/CDC comparisons
     const updatedGrowthResult = await db.execute({
       sql: `
-      SELECT id, baby_id, measurement_date, weight, height, head_circumference, bmi, unit_system, notes, created_at, created_by
+      SELECT id, subject_id, measurement_date, weight, height, head_circumference, bmi, unit_system, notes, created_at, created_by
       FROM growth
       WHERE id = ?
     `,
@@ -545,30 +519,12 @@ growthRoutes.put('/:id{[0-9]+}', zValidator('json', updateGrowthSchema), async (
     let heightPercentile = null;
     
     if (record.weight) {
-      const weightStandard = WHO_STANDARDS.weight_for_age[gender as 'male' | 'female'];
-      if (weightStandard) {
-        const closestData = weightStandard.reduce((prev, curr) => 
-          Math.abs(curr.age_weeks - ageInWeeks) < Math.abs(prev.age_weeks - ageInWeeks) ? curr : prev
-        );
-        
-        if (closestData) {
-          weightPercentile = findPercentile(record.weight, [closestData]);
-        }
+        weightPercentile = percentileForRecord(record, gender, ageInWeeks, 'weight');
       }
-    }
     
     if (record.height) {
-      const heightStandard = WHO_STANDARDS.height_for_age[gender as 'male' | 'female'];
-      if (heightStandard) {
-        const closestData = heightStandard.reduce((prev, curr) => 
-          Math.abs(curr.age_weeks - ageInWeeks) < Math.abs(prev.age_weeks - ageInWeeks) ? curr : prev
-        );
-        
-        if (closestData) {
-          heightPercentile = findPercentile(record.height, [closestData]);
-        }
+        heightPercentile = percentileForRecord(record, gender, ageInWeeks, 'height');
       }
-    }
     
     const growthRecord = {
       ...record,
@@ -576,8 +532,8 @@ growthRoutes.put('/:id{[0-9]+}', zValidator('json', updateGrowthSchema), async (
       weight_percentile: weightPercentile,
       height_percentile: heightPercentile,
       comparisons: {
-        weight: weightPercentile ? `At ${weightPercentile}th percentile for age` : 'No comparison available',
-        height: heightPercentile ? `At ${heightPercentile}th percentile for age` : 'No comparison available'
+        weight: weightPercentile ? `At ${Math.round(weightPercentile)}th percentile for age` : 'No comparison available',
+        height: heightPercentile ? `At ${Math.round(heightPercentile)}th percentile for age` : 'No comparison available'
       }
     };
     
@@ -603,7 +559,7 @@ growthRoutes.delete('/:id{[0-9]+}', async (c) => {
       sql: `
       SELECT g.id
       FROM growth g
-      JOIN babies b ON g.baby_id = b.id
+      JOIN subjects b ON g.subject_id = b.id
       JOIN households h ON b.household_id = h.id
       JOIN user_households uh ON h.id = uh.household_id
       WHERE g.id = ? AND uh.user_id = ?
@@ -639,27 +595,41 @@ growthRoutes.get('/:id{[0-9]+}/chart-data', async (c) => {
     if (!scope) {
       return c.json({ error: 'Member not found or access denied' }, 404);
     }
-    const babyId = scope.babyId;
-    const babyRes = await db.execute({ sql: 'SELECT id, birth_date, gender FROM babies WHERE id = ? LIMIT 1', args: [babyId] });
-    const baby = babyRes.rows[0] as unknown as BabyRow;
+    const subjectId = scope.subjectId;
+    const babyRes = await db.execute({ sql: 'SELECT id, birth_date, gender FROM subjects WHERE id = ? LIMIT 1', args: [subjectId] });
+    const baby = babyRes.rows[0] as unknown as SubjectRow;
     const gender = baby.gender || 'male';
     
     // Get all growth records for this baby
     const growthResult = await db.execute({
       sql: `
-      SELECT id, measurement_date, weight, height, head_circumference, bmi
+      SELECT id, measurement_date, weight, height, head_circumference, bmi, unit_system
       FROM growth
-      WHERE baby_id = ?
+      WHERE subject_id = ?
     `,
-      args: [babyId]
+      args: [subjectId]
     });
     
     // Prepare chart data with WHO standards
     const chartData = {
-      measurements: (growthResult.rows as unknown as GrowthRow[]).map(record => ({
-        ...record,
-        age_in_weeks: calculateAgeInWeeks(baby.birth_date, record.measurement_date)
-      })),
+      measurements: (growthResult.rows as unknown as GrowthRow[]).map(record => {
+        const m = toMetric(record);
+        const ageInWeeks = calculateAgeInWeeks(baby.birth_date, record.measurement_date);
+        return {
+          ...record,
+          age_in_weeks: ageInWeeks,
+          // Normalised to the units the WHO tables use. Records are stored as
+          // typed, so a family that switched from imperial to metric would
+          // otherwise have two scales plotted on one axis.
+          weight_kg: m.weightKg,
+          height_cm: m.heightCm,
+          head_cm: m.headCm,
+          // Computed here, not in the browser: the chart's headline and the
+          // growth list must not be able to disagree about a percentile.
+          weight_percentile: percentileForRecord(record, gender, ageInWeeks, 'weight'),
+          height_percentile: percentileForRecord(record, gender, ageInWeeks, 'height'),
+        };
+      }),
       who_standards: {
         weight_for_age: WHO_STANDARDS.weight_for_age[gender as 'male' | 'female'],
         height_for_age: WHO_STANDARDS.height_for_age[gender as 'male' | 'female']

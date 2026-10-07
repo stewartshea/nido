@@ -75,14 +75,14 @@ async function addMember(token: string, familyId: string, overrides: Record<stri
 	};
 	const { status, body } = await postJson(token, `/api/v1/families/${familyId}/members`, payload);
 	expect(status).toBe(201);
-	return body.member as { id: number; name: string; type: string; categories: string[]; legacyBabyId: number | null };
+	return body.member as { id: number; name: string; type: string; categories: string[]; legacySubjectId: number | null };
 }
 
 describe('multi-tenancy isolation', () => {
 	let userA: { token: string; userId: string; familyId: string };
 	let userB: { token: string; userId: string; familyId: string };
-	let memberA: { id: number; name: string; legacyBabyId: number | null };
-	let memberB: { id: number; name: string; legacyBabyId: number | null };
+	let memberA: { id: number; name: string; legacySubjectId: number | null };
+	let memberB: { id: number; name: string; legacySubjectId: number | null };
 
 	it('provisions two isolated families', async () => {
 		userA = await register('mt-owner-a@example.com');
@@ -121,11 +121,11 @@ describe('multi-tenancy isolation', () => {
 		expect(feedsA.status).toBe(200);
 		const listA = feedsA.body.feedings ?? [];
 		expect(listA.length).toBeGreaterThan(0);
-		// feedings.baby_id is the babies row, which is reached through the member's
-		// legacy_baby_id. The two ids are not interchangeable once the household
+		// feedings.subject_id is the subjects row, which is reached through the member's
+		// legacy_subject_id. The two ids are not interchangeable once the household
 		// also holds adult profiles.
-		expect(memberA.legacyBabyId).toBeGreaterThan(0);
-		for (const f of listA) expect(f.baby_id).toBe(memberA.legacyBabyId);
+		expect(memberA.legacySubjectId).toBeGreaterThan(0);
+		for (const f of listA) expect(f.subject_id).toBe(memberA.legacySubjectId);
 	});
 
 	it('second member in family A is hidden from family B', async () => {
@@ -451,7 +451,7 @@ describe('member profile resolution', () => {
 		const on = await putJson(owner.token, `/api/v1/families/${owner.familyId}/members/${adult.id}`, { trackable: true });
 		expect(on.status).toBe(200);
 		expect(on.body.member.trackable).toBe(true);
-		expect(on.body.member.legacyBabyId).toBeGreaterThan(0);
+		expect(on.body.member.legacySubjectId).toBeGreaterThan(0);
 
 		const created = await postJson(owner.token, '/api/v1/feedings', {
 			memberId: adult.id,
@@ -464,21 +464,21 @@ describe('member profile resolution', () => {
 });
 
 describe('legacy member profiles', () => {
-	it('resolves a member whose profile id equals its member id and legacy_baby_id is NULL', async () => {
+	it('resolves a member whose profile id equals its member id and legacy_subject_id is NULL', async () => {
 		const owner = await register('legacy-owner@example.com');
 		const db = getFamilyClient(owner.familyId);
 
 		const m = await db.execute({
-			sql: `INSERT INTO family_members (household_id, legacy_baby_id, trackable, name, member_type) VALUES (1, NULL, 1, 'Legacy', 'child')`,
+			sql: `INSERT INTO family_members (household_id, legacy_subject_id, trackable, name, member_type) VALUES (1, NULL, 1, 'Legacy', 'child')`,
 			args: [],
 		});
 		const memberId = Number(m.lastInsertRowid);
 		await db.execute({
-			sql: `INSERT INTO babies (id, household_id, name, type) VALUES (?, 1, 'Legacy', 'child')`,
+			sql: `INSERT INTO subjects (id, household_id, name, type) VALUES (?, 1, 'Legacy', 'child')`,
 			args: [memberId],
 		});
 		await db.execute({
-			sql: `INSERT INTO feedings (baby_id, start_time, type) VALUES (?, ?, 'breast')`,
+			sql: `INSERT INTO feedings (subject_id, start_time, type) VALUES (?, ?, 'breast')`,
 			args: [memberId, new Date().toISOString()],
 		});
 

@@ -40,8 +40,8 @@
 			const families = res.data.families ?? [];
 			const familyId = localStorage.getItem('nido.defaultFamily') ?? families[0]?.familyId;
 			if (!familyId) { loaded = true; return; }
-			const babies = await familiesAPI.members(familyId);
-			members = (babies.data.babies ?? babies.data.members ?? []).map((b: any) => ({ id: Number(b.id), name: b.name, trackable: b.trackable !== false }));
+			const membersRes = await familiesAPI.members(familyId);
+			members = (membersRes.data.members ?? []).map((m: any) => ({ id: Number(m.id), name: m.name, trackable: m.trackable !== false }));
 			await loadAlerts();
 		} catch (e: any) {
 			if (e?.response?.status === 401) await goto('/login');

@@ -1,0 +1,78 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: nido-backup-now
+  namespace: nido
+  labels:
+    app: nido-backup
+spec:
+  # One-shot. For a nightly run use backup-cronjob.yaml instead, which is the
+  # same thing on a schedule. This exists for "back up before I do something
+  # risky" and as a readable template.
+  backoffLimit: 1
+  # Clear the finished pod after a day so it does not sit around.
+  ttlSecondsAfterFinished: 86400
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: backup
+          # The API image already ships dist/backup-cli.js, so no extra image is
+          # needed to make a snapshot.
+          image: nido/api:latest
+          imagePullPolicy: IfNotPresent
+          command:
+            - node
+            - dist/backup-cli.js
+            - backup
+            - --dest
+            - /backups
+            - --keep
+            - "14"
+          env:
+            - name: NIDO_DATA_DIR
+              value: "/data"
+            - name: NIDO_BLOB_DIR
+              value: "/data/blobs"
+            # Required: every family database is keyed off this. A backup made
+            # without it cannot be restored, by you or anyone.
+            - name: NIDO_MASTER_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: nido
+                  key: NIDO_MASTER_KEY
+            # Optional: AES-256-GCM encryption for the archive itself, on top of
+            # the per-database encryption. Set it in the `nido` secret. Only
+            # restore reads it, so losing it makes the archives unreadable.
+            - name: NIDO_BACKUP_PASSPHRASE
+              valueFrom:
+                secretKeyRef:
+                  name: nido
+                  key: NIDO_BACKUP_PASSPHRASE
+                  optional: true
+          volumeMounts:
+            # Source, read-only: the API pod holds this read-write, and the
+            # snapshot runs VACUUM INTO rather than reading the files directly,
+            # so a torn WAL is impossible.
+            - name: data
+              mountPath: /data
+              readOnly: true
+            # Destination: a separate volume from the live data, so a problem
+            # with one cannot take the other with it. Create it first:
+            #   kubectl apply -n nido -f backup-pvc.yaml
+            - name: backups
+              mountPath: /backups
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: nido-data
+        - name: backups
+          persistentVolumeClaim:
+            claimName: nido-backups

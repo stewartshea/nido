@@ -31,7 +31,7 @@ export async function countMatching(
   table: string,
   args: unknown[],
 ): Promise<number> {
-  const res = await db.execute({ sql: `SELECT COUNT(*) AS n FROM ${table} WHERE baby_id = ?`, args });
+  const res = await db.execute({ sql: `SELECT COUNT(*) AS n FROM ${table} WHERE subject_id = ?`, args });
   const row = res.rows[0] as { n?: number } | undefined;
   return Number(row?.n ?? 0);
 }

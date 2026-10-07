@@ -10,9 +10,13 @@
 	 * a single copy is what keeps the two pages' logging identical.
 	 */
 	export let memberName = 'Selected';
-	export let quickLinks: string[] = [];
+
 	export let summary: any = null;
+	/** The selected member's enabled categories; drives what can be logged. */
 	export let activeCategories: string[] = [];
+	/** Tiles this member pinned, or null to fall back to their leading categories. */
+	export let quickLinks: string[] | null = null;
+	export let stage: string | null = null;
 	export let feedings: any[] = [];
 	export let diapers: any[] = [];
 	export let sleeps: any[] = [];
@@ -24,14 +28,20 @@
 	export let totals: Record<string, number> = {};
 	export let loadingMore = false;
 
-	const dispatch = createEventDispatcher<{ log: { kind: string }; loadmore: void; refresh: void }>();
+	const dispatch = createEventDispatcher<{ log: { kind: string }; loadmore: void; refresh: void; pin: { kind: string }; unpin: { kind: string } }>();
 
-	$: firstQuick = quickLinks[0] || 'feeds';
+	$: firstQuick = activeCategories[0] || 'feeds';
 </script>
 
-<QuickActions {quickLinks} on:log={(e) => dispatch('log', e.detail)} />
+<QuickActions
+		categories={activeCategories}
+		{quickLinks}
+		on:log={(e) => dispatch('log', e.detail)}
+		on:pin={(e) => dispatch('pin', e.detail)}
+		on:unpin={(e) => dispatch('unpin', e.detail)}
+	/>
 
-<TodaySummary {summary} name={memberName} on:log={(e) => dispatch('log', e.detail)} />
+<TodaySummary {summary} name={memberName} categories={activeCategories} {stage} on:log={(e) => dispatch('log', e.detail)} />
 
 <div class="bg-surface rounded-lg shadow-card p-5 border border-line-soft" id="activities">
 	<div class="flex items-center justify-between mb-4">

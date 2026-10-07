@@ -4,7 +4,8 @@ import { z } from 'zod';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { randomBytes, randomUUID } from 'node:crypto';
-import { NAMESPACE_HOUSEHOLD_ID, DEFAULT_CATEGORIES } from '../db-core';
+import { NAMESPACE_HOUSEHOLD_ID } from '../db-core';
+import { STAGE_CATEGORIES } from '../vocabulary';
 import {
   ensureRegistry,
   getFamilyClient,
@@ -113,9 +114,12 @@ authRoutes.post('/register', zValidator('json', registerSchema), async (c) => {
       // so this makes the owner match that path.
       const ownerName = [firstName, lastName].filter(Boolean).join(' ') || email;
       const ownerMember = await familyDb.execute({
-        sql: `INSERT INTO family_members (household_id, legacy_baby_id, trackable, name, member_type, email, categories, created_at, updated_at)
-              VALUES (?, NULL, 0, ?, 'adult', ?, ?, ?, ?)`,
-        args: [NAMESPACE_HOUSEHOLD_ID, ownerName, email, JSON.stringify(DEFAULT_CATEGORIES), now, now],
+        sql: `INSERT INTO family_members (household_id, legacy_subject_id, trackable, name, member_type, email, categories, stage, created_at, updated_at)
+              VALUES (?, NULL, 0, ?, 'adult', ?, ?, 'adult', ?, ?)`,
+        // The owner is an adult, so they get the adult set. DEFAULT_CATEGORIES is
+        // the infant one — feeds, nappies, pumping — and giving it to every owner
+        // is what put nappies in front of every parent's own profile.
+        args: [NAMESPACE_HOUSEHOLD_ID, ownerName, email, JSON.stringify(STAGE_CATEGORIES.adult), now, now],
       });
       const ownerMemberId = Number(ownerMember.lastInsertRowid);
       await familyDb.execute({

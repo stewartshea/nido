@@ -1,6 +1,6 @@
 ---
 title: Features
-description: What Nido actually does — logging, people, photos, inventory, reminders, and the home inventory that comes after the baby stage.
+description: What Nido actually does — logging, people, blobs, inventory, reminders, and the home inventory that comes after the baby stage.
 ---
 
 Nido is a private record of the things you care for and keep. It starts as a
@@ -32,7 +32,7 @@ optional email, and their own set of tracked categories.
 
 That is the decision everything else rests on. A second child, a pet, an
 elder, a housemate — each is a member with the same log, the same history,
-and the same photos. Tracking a pet's daily log is not a workaround, it is
+and the same blobs. Tracking a pet's daily log is not a workaround, it is
 the same form.
 
 Each member can be tracked separately, so one baby can be logged while a

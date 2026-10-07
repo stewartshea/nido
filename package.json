@@ -11,7 +11,9 @@
     "dev": "docker-compose up",
     "build": "docker-compose build",
     "start": "docker-compose up -d",
-    "test": "npm run test --workspaces --if-present"
+    "test": "npm run test --workspaces --if-present",
+    "vocab:generate": "tsx scripts/generate-vocabulary.ts",
+    "vocab:check": "tsx scripts/generate-vocabulary.ts --check"
   },
   "keywords": [
     "family",

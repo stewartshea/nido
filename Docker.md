@@ -2,7 +2,7 @@
 
 Nido ships as two containers — `api` and `web`. The databases are **not**
 part of any image: the API reads and writes SQLCipher-encrypted SQLite files
-under `/data` (`registry.db`, `db/<familyId>.db`, photos at `/data/photos`) on a
+under `/data` (`registry.db`, `db/<familyId>.db`, encrypted files at `/data/blobs`) on a
 **mounted volume**, so image builds and pulls never carry database state with
 them. There is no separate database service.
 
@@ -26,13 +26,13 @@ derived from `NIDO_MASTER_KEY`. The encrypted file *is* the tenant boundary.
 
 ### Root `docker-compose.yml` (development)
 - **api**: port 3000, `NIDO_MASTER_KEY`, `NIDO_DATA_DIR`, `JWT_SECRET`, and
-  the host folder `./data` bind-mounted to `/data` so the DBs and photos live as
+  the host folder `./data` bind-mounted to `/data` so the DBs and files live as
   plain, inspectable/backup-able files on the host
 - **web**: port 3001, `API_PROXY_TARGET=http://api:3000` (dev server forwards `/api` to the api service), depends on api
 
 ### Deploy `deploy/docker-compose/docker-compose.yml`
 - Same two services, built from the repo root
-- DBs + photos persisted on the **named volume `nido-data`** mounted at `/data`
+- DBs + encrypted files persisted on the **named volume `nido-data`** mounted at `/data`
 - `NIDO_MASTER_KEY` and `JWT_SECRET` are both required — compose fails fast if
   either is unset
 - API exposes a `/health` healthcheck
@@ -57,7 +57,7 @@ docker compose build web
 ```
 
 ## Volumes
-- **Root compose**: `./data` bind mount — SQLite DB + photos as host files.
+- **Root compose**: `./data` bind mount — SQLite DBs + encrypted blobs as host files.
 - **Deploy compose**: named volume `nido-data`.
 - Images never contain database state. To start from a clean DB, reset the
   storage layer — **swapping images alone never clears data**:
@@ -66,11 +66,11 @@ docker compose build web
 
 ## Backups
 The API image doubles as a backup tool — it ships `dist/backup-cli.js`, which
-snapshots every encrypted database plus `photos/` into one gzipped tar.
+snapshots every encrypted database plus `blobs/` into one gzipped tar.
 
 ```bash
 # daily at 03:17 via systemd/cron on the host
-NIDO_MASTER_KEY=... NIDO_DATA_DIR=/data PHOTO_DIR=/data/photos \
+NIDO_MASTER_KEY=... NIDO_DATA_DIR=/data \
 NIDO_BACKUP_DIR=/backups NIDO_BACKUP_PASSPHRASE=... \
 docker run --rm -v nido-data:/data -v nido-backups:/backups \
   nido/api:latest node dist/backup-cli.js backup --keep 14
@@ -84,7 +84,7 @@ Two important properties:
   view (WAL included) and keeps the file encrypted, then runs
   `integrity_check` on each snapshot before the archive is finalised.
 - **Photos are plaintext in the archive unless encrypted.** Databases are
-  already SQLCipher-encrypted, but uploaded photos are not. Set
+  already SQLCipher-encrypted, and so are the blobs. Set
   `NIDO_BACKUP_PASSPHRASE` to AES-256-GCM-encrypt the whole tar, which is what
   you want before shipping it off-box.
 
@@ -100,11 +100,11 @@ per-platform scheduler examples.
   (required in the deploy compose). `openssl rand -hex 32`. **Losing it means
   losing every family's data** — back it up separately from the volume
 - `NIDO_DATA_DIR`: runtime data directory holding `registry.db`,
-  `db/<familyId>.db` and `photos/` (default `/data`)
+  `db/<familyId>.db` and `blobs/` (default `/data`)
 - `JWT_SECRET`: Secret for JWT authentication (required in the deploy compose)
 - `PUBLIC_API_URL`: optional explicit API origin for the browser (defaults to same-origin `/api/v1`)
 - `API_PROXY_TARGET`: where the web server forwards `/api` (compose: `http://api:3000`, single-pod k8s: `http://localhost:3000`)
-- `PHOTO_DIR`: Photo storage directory (deploy compose, defaults to `/data/photos`)
+- `NIDO_BLOB_DIR`: Photo storage directory (deploy compose, defaults to `/data/blobs`)
 - `LOG_LEVEL`: API log verbosity — `debug`, `info` (default), `warn`, `error`,
   `silent`
 - `LOG_FORMAT`: API log format — `json` or `pretty`. Unset lets the API choose,
