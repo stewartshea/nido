@@ -37,17 +37,33 @@ async function familyAccess(db: any, familyId: number, userId: string): Promise<
 }
 
 // Latest timestamp for an inactivity category across tables (per member/home).
+/**
+ * When the target last did something, for an inactivity reminder.
+ *
+ * Resolved through `family_members`, not by comparing ids directly. A reminder
+ * targets a member (that is what the picker offers, and what `families/:id/members`
+ * returns), while every log row carries a `subject_id`. Those are different
+ * numbers that coincide only for a member with no adult sharing the household —
+ * which is why these reminders silently never fired for anyone whose babysitter
+ * or partner had an account.
+ */
 async function latestFor(db: any, familyId: number, category: string, targetId: number | null): Promise<number | null> {
-  const memberWhere = targetId ? 'b.household_id = ? AND b.id = ?' : 'b.household_id = ?';
+  const memberWhere = targetId ? 'fm.household_id = ? AND fm.id = ?' : 'fm.household_id = ?';
   const memberArgs = targetId ? [familyId, targetId] : [familyId];
 
   let sql = '';
-  if (category === 'feeds' || category === 'pumping' || category === 'feed') {
-    sql = `SELECT MAX(f.start_time) AS t FROM feedings f JOIN subjects b ON b.id = f.subject_id WHERE ${memberWhere} AND f.type ${category === 'pumping' ? "='pump'" : "!='pump'"}`;
+  if (category === 'breast_or_pump') {
+    // "Time since the breast was last used" is a supply question, and it is not
+    // the same as either neighbour: `feeds` is when the BABY last ate (a bottle
+    // or a bowl of solids counts, and a pump does not), `pumping` is only the
+    // pump. This is fed-at-the-breast OR expressed.
+    sql = `SELECT MAX(f.start_time) AS t FROM feedings f JOIN family_members fm ON fm.legacy_subject_id = f.subject_id WHERE ${memberWhere} AND f.type IN ('breast', 'pump')`;
+  } else if (category === 'feeds' || category === 'pumping' || category === 'feed') {
+    sql = `SELECT MAX(f.start_time) AS t FROM feedings f JOIN family_members fm ON fm.legacy_subject_id = f.subject_id WHERE ${memberWhere} AND f.type ${category === 'pumping' ? "='pump'" : "!='pump'"}`;
   } else if (category === 'diapers') {
-    sql = `SELECT MAX(d.change_time) AS t FROM diapers d JOIN subjects b ON b.id = d.subject_id WHERE ${memberWhere}`;
+    sql = `SELECT MAX(d.change_time) AS t FROM diapers d JOIN family_members fm ON fm.legacy_subject_id = d.subject_id WHERE ${memberWhere}`;
   } else if (category === 'sleep') {
-    sql = `SELECT MAX(s.start_time) AS t FROM sleep s JOIN subjects b ON b.id = s.subject_id WHERE ${memberWhere}`;
+    sql = `SELECT MAX(s.start_time) AS t FROM sleep s JOIN family_members fm ON fm.legacy_subject_id = s.subject_id WHERE ${memberWhere}`;
   } else {
     return null;
   }

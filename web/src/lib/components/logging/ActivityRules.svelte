@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { reminderNoun } from '$lib/shared';
 	import { createEventDispatcher, onMount } from 'svelte';
 	import { remindersAPI, type Reminder } from '$lib/api';
 
@@ -21,13 +22,16 @@
 	const ACTIVITY = [
 		{ id: 'feeds', label: 'Feed' },
 		{ id: 'pumping', label: 'Pump' },
+		// Fed at the breast or expressed — the supply question, which a bottle
+		// does not answer and a pump alone does not either.
+		{ id: 'breast_or_pump', label: 'Breast or pump' },
 		{ id: 'diapers', label: 'Diaper' },
 		{ id: 'sleep', label: 'Sleep' },
 	];
 
 	function describe(r: Reminder): string {
 		if (r.kind === 'inactivity') {
-			return `no ${r.category === 'pumping' ? 'pump' : r.category === 'diapers' ? 'change' : r.category === 'sleep' ? 'sleep' : 'feed'} in ${r.hours}h`;
+			return `no ${reminderNoun(r.category)} in ${r.hours}h`;
 		}
 		return `${r.label || r.category} — every ${r.intervalDays}d`;
 	}

@@ -72,6 +72,23 @@
 				{#if by(summary.latestFeeding)}<p class="text-xs text-ink-soft mt-0.5">by {by(summary.latestFeeding)}</p>{/if}
 			</button>
 		{/if}
+		{#if has('pumping')}
+			<!-- The parent's side, and deliberately its own tile: a pump is not the
+			     baby feeding, and "time since the breast was last used" is a supply
+			     question that a bottle or a bowl of solids does not answer. -->
+			<button type="button" on:click={() => dispatch('log', { kind: 'pumping' })} data-testid="last-pump" class="text-left bg-surface rounded-lg shadow-card p-4 border-l-4 border-line hover:shadow-card focus:outline-none focus-visible:ring-2 focus-visible:ring-accent active:scale-[0.98] transition">
+				<div class="flex items-center gap-2 mb-1">
+					<span class="shrink-0" aria-hidden="true"><Milk class="w-5 h-5" /></span>
+					<p class="text-xs text-ink-soft uppercase font-semibold tracking-wider">Last Pump</p>
+				</div>
+				<p class="text-2xl font-display font-semibold text-ink">{summary.latestPump ? ago(summary.latestPump.end_time || summary.latestPump.start_time) : '—'}</p>
+				<p class="text-xs text-ink-soft mt-1">{summary.latestPump ? clock(summary.latestPump.end_time || summary.latestPump.start_time) : ''}</p>
+				<p class="text-sm text-ink-soft mt-0.5">
+					{#if summary.latestPump?.amount}{summary.latestPump.amount} {summary.latestPump.amount_unit || 'oz'}{:else if summary.latestPump?.duration}{formatElapsed(summary.latestPump.duration)}{:else}no pump recorded{/if}
+				</p>
+				{#if by(summary.latestPump)}<p class="text-xs text-ink-soft mt-0.5">by {by(summary.latestPump)}</p>{/if}
+			</button>
+		{/if}
 		{#if has('diapers')}
 			<button type="button" on:click={() => dispatch('log', { kind: 'diapers' })} class="text-left bg-surface rounded-lg shadow-card p-4 border-l-4 border-accent hover:shadow-card focus:outline-none focus-visible:ring-2 focus-visible:ring-accent active:scale-[0.98] transition">
 				<div class="flex items-center gap-2 mb-1">

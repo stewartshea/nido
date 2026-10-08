@@ -24,12 +24,29 @@ healthRoutes.get('/summary/:memberId{[0-9]+}', async (c) => {
     });
     const baby = babyRes.rows[0] as unknown as SubjectRow;
     
-    // Get latest feeding
+    // The last time the BABY fed. A pump row is the parent expressing, not the
+    // baby eating, so it must not appear here — otherwise "last feed" can read
+    // hours earlier than the baby actually ate, and a bottle that followed a
+    // pump is hidden behind it.
     const latestFeeding = await db.execute({
       sql: `
       SELECT start_time, end_time, duration, amount, type, side, created_by
       FROM feedings
-      WHERE subject_id = ?
+      WHERE subject_id = ? AND type != 'pump'
+      ORDER BY start_time DESC
+      LIMIT 1
+    `,
+      args: [subjectId]
+    });
+
+    // The parent's side of it, reported separately. "Time since the breast was
+    // last used" is a supply question and is not the same as "time since the
+    // baby last ate" — the baby may have had a bottle or solids since.
+    const latestPump = await db.execute({
+      sql: `
+      SELECT start_time, end_time, duration, amount, amount_unit, type, side, created_by
+      FROM feedings
+      WHERE subject_id = ? AND type = 'pump'
       ORDER BY start_time DESC
       LIMIT 1
     `,
@@ -116,6 +133,7 @@ healthRoutes.get('/summary/:memberId{[0-9]+}', async (c) => {
         birthDate: baby.birth_date
       },
       latestFeeding: latestFeeding.rows[0] || null,
+      latestPump: latestPump.rows[0] || null,
       latestDiaper: latestDiaper.rows[0] || null,
       latestSleep: latestSleep.rows[0] || null,
       latestGrowth: latestGrowth.rows[0] || null,

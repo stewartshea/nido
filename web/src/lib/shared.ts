@@ -49,6 +49,28 @@ export const CATEGORIES = CATEGORY_IDS.map((id) => ({ id, ...PRESENTATION[id] })
  * baby. Prefer a trackable profile; fall back to anybody so an adult-only
  * household still has something to select.
  */
+/**
+ * How a reminder's category reads in a sentence: "no <noun> in 6h".
+ *
+ * One function rather than a ternary per component. There were three copies of
+ * that ternary and adding a category fell through all of them to "feed", which
+ * is how a supply reminder would have been labelled as a baby missed a meal.
+ */
+export function reminderNoun(category: string | null | undefined): string {
+	switch (category) {
+		case 'pumping':
+			return 'pump';
+		case 'breast_or_pump':
+			return 'breast feed or pump';
+		case 'diapers':
+			return 'change';
+		case 'sleep':
+			return 'sleep';
+		default:
+			return 'feed';
+	}
+}
+
 export function defaultMemberId<T extends { id: number | string; trackable?: boolean }>(members: T[]): number | null {
 	if (!members.length) return null;
 	const trackable = members.find((m) => m.trackable !== false);

@@ -13,6 +13,7 @@
 	import LogDrawer from '$lib/components/logging/LogDrawer.svelte';
 	import StockGlance from '$lib/components/logging/StockGlance.svelte';
 		import { CATEGORIES, defaultMemberId } from '$lib/shared';
+	import { reminderNoun } from '$lib/shared';
 	import { Baby, Star, Users, Trash2, Mail, AlertCircle, Activity, Check } from 'lucide-svelte';
 
 
@@ -895,7 +896,7 @@
 						<p class="text-xs">
 							{#each overdueReminders as o}
 								{#if o.kind === 'inactivity'}
-									<span class="capitalize">no {o.category === 'pumping' ? 'pump' : o.category === 'diapers' ? 'change' : o.category === 'sleep' ? 'sleep' : 'feed'} in {o.hours}h{o.since ? ` (since ${new Date(o.since).toLocaleString()})` : ' (never recorded)'}</span>
+									<span class="capitalize">no {reminderNoun(o.category)} in {o.hours}h{o.since ? ` (since ${new Date(o.since).toLocaleString()})` : ' (never recorded)'}</span>
 								{:else}
 									<span>{o.label || o.category} — every {o.intervalDays}d{o.since ? ` (last {new Date(o.since).toLocaleString()})` : ' (never done)'}</span>
 								{/if}{o !== overdueReminders[overdueReminders.length - 1] ? ' · ' : ''}

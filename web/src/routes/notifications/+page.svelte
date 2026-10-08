@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { inventoryAPI, notificationsAPI, remindersAPI, type InventoryAlert, type NotifySchedule, type Reminder } from '$lib/api';
+	import { reminderNoun } from '$lib/shared';
 	import ActivityRules from '$lib/components/logging/ActivityRules.svelte';
 	import InventoryRules from '$lib/components/logging/InventoryRules.svelte';
 
@@ -42,7 +43,7 @@
 
 	function describe(r: Reminder): string {
 		if (r.kind === 'inactivity') {
-			const what = r.category === 'pumping' ? 'pump' : r.category === 'diapers' ? 'change' : r.category === 'sleep' ? 'sleep' : 'feed';
+			const what = reminderNoun(r.category);
 			return `No ${what} in ${r.hours}h${r.since ? ` (since ${new Date(r.since).toLocaleString()})` : ' — never recorded'}`;
 		}
 		return `${r.label || r.category} — every ${r.intervalDays}d${r.since ? ` (last ${new Date(r.since).toLocaleString()})` : ' — never done'}`;
