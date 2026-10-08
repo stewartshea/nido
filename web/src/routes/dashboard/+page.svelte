@@ -13,6 +13,7 @@
 	import MemberSwitcher from '$lib/components/logging/MemberSwitcher.svelte';
 	import StockGlance from '$lib/components/logging/StockGlance.svelte';
 	import LogDrawer from '$lib/components/logging/LogDrawer.svelte';
+	import Trends from '$lib/components/logging/Trends.svelte';
 	import { Users, Home, AlertCircle, Check } from 'lucide-svelte';
 
 	import { CATEGORIES, defaultMemberId } from '$lib/shared';
@@ -641,11 +642,19 @@
 								on:refresh={async () => { await refreshLists(); await refreshSummary(); }}
 								on:pin={(e) => setQuickLink(e.detail.kind, true)}
 								on:unpin={(e) => setQuickLink(e.detail.kind, false)}
-							/>
+							>
+								<!-- Rates over the last week, next to the last-seen tiles: the
+								     tiles say "how long ago", this says "how often". -->
+								{#if selectedMember}
+									<div class="mt-6">
+										<Trends memberId={Number(selectedMember.id)} memberName={selectedMember.name} categories={activeCategories} />
+									</div>
+								{/if}
 
-							<div class="mt-6">
-								<StockGlance />
-							</div>
+								<div class="mt-6">
+									<StockGlance />
+								</div>
+							</MemberActivity>
 						{/if}
 					</section>
 

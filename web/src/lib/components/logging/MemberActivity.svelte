@@ -43,6 +43,10 @@
 
 <TodaySummary {summary} name={memberName} categories={activeCategories} {stage} on:log={(e) => dispatch('log', e.detail)} />
 
+<!-- Trends and stock belong above the feed, not after it: the feed is the
+     long scroll, so anything you want seen at a glance has to come first. -->
+<slot />
+
 <div class="bg-surface rounded-lg shadow-card p-5 border border-line-soft" id="activities">
 	<div class="flex items-center justify-between mb-4">
 		<h3 class="text-lg font-display font-semibold">Activities</h3>

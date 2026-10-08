@@ -176,6 +176,22 @@ healthRoutes.get('/insights/:memberId{[0-9]+}', async (c) => {
       args: [subjectId, weekAgo.toISOString()]
     });
     
+    // Weight is measured far less often than anything else, so a 7-day window
+    // usually holds one point or none and no trend can be read from it. Thirty
+    // days is the shortest window that says anything.
+    const monthAgo = new Date();
+    monthAgo.setDate(monthAgo.getDate() - 30);
+
+    const weightPoints = await db.execute({
+      sql: `
+      SELECT measurement_date, weight, unit_system
+      FROM growth
+      WHERE subject_id = ? AND weight IS NOT NULL AND measurement_date >= ?
+      ORDER BY measurement_date ASC
+    `,
+      args: [subjectId, monthAgo.toISOString()]
+    });
+
     // Get diaper patterns (last 7 days)
     const diaperPatterns = await db.execute({
       sql: `
@@ -190,6 +206,48 @@ healthRoutes.get('/insights/:memberId{[0-9]+}', async (c) => {
       args: [subjectId, weekAgo.toISOString()]
     });
     
+    // Rates, not totals: "14 changes last week" is a number nobody acts on,
+    // "2 a day" is the one that says whether something changed.
+    const days = 7;
+    const feedsTotal = Number((feedingPatterns.rows[0] as any)?.total_feedings ?? 0);
+    const diapersTotal = Number((diaperPatterns.rows[0] as any)?.total_changes ?? 0);
+    const sleepMs = Number((sleepPatterns.rows[0] as any)?.total_duration ?? 0);
+
+    // The WHO tables are metric and a record stores what was typed, so convert
+    // before comparing or dividing two of them.
+    const toKg = (weight: number, unit?: string | null) =>
+      unit === 'imperial' ? weight * 0.453592 : weight;
+    const points = (weightPoints.rows as any[]).map((r) => ({
+      at: new Date(String(r.measurement_date)).getTime(),
+      kg: toKg(Number(r.weight), r.unit_system),
+    }));
+
+    const round1 = (n: number) => Math.round(n * 10) / 10;
+    let weightTrend: {
+      latestKg: number;
+      changePerDayKg: number;
+      changePerWeekKg: number;
+      spanDays: number;
+      measurements: number;
+    } | null = null;
+    if (points.length >= 1) {
+      const first = points[0]!;
+      const last = points[points.length - 1]!;
+      const spanDays = (last.at - first.at) / 86_400_000;
+      // A rate needs two readings far enough apart to mean anything; a known
+      // weight is still worth reporting without one, so the latest is always
+      // returned and only the rate is withheld (spanDays 0).
+      const ratable = points.length >= 2 && spanDays >= 1;
+      const perDay = ratable ? (last.kg - first.kg) / spanDays : 0;
+      weightTrend = {
+        latestKg: round1(last.kg),
+        changePerDayKg: Math.round(perDay * 1000) / 1000,
+        changePerWeekKg: Math.round(perDay * 7 * 1000) / 1000,
+        spanDays: ratable ? Math.round(spanDays) : 0,
+        measurements: points.length,
+      };
+    }
+
     const insights = {
       feeding: feedingPatterns.rows[0] as unknown as FeedingAggRow | undefined,
       sleep: {
@@ -199,6 +257,13 @@ healthRoutes.get('/insights/:memberId{[0-9]+}', async (c) => {
       },
       diaper: diaperPatterns.rows[0] as unknown as DiaperAggRow | undefined,
       period: 'last_7_days',
+      trends: {
+        periodDays: days,
+        feedsPerDay: round1(feedsTotal / days),
+        diapersPerDay: round1(diapersTotal / days),
+        sleepHoursPerDay: round1(sleepMs / 3_600_000 / days),
+        weight: weightTrend,
+      },
       generatedAt: new Date().toISOString()
     };
     
