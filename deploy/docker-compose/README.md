@@ -57,12 +57,15 @@ so this compose files points `build.context` at the corresponding subfolder.
 
 ## Using images published by CI instead of building
 
-The repository's `build-containers.yml` workflow publishes images to GHCR on
-every push to `main` and on `v*` tags:
+Two tiers, and the difference is the point:
 
-- `ghcr.io/<owner>/<repo>/api:latest`
-- `ghcr.io/<owner>/<repo>/web:latest`
-- per-commit: `ghcr.io/<owner>/<repo>/{api|web}:sha-<commit>`
+- `ghcr.io/<owner>/<repo>/{api|web}:main` — published on every push to `main`.
+  A build of whatever was just merged: floating, and unreleased.
+- `ghcr.io/<owner>/<repo>/{api|web}:v<date>` — a release, published by the
+  `Release` workflow. Immutable. **Pin this.**
+- `ghcr.io/<owner>/<repo>/{api|web}:latest` — the newest release. Fine for
+  trying Nido; it moves.
+- `ghcr.io/<owner>/<repo>/{api|web}:sha-<commit>` — every build, by commit.
 
 To pull those instead of building locally, set the compose file to reference
 them (and log in first):
@@ -75,7 +78,7 @@ Replace the `build:`/`image:` blocks with e.g:
 
 ```yaml
 api:
-  image: ghcr.io/<owner>/<repo>/api:latest
+  image: ghcr.io/<owner>/<repo>/api:v<date>
   # ...same ports/env/volumes...
 web:
   image: ghcr.io/<owner>/<repo>/web:latest

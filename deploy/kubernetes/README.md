@@ -48,18 +48,21 @@ each option folder so every option applies cleanly on its own.
 
 ## Images built by CI
 
-The repository's `build-containers.yml` workflow builds both containers on every
-push to `main` and `v*` tags, and publishes them to GitHub Container Registry:
+Two tiers, and the difference matters for a cluster you keep running:
 
-- `ghcr.io/<owner>/<repo>/api:latest` / `web:latest` (on `main`)
-- `ghcr.io/<owner>/<repo>/{api|web}:sha-<commit>` (every push)
-- `ghcr.io/<owner>/<repo>/{api|web}:<tag>` (on `v*` tags)
+- `ghcr.io/<owner>/<repo>/{api|web}:main` — a build of whatever was just merged.
+  Floating, unreleased; not what a deployment should run.
+- `ghcr.io/<owner>/<repo>/{api|web}:v<date>` — a release, cut by the `Release`
+  workflow. Immutable. **Pin this.**
+- `ghcr.io/<owner>/<repo>/{api|web}:latest` — the newest release. Convenient for
+  trying Nido; it moves.
+- `ghcr.io/<owner>/<repo>/{api|web}:sha-<commit>` — every build, by commit.
 
 Point the manifests at those images (and configure the cluster with an image
 pull secret / `docker login` for private repos):
 
 ```yaml
-image: ghcr.io/<owner>/<repo>/api:latest
+image: ghcr.io/<owner>/<repo>/api:v<date>
 ```
 
 ## Configuration

@@ -1,0 +1,149 @@
+name: Release
+
+# Cuts a release: creates a date-based tag and a GitHub Release for it.
+#
+# Nothing else in this repo creates a tag, so this is where a version starts:
+#
+#   release.yml  ->  tag v2026.10.08  ->  build-containers.yml  ->  ghcr.io/...:v2026.10.08
+#
+# The build is *asked for* rather than left to fire on the tag push. Events
+# raised by the default GITHUB_TOKEN do not start further runs — a rule that
+# exists so a workflow cannot recurse — and workflow_dispatch is one of the two
+# exemptions. Pushing the tag and then dispatching the build is the difference
+# between a release that has images and one that only has a tag.
+#
+# Deliberately manual for now. A release is a statement that this commit is
+# safe to run against someone's family data, and that is not a judgement a
+# schedule should make unattended.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Override the dated tag (e.g. v2026.10.08). Blank uses today's UTC date."
+        required: false
+        type: string
+      dry_run:
+        description: "Work out the tag and stop without tagging or releasing."
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  # Needed to dispatch the container build. workflow_dispatch is one of the two
+  # events a GITHUB_TOKEN push *can* start, which is why the build is dispatched
+  # rather than left to the tag push.
+  actions: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      # Full history so the generated notes can walk back to the previous tag,
+      # and so the tag is cut from a real commit rather than a shallow one.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Work out the tag
+        id: tag
+        env:
+          OVERRIDE: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+
+          if [ -n "${OVERRIDE}" ]; then
+            tag="${OVERRIDE}"
+          else
+            # CalVer: the date is the version. Unambiguous without a lookup, and
+            # it says when a build is from, which is the question someone
+            # running a self-hosted instance actually asks.
+            base="v$(date -u +%Y.%m.%d)"
+            tag="${base}"
+            # More than one release in a day gets a suffix rather than a
+            # silently rejected duplicate tag.
+            n=1
+            while git ls-remote --exit-code --tags origin "refs/tags/${tag}" >/dev/null 2>&1; do
+              n=$((n + 1))
+              tag="${base}.${n}"
+            done
+          fi
+
+          if git ls-remote --exit-code --tags origin "refs/tags/${tag}" >/dev/null 2>&1; then
+            echo "::error::Tag ${tag} already exists. Pass a different version."
+            exit 1
+          fi
+
+          # Checkout does not guarantee local tags, and the notes range needs the
+          # previous one to exist locally.
+          git fetch --tags --quiet || true
+          previous="$(git describe --tags --abbrev=0 2>/dev/null || echo '')"
+
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+          echo "previous=${previous}" >> "$GITHUB_OUTPUT"
+          echo "Resolved tag: ${tag}"
+          echo "Previous tag: ${previous:-<none>}"
+
+      - name: Tag and push
+        if: ${{ !inputs.dry_run }}
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          set -euo pipefail
+          # An annotated tag needs an identity; the checkout's token has no
+          # user attached to it.
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "${TAG}" -m "${TAG}"
+          # Pushed explicitly rather than letting `gh release create` make the
+          # tag, so the ref the build is later dispatched at is certainly this
+          # commit.
+          git push origin "${TAG}"
+
+      - name: Create the release
+        if: ${{ !inputs.dry_run }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.tag.outputs.tag }}
+          PREVIOUS: ${{ steps.tag.outputs.previous }}
+        run: |
+          set -euo pipefail
+          # Notes are generated from the merged PRs since the last tag, so there
+          # is no changelog file to keep in step by hand.
+          if [ -n "${PREVIOUS}" ]; then
+            gh release create "${TAG}" --title "${TAG}" --generate-notes --notes-start-tag "${PREVIOUS}"
+          else
+            gh release create "${TAG}" --title "${TAG}" --generate-notes
+          fi
+
+      - name: Build and publish the images for this tag
+        if: ${{ !inputs.dry_run }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          set -euo pipefail
+          # The tag push above cannot start another workflow: events raised by
+          # the default GITHUB_TOKEN do not create runs, or a workflow could
+          # recurse. workflow_dispatch is exempt, so ask for the build directly.
+          #
+          # The --ref carries the version: dispatched at a tag, github.ref_type
+          # is 'tag' and the build tags the image with github.ref_name. No input
+          # is passed because build-containers declares none, and an undeclared
+          # input is a 422.
+          gh workflow run build-containers.yml --ref "${TAG}"
+          echo "Dispatched the container build at ${TAG}."
+
+      - name: Summary
+        run: |
+          {
+            echo "### Release ${{ steps.tag.outputs.tag }}"
+            echo
+            if [ "${{ inputs.dry_run }}" = "true" ]; then
+              echo "Dry run — nothing tagged or released."
+            else
+              echo "- Tag pushed, and the container build dispatched for it."
+              echo "- Images will publish as \`ghcr.io/${{ github.repository }}/{api,web}:${{ steps.tag.outputs.tag }}\`."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

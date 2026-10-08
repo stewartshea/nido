@@ -37,7 +37,7 @@ derived from `NIDO_MASTER_KEY`. The encrypted file *is* the tenant boundary.
   either is unset
 - API exposes a `/health` healthcheck
 - For registry-published images (GHCR) replace the `build:`/`image:` blocks
-  with `image: ghcr.io/<owner>/<repo>/{api|web}:latest` — see
+  with `image: ghcr.io/<owner>/<repo>/{api|web}:v<date>` — see
   `deploy/docker-compose/README.md`
 
 ## Usage

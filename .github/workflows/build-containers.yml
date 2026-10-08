@@ -52,13 +52,25 @@ jobs:
           # Always tag with the short commit sha.
           IMG="${BASE}/${SERVICE}:sha-${SHORT_SHA}"
           echo "image=${IMG}" >> "$GITHUB_OUTPUT"
-          # On main, also tag as latest; on a tag push, tag as the version.
+          # Two tiers, deliberately separate:
+          #
+          #   main   - a build of whatever was just merged. Floating, unreleased.
+          #   v<date> - a release. Immutable, and what a deployment should pin.
+          #
+          # `latest` tracks the newest RELEASE, not the newest commit. It used to
+          # be set on every main push, which meant pulling `latest` silently ran
+          # unreleased code — the tag said "latest" and meant "newest thing
+          # anyone pushed".
           TAGS="${IMG}"
           if [ "${{ github.event_name }}" = "push" ] && [ "${{ github.ref }}" = "refs/heads/main" ]; then
-            TAGS="${TAGS},${BASE}/${SERVICE}:latest"
+            TAGS="${TAGS},${BASE}/${SERVICE}:main"
           fi
-          if [ "${{ github.event_name }}" = "push" ] && [ "${{ github.ref_type }}" = "tag" ]; then
-            TAGS="${TAGS},${BASE}/${SERVICE}:${{ github.ref_name }}"
+          # Any run whose ref is a tag publishes that version. Not gated on
+          # event_name: a tag pushed with the default GITHUB_TOKEN does not
+          # start a run at all, so release.yml dispatches this workflow at the
+          # tag and it must still pick up the version here.
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            TAGS="${TAGS},${BASE}/${SERVICE}:${{ github.ref_name }},${BASE}/${SERVICE}:latest"
           fi
           echo "tags=${TAGS}" >> "$GITHUB_OUTPUT"
 

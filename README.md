@@ -164,7 +164,10 @@ docs/   Design specs and backlog
 - [`deploy/kubernetes`](deploy/kubernetes/) — single-pod and multi-pod
   manifests
 
-Images are published to GHCR on every push to `main`.
+Images are published to GHCR on every push to `main` as `:main` (floating,
+unreleased), and under a date-based tag — `:v2026.10.08` — when the `Release`
+workflow is run. `:latest` tracks the newest release, so pin a version for
+anything you rely on.
 
 ## Security notes
 
