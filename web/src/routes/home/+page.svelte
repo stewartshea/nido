@@ -325,10 +325,9 @@
 		try {
 			const res = await familiesAPI.getSettings(activeFamilyId);
 			familySettings = res.data.settings;
-			const cats = familySettings.categories;
-			if (cats && cats.length) {
-				activeCategories = cats;
-			}
+			// Deliberately does NOT touch activeCategories. Those are the selected
+			// member's own categories; the family-level list is a different thing
+			// that used to overwrite them here.
 		} catch (err: any) {
 			console.error('Failed to load family settings:', err);
 		}

@@ -7,6 +7,7 @@
 	import { uiStore, uiActions } from '$lib/stores/uiStore';
 	import ToggleSwitch from '$lib/components/ToggleSwitch.svelte';
 	import { CATEGORIES, defaultMemberId } from '$lib/shared';
+	import { DIGEST_FREQUENCIES } from '$lib/vocabulary.generated';
 	import { Users, Home, Trash2, Timer, AlertCircle, Settings, Check, ChevronRight, User, Shield, Upload, Download } from 'lucide-svelte';
 
 
@@ -65,7 +66,7 @@
 
 	// Family-scoped tracking settings (categories + per-category option lists).
 	let settingsTab: 'profile' | 'family' | 'import' | 'members' | 'backup' | 'admin' | null = null;
-	let familySettings: { categories: string[] | null; categoryOptions: Record<string, Record<string, string[]>>; defaultCategoryOptions: Record<string, Record<string, string[]>>; stageCategories?: Record<string, string[]> | null; defaultStageCategories?: Record<string, string[]>; shareAnonymizedDaily?: boolean } | null = null;
+	let familySettings: { categories: string[] | null; categoryOptions: Record<string, Record<string, string[]>>; defaultCategoryOptions: Record<string, Record<string, string[]>>; stageCategories?: Record<string, string[]> | null; defaultStageCategories?: Record<string, string[]>; digestFrequency?: string; digestSentAt?: string | null; shareAnonymizedDaily?: boolean } | null = null;
 	// The stage whose category set is being edited, and a local mirror so toggles
 	// feel instant before the round trip lands.
 	let stageEditor: string | null = null;
@@ -73,7 +74,6 @@
 	// What the family tracks, as opposed to `activeCategories`, which is the
 	// selected member's own set. They shared one variable, so this tab showed
 	// one member's categories while writing a family-wide setting.
-	let familyCategories: string[] = [];
 	let savingFamilySettings = false;
 	let anonymizedPreview: any = null;
 	let loadingAnonymizedPreview = false;
@@ -649,7 +649,6 @@
 			familySettings = res.data.settings;
 			anonymizedPreview = res.data.anonymizedPreview ?? anonymizedPreview;
 			const cats = familySettings?.categories;
-			familyCategories = cats?.length ? cats : CATEGORIES.map((c) => c.id);
 		} catch (err: any) {
 			console.error('Failed to load family settings:', err);
 		}
@@ -672,6 +671,21 @@
 	 * A stage's categories: the in-flight edit first so a toggle lands instantly,
 	 * then this family's saved version, then the built-in set.
 	 */
+	function onDigestFrequencyChange(e: Event) {
+		void setDigestFrequency((e.currentTarget as HTMLSelectElement).value);
+	}
+
+	async function setDigestFrequency(next: string) {
+		if (!activeFamilyId) return;
+		try {
+			const res = await familiesAPI.updateSettings(activeFamilyId, { digestFrequency: next });
+			if (familySettings) familySettings.digestFrequency = res.data.settings?.digestFrequency ?? next;
+			notice = 'Digest frequency updated.';
+		} catch (err: any) {
+			error = err.response?.data?.error || 'Could not update the digest frequency.';
+		}
+	}
+
 	function stageSetFor(stage: string | null): string[] {
 		if (!stage) return [];
 		return stageDraft[stage]
@@ -703,25 +717,6 @@
 			if (familySettings) familySettings.stageCategories = merged;
 		} catch (err: any) {
 			error = err.response?.data?.error || 'Could not update the stage.';
-		}
-	}
-
-	async function toggleFamilyCategory(catId: string) {
-		if (!activeFamilyId) return;
-		const next = familyCategories.includes(catId)
-			? familyCategories.filter((c) => c !== catId)
-			: [...familyCategories, catId];
-		familyCategories = next;
-		savingFamilySettings = true;
-		try {
-			await familiesAPI.updateSettings(activeFamilyId, { categories: next });
-			if (familySettings) familySettings.categories = next;
-			notice = 'Family tracking updated.';
-		} catch (err: any) {
-			familyCategories = familySettings?.categories?.length ? familySettings.categories : CATEGORIES.map((c) => c.id);
-			error = err.response?.data?.error || 'Failed to update categories.';
-		} finally {
-			savingFamilySettings = false;
 		}
 	}
 
@@ -1096,19 +1091,6 @@
 									Everything on this tab is shared with everyone in {activeFamily?.name || 'your family'} — it is not a personal setting.
 									Your own account is under Profile, and the people you track are under Members.
 								</p>
-								<div class="mb-5">
-									<h4 class="font-display font-semibold text-sm mb-1">What your family tracks</h4>
-									<p class="text-sm text-ink-soft mb-3">Turn a category off to remove it from the log options for every member. Any family member can change this.</p>
-									<div class="flex flex-col gap-2">
-										{#each CATEGORIES as cat}
-											<ToggleSwitch
-												checked={familyCategories.includes(cat.id)}
-												label={cat.label}
-												onToggle={() => toggleFamilyCategory(cat.id)}
-											/>
-										{/each}
-									</div>
-								</div>
 								{#if familySettings}
 									<div class="border-t border-line-soft pt-4 mt-5">
 										<h4 class="font-display font-semibold text-sm mb-1">Categories by stage</h4>
@@ -1140,9 +1122,32 @@
 								{/if}
 								{#if familySettings}
 									<div class="border-t border-line-soft pt-4">
+										<h4 class="font-display font-semibold text-sm mb-1">Digest email</h4>
+										<p class="text-sm text-ink-soft mb-3">
+											How often Nido emails this family when something needs attention. Rules are still evaluated
+											every sweep — this only sets how often they can reach an inbox. Nothing firing means no email.
+										</p>
+										<label for="digest-frequency" class="block text-sm font-medium text-ink-soft mb-1">How often</label>
+										<select
+											id="digest-frequency"
+											value={familySettings.digestFrequency ?? 'hourly'}
+											on:change={onDigestFrequencyChange}
+											class="w-full px-3 py-2 border border-line rounded-md"
+										>
+											{#each DIGEST_FREQUENCIES as f}
+												<option value={f}>{f[0].toUpperCase() + f.slice(1)}</option>
+											{/each}
+										</select>
+										{#if familySettings.digestSentAt}
+											<p class="text-xs text-ink-soft mt-2">Last sent {new Date(familySettings.digestSentAt).toLocaleString()}.</p>
+										{/if}
+									</div>
+								{/if}
+								{#if familySettings}
+									<div class="border-t border-line-soft pt-4">
 										<h4 class="font-display font-semibold text-sm mb-1">Choices when logging</h4>
 										<p class="text-sm text-ink-soft mb-3">The values offered for each kind of record, for example routine type or visit type. They appear in the log forms for everyone.</p>
-										{#each CATEGORIES.filter((c) => familyCategories.includes(c.id)) as cat}
+										{#each CATEGORIES as cat}
 											{@const options = familySettings.categoryOptions?.[cat.id] ?? familySettings.defaultCategoryOptions?.[cat.id] ?? {}}
 											{#if Object.entries(options).length > 0}
 												<div class="mb-4">

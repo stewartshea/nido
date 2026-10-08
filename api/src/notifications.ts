@@ -4,6 +4,7 @@ import {
 	recordNotified, resolveRecipients, type Recipient,
 } from './inventory-eval';
 import { getAppSettings, smtpConfigured, sendMail, baseUrl } from './mail';
+import { DIGEST_FREQUENCY_MS, type DigestFrequency } from './vocabulary';
 import { renderInventoryAlertsEmail } from './mail-templates';
 import type { InventoryRule } from './inventory-signals';
 import { log } from './logger';
@@ -23,7 +24,7 @@ import { log } from './logger';
 export interface DigestOutcome {
 	familyId: string;
 	/** Set when there was nothing to do, with the reason. */
-	skipped?: 'smtp' | 'no-rules' | 'no-items' | 'nobody-to-tell';
+	skipped?: 'smtp' | 'no-rules' | 'no-items' | 'nobody-to-tell' | 'not-due';
 	/** Rules matching right now, whether or not anyone has been told. */
 	firing: number;
 	/** Alerts emailed in this run. */
@@ -37,6 +38,39 @@ export interface DigestOutcome {
 interface DigestLogger {
 	warn(msg: string, extra?: Record<string, unknown>): void;
 	info(msg: string, extra?: Record<string, unknown>): void;
+}
+
+/**
+ * The cadence rule, as a pure function so it can be reasoned about on its own.
+ *
+ * Returns the hours until the next one is due, or 0 when it is due now. `0` for
+ * "never sent" is deliberate: a family that has just turned the setting on
+ * should get the next digest the moment something fires, not wait a week.
+ */
+export function hoursUntilDigestDue(frequency: string | null | undefined, lastSentIso: string | null | undefined, nowMs: number): number {
+	const window = DIGEST_FREQUENCY_MS[(frequency ?? 'hourly') as DigestFrequency] ?? DIGEST_FREQUENCY_MS.hourly;
+	const last = lastSentIso ? Date.parse(lastSentIso) : NaN;
+	if (!Number.isFinite(last)) return 0;
+	const waited = nowMs - last;
+	if (waited >= window) return 0;
+	return Math.ceil((window - waited) / 3_600_000);
+}
+
+/**
+ * Is this family due a digest?
+ *
+ * The frequency is a ceiling on how often they hear from us, not a schedule
+ * that is missed when nothing fires: `digest_sent_at` only advances on a real
+ * send, so a quiet week does not push the next alert a further week out.
+ */
+async function digestCadence(db: ReturnType<typeof getFamilyClient>, nowMs: number): Promise<{ due: boolean; hoursUntil: number }> {
+	const row = (await db.execute({
+		sql: 'SELECT digest_frequency, digest_sent_at FROM family_settings WHERE family_id = ? LIMIT 1',
+		args: [1],
+	})).rows[0] as { digest_frequency?: string | null; digest_sent_at?: string | null } | undefined;
+
+	const hoursUntil = hoursUntilDigestDue(row?.digest_frequency, row?.digest_sent_at, nowMs);
+	return { due: hoursUntil === 0, hoursUntil };
 }
 
 export async function runFamilyDigest(
@@ -54,6 +88,15 @@ export async function runFamilyDigest(
 	}
 
 	const db = getFamilyClient(familyId);
+
+	// How often this family wants to hear from us. Evaluated every sweep,
+	// delivered at most this often — a weekly family is not skipped, it is only
+	// silent. Reading this before the items matters: a sweep must not walk every
+	// family's stock to discover it is not the week for them.
+	const cadence = await digestCadence(db, nowMs);
+	if (!cadence.due) {
+		return result({ skipped: 'not-due', message: `Next digest is due in ${cadence.hoursUntil} hour(s)` });
+	}
 
 	// Checked before walking any items: most families will never configure a
 	// rule, and a sweep across every family should not pay to read their stock.
@@ -133,6 +176,16 @@ export async function runFamilyDigest(
 			failed.push(`${recipient.email}: ${err?.message ?? 'failed'}`);
 			logger.warn('inventory alert email failed', { err, familyId, ruleId: lines[0]?.ruleId });
 		}
+	}
+
+	// Only a real send consumes the family's slot. A sweep that found nothing to
+	// say must not silence the next one, or a family on weekly would wait another
+	// week for an alert that fired a day later.
+	if (sent > 0) {
+		await db.execute({
+			sql: 'UPDATE family_settings SET digest_sent_at = ? WHERE family_id = ?',
+			args: [new Date(nowMs).toISOString(), 1],
+		});
 	}
 
 	const alertCount = new Set<string>();

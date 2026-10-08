@@ -17,8 +17,9 @@
 	// Deriving it from the category, rather than trusting a flag left over from when
 	// the form opened: changing the category away from diapers hid the checkbox but
 	// left the flag set, so a household item saved both and the API rejected it.
-	$: linkedToLogs = category === 'diapers' && autoDecrement;
-	$: if (category !== 'diapers') autoDecrement = false;
+	// Any item can be consumed by a logged change — a tub of wipes goes down
+	// when a nappy is changed, and that item's category is not 'diapers'.
+	$: linkedToLogs = autoDecrement;
 
 	const CATEGORY_LABELS: Record<string, string> = {
 		diapers: 'Diapers', formula: 'Formula', baby_care: 'Baby care', vitamins: 'Vitamins',
@@ -70,6 +71,8 @@
 	let expiresAt = '';
 	let memberId: number | null = null;
 	let autoDecrement = false;
+	/** How many of this item a single logged change uses. */
+	let eventQty = '1';
 	let saving = false;
 
 	async function loadSizes(memberId: number | null) {
@@ -225,8 +228,9 @@
 		memberId = BABY_CATEGORIES.has(category) ? selectedMemberId : null;
 		name = ''; variant = ''; quantity = ''; packSize = ''; leadDays = '';
 		consumeQty = '';
-		// Diapers are the linked case: a logged change is one unit used.
+		// Diapers are the obvious linked case; anything else is opt-in.
 		autoDecrement = category === 'diapers';
+		eventQty = '1';
 		error = '';
 		notice = '';
 	}
@@ -247,7 +251,7 @@
 				packSize: packSize ? Number(packSize) : null,
 				leadDays: leadDays ? Number(leadDays) : null,
 				eventCategory: linkedToLogs ? 'diapers' : null,
-				decrementPerEvent: linkedToLogs ? 1 : (consumeQty ? Number(consumeQty) : null),
+				decrementPerEvent: linkedToLogs ? Math.max(1, Number(eventQty) || 1) : (consumeQty ? Number(consumeQty) : null),
 				consumeIntervalDays: consumeEvery ? Number(consumeEvery) : null,
 				expiresAt: expiresAt ? new Date(expiresAt).toISOString() : null,
 			});
@@ -454,12 +458,19 @@
 					{#each members as m}<option value={Number(m.id)}>{m.name}</option>{/each}
 				</select>
 			</div>
-			{#if category === 'diapers'}
+			<div>
 				<label class="flex items-center gap-2 text-sm text-ink">
 					<input type="checkbox" bind:checked={autoDecrement} class="w-4 h-4 accent-[var(--color-primary)]" />
-					Subtract one for every diaper change I log
+					Subtract this when I log a diaper change
 				</label>
-			{/if}
+				{#if autoDecrement}
+					<div class="mt-2 flex items-center gap-2">
+						<label for="inv-per-event" class="text-sm text-ink-soft">How many each time</label>
+						<input id="inv-per-event" type="number" min="1" step="1" bind:value={eventQty} class="w-20 px-3 py-2 border border-line rounded-md" placeholder="1" />
+					</div>
+					<p class="text-xs text-ink-soft mt-1">A tub of wipes set to 3 comes down by 3 for every change you log.</p>
+				{/if}
+			</div>
 			<div class="flex gap-2">
 				<button type="submit" disabled={saving} class="flex-1 px-3 py-2 rounded-md bg-primary text-on-primary font-semibold disabled:opacity-50">{saving ? 'Saving…' : 'Add item'}</button>
 				<button type="button" on:click={() => (showAdd = false)} class="px-3 py-2 rounded-md bg-surface text-ink-soft">Cancel</button>

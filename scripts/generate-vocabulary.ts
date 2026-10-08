@@ -20,6 +20,7 @@ import {
 	CATEGORY_OPTION_KEY,
 	CATEGORY_OPTIONS,
 	STAGES,
+	DIGEST_FREQUENCIES,
 } from '../api/src/vocabulary';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -52,6 +53,10 @@ export type MilestoneCategoryId = (typeof MILESTONE_CATEGORY_IDS)[number];
 ${list('STAGES', STAGES)}
 
 export type Stage = (typeof STAGES)[number];
+
+${list('DIGEST_FREQUENCIES', DIGEST_FREQUENCIES)}
+
+export type DigestFrequency = (typeof DIGEST_FREQUENCIES)[number];
 
 ${record('CATEGORY_OPTION_KEY', CATEGORY_OPTION_KEY)}
 

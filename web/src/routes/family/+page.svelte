@@ -52,7 +52,11 @@
 	let activeFamily: any = null;
 	let activeFamilyId: string | null = null;
 	let selectedMemberId: number | null = null;
-	let activeTab = 'feeds';
+		// Which logger the sheet is showing. Deliberately its own state: it was once
+	// shared with the activity tab and reset by a category-availability guard, so
+	// a background load finishing while the sheet was open would change the kind
+	// mid-entry and the form would vanish under the person typing into it.
+	let logKind = 'feeds';
 	let defaultProfileId: number | null = null;
 	let summary: any = null;
 	// Feeds, sleep, diapers and the rest only exist for a trackable profile.
@@ -317,8 +321,7 @@
 				// The API resolves this to the member's own set, constrained by their
 				// stage. An empty list is a real answer, not a prompt to show everything.
 				activeCategories = selected?.categories ?? [];
-				if (!activeCategories.includes(activeTab)) activeTab = activeCategories[0] || 'feeds';
-			} else {
+					} else {
 				selectedMemberId = null;
 				activeCategories = [];
 			}
@@ -509,7 +512,6 @@
 		// The API resolves this to the member's own set, constrained by their
 				// stage. An empty list is a real answer, not a prompt to show everything.
 				activeCategories = selected?.categories ?? [];
-		if (!activeCategories.includes(activeTab)) activeTab = activeCategories[0] || 'feeds';
 		await refreshLists();
 		await refreshSummary();
 	}
@@ -535,10 +537,9 @@
 		try {
 			const res = await familiesAPI.getSettings(activeFamilyId);
 			familySettings = res.data.settings;
-			const cats = familySettings.categories;
-			if (cats && cats.length) {
-				activeCategories = cats;
-			}
+			// Deliberately does NOT touch activeCategories. Those are the selected
+			// member's own categories; the family-level list is a different thing
+			// that used to overwrite them here.
 		} catch (err: any) {
 			console.error('Failed to load family settings:', err);
 		}
@@ -625,7 +626,7 @@
 	let outboxTimer: number | undefined;
 
 	function openLog(kind: string) {
-		activeTab = kind;
+		logKind = kind;
 		sheetOpen = true;
 	}
 
@@ -928,7 +929,7 @@
 									<button type="button" on:click={() => inviteMemberEmail(baby.email)} title="Re-send invite" class="px-2 py-2 text-xs text-accent hover:underline"><Mail class="w-4 h-4 inline mr-1" /> Invite</button>
 								{/if}
 								<button type="button" on:click={() => openEditMember(baby)} class="px-3 py-2 text-xs bg-surface2 text-ink-soft hover:text-ink rounded-md">Edit</button>
-								<button type="button" on:click={() => { selectMember(baby.id); familyView = 'detail'; activeTab = 'feeds'; }} class="px-4 py-2 bg-surface2 text-ink-soft hover:text-ink rounded-md text-sm font-semibold">
+								<button type="button" on:click={() => { selectMember(baby.id); familyView = 'detail'; }} class="px-4 py-2 bg-surface2 text-ink-soft hover:text-ink rounded-md text-sm font-semibold">
 									Log Activity
 								</button>
 							</div>
@@ -937,7 +938,7 @@
 					</div>
 
 					<div class="bg-surface rounded-lg shadow-card p-5 border border-line-soft mb-8">
-						<button type="button" on:click={() => { familyView = 'detail'; activeTab = 'feeds'; }} class="w-full text-left hover:bg-surface2 transition-colors rounded-md">
+						<button type="button" on:click={() => { familyView = 'detail'; }} class="w-full text-left hover:bg-surface2 transition-colors rounded-md">
 							<h3 class="text-lg font-display font-semibold mb-1">Quick reports <span class="text-xs text-ink-soft">· feeds →</span></h3>
 						</button>
 						<div class="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -1080,7 +1081,7 @@
 
 <LogDrawer
 	bind:open={sheetOpen}
-	kind={activeTab}
+	kind={logKind}
 	familyId={activeFamilyId}
 	memberId={selectedMemberId}
 	members={profiles}

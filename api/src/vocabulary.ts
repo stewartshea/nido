@@ -153,3 +153,19 @@ export function defaultStage(memberType: string): Stage | null {
 export function categoryTemplate(stage: string | null | undefined): string[] {
 	return isStage(stage) ? [...STAGE_CATEGORIES[stage]] : [...DEFAULT_CATEGORIES];
 }
+
+/**
+ * How often a family wants the digest email.
+ *
+ * 'hourly' is the default because it is what the scheduler already did before
+ * the setting existed, so nothing changes for a family that never opens the
+ * setting.
+ */
+export const DIGEST_FREQUENCIES = ['hourly', 'daily', 'weekly'] as const;
+export type DigestFrequency = (typeof DIGEST_FREQUENCIES)[number];
+
+export const DIGEST_FREQUENCY_MS: Record<DigestFrequency, number> = {
+	hourly: 60 * 60 * 1000,
+	daily: 24 * 60 * 60 * 1000,
+	weekly: 7 * 24 * 60 * 60 * 1000,
+};

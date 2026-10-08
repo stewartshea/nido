@@ -49,6 +49,14 @@ export const STAGES = [
 
 export type Stage = (typeof STAGES)[number];
 
+export const DIGEST_FREQUENCIES = [
+	'hourly',
+	'daily',
+	'weekly',
+] as const;
+
+export type DigestFrequency = (typeof DIGEST_FREQUENCIES)[number];
+
 export const CATEGORY_OPTION_KEY = {
 	"feeds": "type",
 	"diapers": "consistency",

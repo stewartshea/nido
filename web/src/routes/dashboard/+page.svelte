@@ -49,7 +49,7 @@
 	let allOpen = false;
 
 	function openLog(catId: string) {
-		activeTab = catId;
+		logKind = catId;
 		otherOpen = false;
 		allOpen = false;
 		sheetOpen = true;
@@ -70,7 +70,11 @@
 	// The person the page opens on. Stored per family, because a household that
 	// mostly records against one child should not have to re-pick them each visit.
 	let starredMemberId: number | null = null;
-	let activeTab = 'feeds';
+		// Which logger the sheet is showing. Deliberately its own state: it was once
+	// shared with the activity tab and reset by a category-availability guard, so
+	// a background load finishing while the sheet was open would change the kind
+	// mid-entry and the form would vanish under the person typing into it.
+	let logKind = 'feeds';
 	let defaultProfileId: number | null = null;
 	let summary: any = null;
 	// Feeds, sleep, diapers and the rest only exist for a trackable profile.
@@ -348,8 +352,7 @@
 				// The API resolves this to the member's own set, constrained by their
 				// stage. An empty list is a real answer, not a prompt to show everything.
 				activeCategories = selected?.categories ?? [];
-				if (!activeCategories.includes(activeTab)) activeTab = activeCategories[0] || 'feeds';
-			} else {
+					} else {
 				selectedMemberId = null;
 				activeCategories = [];
 			}
@@ -447,7 +450,6 @@
 		// The API resolves this to the member's own set, constrained by their
 				// stage. An empty list is a real answer, not a prompt to show everything.
 				activeCategories = selected?.categories ?? [];
-		if (!activeCategories.includes(activeTab)) activeTab = activeCategories[0] || 'feeds';
 		await refreshLists();
 		await refreshSummary();
 	}
@@ -499,10 +501,10 @@
 		try {
 			const res = await familiesAPI.getSettings(activeFamilyId);
 			familySettings = res.data.settings ?? null;
-			const cats = familySettings?.categories;
-			if (cats && cats.length) {
-				activeCategories = cats;
-			}
+			// Deliberately does NOT touch activeCategories. Those are the selected
+			// member's own categories, and the family-level list is a different
+			// thing that used to overwrite them here — which is why a newborn
+			// could lose its Last Feed tile to a family setting.
 		} catch (err: any) {
 			console.error('Failed to load family settings:', err);
 		}
@@ -689,7 +691,7 @@
 
 <LogDrawer
 	bind:open={sheetOpen}
-	kind={activeTab}
+	kind={logKind}
 	familyId={activeFamilyId}
 	memberId={selectedMemberId}
 	members={profiles}

@@ -869,6 +869,22 @@ ALTER TABLE inventory_adjustments ADD COLUMN source TEXT DEFAULT 'manual';
       DROP TABLE IF EXISTS photos;
     `,
   },
+  {
+    version: 28,
+    name: 'digest-frequency',
+    sql: `
+      -- How often a family wants to be emailed. Until now the interval was one
+      -- environment variable for the whole instance, so "weekly" was not
+      -- expressible and every family got the same cadence.
+      --
+      -- NULL means hourly, which is what the scheduler already did, so an
+      -- existing family's behaviour does not change on upgrade.
+      ALTER TABLE family_settings ADD COLUMN digest_frequency TEXT;
+      -- When the last digest actually reached someone. Gates the frequency: a
+      -- family on weekly is evaluated every sweep but only sends once a week.
+      ALTER TABLE family_settings ADD COLUMN digest_sent_at TEXT;
+    `,
+  },
 ];
 
 // ---------------------------------------------------------------------------
