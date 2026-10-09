@@ -189,7 +189,8 @@ Each exposes `GET /`, `POST /`, `PUT /:id`, `DELETE /:id`:
 
 ### Reminders
 - `GET /api/v1/reminders` — list
-- `POST /api/v1/reminders` — create
+- `GET /api/v1/reminders/catalog` — the categories a rule can watch, with the option values each accepts (built from the vocabulary plus the family's own options)
+- `POST /api/v1/reminders` — create. An inactivity rule takes `conditions: [{ category, values? }]` and `match: 'any' | 'all'` (`any` clears when either happens; `all` clears only once every one has happened inside `hours`), or the legacy single `category`. An interval rule takes `category`, `label` and `intervalDays`.
 - `PUT /api/v1/reminders/:id` — update
 - `DELETE /api/v1/reminders/:id` — delete
 - `POST /api/v1/reminders/:id/done` — mark done / snooze
@@ -197,6 +198,8 @@ Each exposes `GET /`, `POST /`, `PUT /:id`, `DELETE /:id`:
 ### Notifications
 - `GET /api/v1/notifications/status` — how the digest schedule is configured on
   this instance: `enabled`, `running`, `intervalMinutes`
+- `GET /api/v1/notifications/summary` — how many things are firing right now
+  (`total`, `activity`, `inventory`), for the navigation badge
 - `POST /api/v1/inventory/notify` — email the calling family's newly firing
   inventory alerts now, without waiting for the timer
 

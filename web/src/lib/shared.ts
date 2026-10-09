@@ -58,17 +58,53 @@ export const CATEGORIES = CATEGORY_IDS.map((id) => ({ id, ...PRESENTATION[id] })
  */
 export function reminderNoun(category: string | null | undefined): string {
 	switch (category) {
+		case 'feeds':
+			return 'feed';
 		case 'pumping':
 			return 'pump';
 		case 'breast_or_pump':
 			return 'breast feed or pump';
 		case 'diapers':
-			return 'change';
+			return 'diaper change';
 		case 'sleep':
 			return 'sleep';
+		case 'routines':
+			return 'routine';
+		case 'firsts':
+			return 'first';
+		case 'milestones':
+			return 'milestone';
+		case 'medical':
+			return 'medical entry';
+		case 'vaccines':
+			return 'vaccination';
+		case 'moods':
+			return 'mood';
+		case 'journal':
+			return 'journal entry';
+		case 'medication':
+			return 'medication';
+		case 'vitamins':
+			return 'vitamin';
+		case 'appointments':
+			return 'appointment';
+		case 'grooming':
+			return 'grooming';
 		default:
-			return 'feed';
+			return category ? String(category) : 'entry';
 	}
+}
+
+export function conditionNoun(condition: { category: string; values?: string[] }): string {
+	if (condition.values && condition.values.length) return condition.values.join(' or ');
+	return reminderNoun(condition.category);
+}
+
+export function reminderPhrase(
+	conditions: { category: string; values?: string[] }[],
+	match: 'any' | 'all' = 'any',
+): string {
+	return conditions.map(conditionNoun).join(match === 'all' ? ' and ' : ' or ');
 }
 
 export function defaultMemberId<T extends { id: number | string; trackable?: boolean }>(members: T[]): number | null {

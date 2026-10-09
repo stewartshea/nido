@@ -2,97 +2,88 @@ import { Hono } from 'hono';
 import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 import { type AuthEnv } from '../auth';
+import { NAMESPACE_HOUSEHOLD_ID } from '../db-core';
+import {
+	evaluateReminder,
+	parseConditions,
+	parseMatch,
+	reminderCatalog,
+	validateConditions,
+	type ReminderCondition,
+} from '../reminder-conditions';
 
 const reminderRoutes = new Hono<AuthEnv>();
 
+const conditionSchema = z.object({
+	category: z.string().min(1).max(40),
+	values: z.array(z.string().min(1).max(60)).max(20).optional(),
+});
+
 const createReminderSchema = z.object({
-  kind: z.enum(['inactivity', 'interval']),
-  category: z.string().max(40).optional(),
-  targetType: z.enum(['member', 'home']).default('member'),
-  targetId: z.number().optional(),
-  label: z.string().max(200).optional(),
-  hours: z.number().int().positive().optional(),
-  intervalDays: z.number().int().positive().optional(),
+	kind: z.enum(['inactivity', 'interval']),
+	category: z.string().max(40).optional(),
+	// A rule may watch several things at once ("no pump or feed in 3h"), and the
+	// conditions combine as 'any' (either counts) or 'all' (only the whole set).
+	conditions: z.array(conditionSchema).min(1).max(10).optional(),
+	match: z.enum(['any', 'all']).optional(),
+	targetType: z.enum(['member', 'home']).default('member'),
+	targetId: z.number().optional(),
+	label: z.string().max(200).optional(),
+	hours: z.number().int().positive().optional(),
+	intervalDays: z.number().int().positive().optional(),
 });
 
 const updateReminderSchema = z.object({
-  kind: z.enum(['inactivity', 'interval']).optional(),
-  category: z.string().max(40).nullable().optional(),
-  targetType: z.enum(['member', 'home']).optional(),
-  targetId: z.number().nullable().optional(),
-  label: z.string().max(200).nullable().optional(),
-  hours: z.number().int().positive().nullable().optional(),
-  intervalDays: z.number().int().positive().nullable().optional(),
-  enabled: z.boolean().optional(),
+	kind: z.enum(['inactivity', 'interval']).optional(),
+	category: z.string().max(40).nullable().optional(),
+	conditions: z.array(conditionSchema).min(1).max(10).nullable().optional(),
+	match: z.enum(['any', 'all']).optional(),
+	targetType: z.enum(['member', 'home']).optional(),
+	targetId: z.number().nullable().optional(),
+	label: z.string().max(200).nullable().optional(),
+	hours: z.number().int().positive().nullable().optional(),
+	intervalDays: z.number().int().positive().nullable().optional(),
+	enabled: z.boolean().optional(),
 });
 
 const getUserId = (c: any) => c.get('userId') as string;
 
 async function familyAccess(db: any, familyId: number, userId: string): Promise<boolean> {
-  const res = await db.execute({
-    sql: 'SELECT household_id FROM user_households WHERE user_id = ? AND household_id = ? LIMIT 1',
-    args: [userId, familyId],
-  });
-  return res.rows.length > 0;
+	const res = await db.execute({
+		sql: 'SELECT household_id FROM user_households WHERE user_id = ? AND household_id = ? LIMIT 1',
+		args: [userId, familyId],
+	});
+	return res.rows.length > 0;
 }
 
-// Latest timestamp for an inactivity category across tables (per member/home).
-/**
- * When the target last did something, for an inactivity reminder.
- *
- * Resolved through `family_members`, not by comparing ids directly. A reminder
- * targets a member (that is what the picker offers, and what `families/:id/members`
- * returns), while every log row carries a `subject_id`. Those are different
- * numbers that coincide only for a member with no adult sharing the household —
- * which is why these reminders silently never fired for anyone whose babysitter
- * or partner had an account.
- */
-async function latestFor(db: any, familyId: number, category: string, targetId: number | null): Promise<number | null> {
-  const memberWhere = targetId ? 'fm.household_id = ? AND fm.id = ?' : 'fm.household_id = ?';
-  const memberArgs = targetId ? [familyId, targetId] : [familyId];
-
-  let sql = '';
-  if (category === 'breast_or_pump') {
-    // "Time since the breast was last used" is a supply question, and it is not
-    // the same as either neighbour: `feeds` is when the BABY last ate (a bottle
-    // or a bowl of solids counts, and a pump does not), `pumping` is only the
-    // pump. This is fed-at-the-breast OR expressed.
-    sql = `SELECT MAX(f.start_time) AS t FROM feedings f JOIN family_members fm ON fm.legacy_subject_id = f.subject_id WHERE ${memberWhere} AND f.type IN ('breast', 'pump')`;
-  } else if (category === 'feeds' || category === 'pumping' || category === 'feed') {
-    sql = `SELECT MAX(f.start_time) AS t FROM feedings f JOIN family_members fm ON fm.legacy_subject_id = f.subject_id WHERE ${memberWhere} AND f.type ${category === 'pumping' ? "='pump'" : "!='pump'"}`;
-  } else if (category === 'diapers') {
-    sql = `SELECT MAX(d.change_time) AS t FROM diapers d JOIN family_members fm ON fm.legacy_subject_id = d.subject_id WHERE ${memberWhere}`;
-  } else if (category === 'sleep') {
-    sql = `SELECT MAX(s.start_time) AS t FROM sleep s JOIN family_members fm ON fm.legacy_subject_id = s.subject_id WHERE ${memberWhere}`;
-  } else {
-    return null;
-  }
-  const res = await db.execute({ sql, args: memberArgs });
-  const row = res.rows[0];
-  const t = row && (row as any).t;
-  return t ? new Date(String(t)).getTime() : null;
+function parseJson<T>(value: unknown, fallback: T): T {
+	if (typeof value !== 'string' || !value.trim()) return fallback;
+	try {
+		return JSON.parse(value) as T;
+	} catch {
+		return fallback;
+	}
 }
 
-async function evaluateReminder(db: any, r: any): Promise<{ overdue: boolean; since: number | null }> {
-  const now = Date.now();
-  if (r.kind === 'inactivity') {
-    const hours = Number(r.hours ?? 0);
-    const lastTs = await latestFor(db, Number(r.family_id), String(r.category), r.target_id ? Number(r.target_id) : null);
-    if (!lastTs) return { overdue: true, since: null };
-    return { overdue: now - lastTs > hours * 3600 * 1000, since: lastTs };
-  }
-  // interval
-  const days = Number(r.interval_days ?? 0);
-  const lastTs = r.last_at ? new Date(String(r.last_at)).getTime() : null;
-  if (!lastTs) return { overdue: true, since: null };
-  return { overdue: now - lastTs > days * 24 * 3600 * 1000, since: lastTs };
+/** A family's own option values, so a rule can watch a routine it invented. */
+async function familyOptionOverrides(db: any): Promise<Record<string, Record<string, string[]>>> {
+	const res = await db.execute({
+		sql: 'SELECT category_options FROM family_settings WHERE family_id = ? LIMIT 1',
+		args: [NAMESPACE_HOUSEHOLD_ID],
+	});
+	const raw = (res.rows[0] as { category_options?: unknown } | undefined)?.category_options;
+	return parseJson<Record<string, Record<string, string[]>>>(raw, {});
 }
 
 function shape(r: any, ev: { overdue: boolean; since: number | null }) {
+	const conditions: ReminderCondition[] =
+		r?.kind === 'inactivity' ? parseConditions(r?.conditions, r?.category) : [];
 	return {
 		id: Number(r?.id),
 		kind: r?.kind,
 		category: r?.category,
+		conditions,
+		match: parseMatch(r?.match_mode),
 		targetType: r?.target_type,
 		targetId: r?.target_id ? Number(r.target_id) : null,
 		label: r?.label,
@@ -107,6 +98,15 @@ function shape(r: any, ev: { overdue: boolean; since: number | null }) {
 		createdByName: r?.creator_first_name ?? null,
 	};
 }
+
+// GET /catalog — what a rule can watch, with the option values each accepts.
+// The web builds its picker from this rather than a hard-coded list, so a new
+// category or a family's own routine option shows up without a code change.
+reminderRoutes.get('/catalog', async (c) => {
+	const db = c.get('db');
+	const custom = await familyOptionOverrides(db);
+	return c.json({ categories: reminderCatalog(custom) });
+});
 
 // GET / — list the caller's family reminders with live overdue status.
 reminderRoutes.get('/', async (c) => {
@@ -141,11 +141,41 @@ reminderRoutes.post('/', zValidator('json', createReminderSchema), async (c) => 
 	const familyId = Number((fam as any).household_id);
 
 	const v = c.req.valid('json');
+
+	// Inactivity rules are the ones with conditions. Accept the legacy single
+	// `category` too, so an older client keeps working.
+	let conditions: ReminderCondition[] = [];
+	if (v.kind === 'inactivity') {
+		conditions = v.conditions ?? (v.category ? [{ category: v.category }] : []);
+		if (!v.hours) return c.json({ error: 'Choose how many hours is too long.' }, 400);
+		const custom = await familyOptionOverrides(db);
+		const invalid = validateConditions(conditions, custom);
+		if (invalid) return c.json({ error: invalid }, 400);
+	} else if (!v.intervalDays) {
+		return c.json({ error: 'Choose how many days apart.' }, 400);
+	}
+
 	const ins = await db.execute({
-		sql: `INSERT INTO reminders (family_id, kind, category, target_type, target_id, label, hours, interval_days, last_at, enabled, created_by, created_at)
-		      VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
-		args: [familyId, v.kind, v.category || null, v.targetType, v.targetId || null, v.label || null,
-			v.hours ?? null, v.intervalDays ?? null, null, 1, userId, new Date().toISOString()],
+		sql: `INSERT INTO reminders (family_id, kind, category, conditions, match_mode, target_type, target_id, label, hours, interval_days, last_at, enabled, created_by, created_at)
+		      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		args: [
+			familyId,
+			v.kind,
+			// The first condition's category stays in `category` so the existing
+			// index and any older reader still see something meaningful.
+			conditions[0]?.category ?? v.category ?? null,
+			conditions.length ? JSON.stringify(conditions) : null,
+			parseMatch(v.match),
+			v.targetType,
+			v.targetId || null,
+			v.label || null,
+			v.hours ?? null,
+			v.intervalDays ?? null,
+			null,
+			1,
+			userId,
+			new Date().toISOString(),
+		],
 	});
 	const id = Number(ins.lastInsertRowid);
 	const rowRes = await db.execute({ sql: 'SELECT * FROM reminders WHERE id = ?', args: [id] });
@@ -163,11 +193,22 @@ reminderRoutes.put('/:id{[0-9]+}', zValidator('json', updateReminderSchema), asy
 	if (!(await familyAccess(db, Number(r.family_id), userId))) return c.json({ error: 'Access denied' }, 403);
 
 	const v = c.req.valid('json');
+
+	if (v.conditions !== undefined && v.conditions !== null) {
+		const custom = await familyOptionOverrides(db);
+		const invalid = validateConditions(v.conditions, custom);
+		if (invalid) return c.json({ error: invalid }, 400);
+	}
+
 	const updates: string[] = [];
 	const params: Array<number | string | null> = [];
 	const set = (col: string, val: number | string | null | undefined) => { if (val !== undefined) { updates.push(`${col} = ?`); params.push(val === null ? null : val); } };
-	set('kind', v.kind); set('category', v.category); set('target_type', v.targetType); set('target_id', v.targetId);
+	set('kind', v.kind); set('category', v.category); set('match_mode', v.match); set('target_type', v.targetType); set('target_id', v.targetId);
 	set('label', v.label); set('hours', v.hours); set('interval_days', v.intervalDays); set('enabled', v.enabled === undefined ? undefined : v.enabled ? 1 : 0);
+	if (v.conditions !== undefined) {
+		set('conditions', v.conditions === null ? null : JSON.stringify(v.conditions));
+		if (v.conditions && v.conditions.length) set('category', v.conditions[0]?.category ?? null);
+	}
 	if (updates.length === 0) return c.json({ error: 'Nothing to update' }, 400);
 	params.push(id);
 	await db.execute({ sql: `UPDATE reminders SET ${updates.join(', ')} WHERE id = ?`, args: params });
