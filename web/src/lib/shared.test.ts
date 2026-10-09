@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { milestoneCategory, milestoneCategoryKey, isMilestoneKind, DEFAULT_CATEGORY_OPTIONS } from './shared';
+import { milestoneCategory, milestoneCategoryKey, isMilestoneKind, DEFAULT_CATEGORY_OPTIONS, reminderPhrase } from './shared';
 
 describe('milestoneCategory', () => {
 	it('uses the row kind, even when the category word is ambiguous', () => {
@@ -31,6 +31,18 @@ describe('category vocabulary', () => {
 		for (const k of ['milestones', 'firsts', 'routines', 'medical'] as const) {
 			expect(DEFAULT_CATEGORY_OPTIONS[k][milestoneCategoryKey(k)].length).toBeGreaterThan(0);
 		}
+	});
+});
+
+describe('reminderPhrase', () => {
+	const conditions = [{ category: 'pumping' }, { category: 'feeds', values: ['breast'] }];
+
+	it('joins with or by default', () => {
+		expect(reminderPhrase(conditions)).toBe('pump or breast');
+	});
+
+	it('joins with and when the rule requires every condition', () => {
+		expect(reminderPhrase(conditions, 'all')).toBe('pump and breast');
 	});
 });
 

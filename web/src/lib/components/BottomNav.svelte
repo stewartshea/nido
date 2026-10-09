@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { page } from '$app/stores';
 	import { BOTTOM_NAV } from '$lib/nav';
+	import { notificationCount } from '$lib/stores/notificationCount';
 
 	const navItems = BOTTOM_NAV;
 </script>
@@ -14,8 +15,11 @@
 				class="flex flex-col items-center justify-center gap-1 h-full text-ink"
 				aria-current={isActive ? 'page' : undefined}
 			>
-				<span class="flex items-center justify-center w-11 h-11 rounded-full transition-colors {isActive ? 'bg-accent text-on-accent' : 'text-ink-soft'}">
+				<span class="relative flex items-center justify-center w-11 h-11 rounded-full transition-colors {isActive ? 'bg-accent text-on-accent' : 'text-ink-soft'}">
 					<svelte:component this={item.icon} size={22} strokeWidth={isActive ? 2.4 : 2} />
+					{#if item.id === 'notifications' && $notificationCount > 0}
+						<span class="absolute top-0.5 right-0.5 min-w-[1.15rem] h-[1.15rem] px-1 rounded-full bg-danger text-danger-text text-[10px] font-bold flex items-center justify-center border border-surface" aria-label="{$notificationCount} need attention">{$notificationCount > 9 ? '9+' : $notificationCount}</span>
+					{/if}
 				</span>
 				<span class="text-[11px] font-medium leading-none {isActive ? 'text-ink' : 'text-ink-soft'}">{item.label}</span>
 			</a>

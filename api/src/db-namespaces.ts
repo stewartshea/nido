@@ -885,6 +885,37 @@ ALTER TABLE inventory_adjustments ADD COLUMN source TEXT DEFAULT 'manual';
       ALTER TABLE family_settings ADD COLUMN digest_sent_at TEXT;
     `,
   },
+  {
+    version: 29,
+    name: 'reminder-conditions',
+    sql: `
+      -- A rule can watch more than one thing. "No pump or feed in 3h" is two
+      -- conditions, and a routine like a bath is a category the old hard-coded
+      -- switch did not know. Stored as a JSON array of { category, values? };
+      -- rows written before this column existed keep their single \`category\`
+      -- and are read as one condition, so no backfill is needed and a rule
+      -- created today is identical whether read before or after the upgrade.
+      ALTER TABLE reminders ADD COLUMN conditions TEXT;
+    `,
+  },
+  {
+    version: 30,
+    name: 'reminder-match-mode',
+    // How a rule's conditions combine: 'any' (OR — either counts) or 'all'
+    // (AND — only the whole set counts). Defaults to 'any', which is what a
+    // single-condition rule already meant, so nothing existing changes.
+    //
+    // Guarded rather than plain SQL because `match_mode` briefly lived inside
+    // migration 29 while this feature was unreleased, so some databases already
+    // have the column at version 29. Plain `ADD COLUMN` would then fail and
+    // block the whole family from opening; the check makes it idempotent.
+    run: (raw) => {
+      const columns = raw.pragma('table_info(reminders)') as Array<{ name: string }>;
+      if (!columns.some((c) => c.name === 'match_mode')) {
+        raw.exec("ALTER TABLE reminders ADD COLUMN match_mode TEXT NOT NULL DEFAULT 'any'");
+      }
+    },
+  },
 ];
 
 // ---------------------------------------------------------------------------

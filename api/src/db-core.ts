@@ -218,7 +218,13 @@ export function openDb(
 export interface Migration {
   version: number;
   name: string;
-  sql: string;
+  sql?: string;
+  /**
+   * A guarded migration, for DDL SQLite cannot express conditionally — an
+   * `ADD COLUMN` that must be a no-op when the column is already present.
+   * Used instead of `sql` when set.
+   */
+  run?: (raw: RawDatabase) => void;
 }
 
 /**
@@ -235,7 +241,9 @@ export function runMigrations(raw: RawDatabase, migrations: readonly Migration[]
     if (m.version <= current) continue;
     raw.exec('BEGIN');
     try {
-      raw.exec(m.sql);
+      if (m.run) m.run(raw);
+      else if (m.sql) raw.exec(m.sql);
+      else throw new Error(`migration ${m.version} (${m.name}) has neither sql nor run`);
       raw.pragma(`user_version = ${m.version}`);
       raw.exec('COMMIT');
     } catch (error) {

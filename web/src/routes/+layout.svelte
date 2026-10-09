@@ -9,11 +9,20 @@
 	import BottomNav from '$lib/components/BottomNav.svelte';
 	import { PRIMARY_NAV } from '$lib/nav';
 	import { authStore, authActions } from '$lib/stores/authStore';
+	import { notificationCount, refreshNotificationCount, startNotificationCount, stopNotificationCount } from '$lib/stores/notificationCount';
 
 	// Apply saved theme early on the client (avoids a flash of the default palette)
 	restoreThemeEarly();
 
 	let showAccountMenu = false;
+
+	// The badge polls while signed in, and refreshes on every navigation so
+	// leaving a page where a rule just fired updates the count without a wait.
+	$: if (browser) {
+		if ($authStore.isAuthenticated) startNotificationCount();
+		else stopNotificationCount();
+	}
+	$: if (browser && $authStore.isAuthenticated && $page.url.pathname) void refreshNotificationCount();
 
 	function handleLogout() {
 		authActions.logout();
@@ -59,8 +68,8 @@
 							<a
 								href={item.href}
 								aria-current={$page.url.pathname.startsWith(item.href) ? 'page' : undefined}
-								class="{item.href !== '/' && $page.url.pathname.startsWith(item.href) ? 'bg-primary text-on-primary shadow-sm' : 'text-ink-soft hover:text-ink'} px-4 py-1 rounded text-sm font-semibold transition-colors"
-							>{item.label}</a>
+								class="{item.href !== '/' && $page.url.pathname.startsWith(item.href) ? 'bg-primary text-on-primary shadow-sm' : 'text-ink-soft hover:text-ink'} relative px-4 py-1 rounded text-sm font-semibold transition-colors"
+							>{item.label}{#if item.id === 'notifications' && $notificationCount > 0}<span class="absolute -top-1.5 -right-1.5 min-w-[1.15rem] h-[1.15rem] px-1 rounded-full bg-danger text-danger-text text-[10px] font-bold flex items-center justify-center" aria-label="{$notificationCount} need attention">{$notificationCount > 9 ? '9+' : $notificationCount}</span>{/if}</a>
 						{/each}
 					</nav>
 				{/if}

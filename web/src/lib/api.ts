@@ -421,10 +421,25 @@ export interface InventoryRule {
 	audienceIds: string[];
 }
 
+export interface ReminderCondition {
+	category: string;
+	values?: string[];
+}
+
+export interface ReminderCatalogCategory {
+	id: string;
+	label: string;
+	options: string[];
+}
+
+export type ReminderMatch = 'any' | 'all';
+
 export interface Reminder {
 	id: number;
 	kind: 'inactivity' | 'interval';
 	category: string | null;
+	conditions: ReminderCondition[];
+	match: ReminderMatch;
 	targetType: 'member' | 'home';
 	targetId: number | null;
 	label: string | null;
@@ -499,15 +514,23 @@ export interface NotifySchedule {
 	intervalMinutes: number;
 }
 
+export interface NotifySummary {
+	total: number;
+	activity: number;
+	inventory: number;
+}
+
 export const notificationsAPI = {
 	status: () => api.get<NotifySchedule>('/notifications/status'),
+	summary: () => api.get<NotifySummary>('/notifications/summary'),
 };
 
 export const remindersAPI = {
   list: () => api.get<{ reminders: Reminder[] }>('/reminders'),
-  create: (data: { kind: 'inactivity' | 'interval'; category?: string; targetType?: 'member' | 'home'; targetId?: number; label?: string; hours?: number; intervalDays?: number }) =>
+  catalog: () => api.get<{ categories: ReminderCatalogCategory[] }>('/reminders/catalog'),
+  create: (data: { kind: 'inactivity' | 'interval'; category?: string; conditions?: ReminderCondition[]; match?: ReminderMatch; targetType?: 'member' | 'home'; targetId?: number; label?: string; hours?: number; intervalDays?: number }) =>
     api.post('/reminders', data),
-  update: (id: number, data: Partial<{ kind: 'inactivity' | 'interval'; category?: string; targetType?: 'member' | 'home'; targetId?: number; label?: string; hours?: number; intervalDays?: number; enabled?: boolean }>) =>
+  update: (id: number, data: Partial<{ kind: 'inactivity' | 'interval'; category?: string; conditions?: ReminderCondition[]; match?: ReminderMatch; targetType?: 'member' | 'home'; targetId?: number; label?: string; hours?: number; intervalDays?: number; enabled?: boolean }>) =>
     api.put(`/reminders/${id}`, data),
   done: (id: number) => api.post(`/reminders/${id}/done`),
   remove: (id: number) => api.delete(`/reminders/${id}`),

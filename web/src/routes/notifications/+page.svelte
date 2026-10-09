@@ -2,9 +2,10 @@
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { inventoryAPI, notificationsAPI, remindersAPI, type InventoryAlert, type NotifySchedule, type Reminder } from '$lib/api';
-	import { reminderNoun } from '$lib/shared';
+	import { reminderNoun, reminderPhrase } from '$lib/shared';
 	import ActivityRules from '$lib/components/logging/ActivityRules.svelte';
 	import InventoryRules from '$lib/components/logging/InventoryRules.svelte';
+	import { refreshNotificationCount } from '$lib/stores/notificationCount';
 
 	/**
 	 * Every notification rule in one place. Activity reminders and inventory
@@ -29,6 +30,7 @@
 			inventoryAlerts = alerts.data.alerts ?? [];
 			activity = rem.data.reminders ?? [];
 			schedule = status.data;
+			void refreshNotificationCount();
 		} catch (e: any) {
 			if (e?.response?.status === 401) { await goto('/login'); return; }
 			error = e?.response?.data?.error || 'Could not load notifications.';
@@ -43,7 +45,9 @@
 
 	function describe(r: Reminder): string {
 		if (r.kind === 'inactivity') {
-			const what = reminderNoun(r.category);
+			const what = r.conditions?.length
+				? reminderPhrase(r.conditions, r.match)
+				: reminderNoun(r.category);
 			return `No ${what} in ${r.hours}h${r.since ? ` (since ${new Date(r.since).toLocaleString()})` : ' — never recorded'}`;
 		}
 		return `${r.label || r.category} — every ${r.intervalDays}d${r.since ? ` (last ${new Date(r.since).toLocaleString()})` : ' — never done'}`;
