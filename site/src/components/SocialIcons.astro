@@ -1,6 +1,12 @@
 ---
 import config from 'virtual:starlight/user-config';
 import { Icon } from '@astrojs/starlight/components';
+import { HOSTED_URL } from '../site.config';
+
+// Hosted option — My Nido, the logged-in SaaS. The docs link out to it in
+// several places; the header carries a compact login button too, so a visitor
+// who wants to skip reading and just use the app can get in one click.
+const HOSTED_LOGIN_URL = `${HOSTED_URL}/login`;
 
 const links = config.social || [];
 ---
@@ -20,6 +26,9 @@ const links = config.social || [];
 					)}
 				</a>
 			))}
+			<a class="header-login" href={HOSTED_LOGIN_URL}>
+				Log in
+			</a>
 		</>
 	)
 }
@@ -33,6 +42,27 @@ const links = config.social || [];
 		}
 		a:hover {
 			color: var(--sl-color-white);
+		}
+
+		/* Compact "Log in" button in the header, right of the social icons. */
+		.header-login {
+			display: inline-flex;
+			align-items: center;
+			margin: 0 0 0 0.75rem;
+			padding: 0.35rem 0.85rem;
+			border: 1px solid var(--sl-color-accent);
+			border-radius: 999px;
+			font-size: 0.85rem;
+			font-weight: 600;
+			line-height: 1;
+			color: var(--sl-color-accent);
+			text-decoration: none;
+			transition: background-color 150ms ease, color 150ms ease;
+		}
+
+		.header-login:hover {
+			background: var(--sl-color-accent);
+			color: var(--sl-color-accent-low);
 		}
 	}
 </style>
