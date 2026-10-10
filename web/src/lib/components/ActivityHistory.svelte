@@ -5,6 +5,7 @@
 		vaccinationAPI, moodAPI, journalAPI,
 	} from '$lib/api';
 	import { CATEGORIES, milestoneCategory } from '$lib/shared';
+	import { formatLength, formatWeight } from '$lib/growth/units';
 	import RecordEditModal from '$lib/components/RecordEditModal.svelte';
 	import { breastDetail } from '$lib/breast';
 	import {
@@ -189,9 +190,9 @@
 			}
 			case 'growth': {
 				const bits = [];
-				if (r.weight) bits.push(`${r.weight}${r.unit_system === 'imperial' ? 'lb' : 'kg'}`);
-				if (r.height) bits.push(`${r.height}${r.unit_system === 'imperial' ? 'in' : 'cm'}`);
-				if (r.head_circumference) bits.push(`head ${r.head_circumference}`);
+				if (r.weight) bits.push(formatWeight(Number(r.weight), r.unit_system));
+				if (r.height) bits.push(formatLength(Number(r.height), r.unit_system));
+				if (r.head_circumference) bits.push(`head ${formatLength(Number(r.head_circumference), r.unit_system)}`);
 				return bits.filter(Boolean).join(' · ') || '—';
 			}
 			case 'milestone': {

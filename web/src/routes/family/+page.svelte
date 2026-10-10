@@ -8,6 +8,8 @@
 	import Avatar from '$lib/components/Avatar.svelte';
 	import { loadListsCache, saveListsCache } from '$lib/cache';
 	import { flushOutbox } from '$lib/logging/outbox';
+	import { DATA_CHANGED } from '$lib/events';
+	import { refreshNotificationCount } from '$lib/stores/notificationCount';
 	import MemberActivity from '$lib/components/logging/MemberActivity.svelte';
 	import GrowthChart from '$lib/components/logging/GrowthChart.svelte';
 	import LogDrawer from '$lib/components/logging/LogDrawer.svelte';
@@ -81,6 +83,11 @@
 		try {
 			reminderRules = (await remindersAPI.list()).data.reminders ?? [];
 		} catch { reminderRules = []; }
+	}
+
+	function onDataChanged() {
+		void loadReminders();
+		void refreshNotificationCount();
 	}
 
 	$: overdueReminders = reminderRules.filter((r) => r.enabled && r.overdue);
@@ -680,6 +687,7 @@
 
 	onMount(async () => {
 		if (browser) {
+			window.addEventListener(DATA_CHANGED, onDataChanged);
 			const params = new URLSearchParams(window.location.search);
 			const verifyParam = params.get('verify');
 			const resetParam = params.get('reset');
@@ -723,6 +731,7 @@
 
 	onDestroy(() => {
 		if (browser && outboxTimer) window.clearInterval(outboxTimer);
+		window.removeEventListener(DATA_CHANGED, onDataChanged);
 	});
 </script>
 		{#if notice || error}

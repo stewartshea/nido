@@ -2,6 +2,7 @@
 	import { createEventDispatcher } from 'svelte';
 	import { Milk, Baby, Moon, Syringe, TrendingUp } from 'lucide-svelte';
 	import { formatAge, formatElapsed, formatRelative, formatTime } from '$lib/logging/format';
+	import { formatGrowthHeadline } from '$lib/growth/units';
 
 	export let summary: any;
 	export let name = 'Selected';
@@ -55,7 +56,8 @@
 					<p class="text-2xl font-display font-semibold text-ink">{age.value}{#if age.unit} <span class="text-sm text-ink-soft font-sans font-normal">{age.unit}</span>{/if}</p>
 					<p class="text-sm text-ink-soft mt-1">Add measurement</p>
 				{:else}
-					<p class="text-2xl font-display font-semibold text-ink">{summary.latestGrowth?.weight ? `${summary.latestGrowth.weight}` : '—'}</p>
+					{@const measurement = formatGrowthHeadline(summary.latestGrowth)}
+					<p class="text-xl font-display font-semibold text-ink">{measurement ?? '—'}</p>
 					<p class="text-xs text-ink-soft mt-1">{summary.latestGrowth ? ago(summary.latestGrowth.measurement_date) : 'no measurement recorded'}</p>
 				{/if}
 			</button>

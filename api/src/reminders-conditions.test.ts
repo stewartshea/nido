@@ -159,6 +159,36 @@ describe('AND (match: all) clears only when every condition happened', () => {
 	});
 });
 
+describe('an interval rule clears from a recorded event, not just a manual done', () => {
+	it('is overdue with no routine, and clears once the bath is logged', async () => {
+		const memberId = await addMember('Bath Every Week');
+		const rule = await makeRule({
+			kind: 'interval', intervalDays: 7, match: 'any', targetType: 'member', targetId: memberId,
+			conditions: [{ category: 'routines', values: ['bath'] }],
+		});
+		expect(rule.overdue).toBe(true);
+
+		await call('POST', token, '/api/v1/milestones', {
+			memberId, title: 'Bath', kind: 'routines', category: 'bath', achievedDate: hoursAgo(1),
+		});
+		const after = await call('GET', token, '/api/v1/reminders');
+		expect(after.body.reminders.find((r: any) => r.id === rule.id).overdue).toBe(false);
+	});
+
+	it('a manual interval rule with nothing to watch clears only when marked done', async () => {
+		const memberId = await addMember('Furnace Filter');
+		const rule = await makeRule({
+			kind: 'interval', intervalDays: 180, label: 'Change filter', category: 'custom',
+			targetType: 'member', targetId: memberId,
+		});
+		expect(rule.overdue).toBe(true);
+
+		await call('POST', token, `/api/v1/reminders/${rule.id}/done`);
+		const after = await call('GET', token, '/api/v1/reminders');
+		expect(after.body.reminders.find((r: any) => r.id === rule.id).overdue).toBe(false);
+	});
+});
+
 describe('a category Nido cannot watch is rejected, not silently inert', () => {
 	it('rejects an unknown category with a 400', async () => {
 		const memberId = await addMember('Unknown');

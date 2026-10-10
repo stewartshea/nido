@@ -301,9 +301,12 @@ export async function evaluateReminder(
 	r: any,
 ): Promise<{ overdue: boolean; since: number | null }> {
 	const now = Date.now();
-	if (r.kind === 'inactivity') {
-		const hours = Number(r.hours ?? 0);
-		const conditions = parseConditions(r.conditions, r.category);
+	// An interval rule written before it could name a category stores the
+	// placeholder 'custom', so the legacy category is only read for inactivity.
+	const conditions = parseConditions(r.conditions, r.kind === 'inactivity' ? r.category : null);
+
+	if (conditions.length) {
+		const hours = r.kind === 'inactivity' ? Number(r.hours ?? 0) : Number(r.interval_days ?? 0) * 24;
 		const times = await latestTimesForConditions(
 			db,
 			Number(r.family_id),
@@ -312,7 +315,8 @@ export async function evaluateReminder(
 		);
 		return evaluateInactivity(parseMatch(r.match_mode), times, hours, now);
 	}
-	// interval
+
+	// A manual rule with nothing to watch is completed by hand ("mark done").
 	const days = Number(r.interval_days ?? 0);
 	const lastTs = r.last_at ? new Date(String(r.last_at)).getTime() : null;
 	if (!lastTs) return { overdue: true, since: null };
@@ -345,8 +349,11 @@ async function latestForCondition(
 	}
 
 	// Table and column names come from the registry above, never from input.
+	// The join mirrors resolveTrackableMember's write path, which records against
+	// COALESCE(legacy_subject_id, the member's aligned subject id). Joining only
+	// on legacy_subject_id left older aligned members unable to ever clear a rule.
 	const sql = `SELECT MAX(x.${src.time}) AS t FROM ${src.table} x
-	             JOIN family_members fm ON fm.legacy_subject_id = x.subject_id
+	             JOIN family_members fm ON COALESCE(fm.legacy_subject_id, fm.id) = x.subject_id
 	             WHERE ${where}`;
 	const res = await db.execute({ sql, args: params });
 	const row = res.rows[0] as { t?: unknown } | undefined;

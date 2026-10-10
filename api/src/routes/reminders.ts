@@ -142,17 +142,23 @@ reminderRoutes.post('/', zValidator('json', createReminderSchema), async (c) => 
 
 	const v = c.req.valid('json');
 
-	// Inactivity rules are the ones with conditions. Accept the legacy single
-	// `category` too, so an older client keeps working.
+	// A rule's conditions are optional for an interval rule — empty means a
+	// manual chore completed with "mark done" — but an inactivity rule needs at
+	// least one. Accept the legacy single `category` so an older client works.
 	let conditions: ReminderCondition[] = [];
 	if (v.kind === 'inactivity') {
 		conditions = v.conditions ?? (v.category ? [{ category: v.category }] : []);
 		if (!v.hours) return c.json({ error: 'Choose how many hours is too long.' }, 400);
+	} else {
+		if (!v.intervalDays) return c.json({ error: 'Choose how many days apart.' }, 400);
+		conditions = v.conditions ?? [];
+	}
+	if (conditions.length) {
 		const custom = await familyOptionOverrides(db);
 		const invalid = validateConditions(conditions, custom);
 		if (invalid) return c.json({ error: invalid }, 400);
-	} else if (!v.intervalDays) {
-		return c.json({ error: 'Choose how many days apart.' }, 400);
+	} else if (v.kind === 'inactivity') {
+		return c.json({ error: 'Choose at least one thing to watch.' }, 400);
 	}
 
 	const ins = await db.execute({

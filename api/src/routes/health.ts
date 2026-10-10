@@ -80,7 +80,7 @@ healthRoutes.get('/summary/:memberId{[0-9]+}', async (c) => {
     // Get latest growth
     const latestGrowth = await db.execute({
       sql: `
-      SELECT measurement_date, weight, height, head_circumference, bmi
+      SELECT measurement_date, weight, height, head_circumference, bmi, unit_system
       FROM growth
       WHERE subject_id = ?
       ORDER BY measurement_date DESC

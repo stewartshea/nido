@@ -5,6 +5,7 @@
 		vaccinationAPI, moodAPI, journalAPI,
 	} from '$lib/api';
 	import { DEFAULT_CATEGORY_OPTIONS, milestoneCategory, milestoneCategoryKey, isMilestoneKind } from '$lib/shared';
+	import { convertLength, convertWeight, round1, type GrowthUnitSystem } from '$lib/growth/units';
 	import { buildManualBreastFeed } from '$lib/breast';
 
 	// Shared edit dialog for every tracking record. `kind` is one of:
@@ -38,6 +39,7 @@
 	let eWeight: number | string = '';
 	let eHeight: number | string = '';
 	let eHead: number | string = '';
+	let eUnitSystem: GrowthUnitSystem = 'metric';
 	// Milestones / vaccines / journal
 	let eTitle = '';
 	let eBody = '';
@@ -87,6 +89,7 @@
 		eWeight = field(r, 'weight') ?? '';
 		eHeight = field(r, 'height') ?? '';
 		eHead = field(r, 'head_circumference', 'headCircumference') ?? '';
+		eUnitSystem = field(r, 'unit_system', 'unitSystem') === 'imperial' ? 'imperial' : 'metric';
 		eTitle = String(field(r, 'title') ?? '');
 		eBody = String(field(r, 'body') ?? '');
 		eCategory = String(field(r, 'category') ?? '');
@@ -96,6 +99,18 @@
 	}
 
 	$: if (open && record) initFields();
+
+	function changeGrowthUnit(value: string) {
+		const next: GrowthUnitSystem = value === 'imperial' ? 'imperial' : 'metric';
+		const prev = eUnitSystem;
+		if (next === prev) return;
+		const converted = (value: number | string, fn: (n: number) => number) =>
+			value === '' ? value : String(round1(fn(Number(value))));
+		eWeight = converted(eWeight, (n) => convertWeight(n, prev, next));
+		eHeight = converted(eHeight, (n) => convertLength(n, prev, next));
+		eHead = converted(eHead, (n) => convertLength(n, prev, next));
+		eUnitSystem = next;
+	}
 
 	// A milestone row's own kind selects the vocabulary, so the edit dialog
 	// offers the same categories the logger does instead of free text.
@@ -163,6 +178,7 @@
 					weight: eWeight === '' ? undefined : Number(eWeight),
 					height: eHeight === '' ? undefined : Number(eHeight),
 					headCircumference: eHead === '' ? undefined : Number(eHead),
+					unitSystem: eUnitSystem,
 					notes: eNotes || undefined,
 				});
 			} else if (kind === 'milestone') {
@@ -325,17 +341,24 @@
 						</select>
 					</div>
 				{:else if kind === 'growth'}
+					<div>
+						<label for="edit-record-units" class="block text-sm font-medium text-ink-soft mb-1">Units</label>
+						<select id="edit-record-units" value={eUnitSystem} on:change={(e) => changeGrowthUnit(e.currentTarget.value)} class="w-full px-3 py-2 border border-line rounded-md">
+							<option value="metric">Metric (kg, cm)</option>
+							<option value="imperial">Imperial (lb, in)</option>
+						</select>
+					</div>
 					<div class="grid grid-cols-3 gap-3">
 						<div>
-							<label for="edit-record-weight" class="block text-sm font-medium text-ink-soft mb-1">Weight</label>
+							<label for="edit-record-weight" class="block text-sm font-medium text-ink-soft mb-1">Weight ({eUnitSystem === 'imperial' ? 'lb' : 'kg'})</label>
 							<input id="edit-record-weight" type="number" step="0.1" bind:value={eWeight} class="w-full px-3 py-2 border border-line rounded-md" />
 						</div>
 						<div>
-							<label for="edit-record-height" class="block text-sm font-medium text-ink-soft mb-1">Length</label>
+							<label for="edit-record-height" class="block text-sm font-medium text-ink-soft mb-1">Length ({eUnitSystem === 'imperial' ? 'in' : 'cm'})</label>
 							<input id="edit-record-height" type="number" step="0.1" bind:value={eHeight} class="w-full px-3 py-2 border border-line rounded-md" />
 						</div>
 						<div>
-							<label for="edit-record-head" class="block text-sm font-medium text-ink-soft mb-1">Head</label>
+							<label for="edit-record-head" class="block text-sm font-medium text-ink-soft mb-1">Head ({eUnitSystem === 'imperial' ? 'in' : 'cm'})</label>
 							<input id="edit-record-head" type="number" step="0.1" bind:value={eHead} class="w-full px-3 py-2 border border-line rounded-md" />
 						</div>
 					</div>
