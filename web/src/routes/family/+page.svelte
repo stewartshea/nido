@@ -301,12 +301,16 @@
 			const savedFamily = localStorage.getItem('nido.familyId');
 			activeFamily = families.find((f) => f.familyId === savedFamily) ?? families[0];
 			activeFamilyId = activeFamily?.familyId ?? null;
+			if (!activeFamilyId) {
+				profiles = [];
+				return;
+			}
 
 			const membersRes = await familiesAPI.members(activeFamilyId);
 			const members = membersRes.data.members;
 			// Members are the profiles the tracker operates on (child/adult; "newborn"
 			// is a child with newborn categories enabled).
-			profiles = members.map((m) => ({
+			profiles = members.map((m: any) => ({
 				id: m.id,
 				name: m.name,
 				birth_date: m.birthDate ?? '',

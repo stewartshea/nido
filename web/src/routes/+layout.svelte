@@ -30,6 +30,15 @@
 		goto('/login');
 	}
 
+	function registerServiceWorker() {
+		if (!browser || !('serviceWorker' in navigator)) return;
+		navigator.serviceWorker
+			.register('/sw.js', { scope: '/' })
+			.catch((err) => {
+				console.error('Service worker registration failed', err);
+			});
+	}
+
 	onMount(() => {
 		if (browser) {
 			restoreThemeEarly();
@@ -42,6 +51,7 @@
 				authActions.logout();
 				goto('/login');
 			});
+			registerServiceWorker();
 			console.log('Nido app initialized');
 		}
 	});
