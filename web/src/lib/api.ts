@@ -1,6 +1,7 @@
 // src/lib/api.ts
 import axios from 'axios';
 import type { MilestoneKind } from '$lib/shared';
+import { DATA_CHANGED } from './events';
 
 // Same-origin (relative /api/v1); Vite proxies /api to the API. PUBLIC_ prefix
 // is the only one exposed to the client (vite config envPrefix).
@@ -65,7 +66,14 @@ export function tokenExpired(): boolean {
 // redeploy) leave the token intact so the client retries on the next request
 // instead of flip-flopping to the login page.
 api.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    const method = (response.config.method || 'get').toLowerCase();
+    const url = response.config.url || '';
+    if (method !== 'get' && typeof window !== 'undefined' && !url.startsWith('/auth')) {
+      window.dispatchEvent(new Event(DATA_CHANGED));
+    }
+    return response;
+  },
   (error) => {
     const status = error.response?.status;
     if (status === 401 && isTokenExpired(localStorage.getItem('token') || '')) {

@@ -1,5 +1,6 @@
 import { writable } from 'svelte/store';
 import { notificationsAPI } from '$lib/api';
+import { DATA_CHANGED } from '$lib/events';
 
 /**
  * How many notifications are firing, shown as a badge on the Notifications tab.
@@ -29,4 +30,8 @@ export function startNotificationCount(intervalMs = 60_000): void {
 export function stopNotificationCount(): void {
 	if (timer) { clearInterval(timer); timer = null; }
 	notificationCount.set(0);
+}
+
+if (typeof window !== 'undefined') {
+	window.addEventListener(DATA_CHANGED, () => { void refreshNotificationCount(); });
 }

@@ -34,6 +34,7 @@
 				: reminderNoun(r.category);
 			return `no ${what} in ${r.hours}h`;
 		}
+		if (r.conditions.length) return `no ${reminderPhrase(r.conditions, r.match)} in ${r.intervalDays}d`;
 		return `${r.label || r.category} — every ${r.intervalDays}d`;
 	}
 
@@ -85,19 +86,26 @@
 		error = '';
 		const n = Number(amount);
 		if (!Number.isFinite(n) || n <= 0) { error = 'Enter how many hours or days.'; return; }
+		const conditions = draft
+			.filter((c) => c.category)
+			.map((c) => (c.values.length ? { category: c.category, values: c.values } : { category: c.category }));
 		try {
 			if (kind === 'inactivity') {
-				const conditions = draft
-					.filter((c) => c.category)
-					.map((c) => (c.values.length ? { category: c.category, values: c.values } : { category: c.category }));
 				if (conditions.length === 0) { error = 'Choose at least one thing to watch.'; return; }
 				await remindersAPI.create({
 					kind, conditions, match, hours: n,
 					targetType: targetMemberId ? 'member' : 'home',
 					targetId: targetMemberId ?? undefined,
 				});
+			} else if (conditions.length > 0) {
+				await remindersAPI.create({
+					kind, conditions, match, intervalDays: n,
+					targetType: targetMemberId ? 'member' : 'home',
+					targetId: targetMemberId ?? undefined,
+				});
 			} else {
-				await remindersAPI.create({ kind, category: 'custom', intervalDays: n, label: label.trim() || undefined });
+				if (!label.trim()) { error = 'Name the chore, or watch for something.'; return; }
+				await remindersAPI.create({ kind, category: 'custom', intervalDays: n, label: label.trim() });
 			}
 			label = '';
 			draft = [{ category: catalog[0]?.id ?? '', values: [] }];
@@ -107,6 +115,16 @@
 			dispatch('changed');
 		} catch (e: any) {
 			error = e?.response?.data?.error || 'Could not add that reminder.';
+		}
+	}
+
+	async function markDone(id: number) {
+		try {
+			await remindersAPI.done(id);
+			await load();
+			dispatch('changed');
+		} catch (e: any) {
+			error = e?.response?.data?.error || 'Could not mark that done.';
 		}
 	}
 
@@ -142,7 +160,12 @@
 							{/if}
 							<span class="text-ink-soft"> · set by {rule.createdByName ?? 'a caregiver'}</span>
 						</span>
-						<button type="button" on:click={() => remove(rule.id)} class="text-xs text-danger-text hover:underline">Remove</button>
+						<span class="shrink-0 flex items-center gap-2">
+							{#if rule.kind === 'interval' && rule.conditions.length === 0}
+								<button type="button" on:click={() => markDone(rule.id)} class="text-xs text-accent hover:underline">Mark done</button>
+							{/if}
+							<button type="button" on:click={() => remove(rule.id)} class="text-xs text-danger-text hover:underline">Remove</button>
+						</span>
 					</li>
 				{/each}
 			</ul>
@@ -157,64 +180,61 @@
 						<option value="interval">Do every</option>
 					</select>
 				</div>
-				{#if kind === 'inactivity'}
-					<div class="min-w-[12rem]">
-						<label for="ar-target" class="block text-xs text-ink-soft mb-1">About</label>
-						<select id="ar-target" value={targetMemberId ?? ''} on:change={(e) => (targetMemberId = e.currentTarget.value === '' ? null : Number(e.currentTarget.value))} class="px-3 py-2 border border-line rounded-md bg-surface text-ink text-sm w-full">
-							<option value="">Anyone in the family</option>
-							{#each members as m}<option value={m.id}>{m.name}</option>{/each}
-						</select>
-					</div>
-				{:else}
-					<div>
-						<label for="ar-cat2" class="block text-xs text-ink-soft mb-1">What</label>
-						<input id="ar-cat2" type="text" bind:value={label} class="w-40 px-2 py-2 border border-line rounded-md bg-surface text-ink text-sm" placeholder="Change furnace filter" />
-					</div>
-				{/if}
+				<div class="min-w-[12rem]">
+					<label for="ar-target" class="block text-xs text-ink-soft mb-1">About</label>
+					<select id="ar-target" value={targetMemberId ?? ''} on:change={(e) => (targetMemberId = e.currentTarget.value === '' ? null : Number(e.currentTarget.value))} class="px-3 py-2 border border-line rounded-md bg-surface text-ink text-sm w-full">
+						<option value="">Anyone in the family</option>
+						{#each members as m}<option value={m.id}>{m.name}</option>{/each}
+					</select>
+				</div>
 				<div>
 					<label for="ar-amount" class="block text-xs text-ink-soft mb-1">{kind === 'inactivity' ? 'Hours' : 'Days'}</label>
 					<input id="ar-amount" type="number" min="1" bind:value={amount} class="w-20 px-2 py-2 border border-line rounded-md bg-surface text-ink text-sm" />
 				</div>
 			</div>
 
-			{#if kind === 'inactivity'}
-				<div class="space-y-2">
-					<div class="text-xs font-semibold text-ink-soft">Watch for</div>
-					{#each draft as condition, i}
-						<div class="bg-surface2 rounded-md p-2 space-y-2" data-testid="condition-row">
-							<div class="flex items-center gap-2">
-								<select value={condition.category} on:change={(e) => setCategory(i, e.currentTarget.value)} class="px-3 py-2 border border-line rounded-md bg-surface text-ink text-sm" aria-label="Thing to watch for">
-									{#each catalog as c}<option value={c.id}>{c.label}</option>{/each}
-								</select>
-								{#if draft.length > 1}
-									<button type="button" on:click={() => removeCondition(i)} class="ml-auto text-xs text-ink-soft hover:text-danger-text">Remove</button>
-								{/if}
-							</div>
-							{#if optionsFor(condition.category).length > 0}
-								<div class="flex flex-wrap items-center gap-1.5">
-									<span class="text-xs text-ink-soft">only</span>
-									{#each optionsFor(condition.category) as value}
-										<button type="button" on:click={() => toggleValue(i, value)} class="{condition.values.includes(value) ? 'bg-primary text-on-primary border-primary' : 'bg-surface text-ink-soft border-line-soft'} px-2 py-1 rounded-full border text-xs" aria-pressed={condition.values.includes(value)}>{value}</button>
-									{/each}
-									{#if condition.values.length === 0}
-										<span class="text-xs text-ink-soft">— any type of {labelFor(condition.category).toLowerCase()}</span>
-									{/if}
-								</div>
+			<div class="space-y-2">
+				<div class="text-xs font-semibold text-ink-soft">Watch for{kind === 'interval' ? ' (optional)' : ''}</div>
+				{#each draft as condition, i}
+					<div class="bg-surface2 rounded-md p-2 space-y-2" data-testid="condition-row">
+						<div class="flex items-center gap-2">
+							<select value={condition.category} on:change={(e) => setCategory(i, e.currentTarget.value)} class="px-3 py-2 border border-line rounded-md bg-surface text-ink text-sm" aria-label="Thing to watch for">
+								{#each catalog as c}<option value={c.id}>{c.label}</option>{/each}
+							</select>
+							{#if draft.length > 1 || kind === 'interval'}
+								<button type="button" on:click={() => removeCondition(i)} class="ml-auto text-xs text-ink-soft hover:text-danger-text">Remove</button>
 							{/if}
 						</div>
-					{/each}
-					<div class="flex flex-wrap items-center gap-2">
-						<button type="button" on:click={addCondition} class="text-xs text-accent hover:underline">+ Watch for another</button>
-						{#if draft.length > 1}
-							<label for="ar-match" class="ml-auto text-xs text-ink-soft">Clear when</label>
-							<select id="ar-match" bind:value={match} class="px-2 py-1 border border-line rounded-md bg-surface text-ink text-xs">
-								<option value="any">one of them happens</option>
-								<option value="all">all of them happen</option>
-							</select>
+						{#if optionsFor(condition.category).length > 0}
+							<div class="flex flex-wrap items-center gap-1.5">
+								<span class="text-xs text-ink-soft">only</span>
+								{#each optionsFor(condition.category) as value}
+									<button type="button" on:click={() => toggleValue(i, value)} class="{condition.values.includes(value) ? 'bg-primary text-on-primary border-primary' : 'bg-surface text-ink-soft border-line-soft'} px-2 py-1 rounded-full border text-xs" aria-pressed={condition.values.includes(value)}>{value}</button>
+								{/each}
+								{#if condition.values.length === 0}
+									<span class="text-xs text-ink-soft">— any type of {labelFor(condition.category).toLowerCase()}</span>
+								{/if}
+							</div>
 						{/if}
 					</div>
+				{/each}
+				<div class="flex flex-wrap items-center gap-2">
+					<button type="button" on:click={addCondition} class="text-xs text-accent hover:underline">+ Watch for another</button>
+					{#if draft.length > 1}
+						<label for="ar-match" class="ml-auto text-xs text-ink-soft">Clear when</label>
+						<select id="ar-match" bind:value={match} class="px-2 py-1 border border-line rounded-md bg-surface text-ink text-xs">
+							<option value="any">one of them happens</option>
+							<option value="all">all of them happen</option>
+						</select>
+					{/if}
 				</div>
-			{/if}
+				{#if kind === 'interval' && draft.length === 0}
+					<div>
+						<label for="ar-cat2" class="block text-xs text-ink-soft mb-1">A chore you mark done</label>
+						<input id="ar-cat2" type="text" bind:value={label} class="w-64 px-2 py-2 border border-line rounded-md bg-surface text-ink text-sm" placeholder="Change furnace filter" />
+					</div>
+				{/if}
+			</div>
 
 			<button type="submit" class="bg-primary text-on-primary px-3 py-2 rounded-md text-sm font-semibold">+ Add</button>
 		</form>
