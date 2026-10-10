@@ -1,62 +1,104 @@
 ---
 title: Nido
-description: Nido means nest. It's a calm, private place to manage your nest — starting with a baby, and growing to cover the whole home. Self-host it, or use My Nido, hosted in Canada.
+description: An app for helping tend to your family and home. Self-host it, or use My Nido, hosted in Canada.
 template: splash
 hero:
-  tagline: Nido means nest — a quiet, private place to manage yours. It starts with a baby, and grows to cover the whole home.
-  actions:
-    - text: Install Nido
-      link: ./getting-started/installation/
-      icon: right-arrow
-    - text: Try My Nido
-      link: https://my.nido-app.ca
-      icon: external
-      variant: minimal
-    - text: Sponsor
-      link: https://ko-fi.com/sheastewart0494
-      variant: minimal
+  tagline: An app for helping tend to your family and home.
 ---
 
-import phoneToday from '../../assets/screenshots/phone-today.jpg';
-import phoneDashboard from '../../assets/screenshots/phone-dashboard.jpg';
-import phoneHome from '../../assets/screenshots/phone-home.jpg';
+import phoneTrackingFeeds from '../../assets/screenshots/phone-tracking-feeds.jpg';
+import phoneTrackingPumping from '../../assets/screenshots/phone-tracking-pumping.jpg';
+import phoneTrackingTrends from '../../assets/screenshots/phone-tracking-trends.jpg';
+import phoneTrackingGrowth from '../../assets/screenshots/phone-tracking-growth.jpg';
+import phoneInventoryRunway from '../../assets/screenshots/phone-inventory-runway.jpg';
+import phoneFamilyMembers from '../../assets/screenshots/phone-family-members.jpg';
+import phoneNotifications from '../../assets/screenshots/phone-notifications.jpg';
 
-<p class="nido-toplink"><a href="./getting-started/installation/">Documentation →</a></p>
-
-## What Nido does
-
-<div class="nido-split">
-	<div class="nido-features">
-		<div><strong>Feeding</strong><span>Breast, bottle and combo, with timers and amounts</span></div>
-		<div><strong>Sleep</strong><span>Start and stop, with live duration</span></div>
-		<div><strong>Diapers</strong><span>Wet, soiled, dry and combinations</span></div>
-		<div><strong>Growth</strong><span>Weight, height and head against WHO and CDC curves</span></div>
-		<div><strong>Inventory</strong><span>Stock that counts itself and forecasts days of cover</span></div>
-		<div><strong>Notifications</strong><span>Reminders and stock warnings, in the app or by email</span></div>
-		<div><strong>Shared</strong><span>Invite caregivers, with a role for each one</span></div>
-		<div><strong>Yours</strong><span>Export everything, any time. Works offline</span></div>
-	</div>
-	<div class="nido-phones">
-		<ul class="nido-phones__track">
-			<li id="phone-today">
-				<img src={phoneToday.src} width="390" height="844" alt="Nido on a phone: today's feeds, diapers and sleep for a baby named Wren" />
-			</li>
-			<li id="phone-dashboard">
-				<img src={phoneDashboard.src} width="390" height="844" alt="Nido on a phone: quick actions to log a feed, a diaper or sleep" loading="lazy" decoding="async" />
-			</li>
-			<li id="phone-home">
-				<img src={phoneHome.src} width="390" height="844" alt="Nido on a phone: the Home section, for property, maintenance and manuals" loading="lazy" decoding="async" />
-			</li>
-		</ul>
-		<nav class="nido-phones__dots" aria-label="App screenshots">
-			<a href="#phone-today" aria-label="Today for Wren"></a>
-			<a href="#phone-dashboard" aria-label="Quick actions"></a>
-			<a href="#phone-home" aria-label="Home"></a>
-		</nav>
-	</div>
+<div class="nido-carousel">
+	<ul class="nido-carousel__track">
+		<li class="nido-slide" id="slide-feeds">
+			<div class="nido-slide__text">
+				<span class="nido-slide__eyebrow">Baby tracking</span>
+				<h3>Every feed, logged in two taps</h3>
+				<p>Breast, bottle, or formula — with amounts, timers, and a live "last feed" tile that answers the 3am question.</p>
+			</div>
+			<div class="nido-slide__phone">
+				<img src={phoneTrackingFeeds.src} width="390" height="844" alt="Nido on a phone: logging a feed with quick action tiles" />
+			</div>
+		</li>
+		<li class="nido-slide" id="slide-pumping">
+			<div class="nido-slide__text">
+				<span class="nido-slide__eyebrow">Baby tracking</span>
+				<h3>Pumping, tracked on its own</h3>
+				<p>Every session with amount and duration — separable from feeds, so you can see exactly what you're producing.</p>
+			</div>
+			<div class="nido-slide__phone">
+				<img src={phoneTrackingPumping.src} width="390" height="844" alt="Nido on a phone: logging a pumping session" loading="lazy" decoding="async" />
+			</div>
+		</li>
+		<li class="nido-slide" id="slide-trends">
+			<div class="nido-slide__text">
+				<span class="nido-slide__eyebrow">Baby tracking</span>
+				<h3>See the patterns emerge</h3>
+				<p>Feeds, sleep, and diapers over the last week — rates and rhythms at a glance, not buried in a list.</p>
+			</div>
+			<div class="nido-slide__phone">
+				<img src={phoneTrackingTrends.src} width="390" height="844" alt="Nido on a phone: weekly trends for feeds and sleep" loading="lazy" decoding="async" />
+			</div>
+		</li>
+		<li class="nido-slide" id="slide-growth">
+			<div class="nido-slide__text">
+				<span class="nido-slide__eyebrow">Baby tracking</span>
+				<h3>Growth against WHO curves</h3>
+				<p>Weight, height, and head circumference plotted against standard percentiles — no interpretation, just the record.</p>
+			</div>
+			<div class="nido-slide__phone">
+				<img src={phoneTrackingGrowth.src} width="390" height="844" alt="Nido on a phone: growth chart with WHO percentiles" loading="lazy" decoding="async" />
+			</div>
+		</li>
+		<li class="nido-slide" id="slide-inventory">
+			<div class="nido-slide__text">
+				<span class="nido-slide__eyebrow">Inventory</span>
+				<h3>Know your diaper runway</h3>
+				<p>Stock counts itself as you log. Nido forecasts days of cover and tells you before you run out — not at 2am.</p>
+			</div>
+			<div class="nido-slide__phone">
+				<img src={phoneInventoryRunway.src} width="390" height="844" alt="Nido on a phone: inventory with days-of-cover forecast" loading="lazy" decoding="async" />
+			</div>
+		</li>
+		<li class="nido-slide" id="slide-family">
+			<div class="nido-slide__text">
+				<span class="nido-slide__eyebrow">Family</span>
+				<h3>Everyone in the family</h3>
+				<p>Babies, adults, pets — each with their own categories. Track a second child, or a parent's medications.</p>
+			</div>
+			<div class="nido-slide__phone">
+				<img src={phoneFamilyMembers.src} width="390" height="844" alt="Nido on a phone: family overview with multiple members" loading="lazy" decoding="async" />
+			</div>
+		</li>
+		<li class="nido-slide" id="slide-notifications">
+			<div class="nido-slide__text">
+				<span class="nido-slide__eyebrow">Notifications</span>
+				<h3>Reminders that matter</h3>
+				<p>Inactivity alerts, interval checklists, and stock warnings — in the app, or as an email digest to your family.</p>
+			</div>
+			<div class="nido-slide__phone">
+				<img src={phoneNotifications.src} width="390" height="844" alt="Nido on a phone: notifications page with active reminders" loading="lazy" decoding="async" />
+			</div>
+		</li>
+	</ul>
+	<nav class="nido-carousel__dots" aria-label="Feature slides">
+		<a href="#slide-feeds" aria-label="Feeds"></a>
+		<a href="#slide-pumping" aria-label="Pumping"></a>
+		<a href="#slide-trends" aria-label="Trends"></a>
+		<a href="#slide-growth" aria-label="Growth"></a>
+		<a href="#slide-inventory" aria-label="Inventory"></a>
+		<a href="#slide-family" aria-label="Family"></a>
+		<a href="#slide-notifications" aria-label="Notifications"></a>
+	</nav>
 </div>
 
-Plus milestones, vaccinations, photos, a daily journal, and reminders.
+Also included: milestones, vaccinations, photos, a daily journal, and sleep tracking.
 
 ## Two ways to run it
 
@@ -70,7 +112,7 @@ Same software, same features. Pick whichever fits your household.
 			and your records never leave the house. No account, no uploads, no one
 			else involved.
 		</p>
-		<p>[How self-hosting works →](./self-host/)</p>
+		<p><a href="./self-host/">How self-hosting works →</a></p>
 	</div>
 	<div class="nido-option">
 		<h3>My Nido <span class="nido-option-tag">hosted in Canada</span></h3>
@@ -79,7 +121,7 @@ Same software, same features. Pick whichever fits your household.
 			an email and a password and start logging tonight. Your data stays in
 			Canada, and the only emails you get are about your account.
 		</p>
-		<p>[About My Nido →](./my-nido/) · [Privacy policy →](./privacy/)</p>
+		<p><a href="./my-nido/">About My Nido →</a> · <a href="./privacy/">Privacy policy →</a></p>
 	</div>
 </div>
 
@@ -88,12 +130,11 @@ Same software, same features. Pick whichever fits your household.
 A baby grows up, and the list of things needing care gets longer. The next
 tracker is **home maintenance and care** — filters, warranties, seasonal
 upkeep — already taking shape in the app. It is being built in the open,
-alongside the infant tracker; see [the roadmap](./project/roadmap/).
+alongside the infant tracker. See [the roadmap](./project/roadmap/).
 
 ## Help it keep going
 
-Nido is maintained in one person's evenings. The two things that actually help
-are small ones: [contribute](./project/contributing/) a bug report or an
-answer, or [sponsor the project](./support/) — a monthly sponsorship, or
-[a one-time tip on Ko-fi](https://ko-fi.com/sheastewart0494). Optional, and it
-buys maintainer time.
+Nido is maintained in one person's evenings. Two small things actually help:
+
+- [Contribute](./project/contributing/) a bug report or an answer
+- [Sponsor the project](./support/) — monthly, or [a one-time tip on Ko-fi](https://ko-fi.com/sheastewart0494)

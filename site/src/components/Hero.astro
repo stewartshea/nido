@@ -1,0 +1,21 @@
+---
+// Landing-page hero: just the tagline, nothing else.
+//
+// The product carousel below does the heavy lifting, so the top of the page
+// is deliberately bare — no title, no buttons, no links. Those all live in
+// the sidebar, footer, and the rest of the docs.
+//
+// This overrides Starlight's Hero.astro (see astro.config.mjs) so the
+// frontmatter `hero.tagline` still drives the copy and no other page is
+// affected.
+const { data } = Astro.locals.starlightRoute.entry;
+const tagline = data.hero?.tagline;
+---
+
+{
+	tagline && (
+		<div class="hero">
+			<p class="tagline" set:html={tagline} />
+		</div>
+	)
+}

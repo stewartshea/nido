@@ -8,42 +8,42 @@
 @import '@fontsource/inter/700.css';
 
 /*
- * Nido brand tokens, lifted verbatim from the client's `forest` palette
+ * Nido brand tokens, lifted verbatim from the client's `blush` palette
  * (`web/src/app.css`) so the docs never drift from the app.
  *
- *   ink      #2B2622   brass    #CFAD5E
- *   page     #F7F5F0   forest   #1E2A1D
- *   surface  #FFFFFF   link     #3A6B42
+ *   ink      #322426   accent    #BE7882
+ *   page     #FAF8F6   primary   #4E2E36
+ *   surface  #FFFFFD   link      #4E2E36
  *
  * Starlight wants a full neutral ramp, so the ramp below is the two brand
- * neutrals interpolated and warmed — the greys lean green/cream rather than
+ * neutrals interpolated and warmed — the greys lean rose/mauve rather than
  * the default blue-grey, which is what makes a Starlight site look generic.
  *
  * Contrast is deliberate, not incidental:
- *   - `#CFAD5E` on the cream page is ~1.9:1 and is therefore used ONLY in
- *     dark mode, where it measures ~7.9:1. Light mode gets `#3A6B42` for
- *     links (5.7:1) because a brass link on cream is unreadable.
- *   - The brass stays visible in light mode as an underline/rule accent, which
+ *   - `#BE7882` (rose) on the warm-white page is ~2.5:1 and is therefore used
+ *     ONLY in dark mode, where it measures ~6.5:1. Light mode gets `#4E2E36`
+ *     (deep plum) for links (~10:1) because a rose link on cream is unreadable.
+ *   - The rose stays visible in light mode as an underline/rule accent, which
  *     is what the client uses it for.
  */
 
 :root {
-	--nido-ink: #2b2622;
-	--nido-ink-soft: #3f4d3e;
-	--nido-page: #f7f5f0;
-	--nido-surface: #ffffff;
-	--nido-forest: #1e2a1d;
-	--nido-forest-hover: #182117;
-	--nido-brass: #cfad5e;
-	--nido-brass-soft: #f3e9cf;
-	--nido-line: #9aab97;
-	--nido-line-soft: #d7dfd2;
-	--nido-link: #3a6b42;
-	--nido-link-hover: #2b5433;
-	--nido-alert: #b4543a; /* terracotta: irreversible-action callouts */
+	--nido-ink: #322426;
+	--nido-ink-soft: #684852;
+	--nido-page: #faf8f6;
+	--nido-surface: #fffffd;
+	--nido-primary: #4e2e36;
+	--nido-primary-hover: #3e242b;
+	--nido-accent: #be7882;
+	--nido-accent-soft: #fae8ec;
+	--nido-line: #a87886;
+	--nido-line-soft: #decace;
+	--nido-link: #4e2e36;
+	--nido-link-hover: #3e242b;
+	--nido-alert: #a83a4e; /* deep rose-red: irreversible-action callouts */
 
 	--nido-card: var(--nido-surface);
-	--nido-card-shadow: 0 1px 2px rgb(43 38 34 / 0.05), 0 4px 16px rgb(43 38 34 / 0.06);
+	--nido-card-shadow: 0 1px 2px rgb(50 36 38 / 0.05), 0 4px 16px rgb(50 36 38 / 0.06);
 	--nido-card-radius: 0.75rem;
 
 	/* Starlight font slot. One family: Inter, for headings and body alike. */
@@ -63,27 +63,35 @@
 	/* Starlight names these from the dark theme's perspective: `black` is the
 	   page background (--sl-color-bg aliases it), `white` is the anti-page used
 	   for inverted surfaces and text on dark fills. Swapping them renders a
-	   cream page with dark-theme text — exactly the bug this comment exists to
+	   light page with dark-theme text — exactly the bug this comment exists to
 	   prevent regressing. */
-	--sl-color-black: #181e18; /* page */
-	--sl-color-white: #f7f5f0; /* anti-page: text on dark fills, light surfaces */
-	--sl-color-gray-1: #e6e4df; /* body text */
-	--sl-color-gray-2: #c6c3bb;
-	--sl-color-gray-3: #9a9a90;
-	--sl-color-gray-4: #6e7568;
-	--sl-color-gray-5: #3c443a;
-	--sl-color-gray-6: #232b23; /* nav + sidebar */
+	--sl-color-black: #261c20; /* page */
+	--sl-color-white: #ece4e6; /* anti-page: text on dark fills, light surfaces */
+	--sl-color-gray-1: #e6d8dc; /* body text */
+	--sl-color-gray-2: #c4b0b6;
+	--sl-color-gray-3: #9a7a82;
+	--sl-color-gray-4: #6e5258;
+	--sl-color-gray-5: #463038;
+	--sl-color-gray-6: #342728; /* nav + sidebar */
 
-	--sl-color-accent-high: #cfad5e; /* brass: 7.9:1 on the dark page */
-	--sl-color-accent: #cfad5e;
-	--sl-color-accent-low: #1e2a1d; /* forest: text on brass fills */
+	--sl-color-accent-high: #be7882; /* rose: ~6.5:1 on the dark page */
+	--sl-color-accent: #be7882;
+	--sl-color-accent-low: #4e2e36; /* deep plum: text on rose fills */
 
-	--nido-card: #1e261e;
+	--nido-card: #2e2226;
 	--nido-card-shadow: 0 1px 2px rgb(0 0 0 / 0.3), 0 4px 16px rgb(0 0 0 / 0.25);
-	--nido-link: #cfad5e;
-	--nido-link-hover: #e0c47f;
-	--nido-brass-soft: rgb(207 173 94 / 0.14);
-	--nido-alert: #e08b6f; /* lifted for the forest page: 5.1:1 on #181e18 */
+	--nido-ink: #ece4e6;
+	--nido-ink-soft: #ba929e;
+	--nido-page: #261c20;
+	--nido-surface: #2e2226;
+	--nido-primary: #1c1014;
+	--nido-primary-hover: #140c0f;
+	--nido-accent-soft: #5c3a42;
+	--nido-line: #78505c;
+	--nido-line-soft: #463038;
+	--nido-link: #be7882;
+	--nido-link-hover: #d4a0a8;
+	--nido-alert: #e08b9a; /* lifted for the dark page: ~5:1 on #261c20 */
 }
 
 /* --------------------------------------------------------------- light --- */
@@ -91,22 +99,22 @@
 [data-theme='light'] {
 	color-scheme: light;
 
-	--sl-color-black: #f7f5f0; /* page = brand cream */
-	--sl-color-white: #2b2622; /* anti-page = brand ink: code, filled buttons */
-	--sl-color-gray-1: #2b2622; /* headings = brand ink */
-	--sl-color-gray-2: #4f4a42; /* body text */
-	--sl-color-gray-3: #6e6a5f;
-	--sl-color-gray-4: #a5ad9c;
-	--sl-color-gray-5: #d7dfd2;
-	--sl-color-gray-6: #efede6; /* nav + sidebar */
+	--sl-color-black: #faf8f6; /* page = brand warm white */
+	--sl-color-white: #322426; /* anti-page = brand ink: code, filled buttons */
+	--sl-color-gray-1: #322426; /* headings = brand ink */
+	--sl-color-gray-2: #5a4448; /* body text */
+	--sl-color-gray-3: #8a6a72;
+	--sl-color-gray-4: #ba929e;
+	--sl-color-gray-5: #decace;
+	--sl-color-gray-6: #f7f2f0; /* nav + sidebar */
 
-	--sl-color-accent-high: #3a6b42; /* forest: 5.7:1 on cream */
-	--sl-color-accent: #2f5f38;
-	--sl-color-accent-low: #f3e9cf; /* brass-soft: fills behind dark text */
+	--sl-color-accent-high: #4e2e36; /* deep plum: ~10:1 on warm white */
+	--sl-color-accent: #4e2e36;
+	--sl-color-accent-low: #fae8ec; /* accent-soft: fills behind dark text */
 
-	--nido-card: #ffffff;
-	--nido-link: #3a6b42;
-	--nido-link-hover: #2b5433;
+	--nido-card: #fffffd;
+	--nido-link: #4e2e36;
+	--nido-link-hover: #3e242b;
 }
 
 /* --------------------------------------------------------- brand type --- */
@@ -133,7 +141,7 @@ h6,
 	font-weight: 600;
 }
 
-/* Brass hairline under the H1, mirroring the client's card language. */
+/* Rose hairline under the H1, mirroring the client's card language. */
 .sl-markdown-content > h1:first-child {
 	position: relative;
 	padding-bottom: 0.5rem;
@@ -146,20 +154,20 @@ h6,
 	bottom: 0;
 	width: 3.5rem;
 	height: 2px;
-	background: var(--nido-brass);
+	background: var(--nido-accent);
 	border-radius: 2px;
 }
 
 /* ------------------------------------------------------------- pieces --- */
 
-/* Blockquote / aside: warm, not blue. */
+/* Blockquote / aside: warm rose, not blue. */
 .sl-markdown-content blockquote {
-	border-inline-start: 3px solid var(--nido-brass);
-	background: var(--nido-brass-soft);
+	border-inline-start: 3px solid var(--nido-accent);
+	background: var(--nido-accent-soft);
 	color: var(--sl-color-gray-1);
 }
 
-/* Inline code sits on a warm surface with a forest ink, matching the client. */
+/* Inline code sits on a warm surface with a plum ink, matching the client. */
 .sl-markdown-content :not(pre) > code {
 	background: var(--sl-color-gray-6);
 	color: var(--sl-color-accent-high);
@@ -184,12 +192,12 @@ h6,
 	padding: 1.1rem 1.35rem;
 }
 
-/* Brass top rule marks the sections that answer a direct question. */
+/* Rose top rule marks the sections that answer a direct question. */
 .nido-card--edge {
-	border-top: 2px solid var(--nido-brass);
+	border-top: 2px solid var(--nido-accent);
 }
 
-/* Terracotta left rule marks the actions that cannot be undone. */
+/* Rose-red left rule marks the actions that cannot be undone. */
 .nido-card--alert {
 	border-inline-start: 3px solid var(--nido-alert);
 }
@@ -209,7 +217,7 @@ h6,
 	flex-direction: column;
 	background: var(--nido-card);
 	border: 1px solid var(--sl-color-gray-5);
-	border-top: 2px solid var(--nido-brass);
+	border-top: 2px solid var(--nido-accent);
 	border-radius: var(--nido-card-radius);
 	box-shadow: var(--nido-card-shadow);
 	padding: 1.1rem 1.35rem;
@@ -244,51 +252,36 @@ h6,
 
 /* ------------------------------------------------------ landing page --- */
 
-/* Compacted so the feature list and its phones sit high on the page. */
+/* The landing page opens on a bare, centered tagline — no title, no
+   buttons. The carousel below it does the product's heavy lifting. */
 .hero {
-	padding-block: 2rem 0.75rem;
-}
-
-.hero h1 {
-	font-size: clamp(2.25rem, 6vw, 3.5rem);
+	padding-block: 2.5rem 0.5rem;
+	text-align: center;
 }
 
 .hero .tagline {
 	max-width: 44rem;
 	margin-inline: auto;
-	font-size: var(--sl-text-lg);
+	font-size: clamp(1.4rem, 3vw, 2rem);
+	font-weight: 600;
+	letter-spacing: -0.01em;
+	color: var(--sl-color-gray-1);
 }
 
-.nido-toplink {
-	margin: 0 0 1rem;
-	text-align: center;
-	font-size: 0.95rem;
+/* ---------------------------------------------------------------- */
+/* Feature carousel — Apple-style horizontal slides.                  */
+/* Each slide is a full feature highlight: eyebrow, headline,          */
+/* description, and a phone screenshot. Scroll-snap horizontal,        */
+/* one slide at a time, with anchor-link dots below.                  */
+/* ---------------------------------------------------------------- */
+
+.nido-carousel {
+	margin: 2rem 0 1rem;
 }
 
-/* The feature list beside a small phone carousel: one app screen at a time on
-   the right, the list on the left. */
-.nido-split {
-	display: grid;
-	grid-template-columns: minmax(0, 1fr) auto;
-	gap: 2rem 2.5rem;
-	align-items: center;
-	margin: 1.5rem 0 0.5rem;
-}
-
-.nido-split .nido-features {
-	grid-template-columns: 1fr;
-	margin: 0;
-}
-
-.nido-phones {
-	width: 14rem;
-}
-
-/* Scroll-snap track with plain anchor-link dots: no JavaScript, and it swipes
-   on touch. */
-.nido-phones__track {
+.nido-carousel__track {
 	display: flex;
-	gap: 1rem;
+	gap: 0;
 	margin: 0;
 	padding: 0;
 	list-style: none;
@@ -299,84 +292,121 @@ h6,
 	scrollbar-width: none;
 }
 
-.nido-phones__track::-webkit-scrollbar {
+.nido-carousel__track::-webkit-scrollbar {
 	display: none;
 }
 
-.nido-phones__track li {
+/* Each slide: full-width, text on the left, phone on the right.
+   Generous padding and a max-width keep it feeling like a product
+   section, not a cramped card. */
+.nido-slide {
 	flex: 0 0 100%;
 	scroll-snap-align: center;
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) auto;
+	gap: 3rem 4rem;
+	align-items: center;
+	max-width: 64rem;
+	margin-inline: auto;
+	padding: 2rem 1.5rem 1rem;
 }
 
-.nido-phones__track img {
+/* Text block: eyebrow, headline, description. Apple-style hierarchy —
+   small colored eyebrow, big bold headline, muted description. */
+.nido-slide__text {
+	display: flex;
+	flex-direction: column;
+	gap: 0.75rem;
+}
+
+.nido-slide__eyebrow {
+	font-size: 0.8rem;
+	font-weight: 600;
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+	color: var(--nido-accent);
+}
+
+.nido-slide__text h3 {
+	margin: 0;
+	font-size: clamp(1.75rem, 4vw, 2.75rem);
+	font-weight: 600;
+	letter-spacing: -0.02em;
+	line-height: 1.15;
+	color: var(--sl-color-gray-1);
+}
+
+.nido-slide__text p {
+	margin: 0;
+	font-size: 1.1rem;
+	line-height: 1.6;
+	color: var(--sl-color-gray-2);
+	max-width: 32rem;
+}
+
+/* Phone screenshot: rounded, subtle shadow, fixed width so it doesn't
+   stretch. Sits to the right of the text on desktop. */
+.nido-slide__phone {
+	width: 15rem;
+}
+
+.nido-slide__phone img {
 	display: block;
 	width: 100%;
 	height: auto;
 	background: var(--nido-card);
 	border: 1px solid var(--sl-color-gray-5);
-	border-radius: 1.5rem;
-	box-shadow: var(--nido-card-shadow);
+	border-radius: 2rem;
+	box-shadow: 0 8px 32px rgb(50 36 38 / 0.12), 0 2px 8px rgb(50 36 38 / 0.08);
 }
 
-.nido-phones__dots {
+/* Navigation dots below the carousel. */
+.nido-carousel__dots {
 	display: flex;
 	justify-content: center;
 	gap: 0.6rem;
-	margin-top: 0.75rem;
+	margin-top: 1.5rem;
+	padding-bottom: 1rem;
 }
 
-.nido-phones__dots a {
-	width: 0.6rem;
-	height: 0.6rem;
+.nido-carousel__dots a {
+	width: 0.55rem;
+	height: 0.55rem;
 	background: var(--sl-color-gray-5);
 	border-radius: 50%;
-	transition: background-color 150ms ease;
+	transition: background-color 150ms ease, transform 150ms ease;
 }
 
-.nido-phones__dots a:hover,
-.nido-phones__dots a:focus-visible {
+.nido-carousel__dots a:hover,
+.nido-carousel__dots a:focus-visible {
 	background: var(--nido-link);
+	transform: scale(1.2);
 }
 
-/* Compact feature list: brass-topped rows instead of another wall of cards. */
-.nido-features {
-	display: grid;
-	grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
-	gap: 0.5rem 1.5rem;
-	margin: 1.25rem 0;
-}
-
-.nido-features > div {
-	display: flex;
-	flex-direction: column;
-	gap: 0.15rem;
-	padding: 0.75rem 0;
-	border-top: 2px solid var(--nido-brass);
-}
-
-.nido-features strong {
-	font-size: 1.05rem;
-	font-weight: 600;
-}
-
-.nido-features span {
-	color: var(--sl-color-gray-2);
-	font-size: 0.92rem;
-	line-height: 1.5;
-}
-
+/* Mobile: stack text above phone, center everything, shrink the phone. */
 @media (max-width: 50rem) {
-	.nido-split {
+	.nido-slide {
 		grid-template-columns: 1fr;
+		gap: 1.5rem;
+		text-align: center;
+		padding: 1.5rem 1rem 0.5rem;
 	}
 
-	.nido-phones {
-		width: 12rem;
+	.nido-slide__text {
+		align-items: center;
+	}
+
+	.nido-slide__text p {
+		max-width: 28rem;
+	}
+
+	.nido-slide__phone {
+		width: 11rem;
 		margin-inline: auto;
 	}
 }
 
-/* Keyboard focus must stay obvious against the cream page. */
+/* Keyboard focus must stay obvious against the warm-white page. */
 :where(a, button, input, summary):focus-visible {
 	outline: 2px solid var(--sl-color-accent-high);
 	outline-offset: 2px;

@@ -48,6 +48,10 @@ export default defineConfig({
 				// Starlight's icon set has no Ko-fi mark, so the social row is
 				// overridden to draw one for any link pointing at ko-fi.com.
 				SocialIcons: './src/components/SocialIcons.astro',
+				// The landing page is deliberately bare above the carousel — no
+				// title, no buttons. That means overriding Starlight's hero for
+				// just the tagline (see Hero.astro).
+				Hero: './src/components/Hero.astro',
 			},
 			social: [
 				{ icon: 'github', label: 'GitHub', href: `https://github.com/${REPO}` },

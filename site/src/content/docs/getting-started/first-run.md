@@ -69,8 +69,8 @@ basement or a hospital corridor.
 ## Pick a theme
 
 **Settings → Appearance** offers 7 palettes × light and dark, plus a custom
-theme editor. The default is *forest* — the same palette the documentation
-you're reading is themed in.
+theme editor. The default is *forest* — and *blush* is there too, which is the
+palette the documentation you're reading is themed in.
 
 ## What to do next
 
