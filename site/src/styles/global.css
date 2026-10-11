@@ -420,6 +420,67 @@ h6,
 	}
 }
 
+/* ------------------------------------------------ coming soon --- */
+
+/* "Coming soon" teaser: a dashed card so it reads as in-progress rather than
+   shipped. Sits after the carousel, before the two ways to run it. */
+.nido-coming-soon {
+	display: flex;
+	gap: 1.5rem;
+	align-items: flex-start;
+	background: var(--nido-card);
+	border: 1px dashed var(--sl-color-gray-4);
+	border-radius: var(--nido-card-radius);
+	box-shadow: var(--nido-card-shadow);
+	padding: 1.5rem 1.75rem;
+	margin: 1.5rem 0;
+}
+
+.nido-coming-soon__body {
+	display: flex;
+	flex-direction: column;
+	gap: 0.6rem;
+}
+
+.nido-coming-soon__chip {
+	align-self: flex-start;
+	font-family: var(--sl-font);
+	font-size: 0.72rem;
+	font-weight: 600;
+	letter-spacing: 0.04em;
+	text-transform: uppercase;
+	color: var(--nido-accent);
+	border: 1px solid currentColor;
+	border-radius: 999px;
+	padding: 0.15rem 0.6rem;
+	white-space: nowrap;
+}
+
+.nido-coming-soon h3 {
+	margin: 0;
+	font-size: 1.35rem;
+	font-weight: 600;
+	letter-spacing: -0.02em;
+	color: var(--sl-color-gray-1);
+}
+
+.nido-coming-soon p {
+	margin: 0;
+	max-width: 38rem;
+	color: var(--sl-color-gray-2);
+}
+
+.nido-coming-soon__link {
+	margin-top: 0.25rem;
+}
+
+@media (max-width: 36rem) {
+	.nido-coming-soon {
+		flex-direction: column;
+		gap: 1rem;
+	}
+}
+
 /* Keyboard focus must stay obvious against the warm-white page. */
 :where(a, button, input, summary):focus-visible {
 	outline: 2px solid var(--sl-color-accent-high);

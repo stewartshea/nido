@@ -1,12 +1,17 @@
 ---
 import config from 'virtual:starlight/user-config';
 import { Icon } from '@astrojs/starlight/components';
-import { HOSTED_URL } from '../site.config';
+import { HOSTED_URL, withBase } from '../site.config';
 
 // Hosted option — My Nido, the logged-in SaaS. The docs link out to it in
 // several places; the header carries a compact login button too, so a visitor
 // who wants to skip reading and just use the app can get in one click.
 const HOSTED_LOGIN_URL = `${HOSTED_URL}/login`;
+
+// The landing page is deliberately bare (no in-page links above the carousel),
+// so the header is the reliable way to reach the documentation itself — point
+// "Docs" at the features page, the richest single survey of the product.
+const DOCS_URL = withBase('/features/');
 
 const links = config.social || [];
 ---
@@ -26,6 +31,9 @@ const links = config.social || [];
 					)}
 				</a>
 			))}
+			<a class="header-docs" href={DOCS_URL}>
+				Docs
+			</a>
 			<a class="header-login" href={HOSTED_LOGIN_URL}>
 				Log in
 			</a>
@@ -44,11 +52,28 @@ const links = config.social || [];
 			color: var(--sl-color-white);
 		}
 
+		/* "Docs" text link in the header, before the login button. */
+		.header-docs {
+			display: inline-flex;
+			align-items: center;
+			margin: 0 0 0 0.5rem;
+			padding: 0.35rem 0.6rem;
+			font-size: 0.85rem;
+			font-weight: 600;
+			line-height: 1;
+			color: var(--sl-color-text-accent);
+			text-decoration: none;
+		}
+
+		.header-docs:hover {
+			color: var(--sl-color-white);
+		}
+
 		/* Compact "Log in" button in the header, right of the social icons. */
 		.header-login {
 			display: inline-flex;
 			align-items: center;
-			margin: 0 0 0 0.75rem;
+			margin: 0 0 0 0.5rem;
 			padding: 0.35rem 0.85rem;
 			border: 1px solid var(--sl-color-accent);
 			border-radius: 999px;

@@ -1,6 +1,6 @@
 ---
 title: Privacy policy
-description: What My Nido stores, where it lives, and the only emails it will ever send you. Short version — your data is yours, and we want as little of it as possible.
+description: What My Nido stores, where it lives, and every email it can send you. Short version — your data is yours, and we want as little of it as possible.
 ---
 
 This policy covers **My Nido** ([my.nido-app.ca](https://my.nido-app.ca)),
@@ -28,9 +28,12 @@ family's records live in their own encrypted database file — see the
 is not. (The short honest version: databases are encrypted at rest; uploaded
 blobs are not, yet.)
 
-## The only emails you will ever get
+## Every email we can send you
 
-My Nido sends email for **your account only**, and only when it has to:
+My Nido sends email only for these reasons. It is not a lot, so here is the
+whole list rather than a summary:
+
+**About your account:**
 
 - **Verifying your email address** when you sign up
 - **Resetting your password** when you ask for it
@@ -38,10 +41,17 @@ My Nido sends email for **your account only**, and only when it has to:
   family
 - **A confirmation** if your account is deleted
 
+**Because of rules you set:**
+
+- **A notification digest** — when a tracking rule or inventory rule you
+  configured fires (for example, "diapers down to three days of cover"), the
+  people that rule is addressed to can get **one email** about it. It is about
+  your own family's records, and an unchanged item will not keep emailing you.
+
 That is the complete list. **No marketing emails, no newsletters, no "we miss
 you" nudges, no product announcements.** If you get an email from My Nido,
-it is because something happened to your account, not because we want your
-attention.
+it is either because something happened to your account, or because a rule
+your family chose to set fired. It is never because we want your attention.
 
 ## What we never do
 
@@ -76,4 +86,4 @@ If this policy ever changes, the change lands in
 before it takes effect. Material changes will be called out on this page — not
 quietly edited.
 
-*Last updated: September 2026.*
+*Last updated: October 2026.*

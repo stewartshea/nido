@@ -82,6 +82,7 @@ export default defineConfig({
 						{ label: 'Self-hosting', slug: 'self-host' },
 						{ label: 'My Nido (hosted)', slug: 'my-nido' },
 						{ label: 'Privacy policy', slug: 'privacy' },
+						{ label: 'Terms of use', slug: 'terms-of-use' },
 						{ label: 'Installation', slug: 'getting-started/installation' },
 						{ label: 'First run', slug: 'getting-started/first-run' },
 					],
