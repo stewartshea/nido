@@ -104,6 +104,9 @@
 	let editMemberBirthDate = '';
 	let editMemberGender = '';
 	let editMemberEmail = '';
+	// The member's life stage, so the family can identify a legacy child that
+	// was created before stages existed (its stage is null in the database).
+	let editMemberStage: string | null = null;
 
 	// Family onboarding
 	let familyName = '';
@@ -569,6 +572,7 @@
 		editMemberBirthDate = baby.birth_date ? baby.birth_date.slice(0, 10) : '';
 		editMemberGender = baby.gender || '';
 		editMemberEmail = baby.email || '';
+		editMemberStage = baby.stage ?? null;
 		error = '';
 	}
 
@@ -599,6 +603,7 @@
 				birthDate,
 				gender: editMemberGender || null,
 				email: editMemberEmail.trim() || null,
+				stage: editMemberStage || null,
 			});
 			notice = 'Member updated.';
 			editingMember = null;
@@ -1004,8 +1009,10 @@
 					/>
 
 					<!-- The selected person's own reports. WHO percentiles are child
-					     reference data, so this is a child who tracks growth. -->
-					{#if selectedMember && (selectedMember.stage === 'infant' || selectedMember.stage === 'child') && activeCategories.includes('growth')}
+					     reference data — and a "child" includes legacy members created
+					     before stages existed, whose stage is null. Test the type, not
+					     the stage. -->
+					{#if selectedMember && selectedMember.type === 'child' && activeCategories.includes('growth')}
 						<GrowthChart memberId={Number(selectedMember.id)} memberName={selectedMember.name} />
 					{/if}
 				</div>
@@ -1034,8 +1041,10 @@
 				<!--
 					Growth percentiles are WHO child reference data, so this only makes
 					sense for a child who tracks growth — not an adult, and not a pet.
+					Test the type: a legacy child created before stages exists has a null
+					stage, and must still see the chart.
 				-->
-				{#if selectedMember && (selectedMember.stage === 'infant' || selectedMember.stage === 'child') && activeCategories.includes('growth')}
+				{#if selectedMember && selectedMember.type === 'child' && activeCategories.includes('growth')}
 					<GrowthChart memberId={Number(selectedMember.id)} memberName={selectedMember.name} />
 				{/if}
 			{/if}
@@ -1076,6 +1085,17 @@
 								</select>
 							</div>
 						</div>
+						{#if editingMember?.type === 'child'}
+							<div>
+							<label for="edit-member-stage" class="block text-sm font-medium text-ink-soft mb-1">Stage</label>
+							<select id="edit-member-stage" bind:value={editMemberStage} class="w-full px-3 py-2 border border-line rounded-md">
+									<option value="">Not set</option>
+									<option value="infant">Infant</option>
+									<option value="child">Child</option>
+								</select>
+								<p class="text-xs text-ink-soft mt-1">Sets which categories this person starts with.</p>
+							</div>
+						{/if}
 						<div>
 						<label for="edit-member-email" class="block text-sm font-medium text-ink-soft mb-1">Email (for invites)</label>
 						<div class="flex gap-2">

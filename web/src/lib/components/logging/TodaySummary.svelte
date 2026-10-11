@@ -22,8 +22,10 @@
 	 * the Quick Actions follow.
 	 */
 	$: has = (id: string) => categories.length === 0 || categories.includes(id);
-	/** An age is only meaningful for a child; an adult or a pet gets a measurement. */
-	$: age = stage === 'infant' || stage === 'child' ? formatAge(summary?.baby?.birthDate, now) : null;
+	/** An age is only meaningful for a child. Adults and pets were backfilled
+	 * with a stage when stages arrived, so a null stage uniquely identifies a
+	 * legacy child created before stages — it must show an age too. */
+	$: age = stage === 'adult' || stage === 'pet' ? null : formatAge(summary?.baby?.birthDate, now);
 	$: nextVaccine = summary?.upcomingVaccinations?.[0] ?? null;
 
 	$: now = Date.now();
