@@ -4,6 +4,8 @@ import { z } from 'zod';
 import { ensureRegistry } from '../db-namespaces';
 import { getAppSettings, sendMail, effectiveSignup } from '../mail';
 import { renderSmtpTestEmail } from '../mail-templates';
+import { buildSystemOverview } from '../system-overview';
+import { buildRegistryView } from '../registry-view';
 import { isPlatformAdmin } from '../authz';
 import { type AuthEnv } from '../auth';
 
@@ -36,6 +38,24 @@ function snakeToCamel(row: any) {
 
 settingsRoutes.get('/', async (c) => {
 	return c.json({ settings: snakeToCamel((await getAppSettings())) });
+});
+
+// GET /overview — roll-up stats and component health for the Admin tab
+// (platform admin only). Read-only: the registry plus filesystem metadata, never
+// a family database.
+settingsRoutes.get('/overview', async (c) => {
+	const userId = c.get('userId');
+	if (!(await isPlatformAdmin(userId))) return c.json({ error: "Platform admin access required" }, 403);
+	return c.json({ overview: await buildSystemOverview() });
+});
+
+// GET /registry — read-only rows of the registry DB (families, accounts,
+// settings, scheduler leases) for the Admin tab. Redacts tokens and secrets;
+// platform admin only.
+settingsRoutes.get('/registry', async (c) => {
+	const userId = c.get('userId');
+	if (!(await isPlatformAdmin(userId))) return c.json({ error: "Platform admin access required" }, 403);
+	return c.json({ registry: await buildRegistryView() });
 });
 
 settingsRoutes.put('/', zValidator('json', updateSettingsSchema), async (c) => {
