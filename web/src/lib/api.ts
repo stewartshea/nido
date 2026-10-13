@@ -386,6 +386,7 @@ export interface SystemOverview {
   rollup: {
     families: number;
     activeFamilies: number;
+    orphanedFamilies: number;
     accounts: number;
     platformAdmins: number;
     familyDbFiles: number;
@@ -405,6 +406,8 @@ export interface RegistryFamilyRow {
   name: string;
   familyCode: string | null;
   status: string;
+  /** Accounts whose routing points here; 0 means the family is retained but unreachable. */
+  accountCount: number;
   createdAt: string;
   updatedAt: string;
 }

@@ -21,6 +21,29 @@ import {
 
 const CODE_CHARS = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'; // no I/L/O/0/1 — avoids confusion
 
+/**
+ * A family every account has moved out of — the invite flow re-points the
+ * joiner's routing at the host family — still owns its namespace, because the
+ * file may hold records and member profiles the account left behind. It is
+ * retained, but it is no longer a *live* family: nothing routes to it, so it
+ * cannot be signed into and the digest sweep has no recipient to address.
+ *
+ * Marking it keeps the instance's family count honest (and lets the sweep skip
+ * it) without destroying anything. This same statement is the one-time backfill
+ * for databases written before the join handler marked the source family, which
+ * is how an install that already accumulated phantom families self-corrects on
+ * the next boot.
+ */
+export const MARK_ORPHANED_FAMILIES_SQL = `
+  UPDATE families
+  SET status = 'abandoned',
+      updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
+  WHERE status = 'active'
+    AND NOT EXISTS (
+      SELECT 1 FROM user_routing r WHERE r.family_id = families.family_id
+    );
+`;
+
 // ---------------------------------------------------------------------------
 // Registry DB — global control plane shared by every family namespace.
 // ---------------------------------------------------------------------------
@@ -79,6 +102,11 @@ export const REGISTRY_MIGRATIONS: Migration[] = [
         expires_at  TEXT NOT NULL
       );
     `,
+  },
+  {
+    version: 3,
+    name: 'registry-mark-orphaned-families',
+    sql: MARK_ORPHANED_FAMILIES_SQL,
   },
 ];
 
@@ -1105,4 +1133,30 @@ export async function removeFamily(familyId: string): Promise<void> {
   await registry.execute({ sql: 'DELETE FROM user_routing WHERE family_id = ?', args: [familyId] });
   await registry.execute({ sql: 'DELETE FROM families WHERE family_id = ?', args: [familyId] });
   log.info('family namespace removed', { event: 'db_family_remove', familyId });
+}
+
+/**
+ * Mark a family `abandoned` when no account routes to it any more — the state a
+ * family is left in when the only account that owned it joins another one. The
+ * namespace and its data are kept; only the registry row changes, so the family
+ * stops being counted as live and the scheduler stops opening it. A no-op when
+ * another account still routes there, or when it is already marked.
+ */
+export async function markFamilyAbandonedIfUnoccupied(familyId: string): Promise<boolean> {
+  assertFamilyId(familyId);
+  const registry = await ensureRegistry();
+  const res = await registry.execute({
+    sql: `UPDATE families
+          SET status = 'abandoned', updated_at = ?
+          WHERE family_id = ? AND status = 'active'
+            AND NOT EXISTS (SELECT 1 FROM user_routing r WHERE r.family_id = families.family_id)`,
+    args: [new Date().toISOString(), familyId],
+  });
+  if (Number(res.rowsAffected ?? 0) > 0) {
+    log.info('family marked abandoned, no accounts remain', {
+      event: 'db_family_abandoned',
+      familyId,
+    });
+  }
+  return Number(res.rowsAffected ?? 0) > 0;
 }

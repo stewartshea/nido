@@ -55,6 +55,7 @@ export interface SystemOverview {
 	rollup: {
 		families: number;
 		activeFamilies: number;
+		orphanedFamilies: number;
 		accounts: number;
 		platformAdmins: number;
 		familyDbFiles: number;
@@ -238,6 +239,7 @@ interface RegistryCounts {
 	schema: number;
 	families: number;
 	activeFamilies: number;
+	orphanedFamilies: number;
 	accounts: number;
 	platformAdmins: number;
 }
@@ -248,13 +250,17 @@ async function readRegistryCounts(): Promise<RegistryCounts> {
 		schema: 0,
 		families: 0,
 		activeFamilies: 0,
+		orphanedFamilies: 0,
 		accounts: 0,
 		platformAdmins: 0,
 	};
 	try {
 		const registry = await getRegistryClient();
 		const families = await registry.execute({
-			sql: "SELECT COUNT(*) AS total, SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END) AS active FROM families",
+			sql: `SELECT COUNT(*) AS total,
+			             SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END) AS active,
+			             SUM(CASE WHEN status = 'abandoned' THEN 1 ELSE 0 END) AS orphaned
+			      FROM families`,
 			args: [],
 		});
 		const accountRows = await registry.execute({ sql: 'SELECT COUNT(*) AS c FROM user_routing', args: [] });
@@ -266,6 +272,7 @@ async function readRegistryCounts(): Promise<RegistryCounts> {
 		counts.reachable = true;
 		counts.families = Number(families.rows[0]?.total ?? 0);
 		counts.activeFamilies = Number(families.rows[0]?.active ?? 0);
+		counts.orphanedFamilies = Number(families.rows[0]?.orphaned ?? 0);
 		counts.accounts = Number(accountRows.rows[0]?.c ?? 0);
 		counts.platformAdmins = Number(adminRows.rows[0]?.c ?? 0);
 		counts.schema = Number(schemaRows.rows[0]?.user_version ?? 0);
@@ -319,11 +326,15 @@ export async function buildSystemOverview(): Promise<SystemOverview> {
 		key: 'registry',
 		name: 'Registry database',
 		status: counts.reachable ? 'ok' : 'down',
-		summary: counts.reachable ? `Schema v${counts.schema} · ${counts.families} families` : 'Unreachable',
+		summary: counts.reachable
+			? `Schema v${counts.schema} · ${counts.activeFamilies} active ${counts.activeFamilies === 1 ? 'family' : 'families'}`
+			: 'Unreachable',
 		usagePct: null,
 		metrics: [
 			{ label: 'Size', value: formatBytes(registryBytes) },
 			{ label: 'Schema', value: counts.reachable ? `v${counts.schema}` : '—' },
+			{ label: 'Families', value: String(counts.activeFamilies) },
+			{ label: 'No accounts', value: String(counts.orphanedFamilies) },
 			{ label: 'Accounts', value: String(counts.accounts) },
 			{ label: 'Admins', value: String(counts.platformAdmins) },
 		],
@@ -429,6 +440,7 @@ export async function buildSystemOverview(): Promise<SystemOverview> {
 		rollup: {
 			families: counts.families,
 			activeFamilies: counts.activeFamilies,
+			orphanedFamilies: counts.orphanedFamilies,
 			accounts: counts.accounts,
 			platformAdmins: counts.platformAdmins,
 			familyDbFiles: familyDbs.count,

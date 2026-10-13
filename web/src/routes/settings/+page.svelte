@@ -581,7 +581,7 @@
 
 	$: overviewTiles = systemOverview
 		? [
-			{ label: 'Families', value: String(systemOverview.rollup.families), hint: `${systemOverview.rollup.activeFamilies} active` },
+			{ label: 'Families', value: String(systemOverview.rollup.activeFamilies), hint: systemOverview.rollup.orphanedFamilies > 0 ? `${systemOverview.rollup.orphanedFamilies} retained · no accounts` : 'all with accounts' },
 			{ label: 'Accounts', value: String(systemOverview.rollup.accounts), hint: `${systemOverview.rollup.platformAdmins} platform admin${systemOverview.rollup.platformAdmins === 1 ? '' : 's'}` },
 			{ label: 'Family databases', value: String(systemOverview.rollup.familyDbFiles), hint: formatBytes(systemOverview.rollup.familyDbBytes) },
 			{ label: 'Registry size', value: formatBytes(systemOverview.rollup.registryBytes), hint: 'control plane' },
@@ -611,6 +611,12 @@
 	let registryView: RegistryView | null = null;
 	let loadingRegistry = false;
 	let registryError = '';
+
+	// A family with no routed accounts is a namespace that was retained when its
+	// last account joined another family. It is not a live family, so it is
+	// counted and shown separately rather than inflating the family list.
+	$: registryActiveFamilies = registryView ? registryView.families.filter((f) => f.accountCount > 0).length : 0;
+	$: registryRetainedFamilies = registryView ? registryView.families.length - registryActiveFamilies : 0;
 
 	function fmtDate(iso: string): string {
 		if (!iso) return '—';
@@ -1640,7 +1646,17 @@
 										</section>
 
 										<section>
-											<h4 class="text-xs font-semibold text-ink-soft uppercase tracking-wider mb-2">Families ({registryView.families.length})</h4>
+											<div class="flex flex-wrap items-baseline gap-x-2">
+												<h4 class="text-xs font-semibold text-ink-soft uppercase tracking-wider">Families ({registryActiveFamilies})</h4>
+												{#if registryRetainedFamilies > 0}
+													<span class="text-[11px] text-ink-soft">+ {registryRetainedFamilies} retained without accounts</span>
+												{/if}
+											</div>
+											{#if registryRetainedFamilies > 0}
+												<p class="text-xs text-ink-soft mt-1 mb-2">
+													A retained family has no accounts left — the account that owned it joined another family, and its data was kept rather than deleted. Retained families are excluded from the family count and skipped by the notification scheduler.
+												</p>
+											{/if}
 											{#if registryView.families.length === 0}
 												<p class="text-ink-soft text-sm">No families provisioned yet.</p>
 											{:else}
@@ -1651,7 +1667,7 @@
 																<th class="px-3 py-2 font-semibold">Family</th>
 																<th class="px-3 py-2 font-semibold">Name</th>
 																<th class="px-3 py-2 font-semibold">Code</th>
-																<th class="px-3 py-2 font-semibold">Status</th>
+																<th class="px-3 py-2 font-semibold">Accounts</th>
 																<th class="px-3 py-2 font-semibold">Created</th>
 															</tr>
 														</thead>
@@ -1661,7 +1677,13 @@
 																<td class="px-3 py-2 font-mono text-xs text-ink whitespace-nowrap">{fam.familyId}</td>
 																<td class="px-3 py-2 text-ink whitespace-nowrap">{fam.name}</td>
 																<td class="px-3 py-2 font-mono text-xs text-ink-soft whitespace-nowrap">{fam.familyCode || '—'}</td>
-																<td class="px-3 py-2 whitespace-nowrap"><span class="inline-flex items-center gap-1.5"><span class="w-2 h-2 rounded-full {fam.status === 'active' ? 'bg-ok-text' : 'bg-danger-text'}" aria-hidden="true"></span><span class="text-ink">{fam.status}</span></span></td>
+																<td class="px-3 py-2 whitespace-nowrap">
+																	{#if fam.accountCount > 0}
+																		<span class="inline-flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-ok-text" aria-hidden="true"></span><span class="text-ink">{fam.accountCount}</span></span>
+																	{:else}
+																		<span class="inline-flex items-center rounded-full bg-surface2 px-2 py-0.5 text-[11px] text-ink-soft">none · retained</span>
+																	{/if}
+																</td>
 																<td class="px-3 py-2 text-ink-soft whitespace-nowrap">{fmtDate(fam.createdAt)}</td>
 															</tr>
 															{/each}

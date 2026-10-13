@@ -6,15 +6,18 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import jwt from 'jsonwebtoken';
 import app from './server';
-import { getRegistryClient } from './db-namespaces';
+import { getRegistryClient, getFamilyClient, MARK_ORPHANED_FAMILIES_SQL } from './db-namespaces';
+import { NAMESPACE_HOUSEHOLD_ID } from './db-core';
 
 const JWT_SECRET = process.env.JWT_SECRET ?? 'nido-test-secret';
 
-interface Account { email: string; token: string; userId: string }
+interface Account { email: string; token: string; userId: string; familyId: string }
 
-async function postJson(path: string, body: unknown) {
+async function postJson(path: string, body: unknown, token?: string) {
+	const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+	if (token) headers.Authorization = `Bearer ${token}`;
 	const res = await app.fetch(new Request(`http://localhost${path}`, {
-		method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+		method: 'POST', headers, body: JSON.stringify(body),
 	}));
 	return { status: res.status, body: (await res.json()) as Record<string, any> };
 }
@@ -25,7 +28,17 @@ async function register(email: string): Promise<Account> {
 	});
 	expect(status).toBe(200);
 	const decoded = jwt.verify(body.token, JWT_SECRET) as jwt.JwtPayload;
-	return { email, token: body.token, userId: String(decoded.userId) };
+	return { email, token: body.token, userId: String(decoded.userId), familyId: String(decoded.familyId) };
+}
+
+async function seedInvitation(hostFamilyId: string, email: string, inviterId: string, token: string) {
+	const hostDb = getFamilyClient(hostFamilyId);
+	await hostDb.execute({
+		sql: `INSERT INTO family_invitations (family_id, email, inviter_user_id, token, status, created_at)
+		      VALUES (?, ?, ?, ?, 'pending', ?)`,
+		args: [NAMESPACE_HOUSEHOLD_ID, email, inviterId, token, '2026-01-01T00:00:00.000Z'],
+	});
+	return token;
 }
 
 async function getOverview(token: string) {
@@ -81,6 +94,30 @@ describe('system overview', () => {
 		}
 	});
 
+	// A family whose only account joined another one keeps its namespace but has
+	// no one routed to it. It must not be counted among the live families, which
+	// is what made the roll-up read as one family per account.
+	it('counts a vacated family as retained, not live', async () => {
+		const host = await register('overview-orphan-host@example.com');
+		const leaver = await register('overview-orphan-leaver@example.com');
+		const inviteToken = await seedInvitation(host.familyId, leaver.email, host.userId, 'tok-overview-orphan');
+		const joined = await postJson('/api/v1/families/join', {
+			familyId: host.familyId, token: inviteToken,
+		}, leaver.token);
+		expect(joined.status).toBe(200);
+
+		const res = await getOverview(admin.token);
+		expect(res.status).toBe(200);
+		const rollup = res.body.overview.rollup;
+		expect(Number(rollup.orphanedFamilies)).toBeGreaterThanOrEqual(1);
+		expect(Number(rollup.activeFamilies)).toBeLessThan(Number(rollup.families));
+
+		const registryComponent = (res.body.overview.components as any[])
+			.find((c) => c.key === 'registry');
+		const labels = (registryComponent.metrics as any[]).map((m) => m.label);
+		expect(labels).toContain('No accounts');
+	});
+
 	it('never exposes the SMTP password', async () => {
 		const registry = await getRegistryClient();
 		await registry.execute({
@@ -90,5 +127,37 @@ describe('system overview', () => {
 		const res = await getOverview(admin.token);
 		expect(res.status).toBe(200);
 		expect(JSON.stringify(res.body)).not.toContain('super-secret-app-password');
+	});
+
+	// The one-time upgrade path: a database written before the join handler marked
+	// vacated families already accumulated account-less rows, and the migration
+	// statement has to flag every one of them so the counts self-correct.
+	it('backfill marks pre-existing account-less families abandoned', async () => {
+		const registry = await getRegistryClient();
+		const orphanId = 'feedface-0000-4000-8000-000000000001';
+		await registry.execute({
+			sql: "INSERT OR IGNORE INTO families (family_id, name, family_code, status) VALUES (?, ?, ?, 'active')",
+			args: [orphanId, 'Legacy Shell', 'KZ-LEGACYORPHAN'],
+		});
+		const before = await registry.execute({
+			sql: 'SELECT status FROM families WHERE family_id = ?',
+			args: [orphanId],
+		});
+		expect(String(before.rows[0]?.status)).toBe('active');
+
+		await registry.execute({ sql: MARK_ORPHANED_FAMILIES_SQL, args: [] });
+
+		const after = await registry.execute({
+			sql: 'SELECT status FROM families WHERE family_id = ?',
+			args: [orphanId],
+		});
+		expect(String(after.rows[0]?.status)).toBe('abandoned');
+
+		// A family that still has an account must be left alone.
+		const live = await registry.execute({
+			sql: 'SELECT status FROM families WHERE family_id = ?',
+			args: [admin.familyId],
+		});
+		expect(String(live.rows[0]?.status)).toBe('active');
 	});
 });

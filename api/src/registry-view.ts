@@ -15,6 +15,8 @@ export interface RegistryFamilyRow {
 	name: string;
 	familyCode: string | null;
 	status: string;
+	/** Accounts whose routing points here; 0 means the family is retained but unreachable. */
+	accountCount: number;
 	createdAt: string;
 	updatedAt: string;
 }
@@ -61,7 +63,10 @@ export async function buildRegistryView(): Promise<RegistryView> {
 	const registry = await getRegistryClient();
 	const [families, users, leases, settingsRows] = await Promise.all([
 		registry.execute({
-			sql: 'SELECT family_id, name, family_code, status, created_at, updated_at FROM families ORDER BY created_at, family_id',
+			sql: `SELECT f.family_id, f.name, f.family_code, f.status, f.created_at, f.updated_at,
+			             (SELECT COUNT(*) FROM user_routing r WHERE r.family_id = f.family_id) AS account_count
+			      FROM families f
+			      ORDER BY CASE WHEN f.status = 'active' THEN 0 ELSE 1 END, f.created_at, f.family_id`,
 			args: [],
 		}),
 		registry.execute({
@@ -84,6 +89,7 @@ export async function buildRegistryView(): Promise<RegistryView> {
 			name: String(r.name ?? ''),
 			familyCode: r.family_code == null ? null : String(r.family_code),
 			status: String(r.status ?? 'active'),
+			accountCount: Number(r.account_count ?? 0),
 			createdAt: String(r.created_at ?? ''),
 			updatedAt: String(r.updated_at ?? ''),
 		})),

@@ -262,10 +262,15 @@ notification scheduler. Each row shows whether it is **OK**, needs
 re-reads the figures; it is read-only and never shows secrets.
 
 Below it, the **Registry** panel is a read-only view of the instance control
-plane: instance settings, one row per family (with its invite code), and one
-row per account with its role and platform-admin flag. Scheduler leases appear
-when present. Verification/reset tokens and the SMTP password are never shown —
-credentials are reported only as set or unset.
+plane: instance settings, one row per family (with its invite code and how many
+accounts route to it), and one row per account with its role and platform-admin
+flag. Scheduler leases appear when present. Verification/reset tokens and the
+SMTP password are never shown — credentials are reported only as set or unset.
+
+A family whose only account accepted an invitation into another family is kept
+— its namespace may still hold records and member profiles — but it is no longer
+live, so the panel marks it **none · retained** and it is left out of the family
+count rather than reading as one family per account.
 
 ### Theme
 

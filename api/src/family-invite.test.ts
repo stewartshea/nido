@@ -135,8 +135,8 @@ describe('family invitations', () => {
 			expect(body.error).toMatch(/already been used/i);
 		});
 
-		// Joining deletes the joiner's own namespace, so tracked data must block
-		// it rather than be destroyed along with the file.
+		// Joining detaches the joiner from their own namespace, so tracked data
+		// must block it rather than be stranded in a family with no account.
 		it('refuses to join when the joiner still has tracked data', async () => {
 			const owner = await register('join-data-owner@example.com');
 			const guest = await register('join-data-guest@example.com');
@@ -207,19 +207,52 @@ describe('family invitations', () => {
 			expect(invite.rows[0]?.accepted_at).toBeTruthy();
 
 			// The old namespace is deliberately NOT deleted: it may still hold other
-			// members and their data, so the account is only detached from it.
+			// members and their data, so the account is only detached from it. With
+			// no account routed there any more, though, it is marked abandoned so it
+			// is no longer counted as a live family or opened by the sweep.
 			const oldFamily = await registry.execute({
-				sql: 'SELECT family_id FROM families WHERE family_id = ? LIMIT 1',
+				sql: 'SELECT family_id, status FROM families WHERE family_id = ? LIMIT 1',
 				args: [guest.familyId],
 			});
 			expect(oldFamily.rows.length).toBe(1);
+			expect(String(oldFamily.rows[0]?.status)).toBe('abandoned');
 
+			// The file is retained, so its data is still on disk and readable.
 			const oldDb = getFamilyClient(guest.familyId);
 			const stillMember = await oldDb.execute({
 				sql: 'SELECT 1 FROM user_households WHERE user_id = ? LIMIT 1',
 				args: [guest.userId],
 			});
 			expect(stillMember.rows.length).toBe(0);
+		});
+
+		it('keeps a family live when another account is still routed to it', async () => {
+			// Two accounts land in one family: the owner, and a guest who joins it.
+			const owner = await register('join-shared-owner@example.com');
+			const guest = await register('join-shared-guest@example.com');
+			const guestToken = await seedInvitation(owner.familyId, guest.email, owner.userId, 'tok-shared');
+			const guestJoin = await postAs(guest.token, '/api/v1/families/join', {
+				familyId: owner.familyId,
+				token: guestToken,
+			});
+			expect(guestJoin.status).toBe(200);
+
+			// The owner now leaves for a third family. The first family still has the
+			// guest routed to it, so it must stay active despite losing its owner.
+			const host = await register('join-shared-host@example.com');
+			const ownerToken = await seedInvitation(host.familyId, owner.email, host.userId, 'tok-shared-host');
+			const ownerJoin = await postAs(owner.token, '/api/v1/families/join', {
+				familyId: host.familyId,
+				token: ownerToken,
+			});
+			expect(ownerJoin.status).toBe(200);
+
+			const registry = await ensureRegistry();
+			const original = await registry.execute({
+				sql: 'SELECT status FROM families WHERE family_id = ? LIMIT 1',
+				args: [owner.familyId],
+			});
+			expect(String(original.rows[0]?.status)).toBe('active');
 		});
 
 		// Routing is authoritative, so redeeming into the family you are already

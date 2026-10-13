@@ -219,12 +219,15 @@ Each exposes `GET /`, `POST /`, `PUT /:id`, `DELETE /:id`:
 - `GET /api/v1/settings` — instance settings
 - `PUT /api/v1/settings` — update
 - `POST /api/v1/settings/test` — send a test email (SMTP check)
-- `GET /api/v1/settings/overview` — platform-admin roll-up: family/account
-  counts, database and attachment sizes, and component health with disk free
-  space (registry + filesystem metadata only; never opens a family database)
+- `GET /api/v1/settings/overview` — platform-admin roll-up: live family and
+  account counts, database and attachment sizes, and component health with disk
+  free space (registry + filesystem metadata only; never opens a family
+  database). Families are counted as *live* only while at least one account
+  routes to them; a family whose last account joined another one is retained but
+  reported separately as "no accounts".
 - `GET /api/v1/settings/registry` — platform-admin read-only view of the
-  registry: families, accounts, instance settings, and scheduler leases
-  (tokens and credentials redacted)
+  registry: families (with an account count), accounts, instance settings, and
+  scheduler leases (tokens and credentials redacted)
 
 ### Health
 - `GET /api/v1/health/summary/:babyId` — comprehensive summary

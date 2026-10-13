@@ -9,7 +9,7 @@ import jwt from 'jsonwebtoken';
 import { type AuthEnv, jwtSecret } from '../auth';
 import { NAMESPACE_HOUSEHOLD_ID } from '../db-core';
 import { CATEGORY_OPTIONS, DIGEST_FREQUENCIES, DEFAULT_CATEGORIES, STAGES, STAGE_CATEGORIES, defaultStage, categoryTemplate, isStage, type DigestFrequency } from '../vocabulary';
-import { ensureRegistry, getFamilyClient } from '../db-namespaces';
+import { ensureRegistry, getFamilyClient, markFamilyAbandonedIfUnoccupied } from '../db-namespaces';
 import { EncryptedBlobStore } from '../blob-store';
 import { getAppSettings, sendMail, smtpConfigured, baseUrl } from '../mail';
 import { renderFamilyInviteEmail } from '../mail-templates';
@@ -480,6 +480,19 @@ async function handleCreateFamily(c: Context<AuthEnv>) {
 				args: [userId, NAMESPACE_HOUSEHOLD_ID],
 			})
 			.catch(() => {});
+
+		// If this account was the family's only one, nothing routes there any
+		// more: keep the data, but mark the row so the family count reflects
+		// reality and the digest sweep stops opening a namespace it can never
+		// address. Best-effort — the routing move above is the commit point, so a
+		// failure here must not turn a successful join into an error.
+		await markFamilyAbandonedIfUnoccupied(currentFamilyId).catch((err) => {
+			c.get('log').warn('could not mark vacated family abandoned', {
+				event: 'family_mark_abandoned_failed',
+				familyId: currentFamilyId,
+				err,
+			});
+		});
 
 		await target.execute({
 			sql: "UPDATE family_invitations SET status = 'accepted', accepted_at = ? WHERE id = ?",

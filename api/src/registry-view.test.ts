@@ -67,6 +67,17 @@ describe('registry view', () => {
 		expect(typeof family.name).toBe('string');
 		expect(['active']).toContain(family.status);
 
+		// Each family reports how many accounts route to it, which is what tells a
+		// live family apart from a namespace retained with nobody in it.
+		expect(typeof family.accountCount).toBe('number');
+		for (const fam of registry.families as any[]) {
+			const routed = registry.users.filter((u: any) => u.familyId === fam.familyId).length;
+			expect(fam.accountCount).toBe(routed);
+		}
+		// Families with accounts sort before retained ones.
+		const counts = (registry.families as any[]).map((f) => f.accountCount);
+		expect(counts).toEqual([...counts].sort((a, b) => (a > 0 ? 0 : 1) - (b > 0 ? 0 : 1)));
+
 		const user = registry.users.find((u: any) => u.userId === admin.userId);
 		expect(user).toBeTruthy();
 		expect(user.email).toBe('registry-admin@example.com');
