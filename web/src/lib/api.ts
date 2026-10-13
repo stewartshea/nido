@@ -352,11 +352,107 @@ export const accountAPI = {
   remove: (confirmFamilyName?: string) => api.delete('/users/me', { data: { confirmFamilyName } }),
 };
 
+export type ComponentStatus = 'ok' | 'warn' | 'down';
+
+export interface OverviewMetric {
+  label: string;
+  value: string;
+}
+
+export interface OverviewComponent {
+  key: string;
+  name: string;
+  status: ComponentStatus;
+  summary: string;
+  /** Capacity used, 0–100, for components with a volume; else null. */
+  usagePct: number | null;
+  metrics: OverviewMetric[];
+}
+
+export interface SystemOverview {
+  generatedAt: string;
+  instance: {
+    node: string;
+    platform: string;
+    pid: number;
+    uptimeSeconds: number;
+    hostname: string;
+    dataDir: string;
+    blobDir: string;
+    memoryRssBytes: number;
+    memoryHeapUsedBytes: number;
+    loadAverage: number | null;
+  };
+  rollup: {
+    families: number;
+    activeFamilies: number;
+    accounts: number;
+    platformAdmins: number;
+    familyDbFiles: number;
+    familyDbBytes: number;
+    familyDbWalBytes: number;
+    registryBytes: number;
+    attachmentFiles: number;
+    attachmentBytes: number;
+    diskFreeBytes: number | null;
+    diskTotalBytes: number | null;
+  };
+  components: OverviewComponent[];
+}
+
+export interface RegistryFamilyRow {
+  familyId: string;
+  name: string;
+  familyCode: string | null;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface RegistryUserRow {
+  email: string;
+  familyId: string;
+  userId: string;
+  role: string;
+  isPlatformAdmin: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface RegistryLeaseRow {
+  name: string;
+  holder: string;
+  acquiredAt: string;
+  expiresAt: string;
+}
+
+export interface RegistrySettingsView {
+  signupEnabled: boolean;
+  signupEnvLocked: boolean;
+  emailVerification: boolean;
+  smtpHost: string | null;
+  smtpPort: number | null;
+  smtpFrom: string | null;
+  smtpUserSet: boolean;
+  smtpPassSet: boolean;
+  smtpConfigured: boolean;
+  updatedAt: string;
+}
+
+export interface RegistryView {
+  families: RegistryFamilyRow[];
+  users: RegistryUserRow[];
+  leases: RegistryLeaseRow[];
+  settings: RegistrySettingsView;
+}
+
 export const settingsAPI = {
   get: () => api.get('/settings'),
   update: (data: { signupEnabled?: boolean; emailVerification?: boolean; smtpHost?: string | null; smtpPort?: number | null; smtpUser?: string | null; smtpPass?: string | null; smtpFrom?: string | null }) =>
     api.put('/settings', data),
   test: () => api.post('/settings/test'),
+  overview: () => api.get<{ overview: SystemOverview }>('/settings/overview'),
+  registry: () => api.get<{ registry: RegistryView }>('/settings/registry'),
 };
 
 export interface InventoryItem {

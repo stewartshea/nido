@@ -118,12 +118,21 @@ export interface BlobBackend {
  * belong on a shared mount. Sharing one volume for both would tie them together
  * again and block scaling the API and web tiers independently.
  */
+/**
+ * Where attachment bytes live. Exported so the admin overview can report the
+ * blob volume's size and free space without constructing a backend (and so the
+ * path is stated once rather than re-derived by a second caller).
+ */
+export function blobRootDir(): string {
+	return process.env.NIDO_BLOB_DIR || path.join(getDataDir(), 'blobs');
+}
+
 export class LocalBlobBackend implements BlobBackend {
 	readonly kind = 'local';
 	constructor(private readonly root: string) {}
 
 	static fromEnv(): LocalBlobBackend {
-		return new LocalBlobBackend(process.env.NIDO_BLOB_DIR || path.join(getDataDir(), 'blobs'));
+		return new LocalBlobBackend(blobRootDir());
 	}
 
 	private resolve(key: string): string {

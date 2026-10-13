@@ -248,7 +248,24 @@ connection fails rather than waiting, so enter it again once you are back.
 - **Household** — family and tracking: categories, value lists, anonymized
   sharing, invitations, people, mobile quick links.
 - **Data** — import history, download a backup, restore from one.
-- **Admin** — registration toggle and SMTP, for the platform admin.
+- **Admin** — registration toggle, SMTP, and a live system status panel, for
+  the platform admin.
+
+### System status (platform admin)
+
+The **Admin** tab opens with a **System status** panel: a roll-up of the
+instance (families, accounts, database and attachment sizes, disk free space)
+and a health row for each component — the API process, the registry database,
+the family databases, the attachment store, each storage volume, SMTP, and the
+notification scheduler. Each row shows whether it is **OK**, needs
+**Attention**, or is **Down**, and disk rows carry a usage bar. **Refresh**
+re-reads the figures; it is read-only and never shows secrets.
+
+Below it, the **Registry** panel is a read-only view of the instance control
+plane: instance settings, one row per family (with its invite code), and one
+row per account with its role and platform-admin flag. Scheduler leases appear
+when present. Verification/reset tokens and the SMTP password are never shown —
+credentials are reported only as set or unset.
 
 ### Theme
 

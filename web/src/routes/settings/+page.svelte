@@ -8,6 +8,7 @@
 	import ToggleSwitch from '$lib/components/ToggleSwitch.svelte';
 	import { CATEGORIES, defaultMemberId } from '$lib/shared';
 	import { DIGEST_FREQUENCIES } from '$lib/vocabulary.generated';
+	import type { ComponentStatus, SystemOverview, RegistryView } from '$lib/api';
 	import { Users, Home, Trash2, Timer, AlertCircle, Settings, Check, ChevronRight, User, Shield, Upload, Download } from 'lucide-svelte';
 
 
@@ -539,6 +540,101 @@
 	let signupEnvLocked = false;
 	let emailVerificationSetting = false;
 
+	// Instance health / roll-up stats for the Admin tab.
+	let systemOverview: SystemOverview | null = null;
+	let loadingOverview = false;
+	let overviewError = '';
+
+	// Formatting lives here too rather than being sent pre-rendered for the
+	// tiles; the component metrics arrive as strings from the API.
+	function formatBytes(bytes: number | null | undefined): string {
+		if (bytes === null || bytes === undefined || !Number.isFinite(bytes) || bytes < 0) return '—';
+		if (bytes < 1024) return `${Math.round(bytes)} B`;
+		const units = ['KB', 'MB', 'GB', 'TB', 'PB'];
+		let value = bytes / 1024;
+		let i = 0;
+		while (value >= 1024 && i < units.length - 1) { value /= 1024; i += 1; }
+		return `${value >= 10 ? Math.round(value) : value.toFixed(1)} ${units[i]}`;
+	}
+
+	function formatDuration(seconds: number): string {
+		if (!Number.isFinite(seconds) || seconds < 0) return '—';
+		const s = Math.floor(seconds);
+		const d = Math.floor(s / 86_400);
+		const h = Math.floor((s % 86_400) / 3600);
+		const m = Math.floor((s % 3600) / 60);
+		if (d > 0) return `${d}d ${h}h`;
+		if (h > 0) return `${h}h ${m}m`;
+		if (m > 0) return `${m}m ${s % 60}s`;
+		return `${s}s`;
+	}
+
+	function statusDot(status: ComponentStatus): string {
+		return status === 'ok' ? 'bg-ok-text' : status === 'warn' ? 'bg-accent' : 'bg-danger-text';
+	}
+	function statusText(status: ComponentStatus): string {
+		return status === 'ok' ? 'text-ok-text' : status === 'warn' ? 'text-ink-soft' : 'text-danger-text';
+	}
+	function statusLabel(status: ComponentStatus): string {
+		return status === 'ok' ? 'OK' : status === 'warn' ? 'Attention' : 'Down';
+	}
+
+	$: overviewTiles = systemOverview
+		? [
+			{ label: 'Families', value: String(systemOverview.rollup.families), hint: `${systemOverview.rollup.activeFamilies} active` },
+			{ label: 'Accounts', value: String(systemOverview.rollup.accounts), hint: `${systemOverview.rollup.platformAdmins} platform admin${systemOverview.rollup.platformAdmins === 1 ? '' : 's'}` },
+			{ label: 'Family databases', value: String(systemOverview.rollup.familyDbFiles), hint: formatBytes(systemOverview.rollup.familyDbBytes) },
+			{ label: 'Registry size', value: formatBytes(systemOverview.rollup.registryBytes), hint: 'control plane' },
+			{ label: 'Attachments', value: systemOverview.rollup.attachmentFiles.toLocaleString(), hint: formatBytes(systemOverview.rollup.attachmentBytes) },
+			{ label: 'Disk free', value: formatBytes(systemOverview.rollup.diskFreeBytes), hint: systemOverview.rollup.diskTotalBytes ? `of ${formatBytes(systemOverview.rollup.diskTotalBytes)}` : 'data volume' },
+			{ label: 'Uptime', value: formatDuration(systemOverview.instance.uptimeSeconds), hint: `PID ${systemOverview.instance.pid}` },
+			{ label: 'Memory (RSS)', value: formatBytes(systemOverview.instance.memoryRssBytes), hint: `heap ${formatBytes(systemOverview.instance.memoryHeapUsedBytes)}` },
+		]
+		: [];
+
+	async function loadSystemOverview() {
+		if (!isPanelAdmin) return;
+		loadingOverview = true;
+		overviewError = '';
+		try {
+			const res = await settingsAPI.overview();
+			systemOverview = res.data.overview;
+		} catch (err: any) {
+			systemOverview = null;
+			overviewError = err.response?.data?.error || 'Could not load system status.';
+		} finally {
+			loadingOverview = false;
+		}
+	}
+
+	// Read-only registry view for the Admin tab.
+	let registryView: RegistryView | null = null;
+	let loadingRegistry = false;
+	let registryError = '';
+
+	function fmtDate(iso: string): string {
+		if (!iso) return '—';
+		const d = new Date(iso);
+		if (Number.isNaN(d.getTime())) return iso;
+		const pad = (n: number) => String(n).padStart(2, '0');
+		return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+	}
+
+	async function loadRegistry() {
+		if (!isPanelAdmin) return;
+		loadingRegistry = true;
+		registryError = '';
+		try {
+			const res = await settingsAPI.registry();
+			registryView = res.data.registry;
+		} catch (err: any) {
+			registryView = null;
+			registryError = err.response?.data?.error || 'Could not load the registry.';
+		} finally {
+			loadingRegistry = false;
+		}
+	}
+
 	async function refreshUserProfile() {
 		try {
 			const res = await userAPI.getMe();
@@ -926,7 +1022,7 @@
 			}
 			if (isAuthenticated) {
 				await Promise.all([loadFamilies(), refreshUserProfile()]);
-				if (isPanelAdmin) await loadAppSettings();
+				if (isPanelAdmin) await Promise.all([loadAppSettings(), loadSystemOverview(), loadRegistry()]);
 			}
 		}
 	});
@@ -1019,7 +1115,7 @@
 						<section>
 							<h3 class="text-xs font-semibold text-ink-soft uppercase tracking-wider mb-2 px-4">Admin</h3>
 							<div class="bg-surface rounded-xl border border-line-soft overflow-hidden">
-								<button type="button" on:click={() => (settingsTab = 'admin')} class="w-full flex items-center justify-between px-4 py-3 min-h-[44px] hover:bg-surface2 transition-colors text-left">
+								<button type="button" on:click={() => { settingsTab = 'admin'; loadSystemOverview(); loadRegistry(); }} class="w-full flex items-center justify-between px-4 py-3 min-h-[44px] hover:bg-surface2 transition-colors text-left">
 									<div class="flex items-center gap-3">
 										<Shield class="w-5 h-5 text-ink-soft" />
 										<span class="text-ink font-medium">Admin</span>
@@ -1454,6 +1550,190 @@
 							</div>
 							{:else if settingsTab === 'admin'}
 							{#if isPanelAdmin}
+							<div class="bg-surface rounded-lg shadow-card p-4 md:p-6 border border-line-soft mb-4">
+								<div class="flex items-start justify-between gap-3 mb-4">
+									<div>
+										<h3 class="text-lg font-display font-semibold">System status</h3>
+										<p class="text-ink-soft text-sm">Roll-up of this instance: accounts, storage, and the health of each component.</p>
+									</div>
+									<button type="button" on:click={loadSystemOverview} disabled={loadingOverview} class="bg-surface2 text-ink-soft px-3 py-2 rounded-md hover:text-ink disabled:opacity-50 text-sm min-h-[36px] shrink-0">
+										{loadingOverview ? 'Refreshing…' : 'Refresh'}
+									</button>
+								</div>
+
+								{#if overviewError}
+									<div class="bg-danger border border-danger text-danger-text px-3 py-2 rounded-md text-sm">{overviewError}</div>
+								{:else if !systemOverview}
+									<p class="text-ink-soft text-sm">Loading system status…</p>
+								{:else}
+									<div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2 mb-5" data-testid="admin-stats">
+										{#each overviewTiles as tile (tile.label)}
+											<div class="rounded-lg border border-line-soft bg-surface px-3 py-2.5">
+												<p class="text-xs text-ink-soft leading-tight">{tile.label}</p>
+												<p class="text-2xl font-display font-semibold text-ink leading-tight mt-0.5">{tile.value}</p>
+												<p class="text-[11px] text-ink-soft leading-tight mt-0.5">{tile.hint}</p>
+											</div>
+										{/each}
+									</div>
+
+									<h4 class="text-xs font-semibold text-ink-soft uppercase tracking-wider mb-2">Components</h4>
+									<div class="flex flex-col divide-y divide-line-soft border border-line-soft rounded-lg overflow-hidden">
+										{#each systemOverview.components as cmp (cmp.key)}
+											<div class="p-3 flex flex-col gap-2">
+												<div class="flex items-start gap-2">
+													<span class="mt-1.5 w-2.5 h-2.5 rounded-full shrink-0 {statusDot(cmp.status)}" aria-hidden="true"></span>
+													<div class="flex-1 min-w-0">
+														<div class="flex flex-wrap items-baseline gap-x-2">
+															<span class="font-medium text-ink">{cmp.name}</span>
+															<span class="text-xs font-semibold {statusText(cmp.status)}">{statusLabel(cmp.status)}</span>
+														</div>
+														<p class="text-sm text-ink-soft break-words">{cmp.summary}</p>
+													</div>
+												</div>
+												{#if cmp.usagePct !== null}
+													<div class="h-1.5 rounded-full bg-surface2 overflow-hidden ml-[18px]" aria-hidden="true">
+														<div class="h-full {statusDot(cmp.status)}" style={`width: ${Math.min(100, Math.max(0, cmp.usagePct))}%`}></div>
+													</div>
+												{/if}
+												<div class="flex flex-wrap gap-x-4 gap-y-1 ml-[18px]">
+													{#each cmp.metrics as m (m.label)}
+														<span class="text-xs text-ink-soft">{m.label}: <span class="text-ink">{m.value}</span></span>
+													{/each}
+												</div>
+											</div>
+										{/each}
+									</div>
+
+									<p class="text-[11px] text-ink-soft mt-3 break-words">
+										Node {systemOverview.instance.node} · {systemOverview.instance.platform} · host {systemOverview.instance.hostname} · PID {systemOverview.instance.pid} · data {systemOverview.instance.dataDir}
+									</p>
+								{/if}
+							</div>
+
+							<div class="bg-surface rounded-lg shadow-card p-4 md:p-6 border border-line-soft mb-4">
+								<div class="flex items-start justify-between gap-3 mb-4">
+									<div>
+										<h3 class="text-lg font-display font-semibold">Registry</h3>
+										<p class="text-ink-soft text-sm">Read-only rows of the instance control plane: families, accounts, settings, scheduler leases. Secrets and reset tokens are never shown.</p>
+									</div>
+									<button type="button" on:click={loadRegistry} disabled={loadingRegistry} class="bg-surface2 text-ink-soft px-3 py-2 rounded-md hover:text-ink disabled:opacity-50 text-sm min-h-[36px] shrink-0">
+										{loadingRegistry ? 'Refreshing…' : 'Refresh'}
+									</button>
+								</div>
+
+								{#if registryError}
+									<div class="bg-danger border border-danger text-danger-text px-3 py-2 rounded-md text-sm">{registryError}</div>
+								{:else if !registryView}
+									<p class="text-ink-soft text-sm">Loading registry…</p>
+								{:else}
+									<div class="space-y-5">
+										<section>
+											<h4 class="text-xs font-semibold text-ink-soft uppercase tracking-wider mb-2">Instance settings</h4>
+											<div class="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-2 rounded-lg border border-line-soft p-3 text-sm">
+												<div><span class="text-ink-soft text-xs block">Sign-up</span><span class="text-ink">{registryView.settings.signupEnabled ? 'Open' : 'Closed'}{registryView.settings.signupEnvLocked ? ' (env-locked)' : ''}</span></div>
+												<div><span class="text-ink-soft text-xs block">Email verification</span><span class="text-ink">{registryView.settings.emailVerification ? 'Required' : 'Off'}</span></div>
+												<div><span class="text-ink-soft text-xs block">SMTP</span><span class="text-ink">{registryView.settings.smtpConfigured ? `${registryView.settings.smtpHost}:${registryView.settings.smtpPort}` : 'Not configured'}</span></div>
+												<div><span class="text-ink-soft text-xs block">From</span><span class="text-ink break-words">{registryView.settings.smtpFrom || 'default'}</span></div>
+												<div><span class="text-ink-soft text-xs block">SMTP credentials</span><span class="text-ink">user {registryView.settings.smtpUserSet ? 'set' : 'unset'} · password {registryView.settings.smtpPassSet ? 'set' : 'unset'}</span></div>
+												<div><span class="text-ink-soft text-xs block">Updated</span><span class="text-ink">{fmtDate(registryView.settings.updatedAt)}</span></div>
+											</div>
+										</section>
+
+										<section>
+											<h4 class="text-xs font-semibold text-ink-soft uppercase tracking-wider mb-2">Families ({registryView.families.length})</h4>
+											{#if registryView.families.length === 0}
+												<p class="text-ink-soft text-sm">No families provisioned yet.</p>
+											{:else}
+												<div class="overflow-x-auto rounded-lg border border-line-soft">
+													<table class="w-full text-sm min-w-[560px]">
+														<thead>
+															<tr class="text-left text-xs text-ink-soft bg-surface2">
+																<th class="px-3 py-2 font-semibold">Family</th>
+																<th class="px-3 py-2 font-semibold">Name</th>
+																<th class="px-3 py-2 font-semibold">Code</th>
+																<th class="px-3 py-2 font-semibold">Status</th>
+																<th class="px-3 py-2 font-semibold">Created</th>
+															</tr>
+														</thead>
+														<tbody>
+															{#each registryView.families as fam (fam.familyId)}
+															<tr class="border-t border-line-soft">
+																<td class="px-3 py-2 font-mono text-xs text-ink whitespace-nowrap">{fam.familyId}</td>
+																<td class="px-3 py-2 text-ink whitespace-nowrap">{fam.name}</td>
+																<td class="px-3 py-2 font-mono text-xs text-ink-soft whitespace-nowrap">{fam.familyCode || '—'}</td>
+																<td class="px-3 py-2 whitespace-nowrap"><span class="inline-flex items-center gap-1.5"><span class="w-2 h-2 rounded-full {fam.status === 'active' ? 'bg-ok-text' : 'bg-danger-text'}" aria-hidden="true"></span><span class="text-ink">{fam.status}</span></span></td>
+																<td class="px-3 py-2 text-ink-soft whitespace-nowrap">{fmtDate(fam.createdAt)}</td>
+															</tr>
+															{/each}
+														</tbody>
+													</table>
+												</div>
+											{/if}
+										</section>
+
+										<section>
+											<h4 class="text-xs font-semibold text-ink-soft uppercase tracking-wider mb-2">Accounts ({registryView.users.length})</h4>
+											{#if registryView.users.length === 0}
+												<p class="text-ink-soft text-sm">No accounts yet.</p>
+											{:else}
+												<div class="overflow-x-auto rounded-lg border border-line-soft">
+													<table class="w-full text-sm min-w-[560px]">
+														<thead>
+															<tr class="text-left text-xs text-ink-soft bg-surface2">
+																<th class="px-3 py-2 font-semibold">Email</th>
+																<th class="px-3 py-2 font-semibold">Role</th>
+																<th class="px-3 py-2 font-semibold">Admin</th>
+																<th class="px-3 py-2 font-semibold">Family</th>
+																<th class="px-3 py-2 font-semibold">Created</th>
+															</tr>
+														</thead>
+														<tbody>
+															{#each registryView.users as usr (usr.userId + usr.familyId)}
+															<tr class="border-t border-line-soft">
+																<td class="px-3 py-2 text-ink whitespace-nowrap">{usr.email}</td>
+																<td class="px-3 py-2 text-ink-soft whitespace-nowrap">{usr.role}</td>
+																<td class="px-3 py-2 whitespace-nowrap">{#if usr.isPlatformAdmin}<span class="inline-flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-ok-text" aria-hidden="true"></span><span class="text-ink">platform admin</span></span>{:else}<span class="text-ink-soft">—</span>{/if}</td>
+																<td class="px-3 py-2 font-mono text-xs text-ink-soft whitespace-nowrap">{usr.familyId}</td>
+																<td class="px-3 py-2 text-ink-soft whitespace-nowrap">{fmtDate(usr.createdAt)}</td>
+															</tr>
+															{/each}
+														</tbody>
+													</table>
+												</div>
+											{/if}
+										</section>
+
+										{#if registryView.leases.length > 0}
+										<section>
+											<h4 class="text-xs font-semibold text-ink-soft uppercase tracking-wider mb-2">Scheduler leases ({registryView.leases.length})</h4>
+											<div class="overflow-x-auto rounded-lg border border-line-soft">
+												<table class="w-full text-sm min-w-[480px]">
+													<thead>
+														<tr class="text-left text-xs text-ink-soft bg-surface2">
+															<th class="px-3 py-2 font-semibold">Job</th>
+															<th class="px-3 py-2 font-semibold">Holder</th>
+															<th class="px-3 py-2 font-semibold">Acquired</th>
+															<th class="px-3 py-2 font-semibold">Expires</th>
+														</tr>
+													</thead>
+													<tbody>
+														{#each registryView.leases as lease (lease.name)}
+														<tr class="border-t border-line-soft">
+															<td class="px-3 py-2 font-mono text-xs text-ink whitespace-nowrap">{lease.name}</td>
+															<td class="px-3 py-2 font-mono text-xs text-ink-soft whitespace-nowrap">{lease.holder}</td>
+															<td class="px-3 py-2 text-ink-soft whitespace-nowrap">{fmtDate(lease.acquiredAt)}</td>
+															<td class="px-3 py-2 text-ink-soft whitespace-nowrap">{fmtDate(lease.expiresAt)}</td>
+														</tr>
+														{/each}
+													</tbody>
+												</table>
+											</div>
+										</section>
+										{/if}
+									</div>
+								{/if}
+							</div>
+
 							<div class="bg-surface rounded-lg shadow-card p-4 md:p-6 border border-line-soft">
 								<h3 class="text-lg font-display font-semibold mb-2">Admin</h3>
 								<p class="text-ink-soft text-sm mb-4">Instance-wide settings. These apply to every family on this server.</p>

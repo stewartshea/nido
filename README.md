@@ -221,6 +221,7 @@ Also on the list:
 - Photo size limits and server-side EXIF stripping
 - Run tests in CI
 
+
 ## License
 
 [Apache-2.0](LICENSE)
