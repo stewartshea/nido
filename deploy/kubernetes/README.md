@@ -48,8 +48,10 @@ each option folder so every option applies cleanly on its own.
 
 ## Images built by CI
 
-Two tiers, and the difference matters for a cluster you keep running:
+Three tiers, and the difference matters for a cluster you keep running:
 
+- `ghcr.io/<owner>/<repo>/{api|web}:dev` — a build of an open pull request, for
+  trying a proposed change before it merges. Floating; it follows the branch.
 - `ghcr.io/<owner>/<repo>/{api|web}:main` — a build of whatever was just merged.
   Floating, unreleased; not what a deployment should run.
 - `ghcr.io/<owner>/<repo>/{api|web}:v<date>` — a release, cut by the `Release`

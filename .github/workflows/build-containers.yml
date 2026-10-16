@@ -33,28 +33,39 @@ jobs:
       - name: Set up Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Log in to GHCR
-        if: github.event_name != 'pull_request'
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
+      # Runs before the login so it can also decide *whether* to publish: a
+      # pull request is published as `dev` (see the tiers below) unless it came
+      # from a fork, which gets a read-only GITHUB_TOKEN.
       - name: Derive image tags
         id: meta
         env:
           SERVICE: ${{ matrix.service }}
           SHA: ${{ github.sha }}
+          EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+          # Empty on anything that is not a pull request.
+          PR_HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          REPO: ${{ github.repository }}
         run: |
+          set -euo pipefail
           SHORT_SHA="${SHA:0:12}"
           BASE="${{ env.REGISTRY }}/${{ env.IMAGE_BASE }}"
+
           # Always tag with the short commit sha.
           IMG="${BASE}/${SERVICE}:sha-${SHORT_SHA}"
           echo "image=${IMG}" >> "$GITHUB_OUTPUT"
-          # Two tiers, deliberately separate:
+
+          # Three tiers, deliberately separate:
           #
-          #   main   - a build of whatever was just merged. Floating, unreleased.
+          #   dev     - a build of an open pull request, for running a proposed
+          #             change on a real instance before it merges. Floating:
+          #             it follows the branch, so it is rebuilt on every push
+          #             to the PR. There is one `dev` tag per service, shared
+          #             by every open PR, so the newest build to finish wins —
+          #             the `sha-` tag is what says which commit it is.
+          #   main    - a build of whatever was just merged. Floating, unreleased.
           #   v<date> - a release. Immutable, and what a deployment should pin.
           #
           # `latest` tracks the newest RELEASE, not the newest commit. It used to
@@ -62,24 +73,45 @@ jobs:
           # unreleased code — the tag said "latest" and meant "newest thing
           # anyone pushed".
           TAGS="${IMG}"
-          if [ "${{ github.event_name }}" = "push" ] && [ "${{ github.ref }}" = "refs/heads/main" ]; then
+          PUSH="true"
+
+          if [ "${EVENT}" = "pull_request" ]; then
+            TAGS="${TAGS},${BASE}/${SERVICE}:dev"
+            # A fork's GITHUB_TOKEN cannot write packages, so its build is
+            # validation only.
+            if [ "${PR_HEAD_REPO}" != "${REPO}" ]; then
+              PUSH="false"
+            fi
+          fi
+
+          if [ "${EVENT}" = "push" ] && [ "${REF}" = "refs/heads/main" ]; then
             TAGS="${TAGS},${BASE}/${SERVICE}:main"
           fi
           # Any run whose ref is a tag publishes that version. Not gated on
           # event_name: a tag pushed with the default GITHUB_TOKEN does not
           # start a run at all, so release.yml dispatches this workflow at the
           # tag and it must still pick up the version here.
-          if [ "${{ github.ref_type }}" = "tag" ]; then
-            TAGS="${TAGS},${BASE}/${SERVICE}:${{ github.ref_name }},${BASE}/${SERVICE}:latest"
+          if [ "${REF_TYPE}" = "tag" ]; then
+            TAGS="${TAGS},${BASE}/${SERVICE}:${REF_NAME},${BASE}/${SERVICE}:latest"
           fi
+
           echo "tags=${TAGS}" >> "$GITHUB_OUTPUT"
+          echo "push=${PUSH}" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to GHCR
+        if: steps.meta.outputs.push == 'true'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and push image
         uses: docker/build-push-action@v6
         with:
           context: ./${{ matrix.service }}
           file: ./${{ matrix.service }}/Dockerfile
-          push: ${{ github.event_name != 'pull_request' }}
+          push: ${{ steps.meta.outputs.push == 'true' }}
           tags: ${{ steps.meta.outputs.tags }}
           cache-from: type=gha,scope=${{ matrix.service }}
           cache-to: type=gha,mode=max,scope=${{ matrix.service }}
