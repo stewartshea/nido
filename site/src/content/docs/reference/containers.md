@@ -72,13 +72,19 @@ still there" is not a bug. The volume is what holds state.
 
 ## Published images
 
-CI publishes to GHCR on every push to `main` and on `v*` tags:
+CI publishes to GHCR on every push to `main`, on `v*` tags, and on pull
+requests:
 
 ```text
+ghcr.io/stewartshea/nido/{api,web}:dev
 ghcr.io/stewartshea/nido/api:latest
 ghcr.io/stewartshea/nido/web:latest
 ghcr.io/stewartshea/nido/{api,web}:sha-<commit>
 ```
+
+`dev` builds a pull request so it can be tried before it merges. There is one
+`dev` tag per service, shared by every open pull request, so the most recent
+build wins; use the `sha-<commit>` tag to say which commit you actually pulled.
 
 Per-commit tags are worth knowing about: they are what makes
 [rollbacking an upgrade](../guides/upgrading/#roll-back) pin to exactly the

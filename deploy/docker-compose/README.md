@@ -57,8 +57,10 @@ so this compose files points `build.context` at the corresponding subfolder.
 
 ## Using images published by CI instead of building
 
-Two tiers, and the difference is the point:
+Three tiers, and the difference is the point:
 
+- `ghcr.io/<owner>/<repo>/{api|web}:dev` — published on every push to a pull
+  request, for trying a proposed change before it merges. Floating.
 - `ghcr.io/<owner>/<repo>/{api|web}:main` — published on every push to `main`.
   A build of whatever was just merged: floating, and unreleased.
 - `ghcr.io/<owner>/<repo>/{api|web}:v<date>` — a release, published by the
