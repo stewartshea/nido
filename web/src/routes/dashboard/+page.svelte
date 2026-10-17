@@ -507,10 +507,13 @@
 		if (!activeFamilyId || !selectedMember) return;
 		try {
 			await familiesAPI.updateMember(activeFamilyId, Number(selectedMember.id), { dashboardTiles: tiles });
-			selectedMember.dashboardTiles = tiles;
-			profiles = profiles;
+			// Reassign, don't mutate: selectedMember is derived from profiles, and
+			// mutating the object in place does not re-run the reactive statement,
+			// so the panel kept showing the old layout until a hard reload.
+			profiles = profiles.map((p) => (Number(p.id) === Number(selectedMember.id) ? { ...p, dashboardTiles: tiles } : p));
+			notice = 'Dashboard panel saved.';
 		} catch (err: any) {
-			console.error('Failed to update dashboard tiles', err);
+			error = err.response?.data?.error || 'Failed to update dashboard tiles';
 		}
 	}
 

@@ -98,14 +98,15 @@ This is stated on the Notifications page rather than papered over.
 
 Adding them is a change to `runFamilyDigest`, not to the scheduler.
 
-The **upcoming-appointments email** is a second, separate message rather than
-another section of the digest. It has its own opt-in (`appointment_notifications`),
-its own clock (`appointment_notifications_sent_at`), and its own trigger — a
-weekly list of what is booked, not an alert about something already wrong. An
-appointment reminder is a nudge, so it shares none of the digest's
-firing/notified state, and a family may reasonably want one and not the other.
-It lives in `api/src/appointments.ts`; the scheduler drives both, one family at a
-time (§5).
+The **upcoming email** is a second, separate message rather than another section
+of the digest. It has its own opt-in (`appointment_notifications`), its own clock
+(`appointment_notifications_sent_at`), and its own trigger — a weekly list of
+what is booked, not an alert about something already wrong. "Upcoming" is any
+milestone row with a future date, whatever kind it was logged under, so a
+forward-dated medical visit or routine is a nudge exactly like an appointment.
+It shares none of the digest's firing/notified state, and a family may
+reasonably want one and not the other. It lives in
+`api/src/appointments.ts`; the scheduler drives both, one family at a time (§5).
 
 ## 5. The scheduler
 

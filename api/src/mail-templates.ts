@@ -338,25 +338,25 @@ export function renderUpcomingAppointmentsEmail(opts: {
 	const soonest = opts.appointments[0];
 
 	return {
-		subject: `Nido — ${n} appointment${n === 1 ? '' : 's'} coming up`,
+		subject: `Nido — ${n} thing${n === 1 ? '' : 's'} coming up`,
 		text: [
 			`Hi${opts.firstName ? ' ' + opts.firstName : ''},`,
 			'',
-			`Here ${n === 1 ? 'is the appointment' : 'are the appointments'} on the calendar for your family:`,
+			`Here ${n === 1 ? 'is what' : 'are the things that'} is coming up for your family:`,
 			'',
 			...lines,
 			'',
 			`See them any time: ${opts.appointmentsUrl}`,
 			'',
-			'You asked to be reminded about upcoming appointments once a week. Turn it off in Settings whenever you like.',
+			'You asked to be reminded about what is coming up once a week. Turn it off in Settings whenever you like.',
 		].join('\n'),
 		html: layout({
-			preheader: soonest ? `Next up: ${describe(soonest)}` : 'Your upcoming appointments.',
-			heading: n === 1 ? 'One appointment coming up' : `${n} appointments coming up`,
+			preheader: soonest ? `Next up: ${describe(soonest)}` : 'What is coming up.',
+			heading: n === 1 ? 'One thing coming up' : `${n} things coming up`,
 			intro: 'Here is what is on the calendar for your family.',
 			list: lines.map((l) => esc(l)),
-			cta: { label: 'View appointments', url: opts.appointmentsUrl },
-			footnote: 'You asked to be reminded about upcoming appointments once a week. Turn it off in Settings whenever you like.',
+			cta: { label: 'View upcoming', url: opts.appointmentsUrl },
+			footnote: 'You asked to be reminded about what is coming up once a week. Turn it off in Settings whenever you like.',
 			closing: 'Talk soon,',
 		}),
 	};
