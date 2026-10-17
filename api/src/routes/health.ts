@@ -130,17 +130,19 @@ healthRoutes.get('/summary/:memberId{[0-9]+}', async (c) => {
       args: [subjectId]
     });
 
-    // Get the appointments still ahead of this member, soonest first.
+    // Get the milestone rows still ahead of this member, soonest first.
     //
-    // This is deliberately separate from latestByKind.appointments: that one is
-    // "the most recent row", so with two future appointments it would surface
-    // the further-off one and call it the last. A tile that promises the *next*
-    // appointment has to sort ascending and start from now.
+    // This is deliberately separate from latestByKind: that one is "the most
+    // recent row per kind", which for a future-dated row is the furthest-out
+    // one, not the next. A tile that promises the *next* thing has to sort
+    // ascending and start from now — and it must not require an "appointments"
+    // category, because a forward-dated medical visit or routine is booked
+    // exactly like an appointment and should surface the same way.
     const upcomingAppointments = await db.execute({
       sql: `
-      SELECT id, title, description, achieved_date, category
+      SELECT id, title, description, achieved_date, kind, category
       FROM milestones
-      WHERE subject_id = ? AND kind = 'appointments' AND achieved_date >= ?
+      WHERE subject_id = ? AND achieved_date >= ?
       ORDER BY achieved_date ASC, id ASC
       LIMIT 5
     `,

@@ -74,19 +74,19 @@ describe('mail templates', () => {
 	});
 });
 
-describe('upcoming appointments email', () => {
+describe('upcoming email', () => {
 	const line = { title: 'Six-week check', when: '2026-06-04T14:30:00.000Z', category: 'checkup', memberName: 'Nest' };
 
-	it('names the count in the subject and lists each appointment', () => {
+	it('names the count in the subject and lists each entry', () => {
 		const one = renderUpcomingAppointmentsEmail({ firstName: 'Ada', appointments: [line], appointmentsUrl: URL });
-		expect(one.subject).toContain('1 appointment');
+		expect(one.subject).toContain('1 thing coming up');
 		expect(one.text).toContain('Six-week check');
 		expect(one.text).toContain('Nest');
 		expect(one.html).toContain('<!doctype html>');
-		expect(one.html).toContain('View appointments');
+		expect(one.html).toContain('View upcoming');
 
 		const two = renderUpcomingAppointmentsEmail({ appointments: [line, { ...line, title: 'Follow-up' }], appointmentsUrl: URL });
-		expect(two.subject).toContain('2 appointments');
+		expect(two.subject).toContain('2 things coming up');
 	});
 
 	it('keeps the link in both parts', () => {

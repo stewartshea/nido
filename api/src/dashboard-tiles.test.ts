@@ -103,14 +103,14 @@ describe('the dashboard panel is customizable per member', () => {
 	});
 });
 
-describe('the summary reports the appointments still ahead', () => {
-	it('lists future appointments soonest-first and omits the ones that have passed', async () => {
+describe('the summary reports what is still ahead', () => {
+	it('lists future-dated entries soonest-first, any kind, past omitted', async () => {
 		const id = await newPet('Booked');
 		await call('POST', token, '/api/v1/milestones', {
 			memberId: id, title: 'Vet check', achievedDate: inDays(10), kind: 'appointments', category: 'checkup',
 		});
 		await call('POST', token, '/api/v1/milestones', {
-			memberId: id, title: 'Booster', achievedDate: inDays(3), kind: 'appointments', category: 'vaccine',
+			memberId: id, title: 'Ear check', achievedDate: inDays(3), kind: 'medical', category: 'follow-up',
 		});
 		await call('POST', token, '/api/v1/milestones', {
 			memberId: id, title: 'Already happened', achievedDate: hoursAgo(5), kind: 'appointments',
@@ -119,14 +119,15 @@ describe('the summary reports the appointments still ahead', () => {
 		const res = await call('GET', token, `/api/v1/health/summary/${id}`);
 		expect(res.status).toBe(200);
 
-		// Soonest first, past excluded. This is the ordering the tile needs: it
-		// promises the *next* appointment, not the furthest-out one.
+		// Soonest first, past excluded, and a future medical entry counts: the
+		// tile promises the *next* thing, whatever it was logged as.
 		const upcoming = res.body.summary.upcomingAppointments as any[];
-		expect(upcoming.map((a) => a.title)).toEqual(['Booster', 'Vet check']);
+		expect(upcoming.map((a) => a.title)).toEqual(['Ear check', 'Vet check']);
+		expect(upcoming[0].kind).toBe('medical');
 
-		// latestByKind is "most recent by date", which for a future appointment
-		// is the *furthest* one — the reason upcomingAppointments exists as its
-		// own field rather than being derived from this.
+		// latestByKind is "most recent by date", which for a future entry is the
+		// *furthest* one — the reason upcomingAppointments exists as its own
+		// field rather than being derived from this.
 		expect(res.body.summary.latestByKind.appointments.title).toBe('Vet check');
 	});
 
