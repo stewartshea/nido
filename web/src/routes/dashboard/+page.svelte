@@ -660,34 +660,6 @@
 								/>
 							</div>
 
-							<div class="mb-6 bg-surface rounded-lg shadow-card border border-line-soft p-4 md:p-5" data-testid="upcoming-appointments-card">
-								<div class="flex items-center justify-between mb-3">
-									<h3 class="text-lg font-display font-semibold flex items-center gap-2">
-										<CalendarClock class="w-5 h-5 text-accent" aria-hidden="true" />
-										Upcoming appointments
-									</h3>
-									<button type="button" on:click={() => goto('/appointments')} class="text-sm font-semibold text-link hover:underline">See all &rarr;</button>
-								</div>
-								{#if upcomingAppointments.length === 0}
-									<p class="text-sm text-ink-soft">
-										Nothing booked in the next 30 days. Log one from the sheet and set a future date.
-									</p>
-								{:else}
-									<ul class="space-y-2">
-										{#each upcomingAppointments as a (a.id)}
-											<li class="flex items-baseline gap-3 text-sm">
-												<span class="tabular-nums text-ink-soft shrink-0 w-28">
-													{new Date(a.date).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}
-												</span>
-												<span class="text-ink min-w-0">
-													{#if a.memberName}<span class="font-semibold">{a.memberName}</span> · {/if}{a.title}
-												</span>
-											</li>
-										{/each}
-									</ul>
-								{/if}
-							</div>
-
 							<MemberActivity
 								memberName={selectedMember?.name || 'Selected'}
 								memberId={selectedMemberId}
@@ -707,6 +679,38 @@
 								on:unpin={(e) => setQuickLink(e.detail.kind, false)}
 								on:saveTiles={(e) => saveDashboardTiles(e.detail.tiles)}
 							>
+								<!-- What the family has booked, moved below the Today tiles: Quick
+								     Actions and Today own the top of the page, this is the glance at
+								     what is next so the per-member tile above and the page below
+								     share a home without crowding it. -->
+								<div class="mt-6 bg-surface rounded-lg shadow-card border border-line-soft p-4 md:p-5" data-testid="upcoming-appointments-card">
+									<div class="flex items-center justify-between mb-3">
+										<h3 class="text-lg font-display font-semibold flex items-center gap-2">
+											<CalendarClock class="w-5 h-5 text-accent" aria-hidden="true" />
+											Upcoming appointments
+										</h3>
+										<button type="button" on:click={() => goto('/appointments')} class="text-sm font-semibold text-link hover:underline">See all &rarr;</button>
+									</div>
+									{#if upcomingAppointments.length === 0}
+										<p class="text-sm text-ink-soft">
+											Nothing booked in the next 30 days. Log one from the sheet and set a future date.
+										</p>
+									{:else}
+										<ul class="space-y-2">
+											{#each upcomingAppointments as a (a.id)}
+												<li class="flex items-baseline gap-3 text-sm">
+													<span class="tabular-nums text-ink-soft shrink-0 w-28">
+														{new Date(a.date).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}
+													</span>
+													<span class="text-ink min-w-0">
+														{#if a.memberName}<span class="font-semibold">{a.memberName}</span> · {/if}{a.title}
+													</span>
+												</li>
+											{/each}
+										</ul>
+									{/if}
+								</div>
+
 								<!-- Rates over the last week, next to the last-seen tiles: the
 								     tiles say "how long ago", this says "how often". -->
 								{#if selectedMember}
