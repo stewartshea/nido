@@ -634,6 +634,7 @@
 
 							<MemberActivity
 								memberName={selectedMember?.name || 'Selected'}
+								memberId={selectedMemberId}
 								{summary}
 								{activeCategories}
 								quickLinks={selectedQuickLinks}

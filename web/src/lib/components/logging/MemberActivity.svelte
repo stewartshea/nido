@@ -10,6 +10,7 @@
 	 * a single copy is what keeps the two pages' logging identical.
 	 */
 	export let memberName = 'Selected';
+	export let memberId: number | null = null;
 
 	export let summary: any = null;
 	/** The selected member's enabled categories; drives what can be logged. */
@@ -58,6 +59,7 @@
 		{activeCategories}
 		{totals}
 		{loadingMore}
+		{memberId}
 		on:loadmore={() => dispatch('loadmore')}
 		on:refresh={() => dispatch('refresh')}
 	/>

@@ -95,6 +95,31 @@ describe('a file can be attached to a record', () => {
 	});
 });
 
+describe('a member\'s attachments can be read in one pass', () => {
+	it('lists every file for the member, each tagged with the record it hangs off', async () => {
+		const list = await call('GET', token, `/api/v1/attachments?memberId=${subjectId}`);
+		expect(list.status).toBe(200);
+
+		const names = list.body.attachments.map((a: any) => a.filename);
+		expect(names).toContain('vaccination-report.pdf');
+		expect(names).toContain('microchip.pdf');
+
+		// The ref is what lets the activity history group a file under its row.
+		for (const a of list.body.attachments) {
+			expect(typeof a.refType).toBe('string');
+			expect(Number.isInteger(a.refId)).toBe(true);
+		}
+	});
+
+	it('will not list a member that belongs to another family', async () => {
+		const other = await call('POST', '', '/api/v1/auth/register', {
+			email: 'attach-list-other@example.com', password: 'StrongP4ss!', firstName: 'Other', lastName: 'Family',
+		});
+		const res = await call('GET', other.body.token, `/api/v1/attachments?memberId=${subjectId}`);
+		expect(res.status).toBe(404);
+	});
+});
+
 describe('the boundary holds', () => {
 	it('refuses an unknown ref type rather than guessing a table', async () => {
 		const res = await upload(token, 'not_a_table', 1, 'x.pdf', 'X');

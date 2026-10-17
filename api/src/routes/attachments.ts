@@ -16,6 +16,7 @@ import { Readable } from 'node:stream';
 import type { SqliteFacade } from '../db-core';
 import { type AuthEnv } from '../auth';
 import { EncryptedBlobStore } from '../blob-store';
+import { resolveTrackableMember } from '../member-scope';
 
 const attachmentRoutes = new Hono<AuthEnv>();
 
@@ -33,6 +34,28 @@ const REF_TABLES: Record<string, string> = {
 };
 
 const MAX_BYTES = 25 * 1024 * 1024;
+
+// A member's whole attachment set is fetched in one request so the activity
+// history can put files on their rows without one request per record. The
+// history renders at most a few hundred rows, so this cap is far above what a
+// page can display; anything older simply waits for a filtered view.
+const LIST_LIMIT = 1000;
+
+/** The REST shape of one attachment row. */
+function shapeAttachment(r: any) {
+	return {
+		id: Number(r.id),
+		subjectId: r.subject_id === null ? null : Number(r.subject_id),
+		refType: String(r.ref_type),
+		refId: Number(r.ref_id),
+		filename: r.filename ?? null,
+		contentType: String(r.content_type),
+		size: Number(r.size),
+		createdAt: r.created_at,
+		createdBy: r.created_by ?? null,
+		url: `/api/v1/attachments/${Number(r.id)}/file`,
+	};
+}
 
 let store: EncryptedBlobStore | null = null;
 function blobStore(): EncryptedBlobStore {
@@ -130,9 +153,29 @@ attachmentRoutes.post('/', async (c) => {
 	}
 });
 
+// GET /?memberId= — every attachment for one member, so the activity history
+// can render files on the rows it shows without a request per record.
 // GET /?refType=&refId= — list a record's attachments
 attachmentRoutes.get('/', async (c) => {
 	const db = c.get('db');
+
+	const memberId = Number(c.req.query('memberId') ?? 0);
+	if (memberId) {
+		// Same scope rule as the tracking routes: the member has to be in the
+		// caller's family, which is also what maps the member row to the subjects
+		// row the files are actually stored against.
+		const scope = await resolveTrackableMember(db, c.get('userId'), memberId);
+		if (!scope) return c.json({ error: 'Member not found or access denied' }, 404);
+
+		const rows = (await db.execute({
+			sql: `SELECT id, subject_id, ref_type, ref_id, filename, content_type, size, created_at, created_by
+			      FROM attachments WHERE subject_id = ? ORDER BY created_at DESC LIMIT ?`,
+			args: [scope.subjectId, LIST_LIMIT],
+		})).rows;
+
+		return c.json({ attachments: rows.map(shapeAttachment) });
+	}
+
 	const refType = c.req.query('refType') ?? '';
 	const refId = Number(c.req.query('refId') ?? 0);
 	if (!REF_TABLES[refType] || !refId) return c.json({ error: 'refType and refId are required' }, 400);
@@ -143,20 +186,7 @@ attachmentRoutes.get('/', async (c) => {
 		args: [refType, refId],
 	})).rows;
 
-	return c.json({
-		attachments: rows.map((r: any) => ({
-			id: Number(r.id),
-			subjectId: r.subject_id === null ? null : Number(r.subject_id),
-			refType: String(r.ref_type),
-			refId: Number(r.ref_id),
-			filename: r.filename ?? null,
-			contentType: String(r.content_type),
-			size: Number(r.size),
-			createdAt: r.created_at,
-			createdBy: r.created_by ?? null,
-			url: `/api/v1/attachments/${Number(r.id)}/file`,
-		})),
-	});
+	return c.json({ attachments: rows.map(shapeAttachment) });
 });
 
 // GET /:id/file — the decrypted bytes
