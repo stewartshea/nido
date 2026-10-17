@@ -13,6 +13,14 @@ const config = {
 		// See https://kit.svelte.dev/docs/adapters for more information about adapters.
 		adapter: adapter(),
 
+		// Track the build so an already-open client can detect a new deploy and
+		// silently reload (see the `updated` subscription in +layout.svelte).
+		// `name` defaults to a per-build timestamp, which is unique on every
+		// `vite build` (i.e. every image), so a deploy is always "new".
+		version: {
+			pollInterval: 60_000
+		},
+
 		// Origin checking exists to stop a cross-site form post riding a cookie
 		// the browser attaches automatically. This app has no cookies: the session
 		// is a bearer token read from localStorage and sent in an Authorization

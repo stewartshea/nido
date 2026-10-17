@@ -2,8 +2,30 @@ import { Hono } from 'hono';
 import type { SubjectRow, SleepAggRow, DiaperAggRow, FeedingAggRow } from '../db-types';
 import { resolveTrackableMember, attachCreatedBy } from '../member-scope';
 import { type AuthEnv } from '../auth';
+import { NAMESPACE_HOUSEHOLD_ID, DEFAULT_FEED_GROUPING_MINUTES } from '../db-core';
 
 const healthRoutes = new Hono<AuthEnv>();
+
+/**
+ * Count how many distinct feeding sessions a set of feeding rows represents.
+ *
+ * A breast feed and the bottle that follows it are usually separate rows but
+ * one feed; `windowMs` is the largest gap between two consecutive records that
+ * is still the same session. Rows are expected sorted by start time ascending.
+ * Pumps must be excluded by the caller: a pump is the parent expressing, not
+ * the baby eating.
+ */
+function countFeedSessions(rows: Array<{ start_time?: string }>, windowMs: number): number {
+	let sessions = 0;
+	let prevStart = Number.NEGATIVE_INFINITY;
+	for (const row of rows) {
+		const start = new Date(String(row.start_time)).getTime();
+		if (Number.isNaN(start)) continue;
+		if (start - prevStart > windowMs) sessions += 1;
+		prevStart = start;
+	}
+	return sessions;
+}
 
 // Get comprehensive health summary for a baby
 healthRoutes.get('/summary/:memberId{[0-9]+}', async (c) => {
@@ -234,6 +256,27 @@ healthRoutes.get('/insights/:memberId{[0-9]+}', async (c) => {
       args: [subjectId, weekAgo.toISOString()]
     });
     
+    // Feeds per day counts feeding *sessions*, not rows. A breast feed and the
+    // bottle that immediately follows it are logged as two rows but are one
+    // feed. The merge window is the family's `feedGroupingMinutes` setting, and
+    // pumps are excluded outright — a pump is the parent expressing, not the
+    // baby eating.
+    const groupingRow = (await db.execute({
+      sql: 'SELECT feed_grouping_minutes FROM family_settings WHERE family_id = ? LIMIT 1',
+      args: [NAMESPACE_HOUSEHOLD_ID],
+    })).rows[0];
+    const groupingMinutes = Number((groupingRow as any)?.feed_grouping_minutes ?? DEFAULT_FEED_GROUPING_MINUTES);
+    const feedSessionRows = await db.execute({
+      sql: `
+      SELECT start_time
+      FROM feedings
+      WHERE subject_id = ? AND start_time >= ? AND type != 'pump'
+      ORDER BY start_time ASC, id ASC
+      `,
+      args: [subjectId, weekAgo.toISOString()]
+    });
+    const feedSessions = countFeedSessions(feedSessionRows.rows as Array<{ start_time: string }>, groupingMinutes * 60_000);
+    
     // Get sleep patterns (last 7 days)
     const sleepPatterns = await db.execute({
       sql: `
@@ -280,7 +323,6 @@ healthRoutes.get('/insights/:memberId{[0-9]+}', async (c) => {
     // Rates, not totals: "14 changes last week" is a number nobody acts on,
     // "2 a day" is the one that says whether something changed.
     const days = 7;
-    const feedsTotal = Number((feedingPatterns.rows[0] as any)?.total_feedings ?? 0);
     const diapersTotal = Number((diaperPatterns.rows[0] as any)?.total_changes ?? 0);
     const sleepMs = Number((sleepPatterns.rows[0] as any)?.total_duration ?? 0);
 
@@ -330,7 +372,7 @@ healthRoutes.get('/insights/:memberId{[0-9]+}', async (c) => {
       period: 'last_7_days',
       trends: {
         periodDays: days,
-        feedsPerDay: round1(feedsTotal / days),
+        feedsPerDay: round1(feedSessions / days),
         diapersPerDay: round1(diapersTotal / days),
         sleepHoursPerDay: round1(sleepMs / 3_600_000 / days),
         weight: weightTrend,

@@ -155,7 +155,7 @@ export const familiesAPI = {
     });
   },
   getSettings: (familyId: string) => api.get(`/families/${familyId}/settings`),
-  updateSettings: (familyId: string, data: { categories?: string[]; categoryOptions?: Record<string, Record<string, string[]>>; stageCategories?: Record<string, string[]> | null; digestFrequency?: string; shareAnonymizedDaily?: boolean; appointmentNotifications?: boolean }) =>
+  updateSettings: (familyId: string, data: { categories?: string[]; categoryOptions?: Record<string, Record<string, string[]>>; stageCategories?: Record<string, string[]> | null; digestFrequency?: string; shareAnonymizedDaily?: boolean; appointmentNotifications?: boolean; feedGroupingMinutes?: number }) =>
     api.put(`/families/${familyId}/settings`, data),
   getAnonymizedPreview: (familyId: string) => api.get(`/families/${familyId}/settings/anonymized-preview`),
 };

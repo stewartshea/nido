@@ -2,7 +2,7 @@
 	import { browser } from '$app/environment';
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
-	import { page } from '$app/stores';
+	import { page, updated } from '$app/stores';
 	import '../app.css';
 	import { restoreThemeEarly } from '$lib/theme';
 	import ThemePicker from '$lib/components/ThemePicker.svelte';
@@ -53,6 +53,21 @@
 			});
 			registerServiceWorker();
 			console.log('Nido app initialized');
+
+			// A new deploy changes the SvelteKit build version. When `updated` flips
+			// (polled per `version.pollInterval` in svelte.config.js, plus an
+			// immediate check when the tab regains focus/visibility) reload so the
+			// fresh shell, assets and `/_app/version.json` take over. Reloading is
+			// safe here: writes are queued to the offline outbox and replayed on mount.
+			updated.subscribe((isUpdated) => {
+				if (isUpdated) {
+					location.reload();
+				}
+			});
+			const refreshIfUpdated = () => void updated.check();
+			document.addEventListener('visibilitychange', refreshIfUpdated);
+			window.addEventListener('focus', refreshIfUpdated);
+			void updated.check();
 		}
 	});
 </script>

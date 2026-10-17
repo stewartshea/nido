@@ -9,6 +9,7 @@ import { randomFillSync } from 'node:crypto';
 import { log } from './logger';
 import {
   NAMESPACE_HOUSEHOLD_ID,
+  DEFAULT_FEED_GROUPING_MINUTES,
   SqliteFacade,
   assertFamilyId,
   deriveKey,
@@ -988,6 +989,22 @@ ALTER TABLE inventory_adjustments ADD COLUMN source TEXT DEFAULT 'manual';
       // weekly cadence the same way digest_sent_at gates the inventory digest.
       if (!has('appointment_notifications_sent_at')) {
         raw.exec('ALTER TABLE family_settings ADD COLUMN appointment_notifications_sent_at TEXT');
+      }
+    },
+  },
+  {
+    version: 33,
+    name: 'feed-grouping-window',
+    // How wide a gap between two feeding rows still counts as one feed for the
+    // feeds/day rate. A breast feed and the bottle that follows it are usually
+    // minutes apart but are one feed; this is the window that merges them.
+    //
+    // Guarded like migration 32, for the same reason: a re-run (or a database
+    // already carrying the column) must not throw and block the family opening.
+    run: (raw) => {
+      const columns = raw.pragma('table_info(family_settings)') as Array<{ name: string }>;
+      if (!columns.some((c) => c.name === 'feed_grouping_minutes')) {
+        raw.exec(`ALTER TABLE family_settings ADD COLUMN feed_grouping_minutes INTEGER NOT NULL DEFAULT ${DEFAULT_FEED_GROUPING_MINUTES}`);
       }
     },
   },
