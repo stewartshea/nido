@@ -993,6 +993,7 @@
 
 					<MemberActivity
 						memberName={selectedMember?.name || 'Selected'}
+						memberId={selectedMemberId}
 						{summary}
 						{activeCategories}
 						quickLinks={selectedMember?.quickLinks ?? null}
@@ -1023,6 +1024,7 @@
 
 				<MemberActivity
 					memberName={selectedMember?.name || 'Selected'}
+					memberId={selectedMemberId}
 					{summary}
 					{activeCategories}
 					quickLinks={selectedMember?.quickLinks ?? null}

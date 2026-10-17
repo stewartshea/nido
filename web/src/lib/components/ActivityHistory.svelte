@@ -2,17 +2,21 @@
 	import { createEventDispatcher } from 'svelte';
 	import {
 		feedingAPI, diaperAPI, sleepAPI, growthAPI, milestoneAPI,
-		vaccinationAPI, moodAPI, journalAPI,
+		vaccinationAPI, moodAPI, journalAPI, attachmentsAPI, type AttachmentMeta,
 	} from '$lib/api';
 	import { CATEGORIES, milestoneCategory } from '$lib/shared';
 	import { formatLength, formatWeight } from '$lib/growth/units';
 	import RecordEditModal from '$lib/components/RecordEditModal.svelte';
+	import AttachmentPreview from '$lib/components/AttachmentPreview.svelte';
 	import { breastDetail } from '$lib/breast';
 	import {
 		Milk, Baby, Moon, TrendingUp, Star, Trophy, Stethoscope, Syringe,
 		Smile, Book, Calendar, PenLine, Trash2, ListFilter, Check,
 	} from 'lucide-svelte';
 
+	// The member whose rows these are, so their attachments can be fetched in
+	// one pass and shown under the records they belong to.
+	export let memberId: number | null = null;
 	// All tracking lists for the selected member (snake_case rows as returned
 	// by the API, except moods which are camelCase).
 	export let feedings: any[] = [];
@@ -95,6 +99,60 @@
 		...moods.map((r) => tag('mood', 'moods', r)),
 		...journalEntries.map((r) => tag('journal', 'journal', r)),
 	].sort((a, b) => new Date(b._when || 0).getTime() - new Date(a._when || 0).getTime());
+
+	/** Map a merged row's _kind to the attachment refType. */
+	function refTypeOfRow(r: any): string {
+		switch (r._kind) {
+			case 'feeding':
+			case 'pumping': return 'feeding';
+			case 'diaper': return 'diaper';
+			case 'sleep': return 'sleep';
+			case 'growth': return 'growth';
+			case 'milestone': return 'milestone';
+			case 'vaccine': return 'vaccination';
+			case 'mood': return 'mood';
+			case 'journal': return 'journal';
+			default: return '';
+		}
+	}
+
+	// Attachments loaded for this member, grouped by "refType:refId".
+	let attachmentsByRef: Record<string, AttachmentMeta[]> = {};
+	let attachmentsLoadedKey = '';
+
+	async function loadAttachments(mid: number | null, version: number) {
+		if (!mid) {
+			attachmentsByRef = {};
+			attachmentsLoadedKey = '';
+			return;
+		}
+		// The version is the row count: a log or a delete changes it and the
+		// files are re-read, so a record added with an attachment shows it
+		// without a page reload. Same-member edits leave the count alone.
+		const key = `${mid}:${version}`;
+		if (key === attachmentsLoadedKey) return;
+		attachmentsLoadedKey = key;
+		try {
+			const res = await attachmentsAPI.listForMember(mid);
+			const map: Record<string, AttachmentMeta[]> = {};
+			for (const a of res.data.attachments ?? []) {
+				const k = `${a.refType}:${a.refId}`;
+				map[k] ??= [];
+				map[k].push(a);
+			}
+			attachmentsByRef = map;
+		} catch {
+			attachmentsByRef = {};
+		}
+	}
+
+	$: loadAttachments(memberId, merged.length);
+
+	function attachmentsFor(r: any): AttachmentMeta[] {
+		const t = refTypeOfRow(r);
+		if (!t || !r.id) return [];
+		return attachmentsByRef[`${t}:${r.id}`] ?? [];
+	}
 
 	$: availableCats = CATEGORIES.filter((c) => activeCategories.length === 0 || activeCategories.includes(c.id));
 	$: filterLabel = selected.length === 0
@@ -338,6 +396,13 @@
 						{#if noteOf(r)}
 							<p class="text-xs text-ink-soft truncate">{noteOf(r)}</p>
 						{/if}
+						{#if attachmentsFor(r).length}
+							<div class="mt-2 flex flex-wrap items-center gap-1.5">
+								{#each attachmentsFor(r) as a (a.id)}
+									<AttachmentPreview attachment={a} variant="thumb" />
+								{/each}
+							</div>
+						{/if}
 					</div>
 					<div class="flex items-center gap-1 shrink-0">
 						<button type="button" on:click={() => openEdit(r)} class="p-2 rounded-md text-accent hover:bg-surface2" aria-label="Edit record">
@@ -360,6 +425,7 @@
 						<th class="py-2 px-2">Details</th>
 						<th class="py-2 px-2">By</th>
 						<th class="py-2 px-2">Notes</th>
+						<th class="py-2 px-2">Files</th>
 						<th class="py-2 px-2 text-right">Actions</th>
 					</tr>
 				</thead>
@@ -371,6 +437,17 @@
 							<td class="py-2 px-2">{details(r)}</td>
 							<td class="py-2 px-2 whitespace-nowrap">{recordedBy(r) || '—'}</td>
 							<td class="py-2 px-2 text-ink-soft">{r.notes || (r._kind === 'journal' ? r.body : '') || ''}</td>
+							<td class="py-2 px-2">
+								{#if attachmentsFor(r).length}
+									<div class="flex flex-wrap gap-1">
+										{#each attachmentsFor(r) as a (a.id)}
+											<AttachmentPreview attachment={a} variant="chip" />
+										{/each}
+									</div>
+								{:else}
+									<span class="text-ink-soft">—</span>
+								{/if}
+							</td>
 							<td class="py-2 px-2 text-right whitespace-nowrap">
 								<button type="button" on:click={() => openEdit(r)} class="text-accent hover:underline">Edit</button>
 								<span class="text-ink-soft mx-1">·</span>
