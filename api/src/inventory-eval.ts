@@ -164,11 +164,11 @@ export interface Recipient {
 }
 
 /**
- * Who a rule is addressed to. Only accounts that have confirmed their address are
- * eligible: an unconfirmed address is either a typo or someone else's, and a
- * family alert is not the place to find out which.
+ * Every account in the family that may be emailed: confirmed address, and a
+ * real one. Shared by rule-addressed digests and the family-wide appointment
+ * reminder, so "who can we email" is answered in exactly one place.
  */
-export async function resolveRecipients(db: any, rule: InventoryRule): Promise<Recipient[]> {
+export async function familyRecipients(db: any): Promise<Recipient[]> {
 	const scope = await householdScopeId(db);
 	if (scope === null) return [];
 	const eligible = (await db.execute({
@@ -180,13 +180,21 @@ export async function resolveRecipients(db: any, rule: InventoryRule): Promise<R
 		      ORDER BY u.first_name`,
 		args: [scope],
 	})).rows as any[];
-
-	const toRecipient = (r: any): Recipient => ({
+	return eligible.map((r) => ({
 		userId: String(r.userId), email: String(r.email), firstName: r.firstName ?? null,
-	});
-	if (rule.audienceKind !== 'users') return eligible.map(toRecipient);
+	}));
+}
+
+/**
+ * Who a rule is addressed to. Only accounts that have confirmed their address are
+ * eligible: an unconfirmed address is either a typo or someone else's, and a
+ * family alert is not the place to find out which.
+ */
+export async function resolveRecipients(db: any, rule: InventoryRule): Promise<Recipient[]> {
+	const eligible = await familyRecipients(db);
+	if (rule.audienceKind !== 'users') return eligible;
 	const wanted = new Set(rule.audienceIds);
-	return eligible.filter((r) => wanted.has(String(r.userId))).map(toRecipient);
+	return eligible.filter((r) => wanted.has(r.userId));
 }
 
 /** The subset of `recipients` who have not been told about this crossing yet. */

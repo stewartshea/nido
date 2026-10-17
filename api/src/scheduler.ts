@@ -1,5 +1,6 @@
 import { getRegistryClient } from './db-namespaces';
 import { runFamilyDigest } from './notifications';
+import { runAppointmentDigest } from './appointments';
 import { log } from './logger';
 import { randomBytes } from 'node:crypto';
 import { hostname } from 'node:os';
@@ -102,6 +103,8 @@ export interface SweepResult {
 	firing: number;
 	/** Digests actually emailed in this sweep. */
 	sent: number;
+	/** Families that got their weekly appointment email in this sweep. */
+	appointmentsSent: number;
 	failed: number;
 	errors: number;
 }
@@ -113,7 +116,7 @@ export async function runDigestSweep(
 ): Promise<SweepResult> {
 	const config = opts.config ?? readConfig();
 	const holder = opts.holder ?? schedulerHolder;
-	const empty: SweepResult = { families: 0, firing: 0, sent: 0, failed: 0, errors: 0 };
+	const empty: SweepResult = { families: 0, firing: 0, sent: 0, appointmentsSent: 0, failed: 0, errors: 0 };
 
 	if (!config.enabled) return { ...empty, skipped: 'disabled' };
 	// A slow sweep must not overlap itself and double-send inside one process.
@@ -142,10 +145,22 @@ export async function runDigestSweep(
 					summary.errors += 1;
 					log.error('notification digest failed for family', { event: 'scheduler_family_failed', familyId, err });
 				}
+				// The appointment reminder is its own opt-in and its own weekly
+				// clock, so it is driven here rather than folded into the digest
+				// above. Still one family database at a time.
+				try {
+					const appt = await runAppointmentDigest(familyId, { logger: log });
+					if (appt.sent > 0) summary.appointmentsSent += 1;
+					if (appt.failed.length > 0) summary.failed += 1;
+				} catch (err: any) {
+					summary.errors += 1;
+					log.error('appointment digest failed for family', { event: 'scheduler_appointment_failed', familyId, err });
+				}
 			}
 			log.info('notification sweep complete', {
 				event: 'scheduler_sweep', families: summary.families,
-				firing: summary.firing, sent: summary.sent, failed: summary.failed, errors: summary.errors,
+				firing: summary.firing, sent: summary.sent, appointmentsSent: summary.appointmentsSent,
+				failed: summary.failed, errors: summary.errors,
 			});
 			return summary;
 		} finally {

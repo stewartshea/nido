@@ -966,6 +966,31 @@ ALTER TABLE inventory_adjustments ADD COLUMN source TEXT DEFAULT 'manual';
       }
     },
   },
+  {
+    // Renumbered from 31 when member-dashboard-tiles (#33) landed first; two
+    // migrations must never share a version, or the second is silently skipped
+    // on any database that already ran the first.
+    version: 32,
+    name: 'appointment-notifications',
+    // Guarded rather than plain SQL, like migration 30: a database that has had
+    // its version rewound (or an interrupted upgrade) may already carry these
+    // columns, and a plain ADD COLUMN would then throw and block the whole
+    // family from opening. The check makes re-running harmless.
+    run: (raw) => {
+      const columns = raw.pragma('table_info(family_settings)') as Array<{ name: string }>;
+      const has = (name: string) => columns.some((c) => c.name === name);
+      // Opt-in weekly email about upcoming appointments. Off by default (0), so
+      // an existing family's inbox behaviour does not change on upgrade.
+      if (!has('appointment_notifications')) {
+        raw.exec('ALTER TABLE family_settings ADD COLUMN appointment_notifications INTEGER NOT NULL DEFAULT 0');
+      }
+      // When the last appointment email actually reached someone. Gates the
+      // weekly cadence the same way digest_sent_at gates the inventory digest.
+      if (!has('appointment_notifications_sent_at')) {
+        raw.exec('ALTER TABLE family_settings ADD COLUMN appointment_notifications_sent_at TEXT');
+      }
+    },
+  },
 ];
 
 // ---------------------------------------------------------------------------
