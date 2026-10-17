@@ -944,6 +944,28 @@ ALTER TABLE inventory_adjustments ADD COLUMN source TEXT DEFAULT 'manual';
       }
     },
   },
+  {
+    version: 31,
+    name: 'member-dashboard-tiles',
+    // Which dashboard tiles to show for a member, and in what order. Stored per
+    // member (not per account), so the panel follows the person across devices.
+    //
+    // Null means "follow the member's categories", which is how the panel has
+    // always decided its tiles; a family that never customizes keeps getting
+    // that. (The set of tiles on offer grew in the same change that added this
+    // column, so the raw tile count does go up for members who track the newer
+    // categories.)
+    //
+    // Guarded rather than plain SQL, the same reason migration 30 is: an
+    // intermediate build can carry the column at an earlier user_version, and a
+    // plain ADD COLUMN would then fail and block the whole family from opening.
+    run: (raw) => {
+      const columns = raw.pragma('table_info(family_members)') as Array<{ name: string }>;
+      if (!columns.some((c) => c.name === 'dashboard_tiles')) {
+        raw.exec('ALTER TABLE family_members ADD COLUMN dashboard_tiles TEXT');
+      }
+    },
+  },
 ];
 
 // ---------------------------------------------------------------------------

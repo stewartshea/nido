@@ -107,6 +107,7 @@ function memberShape(row: any, familyStages?: Record<string, string[]> | null) {
 		linkedAccount: Number(row.linked_account || 0) === 1,
 		stage: row.stage ?? null,
 		quickLinks: parseJson<string[] | null>(row.quick_links, null),
+		dashboardTiles: parseJson<string[] | null>(row.dashboard_tiles, null),
 		categories: resolveCategories(parseJson<string[] | null>(row.categories, null), row.stage ?? null, familyStages),
 	};
 }
@@ -200,6 +201,7 @@ const updateMemberSchema = z.object({
 	categories: z.array(z.string()).optional(),
 	stage: z.enum(STAGES).nullable().optional(),
 	quickLinks: z.array(z.string()).nullable().optional(),
+	dashboardTiles: z.array(z.string()).nullable().optional(),
 	trackable: z.boolean().optional(),
 });
 
@@ -562,6 +564,7 @@ async function handleGetMembers(c: Context<AuthEnv>) {
 				fm.avatar,
 				fm.stage,
 				fm.quick_links,
+				fm.dashboard_tiles,
 				fm.categories,
 				CASE WHEN am.user_id IS NULL THEN 0 ELSE 1 END AS linked_account
 			FROM family_members fm
@@ -621,7 +624,7 @@ async function handleAddMember(c: Context<AuthEnv>) {
 		if (linkedId) {
 			const shapeRes = await db.execute({
 				sql: `
-					SELECT fm.id, fm.legacy_subject_id, fm.trackable, fm.name, fm.birth_date, fm.gender, fm.member_type, fm.email, fm.avatar, fm.stage, fm.quick_links, fm.categories,
+					SELECT fm.id, fm.legacy_subject_id, fm.trackable, fm.name, fm.birth_date, fm.gender, fm.member_type, fm.email, fm.avatar, fm.stage, fm.quick_links, fm.dashboard_tiles, fm.categories,
 					       CASE WHEN am.user_id IS NULL THEN 0 ELSE 1 END AS linked_account
 					FROM family_members fm
 					LEFT JOIN account_members am ON am.member_id = fm.id
@@ -673,7 +676,7 @@ async function handleAddMember(c: Context<AuthEnv>) {
 
 	const rowRes = await db.execute({
 		sql: `
-			SELECT fm.id, fm.legacy_subject_id, fm.trackable, fm.name, fm.birth_date, fm.gender, fm.member_type, fm.email, fm.avatar, fm.stage, fm.quick_links, fm.categories,
+			SELECT fm.id, fm.legacy_subject_id, fm.trackable, fm.name, fm.birth_date, fm.gender, fm.member_type, fm.email, fm.avatar, fm.stage, fm.quick_links, fm.dashboard_tiles, fm.categories,
 			       CASE WHEN am.user_id IS NULL THEN 0 ELSE 1 END AS linked_account
 			FROM family_members fm
 			LEFT JOIN account_members am ON am.member_id = fm.id
@@ -700,7 +703,7 @@ async function handleUpdateMember(c: Context<AuthEnv>) {
 	if (rowRes.rows.length === 0) return c.json({ error: 'Member not found' }, 404);
 	const existing = rowRes.rows[0] as any;
 
-	const { type, name, birthDate, gender, email, categories, stage, quickLinks, trackable } = (c.req as any).valid('json');
+	const { type, name, birthDate, gender, email, categories, stage, quickLinks, dashboardTiles, trackable } = (c.req as any).valid('json');
 	const nextMemberType = type || String(existing.member_type || 'child');
 	const normalizedEmail = email === undefined ? undefined : (email === null ? null : String(email).trim().toLowerCase());
 	const updates: string[] = [];
@@ -716,6 +719,7 @@ async function handleUpdateMember(c: Context<AuthEnv>) {
 	// off must not have it switched back on by an age change.
 	if (stage !== undefined) { updates.push('stage = ?'); params.push(stage); }
 	if (quickLinks !== undefined) { updates.push('quick_links = ?'); params.push(quickLinks ? JSON.stringify(quickLinks) : null); }
+	if (dashboardTiles !== undefined) { updates.push('dashboard_tiles = ?'); params.push(dashboardTiles ? JSON.stringify(dashboardTiles) : null); }
 
 	let legacySubjectId = existing.legacy_subject_id ? Number(existing.legacy_subject_id) : null;
 	// Flagging a member off is non-destructive: the profile and its records are kept.
@@ -780,7 +784,7 @@ async function handleUpdateMember(c: Context<AuthEnv>) {
 
 	const memRes = await db.execute({
 		sql: `
-			SELECT fm.id, fm.legacy_subject_id, fm.trackable, fm.name, fm.birth_date, fm.gender, fm.member_type, fm.email, fm.avatar, fm.stage, fm.quick_links, fm.categories,
+			SELECT fm.id, fm.legacy_subject_id, fm.trackable, fm.name, fm.birth_date, fm.gender, fm.member_type, fm.email, fm.avatar, fm.stage, fm.quick_links, fm.dashboard_tiles, fm.categories,
 			       CASE WHEN am.user_id IS NULL THEN 0 ELSE 1 END AS linked_account
 			FROM family_members fm
 			LEFT JOIN account_members am ON am.member_id = fm.id
@@ -1145,7 +1149,7 @@ async function handleExportFamily(c: Context<AuthEnv>) {
 
 	const members = (await db.execute({
 		sql: `
-			SELECT fm.id, fm.legacy_subject_id, fm.trackable, fm.name, fm.birth_date, fm.gender, fm.member_type, fm.email, fm.avatar, fm.stage, fm.quick_links, fm.categories,
+			SELECT fm.id, fm.legacy_subject_id, fm.trackable, fm.name, fm.birth_date, fm.gender, fm.member_type, fm.email, fm.avatar, fm.stage, fm.quick_links, fm.dashboard_tiles, fm.categories,
 			       CASE WHEN am.user_id IS NULL THEN 0 ELSE 1 END AS linked_account
 			FROM family_members fm
 			LEFT JOIN account_members am ON am.member_id = fm.id

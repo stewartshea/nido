@@ -325,6 +325,7 @@
 				trackable: m.trackable !== false,
 				stage: m.stage ?? null,
 				quickLinks: Array.isArray(m.quickLinks) ? m.quickLinks : null,
+				dashboardTiles: Array.isArray(m.dashboardTiles) ? m.dashboardTiles : null,
 				legacySubjectId: m.legacySubjectId ?? null,
 			}));
 
@@ -544,6 +545,17 @@
 			profiles = profiles;
 		} catch (err: any) {
 			console.error('Failed to update quick links', err);
+		}
+	}
+
+	async function saveDashboardTiles(tiles: string[] | null) {
+		if (!activeFamilyId || !selectedMember) return;
+		try {
+			await familiesAPI.updateMember(activeFamilyId, Number(selectedMember.id), { dashboardTiles: tiles });
+			selectedMember.dashboardTiles = tiles;
+			profiles = profiles;
+		} catch (err: any) {
+			console.error('Failed to update dashboard tiles', err);
 		}
 	}
 
@@ -996,6 +1008,7 @@
 						{summary}
 						{activeCategories}
 						quickLinks={selectedMember?.quickLinks ?? null}
+						dashboardTiles={selectedMember?.dashboardTiles ?? null}
 						stage={selectedMember?.stage ?? null}
 						{feedings} {diapers} {sleeps} {growths}
 						{milestones} {vaccinations} {moods} {journalEntries}
@@ -1006,6 +1019,7 @@
 						on:refresh={async () => { await refreshLists(); await refreshSummary(); }}
 						on:pin={(e) => setQuickLink(e.detail.kind, true)}
 						on:unpin={(e) => setQuickLink(e.detail.kind, false)}
+						on:saveTiles={(e) => saveDashboardTiles(e.detail.tiles)}
 					/>
 
 					<!-- The selected person's own reports. WHO percentiles are child
@@ -1026,6 +1040,7 @@
 					{summary}
 					{activeCategories}
 					quickLinks={selectedMember?.quickLinks ?? null}
+					dashboardTiles={selectedMember?.dashboardTiles ?? null}
 					stage={selectedMember?.stage ?? null}
 					{feedings} {diapers} {sleeps} {growths}
 					{milestones} {vaccinations} {moods} {journalEntries}
@@ -1036,6 +1051,7 @@
 					on:refresh={async () => { await refreshLists(); await refreshSummary(); }}
 					on:pin={(e) => setQuickLink(e.detail.kind, true)}
 					on:unpin={(e) => setQuickLink(e.detail.kind, false)}
+					on:saveTiles={(e) => saveDashboardTiles(e.detail.tiles)}
 				/>
 
 				<!--
