@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { formatAge, formatRelative } from './format';
+import { formatAge, formatRelative, formatUpcoming } from './format';
 
 // Fixed reference point so these cases cannot drift with the clock.
 const NOW = Date.parse('2026-10-05T17:16:00.000Z');   // a Monday evening
@@ -54,6 +54,44 @@ describe('formatRelative', () => {
 		expect(formatRelative(minutesAgo(60 * 24), NOW)).toBe('yesterday');
 		expect(formatRelative(minutesAgo(60 * 24 * 3), NOW)).toBe('3 days ago');
 		expect(formatRelative(minutesAgo(60 * 24 * 8), NOW)).not.toContain('ago');
+	});
+});
+
+describe('formatUpcoming', () => {
+	// Same fixed reference as formatRelative, so the two are read the same way.
+	const NOW = Date.parse('2026-10-05T17:16:00.000Z');
+	const inMinutes = (m: number) => new Date(NOW + m * 60_000).toISOString();
+
+	it('says nothing about a missing or unparseable moment', () => {
+		expect(formatUpcoming(null, NOW)).toBe('—');
+		expect(formatUpcoming(undefined, NOW)).toBe('—');
+		expect(formatUpcoming('not a date', NOW)).toBe('—');
+	});
+
+	// The bug this exists to prevent: formatRelative reads a future date as
+	// "just now", because its first branch is "less than a minute ago".
+	it('never reports a future appointment as having already happened', () => {
+		expect(formatUpcoming(inMinutes(45), NOW)).not.toBe('just now');
+		expect(formatRelative(inMinutes(45), NOW)).toBe('just now');
+	});
+
+	it('counts up in minutes, then whole hours', () => {
+		expect(formatUpcoming(inMinutes(1), NOW)).toBe('in 1 min');
+		expect(formatUpcoming(inMinutes(45), NOW)).toBe('in 45 min');
+		expect(formatUpcoming(inMinutes(60), NOW)).toBe('in 1 hour');
+		expect(formatUpcoming(inMinutes(180), NOW)).toBe('in 3 hours');
+	});
+
+	it('says tomorrow, then days, then weeks', () => {
+		expect(formatUpcoming(inMinutes(60 * 24), NOW)).toBe('tomorrow');
+		expect(formatUpcoming(inMinutes(60 * 24 * 4), NOW)).toBe('in 4 days');
+		expect(formatUpcoming(inMinutes(60 * 24 * 8), NOW)).toBe('in 1 week');
+		expect(formatUpcoming(inMinutes(60 * 24 * 21), NOW)).toBe('in 3 weeks');
+	});
+
+	it('reads a due or past instant as now rather than a negative countdown', () => {
+		expect(formatUpcoming(inMinutes(0), NOW)).toBe('now');
+		expect(formatUpcoming(inMinutes(-5), NOW)).toBe('now');
 	});
 });
 

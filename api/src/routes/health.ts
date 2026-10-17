@@ -129,6 +129,23 @@ healthRoutes.get('/summary/:memberId{[0-9]+}', async (c) => {
     `,
       args: [subjectId]
     });
+
+    // Get the appointments still ahead of this member, soonest first.
+    //
+    // This is deliberately separate from latestByKind.appointments: that one is
+    // "the most recent row", so with two future appointments it would surface
+    // the further-off one and call it the last. A tile that promises the *next*
+    // appointment has to sort ascending and start from now.
+    const upcomingAppointments = await db.execute({
+      sql: `
+      SELECT id, title, description, achieved_date, category
+      FROM milestones
+      WHERE subject_id = ? AND kind = 'appointments' AND achieved_date >= ?
+      ORDER BY achieved_date ASC, id ASC
+      LIMIT 5
+    `,
+      args: [subjectId, new Date().toISOString()]
+    });
     
     // Calculate age in weeks
     const birthDate = new Date(baby.birth_date);
@@ -162,6 +179,7 @@ healthRoutes.get('/summary/:memberId{[0-9]+}', async (c) => {
       latestGrowth: latestGrowth.rows[0] || null,
       recentMilestones: latestMilestones.rows,
       upcomingVaccinations: upcomingVaccinations.rows,
+      upcomingAppointments: upcomingAppointments.rows,
       latestMilestoneKinds: latestMilestoneKinds.rows,
       latestByKind,
       lastUpdated: new Date().toISOString()

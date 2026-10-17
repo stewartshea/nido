@@ -61,6 +61,35 @@ export function formatRelative(iso: string | null | undefined, nowMs: number = D
 	return formatTime(iso);
 }
 
+/**
+ * Human "time until" phrasing for a moment that has not happened yet.
+ *
+ * `formatRelative` answers "how long since", so a future date falls through its
+ * first branch and reads as "just now" — which is exactly wrong for a booked
+ * appointment. This is the mirror image, and it is deliberately coarse for the
+ * same reason: a tile is answering "how soon", not "the exact instant". Past a
+ * week it counts weeks rather than falling back to a date, because "in 3 weeks"
+ * is the useful shape of a far-off appointment.
+ */
+export function formatUpcoming(iso: string | null | undefined, nowMs: number = Date.now()): string {
+	if (!iso) return '—';
+	const t = new Date(iso).getTime();
+	if (!Number.isFinite(t)) return '—';
+	const diff = t - nowMs;
+	// Due, or already past: the caller should be using formatRelative for those,
+	// but reading "now" beats reading a negative "in -3 days".
+	if (diff < 60_000) return 'now';
+	const mins = Math.floor(diff / 60_000);
+	if (mins < 60) return `in ${mins} min`;
+	const hours = Math.floor(mins / 60);
+	if (hours < 24) return `in ${hours} hour${hours === 1 ? '' : 's'}`;
+	const days = Math.floor(hours / 24);
+	if (days === 1) return 'tomorrow';
+	if (days < 7) return `in ${days} days`;
+	const weeks = Math.floor(days / 7);
+	return `in ${weeks} week${weeks === 1 ? '' : 's'}`;
+}
+
 export interface AgeParts {
 	value: string;
 	unit: string;

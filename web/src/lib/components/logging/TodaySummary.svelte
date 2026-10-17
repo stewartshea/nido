@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { createEventDispatcher } from 'svelte';
 	import { Milk, Baby, Moon, Syringe, TrendingUp, Pill, Apple, Scissors, Calendar, Stethoscope, Award, Repeat2, Settings2 } from 'lucide-svelte';
-	import { formatAge, formatElapsed, formatRelative, formatTime } from '$lib/logging/format';
+	import { formatAge, formatElapsed, formatRelative, formatTime, formatUpcoming } from '$lib/logging/format';
 	import { formatGrowthHeadline } from '$lib/growth/units';
 
 	export let summary: any;
@@ -35,6 +35,10 @@
 
 	function ago(iso: string | null | undefined): string {
 		return formatRelative(iso, now);
+	}
+
+	function up(iso: string | null | undefined): string {
+		return formatUpcoming(iso, now);
 	}
 
 	function clock(iso: string | null | undefined): string {
@@ -239,15 +243,21 @@
 				<p class="text-sm text-ink-soft mt-0.5">{m?.title || m?.category || 'no grooming recorded'}</p>
 			</button>
 		{:else if t === 'appointments'}
+			<!-- Future-facing. A booked appointment lives on a date that has not
+			     arrived, and "time since the last appointment" is the wrong
+			     question while one is on the calendar. When the member has an
+			     appointment ahead, this tile counts down to the next one; only
+			     when none is booked does it fall back to the last one. -->
+			{@const next = summary?.upcomingAppointments?.[0] ?? null}
 			{@const m = latestByKind.appointments}
-			<button type="button" on:click={() => dispatch('log', { kind: 'appointments' })} class="text-left bg-surface rounded-lg shadow-card p-4 border-l-4 border-line hover:shadow-card focus:outline-none focus-visible:ring-2 focus-visible:ring-accent active:scale-[0.98] transition">
+			<button type="button" on:click={() => dispatch('log', { kind: 'appointments' })} data-testid="appointments-tile" class="text-left bg-surface rounded-lg shadow-card p-4 border-l-4 border-line hover:shadow-card focus:outline-none focus-visible:ring-2 focus-visible:ring-accent active:scale-[0.98] transition">
 				<div class="flex items-center gap-2 mb-1">
 					<Calendar class="w-5 h-5 text-ink-soft" aria-hidden="true" />
-					<p class="text-xs text-ink-soft uppercase font-semibold tracking-wider">Last Appointment</p>
+					<p class="text-xs text-ink-soft uppercase font-semibold tracking-wider">{next ? 'Next Appointment' : 'Last Appointment'}</p>
 				</div>
-				<p class="text-2xl font-display font-semibold text-ink">{m ? ago(m.achieved_date) : '—'}</p>
-				<p class="text-xs text-ink-soft mt-1">{m ? clock(m.achieved_date) : ''}</p>
-				<p class="text-sm text-ink-soft mt-0.5">{m?.title || 'no appointment recorded'}</p>
+				<p class="text-2xl font-display font-semibold text-ink">{next ? up(next.achieved_date) : (m ? ago(m.achieved_date) : '—')}</p>
+				<p class="text-xs text-ink-soft mt-1">{next ? formatTime(next.achieved_date) : (m ? clock(m.achieved_date) : '')}</p>
+				<p class="text-sm text-ink-soft mt-0.5">{next?.title || m?.title || 'no appointment recorded'}</p>
 			</button>
 		{:else if t === 'medical'}
 			{@const m = latestByKind.medical}

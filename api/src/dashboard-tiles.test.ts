@@ -21,6 +21,7 @@ async function call(method: string, token: string, path: string, body?: unknown)
 
 const HOUR = 60 * 60 * 1000;
 const hoursAgo = (n: number) => new Date(Date.now() - n * HOUR).toISOString();
+const inDays = (n: number) => new Date(Date.now() + n * 24 * HOUR).toISOString();
 
 let token = '';
 let familyId = '';
@@ -99,5 +100,42 @@ describe('the dashboard panel is customizable per member', () => {
 		await call('PUT', token, `/api/v1/families/${familyId}/members/${id}`, { dashboardTiles: ['medication'] });
 		const cleared = await call('PUT', token, `/api/v1/families/${familyId}/members/${id}`, { dashboardTiles: null });
 		expect(cleared.body.member.dashboardTiles).toBeNull();
+	});
+});
+
+describe('the summary reports the appointments still ahead', () => {
+	it('lists future appointments soonest-first and omits the ones that have passed', async () => {
+		const id = await newPet('Booked');
+		await call('POST', token, '/api/v1/milestones', {
+			memberId: id, title: 'Vet check', achievedDate: inDays(10), kind: 'appointments', category: 'checkup',
+		});
+		await call('POST', token, '/api/v1/milestones', {
+			memberId: id, title: 'Booster', achievedDate: inDays(3), kind: 'appointments', category: 'vaccine',
+		});
+		await call('POST', token, '/api/v1/milestones', {
+			memberId: id, title: 'Already happened', achievedDate: hoursAgo(5), kind: 'appointments',
+		});
+
+		const res = await call('GET', token, `/api/v1/health/summary/${id}`);
+		expect(res.status).toBe(200);
+
+		// Soonest first, past excluded. This is the ordering the tile needs: it
+		// promises the *next* appointment, not the furthest-out one.
+		const upcoming = res.body.summary.upcomingAppointments as any[];
+		expect(upcoming.map((a) => a.title)).toEqual(['Booster', 'Vet check']);
+
+		// latestByKind is "most recent by date", which for a future appointment
+		// is the *furthest* one — the reason upcomingAppointments exists as its
+		// own field rather than being derived from this.
+		expect(res.body.summary.latestByKind.appointments.title).toBe('Vet check');
+	});
+
+	it('is empty when nothing is booked ahead', async () => {
+		const id = await newPet('Unbooked');
+		await call('POST', token, '/api/v1/milestones', {
+			memberId: id, title: 'Last visit', achievedDate: hoursAgo(48), kind: 'appointments',
+		});
+		const res = await call('GET', token, `/api/v1/health/summary/${id}`);
+		expect(res.body.summary.upcomingAppointments).toEqual([]);
 	});
 });
