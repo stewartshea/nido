@@ -125,10 +125,11 @@ describe('the summary reports what is still ahead', () => {
 		expect(upcoming.map((a) => a.title)).toEqual(['Ear check', 'Vet check']);
 		expect(upcoming[0].kind).toBe('medical');
 
-		// latestByKind is "most recent by date", which for a future entry is the
-		// *furthest* one — the reason upcomingAppointments exists as its own
-		// field rather than being derived from this.
-		expect(res.body.summary.latestByKind.appointments.title).toBe('Vet check');
+		// lastByKind is "most recently happened", so a future-dated appointment
+		// must not qualify as the last one — the past "Already happened" row is.
+		expect(res.body.summary.latestByKind.appointments.title).toBe('Already happened');
+		// And a future medical row must not leak into "Last Medical" either.
+		expect(res.body.summary.latestByKind.medical).toBeUndefined();
 	});
 
 	it('is empty when nothing is booked ahead', async () => {
