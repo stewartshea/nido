@@ -6,6 +6,7 @@ import {
 	renderFamilyInviteEmail,
 	renderSmtpTestEmail,
 	renderAccountDeletedEmail,
+	renderUpcomingAppointmentsEmail,
 } from './mail-templates';
 
 const URL = 'https://nido.test/join?family=abc&token=xyz';
@@ -70,5 +71,44 @@ describe('mail templates', () => {
 	it('never leaks a raw interpolation into the html without escaping', () => {
 		const mail = renderFamilyInviteEmail({ familyName: 'a&b<c>"d"', url: URL });
 		expect(mail.html).toContain('a&amp;b&lt;c&gt;&quot;d&quot;');
+	});
+});
+
+describe('upcoming appointments email', () => {
+	const line = { title: 'Six-week check', when: '2026-06-04T14:30:00.000Z', category: 'checkup', memberName: 'Nest' };
+
+	it('names the count in the subject and lists each appointment', () => {
+		const one = renderUpcomingAppointmentsEmail({ firstName: 'Ada', appointments: [line], appointmentsUrl: URL });
+		expect(one.subject).toContain('1 appointment');
+		expect(one.text).toContain('Six-week check');
+		expect(one.text).toContain('Nest');
+		expect(one.html).toContain('<!doctype html>');
+		expect(one.html).toContain('View appointments');
+
+		const two = renderUpcomingAppointmentsEmail({ appointments: [line, { ...line, title: 'Follow-up' }], appointmentsUrl: URL });
+		expect(two.subject).toContain('2 appointments');
+	});
+
+	it('keeps the link in both parts', () => {
+		const mail = renderUpcomingAppointmentsEmail({ appointments: [line], appointmentsUrl: URL });
+		expect(mail.text).toContain(URL);
+		expect(mail.html).toContain('href="https://nido.test/join?family=abc&amp;token=xyz"');
+	});
+
+	// An appointment title is free text a caregiver typed, and it is interpolated
+	// into HTML that lands in another person's inbox.
+	it('escapes appointment titles in the html part', () => {
+		const mail = renderUpcomingAppointmentsEmail({
+			appointments: [{ title: '<img src=x onerror=alert(1)>', when: '2026-06-04T14:30:00.000Z' }],
+			appointmentsUrl: URL,
+		});
+		expect(mail.html).not.toContain('<img');
+		expect(mail.html).toContain('&lt;img src=x');
+	});
+
+	it('does not crash on an unparseable date, and never prints Invalid Date', () => {
+		const mail = renderUpcomingAppointmentsEmail({ appointments: [{ title: 'Odd', when: 'soon' }], appointmentsUrl: URL });
+		expect(mail.text).toContain('soon');
+		expect(mail.html).not.toContain('Invalid Date');
 	});
 });

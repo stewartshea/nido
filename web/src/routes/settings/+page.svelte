@@ -67,7 +67,7 @@
 
 	// Family-scoped tracking settings (categories + per-category option lists).
 	let settingsTab: 'profile' | 'family' | 'import' | 'members' | 'backup' | 'admin' | null = null;
-	let familySettings: { categories: string[] | null; categoryOptions: Record<string, Record<string, string[]>>; defaultCategoryOptions: Record<string, Record<string, string[]>>; stageCategories?: Record<string, string[]> | null; defaultStageCategories?: Record<string, string[]>; digestFrequency?: string; digestSentAt?: string | null; shareAnonymizedDaily?: boolean } | null = null;
+	let familySettings: { categories: string[] | null; categoryOptions: Record<string, Record<string, string[]>>; defaultCategoryOptions: Record<string, Record<string, string[]>>; stageCategories?: Record<string, string[]> | null; defaultStageCategories?: Record<string, string[]>; digestFrequency?: string; digestSentAt?: string | null; shareAnonymizedDaily?: boolean; appointmentNotifications?: boolean; appointmentNotificationsSentAt?: string | null } | null = null;
 	// The stage whose category set is being edited, and a local mirror so toggles
 	// feel instant before the round trip lands.
 	let stageEditor: string | null = null;
@@ -793,6 +793,33 @@
 		}
 	}
 
+	/**
+	 * The weekly appointment reminder is a separate opt-in from the digest: it
+	 * has its own cadence and its own column, so turning one off never turns the
+	 * other off. Optimistic like the other settings toggles here.
+	 */
+	async function toggleAppointmentNotifications() {
+		if (!activeFamilyId || !familySettings) return;
+		savingFamilySettings = true;
+		const next = !familySettings.appointmentNotifications;
+		try {
+			const res = await familiesAPI.updateSettings(activeFamilyId, { appointmentNotifications: next });
+			familySettings = {
+				...familySettings,
+				...res.data.settings,
+				defaultCategoryOptions: familySettings.defaultCategoryOptions,
+				defaultStageCategories: familySettings.defaultStageCategories,
+			};
+			notice = next
+				? 'Weekly appointment reminders enabled.'
+				: 'Weekly appointment reminders turned off.';
+		} catch (err: any) {
+			error = err.response?.data?.error || 'Could not update appointment reminders.';
+		} finally {
+			savingFamilySettings = false;
+		}
+	}
+
 	function stageSetFor(stage: string | null): string[] {
 		if (!stage) return [];
 		return stageDraft[stage]
@@ -1248,6 +1275,26 @@
 										{#if familySettings.digestSentAt}
 											<p class="text-xs text-ink-soft mt-2">Last sent {new Date(familySettings.digestSentAt).toLocaleString()}.</p>
 										{/if}
+										<div class="border-t border-line-soft pt-4 mt-4">
+											<h4 class="font-display font-semibold text-sm mb-1">Upcoming appointment reminders</h4>
+											<p class="text-sm text-ink-soft mb-2">
+												A weekly email listing the appointments your family has coming up in the next two weeks.
+												Separate from the digest above: this is a reminder, not an alert, and it stays quiet when nothing is booked.
+											</p>
+											<ToggleSwitch
+												checked={familySettings.appointmentNotifications === true}
+												disabled={savingFamilySettings}
+												label="Email a weekly list of upcoming appointments"
+												description="Off by default. Sent once a week to everyone in the family with a confirmed email address."
+												onToggle={toggleAppointmentNotifications}
+											/>
+											{#if familySettings.appointmentNotificationsSentAt}
+												<p class="text-xs text-ink-soft mt-2">Last sent {new Date(familySettings.appointmentNotificationsSentAt).toLocaleString()}.</p>
+											{/if}
+											<p class="text-xs text-ink-soft mt-2">
+												See them any time on the <a href="/appointments" class="text-link underline">upcoming appointments page</a>.
+											</p>
+										</div>
 									</div>
 								{/if}
 								{#if familySettings}

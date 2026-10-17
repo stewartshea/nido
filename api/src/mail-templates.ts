@@ -289,3 +289,75 @@ export function renderInventoryAlertsEmail(opts: {
 		}),
 	};
 }
+
+export interface AppointmentEmailLine {
+	title: string;
+	/** ISO 8601 timestamp of the appointment. */
+	when: string;
+	category?: string | null;
+	memberName?: string | null;
+}
+
+/**
+ * Date and time for a person, not a machine.
+ *
+ * `toLocaleString` is deliberate: an appointment is a wall-clock event
+ * ("Thursday at 9:30"), so the day it falls on matters more than the absolute
+ * instant. Anything unparseable is passed through rather than shown as
+ * "Invalid Date".
+ */
+function appointmentWhen(iso: string): string {
+	const t = Date.parse(iso);
+	if (!Number.isFinite(t)) return iso;
+	return new Date(t).toLocaleString(undefined, {
+		weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
+	});
+}
+
+/**
+ * The weekly nudge listing what is booked in the weeks ahead.
+ *
+ * Written to be scanned on a phone between other things: one line per
+ * appointment, who it is for and when, soonest first. It says nothing when
+ * there is nothing booked — the caller sends nothing at all rather than an
+ * empty list — so the email always means "there is something coming up".
+ */
+export function renderUpcomingAppointmentsEmail(opts: {
+	firstName?: string | null;
+	appointments: AppointmentEmailLine[];
+	appointmentsUrl: string;
+}): RenderedEmail {
+	const describe = (a: AppointmentEmailLine) => {
+		const who = a.memberName ? `${a.memberName}: ` : '';
+		const category = a.category ? ` (${a.category})` : '';
+		return `${who}${a.title}${category} — ${appointmentWhen(a.when)}`;
+	};
+
+	const lines = opts.appointments.map((a) => `- ${describe(a)}`);
+	const n = opts.appointments.length;
+	const soonest = opts.appointments[0];
+
+	return {
+		subject: `Nido — ${n} appointment${n === 1 ? '' : 's'} coming up`,
+		text: [
+			`Hi${opts.firstName ? ' ' + opts.firstName : ''},`,
+			'',
+			`Here ${n === 1 ? 'is the appointment' : 'are the appointments'} on the calendar for your family:`,
+			'',
+			...lines,
+			'',
+			`See them any time: ${opts.appointmentsUrl}`,
+			'',
+			'You asked to be reminded about upcoming appointments once a week. Turn it off in Settings whenever you like.',
+		].join('\n'),
+		html: layout({
+			preheader: soonest ? `Next up: ${describe(soonest)}` : 'Your upcoming appointments.',
+			heading: n === 1 ? 'One appointment coming up' : `${n} appointments coming up`,
+			intro: 'Here is what is on the calendar for your family.',
+			list: lines.map((l) => esc(l)),
+			cta: { label: 'View appointments', url: opts.appointmentsUrl },
+			footnote: 'You asked to be reminded about upcoming appointments once a week. Turn it off in Settings whenever you like.',
+			closing: 'Talk soon,',
+		}),
+	};
+}

@@ -24,6 +24,7 @@ codebase with the same features.
 - **Sleep** — start/stop with live duration
 - **Growth** — weight, height and head circumference against WHO/CDC percentiles
 - **Milestones & vaccinations** — logging plus schedule
+- **Appointments** — a forward-looking list of what is booked, with an opt-in weekly email
 - **Photos & attachments** — avatars and file uploads on any log entry, encrypted
 - **Journal & mood** — free-form notes per day
 - **Shared family access** — invite caregivers, owner/admin/member roles

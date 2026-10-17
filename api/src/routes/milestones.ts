@@ -5,6 +5,7 @@ import { resolveTrackableMember, attachCreatedBy } from '../member-scope';
 import { parsePaging, countMatching } from '../paging';
 import { type AuthEnv } from '../auth';
 import { MILESTONE_CATEGORY_IDS } from '../vocabulary';
+import { upcomingAppointmentsForSubject, upcomingAppointmentsForFamily, APPOINTMENT_LIST_LOOKAHEAD_DAYS } from '../appointments';
 
 const milestoneRoutes = new Hono<AuthEnv>();
 
@@ -287,6 +288,35 @@ milestoneRoutes.delete('/:id{[0-9]+}', async (c) => {
   } catch (error) {
     c.get('log').error('delete milestone failed', { err: error });
     return c.json({ error: 'Failed to delete milestone' }, 500);
+  }
+});
+
+// Get upcoming appointments: future-dated milestone rows whose kind is
+// 'appointments'. Kept beside /categories and /trends; the numeric /:id route
+// matches digits only, so a literal path here is never shadowed.
+//
+// With a memberId it lists one person's appointments; without one it lists the
+// whole family's, each labelled with who it is for. The family-wide form backs
+// both the appointments page and, in spirit, the weekly email.
+milestoneRoutes.get('/upcoming', async (c) => {
+  try {
+    const userId = c.get('userId');
+    const db = c.get('db');
+    const memberId = parseInt(c.req.query('memberId') || '0');
+    const days = parseInt(c.req.query('days') || String(APPOINTMENT_LIST_LOOKAHEAD_DAYS));
+
+    if (memberId) {
+      const scope = await resolveTrackableMember(db, userId, memberId);
+      if (!scope) return c.json({ error: 'Member not found or access denied' }, 404);
+      const appointments = await upcomingAppointmentsForSubject(db, scope.subjectId, { days });
+      return c.json({ appointments, total: appointments.length, days });
+    }
+
+    const appointments = await upcomingAppointmentsForFamily(db, { days });
+    return c.json({ appointments, total: appointments.length, days });
+  } catch (error) {
+    c.get('log').error('get upcoming appointments failed', { err: error });
+    return c.json({ error: 'Failed to fetch upcoming appointments' }, 500);
   }
 });
 

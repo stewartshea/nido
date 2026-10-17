@@ -149,6 +149,10 @@ function settingsShape(row: any) {
 		// which is what the scheduler did before the setting existed.
 		digestFrequency: (row?.digest_frequency ?? 'hourly') as DigestFrequency,
 		digestSentAt: row?.digest_sent_at ?? null,
+		// Opt-in weekly email listing upcoming appointments. Off unless the family
+		// has turned it on, so an upgrade never starts mailing anyone.
+		appointmentNotifications: Number(row?.appointment_notifications ?? 0) === 1,
+		appointmentNotificationsSentAt: row?.appointment_notifications_sent_at ?? null,
 	};
 }
 
@@ -211,6 +215,7 @@ const settingsSchema = z.object({
 	stageCategories: z.record(z.enum(STAGES), z.array(z.string())).nullable().optional(),
 	digestFrequency: z.enum(DIGEST_FREQUENCIES).optional(),
 	shareAnonymizedDaily: z.boolean().optional(),
+	appointmentNotifications: z.boolean().optional(),
 });
 
 const HOME_ID_PRIMARY = 1;
@@ -1074,7 +1079,7 @@ async function handleGetSettings(c: Context<AuthEnv>) {
 	if (!role) return c.json({ error: 'No family access' }, 403);
 
 	const res = await db.execute({
-		sql: 'SELECT categories, category_options, share_anonymized_daily, stage_categories, digest_frequency, digest_sent_at FROM family_settings WHERE family_id = ? LIMIT 1',
+		sql: 'SELECT categories, category_options, share_anonymized_daily, stage_categories, digest_frequency, digest_sent_at, appointment_notifications, appointment_notifications_sent_at FROM family_settings WHERE family_id = ? LIMIT 1',
 		args: [NAMESPACE_HOUSEHOLD_ID],
 	});
 	const row = res.rows[0] || null;
@@ -1093,13 +1098,13 @@ async function handleUpdateSettings(c: Context<AuthEnv>) {
 	const role = await familyAccess(c);
 	if (!role) return c.json({ error: 'No family access' }, 403);
 
-	const { categories, categoryOptions, stageCategories, shareAnonymizedDaily, digestFrequency } = (c.req as any).valid('json');
+	const { categories, categoryOptions, stageCategories, shareAnonymizedDaily, digestFrequency, appointmentNotifications } = (c.req as any).valid('json');
 	if (shareAnonymizedDaily !== undefined && !(await familyAccess(c, ['owner', 'admin']))) {
 		return c.json({ error: 'Only an owner or admin can change anonymized sharing' }, 403);
 	}
 
 	const existing = await db.execute({
-		sql: 'SELECT categories, category_options, share_anonymized_daily, stage_categories, digest_frequency, digest_sent_at FROM family_settings WHERE family_id = ?',
+		sql: 'SELECT categories, category_options, share_anonymized_daily, stage_categories, digest_frequency, digest_sent_at, appointment_notifications, appointment_notifications_sent_at FROM family_settings WHERE family_id = ?',
 		args: [NAMESPACE_HOUSEHOLD_ID],
 	});
 
@@ -1108,8 +1113,8 @@ async function handleUpdateSettings(c: Context<AuthEnv>) {
 			// Every column has to be listed, or the first write to a family with no
 			// settings row silently drops whichever ones are missing — which is how
 			// the digest frequency failed to persist.
-			sql: 'INSERT INTO family_settings (family_id, categories, category_options, stage_categories, digest_frequency, share_anonymized_daily) VALUES (?, ?, ?, ?, ?, ?)',
-			args: [NAMESPACE_HOUSEHOLD_ID, categories ? JSON.stringify(categories) : null, categoryOptions ? JSON.stringify(categoryOptions) : JSON.stringify({}), stageCategories ? JSON.stringify(stageCategories) : null, digestFrequency ?? null, shareAnonymizedDaily ? 1 : 0],
+			sql: 'INSERT INTO family_settings (family_id, categories, category_options, stage_categories, digest_frequency, share_anonymized_daily, appointment_notifications) VALUES (?, ?, ?, ?, ?, ?, ?)',
+			args: [NAMESPACE_HOUSEHOLD_ID, categories ? JSON.stringify(categories) : null, categoryOptions ? JSON.stringify(categoryOptions) : JSON.stringify({}), stageCategories ? JSON.stringify(stageCategories) : null, digestFrequency ?? null, shareAnonymizedDaily ? 1 : 0, appointmentNotifications ? 1 : 0],
 		});
 	} else {
 		const cur = settingsShape(existing.rows[0]);
@@ -1118,14 +1123,15 @@ async function handleUpdateSettings(c: Context<AuthEnv>) {
 		const nextShare = shareAnonymizedDaily !== undefined ? shareAnonymizedDaily : cur.shareAnonymizedDaily;
 		const nextStageCategories = stageCategories !== undefined ? stageCategories : cur.stageCategories;
 		const nextDigest = digestFrequency !== undefined ? digestFrequency : cur.digestFrequency;
+		const nextAppointmentNotifications = appointmentNotifications !== undefined ? appointmentNotifications : cur.appointmentNotifications;
 		await db.execute({
-			sql: 'UPDATE family_settings SET categories = ?, category_options = ?, stage_categories = ?, digest_frequency = ?, share_anonymized_daily = ?, updated_at = ? WHERE family_id = ?',
-			args: [nextCategories ? JSON.stringify(nextCategories) : null, JSON.stringify(nextOptions ?? {}), nextStageCategories ? JSON.stringify(nextStageCategories) : null, nextDigest, nextShare ? 1 : 0, isoNow(), NAMESPACE_HOUSEHOLD_ID],
+			sql: 'UPDATE family_settings SET categories = ?, category_options = ?, stage_categories = ?, digest_frequency = ?, share_anonymized_daily = ?, appointment_notifications = ?, updated_at = ? WHERE family_id = ?',
+			args: [nextCategories ? JSON.stringify(nextCategories) : null, JSON.stringify(nextOptions ?? {}), nextStageCategories ? JSON.stringify(nextStageCategories) : null, nextDigest, nextShare ? 1 : 0, nextAppointmentNotifications ? 1 : 0, isoNow(), NAMESPACE_HOUSEHOLD_ID],
 		});
 	}
 
 	const fres = await db.execute({
-		sql: 'SELECT categories, category_options, share_anonymized_daily, stage_categories, digest_frequency, digest_sent_at FROM family_settings WHERE family_id = ?',
+		sql: 'SELECT categories, category_options, share_anonymized_daily, stage_categories, digest_frequency, digest_sent_at, appointment_notifications, appointment_notifications_sent_at FROM family_settings WHERE family_id = ?',
 		args: [NAMESPACE_HOUSEHOLD_ID],
 	});
 	return c.json({ message: 'Settings updated', settings: settingsShape(fres.rows[0]), anonymizedPreview: await buildAnonymizedDailyPreview(db) });
@@ -1200,7 +1206,7 @@ async function handleExportFamily(c: Context<AuthEnv>) {
 		}
 	}
 
-	const familySettingsRow = (await db.execute({ sql: 'SELECT categories, category_options, share_anonymized_daily, stage_categories, digest_frequency, digest_sent_at FROM family_settings WHERE family_id = ?', args: [NAMESPACE_HOUSEHOLD_ID] })).rows[0];
+	const familySettingsRow = (await db.execute({ sql: 'SELECT categories, category_options, share_anonymized_daily, stage_categories, digest_frequency, digest_sent_at, appointment_notifications, appointment_notifications_sent_at FROM family_settings WHERE family_id = ?', args: [NAMESPACE_HOUSEHOLD_ID] })).rows[0];
 	const invitations = (await db.execute({
 		sql: 'SELECT email, status, created_at FROM family_invitations WHERE family_id = ? ORDER BY created_at',
 		args: [NAMESPACE_HOUSEHOLD_ID],

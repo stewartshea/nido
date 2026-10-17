@@ -98,6 +98,15 @@ This is stated on the Notifications page rather than papered over.
 
 Adding them is a change to `runFamilyDigest`, not to the scheduler.
 
+The **upcoming-appointments email** is a second, separate message rather than
+another section of the digest. It has its own opt-in (`appointment_notifications`),
+its own clock (`appointment_notifications_sent_at`), and its own trigger — a
+weekly list of what is booked, not an alert about something already wrong. An
+appointment reminder is a nudge, so it shares none of the digest's
+firing/notified state, and a family may reasonably want one and not the other.
+It lives in `api/src/appointments.ts`; the scheduler drives both, one family at a
+time (§5).
+
 ## 5. The scheduler
 
 An in-process timer in the **API** container. Not the web container, not a third
@@ -186,9 +195,10 @@ Structured logs, greppable by `event`:
 | --- | --- |
 | `scheduler_started` | Timer armed; includes `intervalMinutes` and `holder` |
 | `scheduler_disabled` | `NOTIFY_ENABLED=false` |
-| `scheduler_sweep` | Sweep finished; `families`, `firing`, `sent`, `failed`, `errors` |
+| `scheduler_sweep` | Sweep finished; `families`, `firing`, `sent`, `appointmentsSent`, `failed`, `errors` |
 | `scheduler_lease_held` | Another holder owns it; skipped |
 | `scheduler_family_failed` | One tenant threw; the rest continued |
+| `scheduler_appointment_failed` | A tenant's appointment email threw; the rest continued |
 
 `GET /api/v1/notifications/status` returns `{ enabled, running, intervalMinutes }`
 so the UI can describe the actual schedule instead of guessing. It is instance
@@ -210,6 +220,8 @@ level, not family level: one timer sweeps every family.
 | --- | --- |
 | `api/src/scheduler.ts` | Timer, config, lease, sweep. The only thing a queue replaces. |
 | `api/src/notifications.ts` | `runFamilyDigest(familyId)` — the unit of work. |
+| `api/src/appointments.ts` | `runAppointmentDigest(familyId)` and the upcoming-appointments queries. |
+| `api/src/appointments.test.ts` | Upcoming query shape, weekly cadence, and the settings opt-in. |
 | `api/src/inventory-eval.ts` | Family-scoped evaluation, plus audience resolution and per-recipient notification state. |
 | `api/src/inventory-audience.test.ts` | Audience, verified-address filtering, per-recipient state. |
 | `api/src/inventory-signals.ts` | Signal registry and `evaluateRules` (firing vs notified). |

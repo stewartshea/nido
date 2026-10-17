@@ -155,7 +155,7 @@ export const familiesAPI = {
     });
   },
   getSettings: (familyId: string) => api.get(`/families/${familyId}/settings`),
-  updateSettings: (familyId: string, data: { categories?: string[]; categoryOptions?: Record<string, Record<string, string[]>>; stageCategories?: Record<string, string[]> | null; digestFrequency?: string; shareAnonymizedDaily?: boolean }) =>
+  updateSettings: (familyId: string, data: { categories?: string[]; categoryOptions?: Record<string, Record<string, string[]>>; stageCategories?: Record<string, string[]> | null; digestFrequency?: string; shareAnonymizedDaily?: boolean; appointmentNotifications?: boolean }) =>
     api.put(`/families/${familyId}/settings`, data),
   getAnonymizedPreview: (familyId: string) => api.get(`/families/${familyId}/settings/anonymized-preview`),
 };
@@ -284,6 +284,13 @@ export const milestoneAPI = {
     api.get(`/milestones?memberId=${memberId}${pageQuery(opts)}`),
   getById: (id: number) => api.get(`/milestones/${id}`),
   getCategories: () => api.get('/milestones/categories'),
+  getUpcoming: (opts?: { memberId?: number; days?: number }) => {
+    const qs = new URLSearchParams();
+    if (opts?.memberId) qs.set('memberId', String(opts.memberId));
+    if (opts?.days) qs.set('days', String(opts.days));
+    const q = qs.toString();
+    return api.get(`/milestones/upcoming${q ? `?${q}` : ''}`);
+  },
   getTrends: (memberId: number, opts?: { category?: string; days?: number }) =>
     api.get(`/milestones/trends?memberId=${memberId}${opts?.category ? `&category=${opts.category}` : ''}${opts?.days ? `&days=${opts.days}` : ''}`),
   create: (milestoneData: { memberId: number; title: string; description?: string; achievedDate: string; kind?: MilestoneKind; category?: string; tags?: string[] }) => 

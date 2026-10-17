@@ -1,13 +1,19 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { ensureRegistry, getRegistryClient } from './db-namespaces';
 import { runFamilyDigest } from './notifications';
+import { runAppointmentDigest } from './appointments';
 import { readConfig, runDigestSweep, listActiveFamilies, __resetSweepGuard } from './scheduler';
 
 vi.mock('./notifications', () => ({
 	runFamilyDigest: vi.fn(),
 }));
 
+vi.mock('./appointments', () => ({
+	runAppointmentDigest: vi.fn(),
+}));
+
 const digest = vi.mocked(runFamilyDigest);
+const appointments = vi.mocked(runAppointmentDigest);
 
 async function addFamily(familyId: string, status = 'active'): Promise<void> {
 	const registry = await getRegistryClient();
@@ -24,6 +30,8 @@ function quiet(firing = 0, sent = 0) {
 beforeEach(async () => {
 	digest.mockReset();
 	digest.mockResolvedValue(quiet());
+	appointments.mockReset();
+	appointments.mockResolvedValue({ familyId: 'x', upcoming: 0, sent: 0, failed: [], message: 'ok' } as any);
 	__resetSweepGuard();
 	// The registry is shared across every test in this file, and a lease left
 	// behind by one test would otherwise veto all the others.
@@ -111,6 +119,15 @@ describe('runDigestSweep', () => {
 		expect(result.sent).toBe(0);
 	});
 
+	it('drives the weekly appointment reminder for every family too', async () => {
+		await addFamily('fam-appt');
+		appointments.mockResolvedValue({ familyId: 'fam-appt', upcoming: 2, sent: 1, failed: [], message: 'ok' } as any);
+		const result = await runDigestSweep({ holder: 'holder-appt' });
+		expect(result.skipped).toBeUndefined();
+		expect(appointments.mock.calls.map((c) => c[0])).toContain('fam-appt');
+		expect(result.appointmentsSent).toBeGreaterThanOrEqual(1);
+	});
+
 	it('refuses a second holder while the lease is live, so replicas cannot double-send', async () => {
 		await addFamily('fam-lease');
 		const now = Date.now();
@@ -150,12 +167,14 @@ describe('runDigestSweep', () => {
 
 	it('releases the lease when it is done, so the next tick is not blocked', async () => {
 		await addFamily('fam-release');
-		const now = Date.now();
-		await runDigestSweep({ holder: 'replica-4', nowMs: now });
+		await runDigestSweep({ holder: 'replica-4' });
 
 		const registry = await getRegistryClient();
 		const row = (await registry.execute({ sql: 'SELECT expires_at FROM scheduler_leases WHERE name = ?', args: ['inventory-notification-digest'] })).rows[0] as any;
-		expect(new Date(row.expires_at).getTime()).toBeLessThanOrEqual(now);
+		// Released means "not in the future any more", which is what frees the
+		// next tick. Comparing against Date.now() rather than a timestamp taken
+		// before the sweep avoids a one-millisecond race in the assertion itself.
+		expect(new Date(row.expires_at).getTime()).toBeLessThanOrEqual(Date.now());
 	});
 
 	it('refuses to re-enter itself rather than overlapping two sweeps', async () => {
