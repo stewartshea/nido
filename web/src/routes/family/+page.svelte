@@ -16,7 +16,7 @@
 	import StockGlance from '$lib/components/logging/StockGlance.svelte';
 		import { CATEGORIES, defaultMemberId } from '$lib/shared';
 	import { reminderNoun, reminderPhrase } from '$lib/shared';
-	import { Baby, Star, Users, Trash2, Mail, AlertCircle, Activity, Check } from 'lucide-svelte';
+	import { Baby, Star, Users, Trash2, Mail, AlertCircle, Activity, Check, CalendarClock } from 'lucide-svelte';
 
 
   let familyView: 'dashboard' | 'detail' = 'dashboard';
@@ -78,6 +78,20 @@
 
 	// ----- Reminders (family-scoped; shared by every caregiver) -----
 	let reminderRules: Reminder[] = [];
+
+	// What the family has booked ahead, from the same family-wide query the
+	// /appointments page and the weekly email use. Family-level information, so
+	// it lives with Family Overview rather than on the per-member dashboard.
+	let upcomingAppointments: any[] = [];
+
+	async function loadUpcomingAppointments() {
+		try {
+			const res = await milestoneAPI.getUpcoming({ days: 30 });
+			upcomingAppointments = res.data.appointments ?? [];
+		} catch {
+			upcomingAppointments = [];
+		}
+	}
 
 	async function loadReminders() {
 		try {
@@ -341,7 +355,7 @@
 				selectedMemberId = null;
 				activeCategories = [];
 			}
-			await Promise.all([loadFamilySettings(), refreshLists(), refreshSummary(), loadInvitations(), loadImportRuns()]);
+			await Promise.all([loadFamilySettings(), refreshLists(), refreshSummary(), loadInvitations(), loadImportRuns(), loadUpcomingAppointments()]);
 		} catch (e: any) {
 			const status = e.response?.status;
 			if (status === 401 || status === 403) {
@@ -967,6 +981,36 @@
 							</div>
 							</div>
 						{/each}
+					</div>
+
+					<!-- What the whole family has booked, alongside the member grid:
+					     family-level information belongs here, not on the dashboard. -->
+					<div class="bg-surface rounded-lg shadow-card p-5 border border-line-soft mb-8" data-testid="upcoming-appointments-card">
+						<div class="flex items-center justify-between mb-3">
+							<h3 class="text-lg font-display font-semibold flex items-center gap-2">
+								<CalendarClock class="w-5 h-5 text-accent" aria-hidden="true" />
+								Upcoming appointments
+							</h3>
+							<a href="/appointments" class="text-sm font-semibold text-link hover:underline">See all &rarr;</a>
+						</div>
+						{#if upcomingAppointments.length === 0}
+							<p class="text-sm text-ink-soft">
+								Nothing booked in the next 30 days. Log one from the sheet and set a future date.
+							</p>
+						{:else}
+							<ul class="space-y-2">
+								{#each upcomingAppointments as a (a.id)}
+									<li class="flex items-baseline gap-3 text-sm">
+										<span class="tabular-nums text-ink-soft shrink-0 w-28">
+											{new Date(a.date).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}
+										</span>
+										<span class="text-ink min-w-0">
+											{#if a.memberName}<span class="font-semibold">{a.memberName}</span> · {/if}{a.title}
+										</span>
+									</li>
+								{/each}
+							</ul>
+						{/if}
 					</div>
 
 					<div class="bg-surface rounded-lg shadow-card p-5 border border-line-soft mb-8">
