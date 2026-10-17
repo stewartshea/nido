@@ -113,8 +113,16 @@ healthRoutes.get('/summary/:memberId{[0-9]+}', async (c) => {
       args: [subjectId]
     });
 
-    // Get latest milestone row per milestone-backed kind (medication, vitamins,
-    // grooming, appointments, medical, milestones, firsts, routines).
+    // Get the most recent *past* milestone row per milestone-backed kind
+	// (medication, vitamins, grooming, appointments, medical, milestones,
+	// firsts, routines).
+	//
+	// "Last X" means "most recently happened", so future-dated rows must not
+	// qualify: a forward-dated visit that happens to sort after everything
+	// would otherwise read as the last medical entry "just now". Future rows
+	// belong to upcomingAppointments below, not to these tiles.
+	const nowIso = new Date().toISOString();
+
     const latestMilestoneKinds = await db.execute({
       sql: `
       SELECT kind, title, description, achieved_date, category
@@ -122,19 +130,19 @@ healthRoutes.get('/summary/:memberId{[0-9]+}', async (c) => {
         SELECT kind, title, description, achieved_date, category,
                ROW_NUMBER() OVER (PARTITION BY kind ORDER BY achieved_date DESC, id DESC) rn
         FROM milestones
-        WHERE subject_id = ?
+        WHERE subject_id = ? AND achieved_date <= ?
       )
       WHERE rn = 1
       ORDER BY achieved_date DESC
     `,
-      args: [subjectId]
+      args: [subjectId, nowIso]
     });
 
     // Get the milestone rows still ahead of this member, soonest first.
     //
     // This is deliberately separate from latestByKind: that one is "the most
-    // recent row per kind", which for a future-dated row is the furthest-out
-    // one, not the next. A tile that promises the *next* thing has to sort
+    // recent past row per kind", which for a future-dated row is a different
+    // thing entirely. A tile that promises the *next* thing has to sort
     // ascending and start from now — and it must not require an "appointments"
     // category, because a forward-dated medical visit or routine is booked
     // exactly like an appointment and should surface the same way.
@@ -146,7 +154,7 @@ healthRoutes.get('/summary/:memberId{[0-9]+}', async (c) => {
       ORDER BY achieved_date ASC, id ASC
       LIMIT 5
     `,
-      args: [subjectId, new Date().toISOString()]
+      args: [subjectId, nowIso]
     });
     
     // Calculate age in weeks
