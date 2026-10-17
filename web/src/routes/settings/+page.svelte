@@ -1276,15 +1276,16 @@
 											<p class="text-xs text-ink-soft mt-2">Last sent {new Date(familySettings.digestSentAt).toLocaleString()}.</p>
 										{/if}
 										<div class="border-t border-line-soft pt-4 mt-4">
-											<h4 class="font-display font-semibold text-sm mb-1">Upcoming appointment reminders</h4>
+											<h4 class="font-display font-semibold text-sm mb-1">Weekly upcoming reminders</h4>
 											<p class="text-sm text-ink-soft mb-2">
-												A weekly email listing the appointments your family has coming up in the next two weeks.
+												A weekly email listing everything your family has coming up in the next two weeks —
+												appointments, medical visits, routines, whatever you logged with a future date.
 												Separate from the digest above: this is a reminder, not an alert, and it stays quiet when nothing is booked.
 											</p>
 											<ToggleSwitch
 												checked={familySettings.appointmentNotifications === true}
 												disabled={savingFamilySettings}
-												label="Email a weekly list of upcoming appointments"
+												label="Email a weekly list of what's coming up"
 												description="Off by default. Sent once a week to everyone in the family with a confirmed email address."
 												onToggle={toggleAppointmentNotifications}
 											/>
@@ -1292,7 +1293,7 @@
 												<p class="text-xs text-ink-soft mt-2">Last sent {new Date(familySettings.appointmentNotificationsSentAt).toLocaleString()}.</p>
 											{/if}
 											<p class="text-xs text-ink-soft mt-2">
-												See them any time on the <a href="/appointments" class="text-link underline">upcoming appointments page</a>.
+												See everything on the <a href="/appointments" class="text-link underline">upcoming page</a>.
 											</p>
 										</div>
 									</div>

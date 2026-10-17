@@ -1,16 +1,16 @@
 // appointments.ts
 //
-// Upcoming appointments, and the email that reminds a family about them.
+// What is booked ahead, and the email that reminds a family about it.
 //
-// An appointment is not its own entity: it is a milestone row with
-// `kind = 'appointments'` (see vocabulary.ts), so "upcoming" is simply the
-// subset whose `achieved_date` is still in the future. That keeps the feature
-// from inventing a second scheduling table and means anything that can already
-// write an appointment is picked up here with no extra plumbing.
+// "Upcoming" is not its own entity and not its own log category: it is any
+// milestone row whose `achieved_date` is still in the future, whatever kind it
+// was recorded under. Logging a forward-dated medical visit, routine or
+// appointment is the same "schedule this" gesture, so all of them surface here
+// with no second table and no special option to hunt for in the log sheet.
 //
 // The reminder is deliberately separate from the inventory digest in
 // notifications.ts: they gate on different settings and different columns, and
-// one family may want a weekly nudge about appointments while keeping its
+// one family may want a weekly nudge about what is coming up while keeping its
 // inventory digest quiet (or the other way round). The scheduler calls both,
 // one family at a time, for the reasons recorded in AGENTS.md.
 
@@ -40,6 +40,8 @@ export interface UpcomingAppointment {
 	title: string;
 	/** ISO 8601, as stored on the milestone row. */
 	date: string;
+	/** The milestone kind (medical, appointments, routines, ...) that got the future date. */
+	kind: string;
 	category: string | null;
 	description: string | null;
 	/** Set by the family-wide queries; null for a single member's list. */
@@ -53,7 +55,11 @@ interface QueryOptions {
 }
 
 /**
- * Upcoming appointments for one tracked profile.
+ * What is booked for one tracked profile: milestone rows of any kind whose
+ * date is still ahead. "Appointment" here is not a log category — it is simply
+ * a future-dated entry, however it was recorded, so a forward-dated medical
+ * visit or routine shows up next to a scheduled appointment with no extra
+ * plumbing.
  *
  * Scoped by `subject_id`, the way every other milestone read is, because the
  * caller has already been through resolveTrackableMember.
@@ -70,10 +76,9 @@ export async function upcomingAppointmentsForSubject(
 
 	const res = await db.execute({
 		sql: `
-			SELECT id, title, description, achieved_date, category
+			SELECT id, title, description, achieved_date, kind, category
 			FROM milestones
 			WHERE subject_id = ?
-			  AND kind = 'appointments'
 			  AND achieved_date >= ? AND achieved_date <= ?
 			ORDER BY achieved_date ASC, id ASC
 		`,
@@ -83,6 +88,7 @@ export async function upcomingAppointmentsForSubject(
 		id: Number(r.id),
 		title: String(r.title ?? ''),
 		date: String(r.achieved_date ?? ''),
+		kind: String(r.kind ?? ''),
 		category: r.category ?? null,
 		description: r.description ?? null,
 		memberId: null,
@@ -91,12 +97,11 @@ export async function upcomingAppointmentsForSubject(
 }
 
 /**
- * Upcoming appointments across every trackable member of a family.
- *
- * Read from the family DB itself, so the scheduler — which has a family id and
- * no session — can call it. The join mirrors resolveTrackableMember's write
- * path: a record lands on `COALESCE(legacy_subject_id, the member's aligned
- * subject id)`.
+ * What is booked across every trackable member of a family: any milestone-kind
+ * row whose date is still ahead. The scheduler — which has a family id and no
+ * session — calls this too, so the weekly email and the in-app list read the
+ * same rows. The join mirrors resolveTrackableMember's write path: a record
+ * lands on `COALESCE(legacy_subject_id, the member's aligned subject id)`.
  */
 export async function upcomingAppointmentsForFamily(
 	db: any,
@@ -109,13 +114,12 @@ export async function upcomingAppointmentsForFamily(
 
 	const res = await db.execute({
 		sql: `
-			SELECT m.id, m.title, m.description, m.achieved_date, m.category,
+			SELECT m.id, m.title, m.description, m.achieved_date, m.kind, m.category,
 			       fm.id AS member_id, fm.name AS member_name
 			FROM milestones m
 			JOIN family_members fm
 			  ON COALESCE(fm.legacy_subject_id, fm.id) = m.subject_id
-			WHERE m.kind = 'appointments'
-			  AND COALESCE(fm.trackable, 1) = 1
+			WHERE COALESCE(fm.trackable, 1) = 1
 			  AND m.achieved_date >= ? AND m.achieved_date <= ?
 			ORDER BY m.achieved_date ASC, m.id ASC
 		`,
@@ -125,6 +129,7 @@ export async function upcomingAppointmentsForFamily(
 		id: Number(r.id),
 		title: String(r.title ?? ''),
 		date: String(r.achieved_date ?? ''),
+		kind: String(r.kind ?? ''),
 		category: r.category ?? null,
 		description: r.description ?? null,
 		memberId: r.member_id != null ? Number(r.member_id) : null,

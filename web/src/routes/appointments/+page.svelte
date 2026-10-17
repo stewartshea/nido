@@ -7,17 +7,17 @@
 	/**
 	 * What is booked, family-wide, in the weeks ahead.
 	 *
-	 * Appointments are milestone rows with kind 'appointments' (see
-	 * api/src/appointments.ts), so this page is a read of one list rather than a
-	 * module of its own. It is deliberately family-wide: an appointment belongs
-	 * to the household's week, not to whoever happens to be selected on the
-	 * dashboard, and the weekly email is built from the same query.
+	 * "Upcoming" is not a log category: it is any milestone whose date has not
+	 * arrived, whatever it was recorded as. A forward-dated medical visit, a
+	 * routine, or an appointment all land here, so this page is one read of the
+	 * list the weekly email is built from, not a module of its own.
 	 */
 
 	interface UpcomingAppointment {
 		id: number;
 		title: string;
 		date: string;
+		kind: string;
 		category: string | null;
 		description: string | null;
 		memberId: number | null;
@@ -77,7 +77,7 @@
 	onMount(load);
 </script>
 
-<svelte:head><title>Appointments · Nido</title></svelte:head>
+<svelte:head><title>Upcoming · Nido</title></svelte:head>
 
 <div class="max-w-3xl mx-auto px-4 py-4 md:py-6">
 	<button type="button" on:click={() => history.back()} class="mb-2 text-ink-soft hover:text-ink text-sm font-semibold">&larr; Back</button>
@@ -87,10 +87,10 @@
 			<CalendarClock class="w-6 h-6" />
 		</span>
 		<div>
-			<h1 class="text-2xl font-display font-semibold text-ink">Upcoming appointments</h1>
+			<h1 class="text-2xl font-display font-semibold text-ink">Upcoming</h1>
 			<p class="text-sm text-ink-soft mt-1">
-				What is booked for your family in the next {days} days. Appointments are added from the
-				dashboard&rsquo;s log sheet — pick <strong class="font-semibold text-ink">Appointments</strong> and set a future date.
+				What is booked for your family in the next {days} days. Log any activity from the
+				dashboard with a future date and it appears here.
 			</p>
 		</div>
 	</div>
@@ -102,7 +102,7 @@
 			<section class="bg-surface rounded-lg shadow-card border border-line-soft p-6 text-center" data-testid="appointments-empty">
 				<CalendarClock class="w-8 h-8 mx-auto text-ink-soft mb-2" aria-hidden="true" />
 				<p class="text-ink-soft">Nothing booked in the next {days} days.</p>
-				<p class="text-sm text-ink-soft mt-1">When an appointment is logged with a future date, it appears here.</p>
+				<p class="text-sm text-ink-soft mt-1">Log any activity with a future date and it appears here.</p>
 			</section>
 		{:else}
 			<div class="space-y-4" data-testid="appointments-list">
@@ -117,9 +117,11 @@
 										<span class="block text-ink">
 											{#if a.memberName}<span class="font-semibold">{a.memberName}</span> · {/if}{a.title}
 										</span>
-										{#if a.category}
-											<span class="block text-xs text-ink-soft capitalize">{a.category}</span>
-										{/if}
+										<span class="block text-xs text-ink-soft capitalize">
+											{#if a.kind === 'appointments'}Appointment
+											{:else if a.kind}{a.kind}
+											{/if}{#if a.category} · {a.category}{/if}
+										</span>
 										{#if a.description}
 											<span class="block text-xs text-ink-soft">{a.description}</span>
 										{/if}

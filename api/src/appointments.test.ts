@@ -1,9 +1,11 @@
 // src/appointments.test.ts
 //
-// Upcoming appointments are milestone rows with kind 'appointments' whose date
-// has not passed, and the weekly reminder is a gated email on top of them. These
-// cover the query shape (future only, family vs member) and the cadence rule,
-// which is the part that decides whether anyone is emailed at all.
+// "Upcoming" is any milestone row whose date has not passed, whatever kind it
+// was logged under — a forward-dated first, medical visit, routine, or
+// appointment is the same "schedule this" gesture. The weekly reminder is a
+// gated email on top of the same rows. These cover the query shape (future
+// only, any kind, soonest first; family vs member) and the cadence rule, which
+// is the part that decides whether anyone is emailed at all.
 import { describe, it, expect, beforeAll } from 'vitest';
 import jwt from 'jsonwebtoken';
 import app from './server';
@@ -38,8 +40,10 @@ beforeAll(async () => {
 	});
 	childId = member.body.member.id;
 
-	// A future appointment, a past one, and a future non-appointment. Only the
-	// first should ever appear.
+	// A future appointment, a future first, and a past appointment. Only the
+	// two future-dated rows should appear, soonest first — a future "first"
+	// counts exactly as much as a future appointment, because "upcoming" is
+	// about the date, not the log category.
 	await call('POST', token, '/api/v1/milestones', {
 		memberId: childId, title: 'Six-week check', achievedDate: inDays(5), kind: 'appointments', category: 'checkup',
 	});
@@ -52,19 +56,22 @@ beforeAll(async () => {
 });
 
 describe('GET /milestones/upcoming', () => {
-	it('returns only future appointments, soonest first', async () => {
+	it('returns any future-dated entry, soonest first, past omitted', async () => {
 		const res = await call('GET', token, `/api/v1/milestones/upcoming?memberId=${childId}`);
 		expect(res.status).toBe(200);
-		expect(res.body.total).toBe(1);
-		expect(res.body.appointments[0].title).toBe('Six-week check');
-		expect(res.body.appointments[0].category).toBe('checkup');
+		expect(res.body.total).toBe(2);
+		expect(res.body.appointments.map((a: any) => a.title)).toEqual(['First smile', 'Six-week check']);
+		// The kind travels with the row so the list can say what it was.
+		expect(res.body.appointments[0].kind).toBe('firsts');
+		expect(res.body.appointments[1].kind).toBe('appointments');
+		expect(res.body.appointments[1].category).toBe('checkup');
 	});
 
 	it('lists the whole family with the member named when no memberId is given', async () => {
 		const res = await call('GET', token, '/api/v1/milestones/upcoming');
 		expect(res.status).toBe(200);
-		expect(res.body.total).toBe(1);
-		expect(res.body.appointments[0].title).toBe('Six-week check');
+		expect(res.body.total).toBe(2);
+		expect(res.body.appointments[0].title).toBe('First smile');
 		expect(res.body.appointments[0].memberName).toBe('Nest');
 	});
 
@@ -72,7 +79,7 @@ describe('GET /milestones/upcoming', () => {
 		const soon = await call('GET', token, `/api/v1/milestones/upcoming?memberId=${childId}&days=1`);
 		expect(soon.body.total).toBe(0);
 		const later = await call('GET', token, `/api/v1/milestones/upcoming?memberId=${childId}&days=30`);
-		expect(later.body.total).toBe(1);
+		expect(later.body.total).toBe(2);
 	});
 
 	it('rejects a member the caller cannot see', async () => {

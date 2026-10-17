@@ -566,10 +566,13 @@
 		if (!activeFamilyId || !selectedMember) return;
 		try {
 			await familiesAPI.updateMember(activeFamilyId, Number(selectedMember.id), { dashboardTiles: tiles });
-			selectedMember.dashboardTiles = tiles;
-			profiles = profiles;
+			// Reassign, don't mutate: selectedMember is derived from profiles, and
+			// mutating the object in place never re-runs the reactive statement, so
+			// the panel kept showing the old layout until a hard reload.
+			profiles = profiles.map((p) => (Number(p.id) === Number(selectedMember.id) ? { ...p, dashboardTiles: tiles } : p));
+			notice = 'Dashboard panel saved.';
 		} catch (err: any) {
-			console.error('Failed to update dashboard tiles', err);
+			error = err.response?.data?.error || 'Failed to update dashboard tiles';
 		}
 	}
 
@@ -989,13 +992,13 @@
 						<div class="flex items-center justify-between mb-3">
 							<h3 class="text-lg font-display font-semibold flex items-center gap-2">
 								<CalendarClock class="w-5 h-5 text-accent" aria-hidden="true" />
-								Upcoming appointments
+								Upcoming
 							</h3>
 							<a href="/appointments" class="text-sm font-semibold text-link hover:underline">See all &rarr;</a>
 						</div>
 						{#if upcomingAppointments.length === 0}
 							<p class="text-sm text-ink-soft">
-								Nothing booked in the next 30 days. Log one from the sheet and set a future date.
+								Nothing booked in the next 30 days. Log any activity with a future date and it appears here.
 							</p>
 						{:else}
 							<ul class="space-y-2">
