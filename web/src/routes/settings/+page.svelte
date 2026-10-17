@@ -67,7 +67,7 @@
 
 	// Family-scoped tracking settings (categories + per-category option lists).
 	let settingsTab: 'profile' | 'family' | 'import' | 'members' | 'backup' | 'admin' | null = null;
-	let familySettings: { categories: string[] | null; categoryOptions: Record<string, Record<string, string[]>>; defaultCategoryOptions: Record<string, Record<string, string[]>>; stageCategories?: Record<string, string[]> | null; defaultStageCategories?: Record<string, string[]>; digestFrequency?: string; digestSentAt?: string | null; shareAnonymizedDaily?: boolean; appointmentNotifications?: boolean; appointmentNotificationsSentAt?: string | null } | null = null;
+	let familySettings: { categories: string[] | null; categoryOptions: Record<string, Record<string, string[]>>; defaultCategoryOptions: Record<string, Record<string, string[]>>; stageCategories?: Record<string, string[]> | null; defaultStageCategories?: Record<string, string[]>; digestFrequency?: string; digestSentAt?: string | null; shareAnonymizedDaily?: boolean; appointmentNotifications?: boolean; appointmentNotificationsSentAt?: string | null; feedGroupingMinutes?: number } | null = null;
 	// The stage whose category set is being edited, and a local mirror so toggles
 	// feel instant before the round trip lands.
 	let stageEditor: string | null = null;
@@ -793,6 +793,25 @@
 		}
 	}
 
+	/** The window (in minutes) that groups a breast feed and its bottle into one feed. */
+	const FEED_GROUPING_OPTIONS = [15, 30, 45, 60, 90, 120];
+
+	function onFeedGroupingMinutesChange(e: Event) {
+		const value = parseInt((e.currentTarget as HTMLSelectElement).value, 10);
+		if (Number.isFinite(value)) void setFeedGroupingMinutes(value);
+	}
+
+	async function setFeedGroupingMinutes(next: number) {
+		if (!activeFamilyId) return;
+		try {
+			const res = await familiesAPI.updateSettings(activeFamilyId, { feedGroupingMinutes: next });
+			if (familySettings) familySettings.feedGroupingMinutes = res.data.settings?.feedGroupingMinutes ?? next;
+			notice = 'Feed grouping window updated.';
+		} catch (err: any) {
+			error = err.response?.data?.error || 'Could not update the feed grouping window.';
+		}
+	}
+
 	/**
 	 * The weekly appointment reminder is a separate opt-in from the digest: it
 	 * has its own cadence and its own column, so turning one off never turns the
@@ -1252,6 +1271,27 @@
 												{/each}
 											</div>
 										{/if}
+									</div>
+								{/if}
+								{#if familySettings}
+									<div class="border-t border-line-soft pt-4">
+										<h4 class="font-display font-semibold text-sm mb-1">Feeding</h4>
+										<p class="text-sm text-ink-soft mb-3">
+											How close together two feed records have to be to count as one feed in the
+											Trends &ldquo;feeds per day&rdquo; rate. A breast feed and the bottle that follows it are
+											usually one feed — set the window wide enough to merge them.
+										</p>
+										<label for="feed-grouping" class="block text-sm font-medium text-ink-soft mb-1">Group feeds within</label>
+										<select
+											id="feed-grouping"
+											value={familySettings.feedGroupingMinutes ?? 60}
+											on:change={onFeedGroupingMinutesChange}
+											class="w-full px-3 py-2 border border-line rounded-md"
+										>
+											{#each FEED_GROUPING_OPTIONS as m}
+												<option value={m}>{m} minutes</option>
+											{/each}
+										</select>
 									</div>
 								{/if}
 								{#if familySettings}

@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import jwt from 'jsonwebtoken';
 import { type AuthEnv, jwtSecret } from '../auth';
-import { NAMESPACE_HOUSEHOLD_ID } from '../db-core';
+import { NAMESPACE_HOUSEHOLD_ID, DEFAULT_FEED_GROUPING_MINUTES } from '../db-core';
 import { CATEGORY_OPTIONS, DIGEST_FREQUENCIES, DEFAULT_CATEGORIES, STAGES, STAGE_CATEGORIES, defaultStage, categoryTemplate, isStage, type DigestFrequency } from '../vocabulary';
 import { ensureRegistry, getFamilyClient, markFamilyAbandonedIfUnoccupied } from '../db-namespaces';
 import { EncryptedBlobStore } from '../blob-store';
@@ -153,6 +153,10 @@ function settingsShape(row: any) {
 		// has turned it on, so an upgrade never starts mailing anyone.
 		appointmentNotifications: Number(row?.appointment_notifications ?? 0) === 1,
 		appointmentNotificationsSentAt: row?.appointment_notifications_sent_at ?? null,
+		// The grouping window for the feeds/day rate (see health.ts): two feeding
+		// rows within this many minutes are one feed session. Column is NOT NULL
+		// with a default, but a hand-imported DB may predate it, so fall back.
+		feedGroupingMinutes: Number(row?.feed_grouping_minutes ?? DEFAULT_FEED_GROUPING_MINUTES),
 	};
 }
 
@@ -216,6 +220,7 @@ const settingsSchema = z.object({
 	digestFrequency: z.enum(DIGEST_FREQUENCIES).optional(),
 	shareAnonymizedDaily: z.boolean().optional(),
 	appointmentNotifications: z.boolean().optional(),
+	feedGroupingMinutes: z.number().int().min(1).max(240).optional(),
 });
 
 const HOME_ID_PRIMARY = 1;
@@ -1079,7 +1084,7 @@ async function handleGetSettings(c: Context<AuthEnv>) {
 	if (!role) return c.json({ error: 'No family access' }, 403);
 
 	const res = await db.execute({
-		sql: 'SELECT categories, category_options, share_anonymized_daily, stage_categories, digest_frequency, digest_sent_at, appointment_notifications, appointment_notifications_sent_at FROM family_settings WHERE family_id = ? LIMIT 1',
+		sql: 'SELECT categories, category_options, share_anonymized_daily, stage_categories, digest_frequency, digest_sent_at, appointment_notifications, appointment_notifications_sent_at, feed_grouping_minutes FROM family_settings WHERE family_id = ? LIMIT 1',
 		args: [NAMESPACE_HOUSEHOLD_ID],
 	});
 	const row = res.rows[0] || null;
@@ -1098,13 +1103,13 @@ async function handleUpdateSettings(c: Context<AuthEnv>) {
 	const role = await familyAccess(c);
 	if (!role) return c.json({ error: 'No family access' }, 403);
 
-	const { categories, categoryOptions, stageCategories, shareAnonymizedDaily, digestFrequency, appointmentNotifications } = (c.req as any).valid('json');
+	const { categories, categoryOptions, stageCategories, shareAnonymizedDaily, digestFrequency, appointmentNotifications, feedGroupingMinutes } = (c.req as any).valid('json');
 	if (shareAnonymizedDaily !== undefined && !(await familyAccess(c, ['owner', 'admin']))) {
 		return c.json({ error: 'Only an owner or admin can change anonymized sharing' }, 403);
 	}
 
 	const existing = await db.execute({
-		sql: 'SELECT categories, category_options, share_anonymized_daily, stage_categories, digest_frequency, digest_sent_at, appointment_notifications, appointment_notifications_sent_at FROM family_settings WHERE family_id = ?',
+		sql: 'SELECT categories, category_options, share_anonymized_daily, stage_categories, digest_frequency, digest_sent_at, appointment_notifications, appointment_notifications_sent_at, feed_grouping_minutes FROM family_settings WHERE family_id = ?',
 		args: [NAMESPACE_HOUSEHOLD_ID],
 	});
 
@@ -1113,8 +1118,8 @@ async function handleUpdateSettings(c: Context<AuthEnv>) {
 			// Every column has to be listed, or the first write to a family with no
 			// settings row silently drops whichever ones are missing — which is how
 			// the digest frequency failed to persist.
-			sql: 'INSERT INTO family_settings (family_id, categories, category_options, stage_categories, digest_frequency, share_anonymized_daily, appointment_notifications) VALUES (?, ?, ?, ?, ?, ?, ?)',
-			args: [NAMESPACE_HOUSEHOLD_ID, categories ? JSON.stringify(categories) : null, categoryOptions ? JSON.stringify(categoryOptions) : JSON.stringify({}), stageCategories ? JSON.stringify(stageCategories) : null, digestFrequency ?? null, shareAnonymizedDaily ? 1 : 0, appointmentNotifications ? 1 : 0],
+			sql: 'INSERT INTO family_settings (family_id, categories, category_options, stage_categories, digest_frequency, share_anonymized_daily, appointment_notifications, feed_grouping_minutes) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+			args: [NAMESPACE_HOUSEHOLD_ID, categories ? JSON.stringify(categories) : null, categoryOptions ? JSON.stringify(categoryOptions) : JSON.stringify({}), stageCategories ? JSON.stringify(stageCategories) : null, digestFrequency ?? null, shareAnonymizedDaily ? 1 : 0, appointmentNotifications ? 1 : 0, feedGroupingMinutes ?? DEFAULT_FEED_GROUPING_MINUTES],
 		});
 	} else {
 		const cur = settingsShape(existing.rows[0]);
@@ -1124,14 +1129,15 @@ async function handleUpdateSettings(c: Context<AuthEnv>) {
 		const nextStageCategories = stageCategories !== undefined ? stageCategories : cur.stageCategories;
 		const nextDigest = digestFrequency !== undefined ? digestFrequency : cur.digestFrequency;
 		const nextAppointmentNotifications = appointmentNotifications !== undefined ? appointmentNotifications : cur.appointmentNotifications;
+		const nextFeedGroupingMinutes = feedGroupingMinutes !== undefined ? feedGroupingMinutes : cur.feedGroupingMinutes;
 		await db.execute({
-			sql: 'UPDATE family_settings SET categories = ?, category_options = ?, stage_categories = ?, digest_frequency = ?, share_anonymized_daily = ?, appointment_notifications = ?, updated_at = ? WHERE family_id = ?',
-			args: [nextCategories ? JSON.stringify(nextCategories) : null, JSON.stringify(nextOptions ?? {}), nextStageCategories ? JSON.stringify(nextStageCategories) : null, nextDigest, nextShare ? 1 : 0, nextAppointmentNotifications ? 1 : 0, isoNow(), NAMESPACE_HOUSEHOLD_ID],
+			sql: 'UPDATE family_settings SET categories = ?, category_options = ?, stage_categories = ?, digest_frequency = ?, share_anonymized_daily = ?, appointment_notifications = ?, feed_grouping_minutes = ?, updated_at = ? WHERE family_id = ?',
+			args: [nextCategories ? JSON.stringify(nextCategories) : null, JSON.stringify(nextOptions ?? {}), nextStageCategories ? JSON.stringify(nextStageCategories) : null, nextDigest, nextShare ? 1 : 0, nextAppointmentNotifications ? 1 : 0, nextFeedGroupingMinutes, isoNow(), NAMESPACE_HOUSEHOLD_ID],
 		});
 	}
 
 	const fres = await db.execute({
-		sql: 'SELECT categories, category_options, share_anonymized_daily, stage_categories, digest_frequency, digest_sent_at, appointment_notifications, appointment_notifications_sent_at FROM family_settings WHERE family_id = ?',
+		sql: 'SELECT categories, category_options, share_anonymized_daily, stage_categories, digest_frequency, digest_sent_at, appointment_notifications, appointment_notifications_sent_at, feed_grouping_minutes FROM family_settings WHERE family_id = ?',
 		args: [NAMESPACE_HOUSEHOLD_ID],
 	});
 	return c.json({ message: 'Settings updated', settings: settingsShape(fres.rows[0]), anonymizedPreview: await buildAnonymizedDailyPreview(db) });
@@ -1206,7 +1212,7 @@ async function handleExportFamily(c: Context<AuthEnv>) {
 		}
 	}
 
-	const familySettingsRow = (await db.execute({ sql: 'SELECT categories, category_options, share_anonymized_daily, stage_categories, digest_frequency, digest_sent_at, appointment_notifications, appointment_notifications_sent_at FROM family_settings WHERE family_id = ?', args: [NAMESPACE_HOUSEHOLD_ID] })).rows[0];
+	const familySettingsRow = (await db.execute({ sql: 'SELECT categories, category_options, share_anonymized_daily, stage_categories, digest_frequency, digest_sent_at, appointment_notifications, appointment_notifications_sent_at, feed_grouping_minutes FROM family_settings WHERE family_id = ?', args: [NAMESPACE_HOUSEHOLD_ID] })).rows[0];
 	const invitations = (await db.execute({
 		sql: 'SELECT email, status, created_at FROM family_invitations WHERE family_id = ? ORDER BY created_at',
 		args: [NAMESPACE_HOUSEHOLD_ID],
@@ -1215,6 +1221,7 @@ async function handleExportFamily(c: Context<AuthEnv>) {
 		categories: parseJson<string[] | null>(familySettingsRow.categories, null),
 		categoryOptions: parseJson<Record<string, unknown>>(familySettingsRow.category_options, {}),
 		shareAnonymizedDaily: Number(familySettingsRow.share_anonymized_daily ?? 0) === 1,
+		feedGroupingMinutes: Number(familySettingsRow.feed_grouping_minutes ?? DEFAULT_FEED_GROUPING_MINUTES),
 	} : null;
 	exportData.invitations = invitations.map((r) => ({ email: r?.email, status: r?.status, createdAt: r?.created_at }));
 	return c.json(exportData);
@@ -1347,11 +1354,12 @@ await db.execute({ sql: `INSERT INTO feedings (subject_id, start_time, end_time,
 		// digest frequency too — they are family settings like any other.
 		const stages = body.settings.stageCategories ?? null;
 		const digest = body.settings.digestFrequency ?? null;
+		const grouping = body.settings.feedGroupingMinutes ?? DEFAULT_FEED_GROUPING_MINUTES;
 		const existingSettings = await db.execute({ sql: 'SELECT family_id FROM family_settings WHERE family_id = ?', args: [NAMESPACE_HOUSEHOLD_ID] });
 		if (existingSettings.rows.length === 0) {
-			await db.execute({ sql: 'INSERT INTO family_settings (family_id, categories, category_options, stage_categories, digest_frequency, share_anonymized_daily) VALUES (?,?,?,?,?,?)', args: [NAMESPACE_HOUSEHOLD_ID, cats ? JSON.stringify(cats) : null, JSON.stringify(opts), stages ? JSON.stringify(stages) : null, digest, share] });
+			await db.execute({ sql: 'INSERT INTO family_settings (family_id, categories, category_options, stage_categories, digest_frequency, share_anonymized_daily, feed_grouping_minutes) VALUES (?,?,?,?,?,?,?)', args: [NAMESPACE_HOUSEHOLD_ID, cats ? JSON.stringify(cats) : null, JSON.stringify(opts), stages ? JSON.stringify(stages) : null, digest, share, grouping] });
 		} else {
-			await db.execute({ sql: 'UPDATE family_settings SET categories = ?, category_options = ?, stage_categories = ?, digest_frequency = ?, share_anonymized_daily = ? WHERE family_id = ?', args: [cats ? JSON.stringify(cats) : null, JSON.stringify(opts), stages ? JSON.stringify(stages) : null, digest, share, NAMESPACE_HOUSEHOLD_ID] });
+			await db.execute({ sql: 'UPDATE family_settings SET categories = ?, category_options = ?, stage_categories = ?, digest_frequency = ?, share_anonymized_daily = ?, feed_grouping_minutes = ? WHERE family_id = ?', args: [cats ? JSON.stringify(cats) : null, JSON.stringify(opts), stages ? JSON.stringify(stages) : null, digest, share, grouping, NAMESPACE_HOUSEHOLD_ID] });
 		}
 	}
 

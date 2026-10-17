@@ -24,6 +24,11 @@ dotenv.config();
 // every record hard-pins to this singleton household.
 export const NAMESPACE_HOUSEHOLD_ID = 1;
 
+// Feeds recorded within this many minutes are one "feed session" for the
+// feeds/day rate: a breast feed and the bottle that immediately follows are
+// one feed in a parent's mind, not two. Configurable per family via
+// `feedGroupingMinutes`; this is the default the migration writes.
+export const DEFAULT_FEED_GROUPING_MINUTES = 60;
 
 // Opaque, server-generated family identifier carried in the JWT, used as the
 // DB filename and path parameter. Never derived from user input.
