@@ -134,7 +134,7 @@ export const familiesAPI = {
   accounts: () => api.get<{ accounts: FamilyAccount[] }>('/families/accounts'),
   addMember: (familyId: string, data: { type?: string; name: string; birthDate?: string; gender?: string; email?: string; categories?: string[]; stage?: string; trackable?: boolean }) =>
     api.post(`/families/${familyId}/members`, data),
-  updateMember: (familyId: string, memberId: number, data: { type?: string; name?: string; birthDate?: string | null; gender?: string | null; email?: string | null; categories?: string[]; stage?: string | null; quickLinks?: string[] | null; trackable?: boolean }) =>
+  updateMember: (familyId: string, memberId: number, data: { type?: string; name?: string; birthDate?: string | null; gender?: string | null; email?: string | null; categories?: string[]; stage?: string | null; quickLinks?: string[] | null; dashboardTiles?: string[] | null; trackable?: boolean }) =>
     api.put(`/families/${familyId}/members/${memberId}`, data),
   removeMember: (familyId: string, memberId: number) =>
     api.delete(`/families/${familyId}/members/${memberId}`),

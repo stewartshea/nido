@@ -112,6 +112,23 @@ healthRoutes.get('/summary/:memberId{[0-9]+}', async (c) => {
     `,
       args: [subjectId]
     });
+
+    // Get latest milestone row per milestone-backed kind (medication, vitamins,
+    // grooming, appointments, medical, milestones, firsts, routines).
+    const latestMilestoneKinds = await db.execute({
+      sql: `
+      SELECT kind, title, description, achieved_date, category
+      FROM (
+        SELECT kind, title, description, achieved_date, category,
+               ROW_NUMBER() OVER (PARTITION BY kind ORDER BY achieved_date DESC, id DESC) rn
+        FROM milestones
+        WHERE subject_id = ?
+      )
+      WHERE rn = 1
+      ORDER BY achieved_date DESC
+    `,
+      args: [subjectId]
+    });
     
     // Calculate age in weeks
     const birthDate = new Date(baby.birth_date);
@@ -123,6 +140,12 @@ healthRoutes.get('/summary/:memberId{[0-9]+}', async (c) => {
       ...latestDiaper.rows,
       ...latestSleep.rows,
     ]);
+
+    // Build a map for easy lookup by kind on the web.
+    const latestByKind: Record<string, any> = {};
+    for (const r of latestMilestoneKinds.rows as any[]) {
+      latestByKind[r.kind] = r;
+    }
 
     const healthSummary = {
       baby: {
@@ -139,6 +162,8 @@ healthRoutes.get('/summary/:memberId{[0-9]+}', async (c) => {
       latestGrowth: latestGrowth.rows[0] || null,
       recentMilestones: latestMilestones.rows,
       upcomingVaccinations: upcomingVaccinations.rows,
+      latestMilestoneKinds: latestMilestoneKinds.rows,
+      latestByKind,
       lastUpdated: new Date().toISOString()
     };
     

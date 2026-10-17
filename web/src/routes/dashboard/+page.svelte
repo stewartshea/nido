@@ -343,6 +343,7 @@
 				legacySubjectId: m.legacySubjectId ?? null,
 				stage: m.stage ?? null,
 				quickLinks: Array.isArray(m.quickLinks) ? m.quickLinks : null,
+				dashboardTiles: Array.isArray(m.dashboardTiles) ? m.dashboardTiles : null,
 			}));
 
 			if (profiles.length > 0) {
@@ -502,6 +503,17 @@
 		}
 	}
 
+	async function saveDashboardTiles(tiles: string[] | null) {
+		if (!activeFamilyId || !selectedMember) return;
+		try {
+			await familiesAPI.updateMember(activeFamilyId, Number(selectedMember.id), { dashboardTiles: tiles });
+			selectedMember.dashboardTiles = tiles;
+			profiles = profiles;
+		} catch (err: any) {
+			console.error('Failed to update dashboard tiles', err);
+		}
+	}
+
 	async function loadFamilySettings() {
 		if (!activeFamilyId) return;
 		try {
@@ -638,6 +650,7 @@
 								{summary}
 								{activeCategories}
 								quickLinks={selectedQuickLinks}
+								dashboardTiles={selectedMember?.dashboardTiles ?? null}
 								stage={selectedStage}
 								{feedings} {diapers} {sleeps} {growths}
 								{milestones} {vaccinations} {moods} {journalEntries}
@@ -648,6 +661,7 @@
 								on:refresh={async () => { await refreshLists(); await refreshSummary(); }}
 								on:pin={(e) => setQuickLink(e.detail.kind, true)}
 								on:unpin={(e) => setQuickLink(e.detail.kind, false)}
+								on:saveTiles={(e) => saveDashboardTiles(e.detail.tiles)}
 							>
 								<!-- Rates over the last week, next to the last-seen tiles: the
 								     tiles say "how long ago", this says "how often". -->

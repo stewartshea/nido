@@ -17,6 +17,8 @@
 	export let activeCategories: string[] = [];
 	/** Tiles this member pinned, or null to fall back to their leading categories. */
 	export let quickLinks: string[] | null = null;
+	/** Dashboard tiles this member chose, or null for the default set. */
+	export let dashboardTiles: string[] | null = null;
 	export let stage: string | null = null;
 	export let feedings: any[] = [];
 	export let diapers: any[] = [];
@@ -29,7 +31,7 @@
 	export let totals: Record<string, number> = {};
 	export let loadingMore = false;
 
-	const dispatch = createEventDispatcher<{ log: { kind: string }; loadmore: void; refresh: void; pin: { kind: string }; unpin: { kind: string } }>();
+	const dispatch = createEventDispatcher<{ log: { kind: string }; loadmore: void; refresh: void; pin: { kind: string }; unpin: { kind: string }; saveTiles: { tiles: string[] | null } }>();
 
 	$: firstQuick = activeCategories[0] || 'feeds';
 </script>
@@ -42,7 +44,7 @@
 		on:unpin={(e) => dispatch('unpin', e.detail)}
 	/>
 
-<TodaySummary {summary} name={memberName} categories={activeCategories} {stage} on:log={(e) => dispatch('log', e.detail)} />
+<TodaySummary {summary} name={memberName} categories={activeCategories} {stage} tiles={dashboardTiles} on:log={(e) => dispatch('log', e.detail)} on:saveTiles={(e) => dispatch('saveTiles', e.detail)} />
 
 <!-- Trends and stock belong above the feed, not after it: the feed is the
      long scroll, so anything you want seen at a glance has to come first. -->
