@@ -17,7 +17,7 @@ const api = axios.create({
   },
 });
 
-type JwtPayload = { userId?: number; exp?: number };
+type JwtPayload = { userId?: number; exp?: number; familyId?: string };
 
 function decodeJwtPayload(token: string): JwtPayload | null {
   try {
@@ -29,6 +29,22 @@ function decodeJwtPayload(token: string): JwtPayload | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * The signed-in user's family, read from the JWT every authenticated request
+ * already carries.
+ *
+ * Deliberately not from `localStorage['nido.familyId']`: that key is written by
+ * the family page alone, so it is empty on a fresh sign-in — precisely when the
+ * app is loading the family's settings. The token is authoritative and always
+ * present.
+ */
+export function currentFamilyId(): string | null {
+  if (typeof localStorage === 'undefined') return null;
+  const token = localStorage.getItem('token');
+  if (!token) return null;
+  return decodeJwtPayload(token)?.familyId ?? null;
 }
 
 // Request interceptor: attach the stored JWT. The backend derives the user
@@ -155,7 +171,7 @@ export const familiesAPI = {
     });
   },
   getSettings: (familyId: string) => api.get(`/families/${familyId}/settings`),
-  updateSettings: (familyId: string, data: { categories?: string[]; categoryOptions?: Record<string, Record<string, string[]>>; stageCategories?: Record<string, string[]> | null; digestFrequency?: string; shareAnonymizedDaily?: boolean; appointmentNotifications?: boolean; feedGroupingMinutes?: number }) =>
+  updateSettings: (familyId: string, data: { categories?: string[]; categoryOptions?: Record<string, Record<string, string[]>>; stageCategories?: Record<string, string[]> | null; digestFrequency?: string; shareAnonymizedDaily?: boolean; appointmentNotifications?: boolean; feedGroupingMinutes?: number; timezone?: string | null }) =>
     api.put(`/families/${familyId}/settings`, data),
   getAnonymizedPreview: (familyId: string) => api.get(`/families/${familyId}/settings/anonymized-preview`),
 };

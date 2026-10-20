@@ -10,6 +10,7 @@ import { type AuthEnv, jwtSecret } from '../auth';
 import { NAMESPACE_HOUSEHOLD_ID, DEFAULT_FEED_GROUPING_MINUTES } from '../db-core';
 import { CATEGORY_OPTIONS, DIGEST_FREQUENCIES, DEFAULT_CATEGORIES, STAGES, STAGE_CATEGORIES, defaultStage, categoryTemplate, isStage, type DigestFrequency } from '../vocabulary';
 import { ensureRegistry, getFamilyClient, markFamilyAbandonedIfUnoccupied } from '../db-namespaces';
+import { isValidTimezone } from '../timezone';
 import { EncryptedBlobStore } from '../blob-store';
 import { getAppSettings, sendMail, smtpConfigured, baseUrl } from '../mail';
 import { renderFamilyInviteEmail } from '../mail-templates';
@@ -157,6 +158,12 @@ function settingsShape(row: any) {
 		// rows within this many minutes are one feed session. Column is NOT NULL
 		// with a default, but a hand-imported DB may predate it, so fall back.
 		feedGroupingMinutes: Number(row?.feed_grouping_minutes ?? DEFAULT_FEED_GROUPING_MINUTES),
+		// The family's wall clock, as an IANA name, or null when nobody has chosen
+		// one yet. Null is deliberate rather than a UTC default: the web app reads
+		// an unset value as "detect the device's zone and offer it", so an upgrade
+		// never pins a family to the server's clock. Every read of a timestamp
+		// falls back to UTC (see effectiveTimezone), so a null is never a crash.
+		timezone: row?.timezone ? String(row.timezone) : null,
 	};
 }
 
@@ -221,6 +228,11 @@ const settingsSchema = z.object({
 	shareAnonymizedDaily: z.boolean().optional(),
 	appointmentNotifications: z.boolean().optional(),
 	feedGroupingMinutes: z.number().int().min(1).max(240).optional(),
+	// An IANA zone name, nullable so the family can clear a wrong choice. Checked
+	// against the runtime's tz database rather than a shape, so "Narnia/Chrome"
+	// is refused while a zone added in a tzdata update is accepted. A null clears
+	// the preference back to "not chosen".
+	timezone: z.string().max(64).refine(isValidTimezone, { message: 'Unknown timezone' }).nullable().optional(),
 });
 
 const HOME_ID_PRIMARY = 1;
@@ -1084,7 +1096,7 @@ async function handleGetSettings(c: Context<AuthEnv>) {
 	if (!role) return c.json({ error: 'No family access' }, 403);
 
 	const res = await db.execute({
-		sql: 'SELECT categories, category_options, share_anonymized_daily, stage_categories, digest_frequency, digest_sent_at, appointment_notifications, appointment_notifications_sent_at, feed_grouping_minutes FROM family_settings WHERE family_id = ? LIMIT 1',
+		sql: 'SELECT categories, category_options, share_anonymized_daily, stage_categories, digest_frequency, digest_sent_at, appointment_notifications, appointment_notifications_sent_at, feed_grouping_minutes, timezone FROM family_settings WHERE family_id = ? LIMIT 1',
 		args: [NAMESPACE_HOUSEHOLD_ID],
 	});
 	const row = res.rows[0] || null;
@@ -1103,13 +1115,13 @@ async function handleUpdateSettings(c: Context<AuthEnv>) {
 	const role = await familyAccess(c);
 	if (!role) return c.json({ error: 'No family access' }, 403);
 
-	const { categories, categoryOptions, stageCategories, shareAnonymizedDaily, digestFrequency, appointmentNotifications, feedGroupingMinutes } = (c.req as any).valid('json');
+	const { categories, categoryOptions, stageCategories, shareAnonymizedDaily, digestFrequency, appointmentNotifications, feedGroupingMinutes, timezone } = (c.req as any).valid('json');
 	if (shareAnonymizedDaily !== undefined && !(await familyAccess(c, ['owner', 'admin']))) {
 		return c.json({ error: 'Only an owner or admin can change anonymized sharing' }, 403);
 	}
 
 	const existing = await db.execute({
-		sql: 'SELECT categories, category_options, share_anonymized_daily, stage_categories, digest_frequency, digest_sent_at, appointment_notifications, appointment_notifications_sent_at, feed_grouping_minutes FROM family_settings WHERE family_id = ?',
+		sql: 'SELECT categories, category_options, share_anonymized_daily, stage_categories, digest_frequency, digest_sent_at, appointment_notifications, appointment_notifications_sent_at, feed_grouping_minutes, timezone FROM family_settings WHERE family_id = ?',
 		args: [NAMESPACE_HOUSEHOLD_ID],
 	});
 
@@ -1118,8 +1130,8 @@ async function handleUpdateSettings(c: Context<AuthEnv>) {
 			// Every column has to be listed, or the first write to a family with no
 			// settings row silently drops whichever ones are missing — which is how
 			// the digest frequency failed to persist.
-			sql: 'INSERT INTO family_settings (family_id, categories, category_options, stage_categories, digest_frequency, share_anonymized_daily, appointment_notifications, feed_grouping_minutes) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-			args: [NAMESPACE_HOUSEHOLD_ID, categories ? JSON.stringify(categories) : null, categoryOptions ? JSON.stringify(categoryOptions) : JSON.stringify({}), stageCategories ? JSON.stringify(stageCategories) : null, digestFrequency ?? null, shareAnonymizedDaily ? 1 : 0, appointmentNotifications ? 1 : 0, feedGroupingMinutes ?? DEFAULT_FEED_GROUPING_MINUTES],
+			sql: 'INSERT INTO family_settings (family_id, categories, category_options, stage_categories, digest_frequency, share_anonymized_daily, appointment_notifications, feed_grouping_minutes, timezone) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+			args: [NAMESPACE_HOUSEHOLD_ID, categories ? JSON.stringify(categories) : null, categoryOptions ? JSON.stringify(categoryOptions) : JSON.stringify({}), stageCategories ? JSON.stringify(stageCategories) : null, digestFrequency ?? null, shareAnonymizedDaily ? 1 : 0, appointmentNotifications ? 1 : 0, feedGroupingMinutes ?? DEFAULT_FEED_GROUPING_MINUTES, timezone ?? null],
 		});
 	} else {
 		const cur = settingsShape(existing.rows[0]);
@@ -1130,14 +1142,18 @@ async function handleUpdateSettings(c: Context<AuthEnv>) {
 		const nextDigest = digestFrequency !== undefined ? digestFrequency : cur.digestFrequency;
 		const nextAppointmentNotifications = appointmentNotifications !== undefined ? appointmentNotifications : cur.appointmentNotifications;
 		const nextFeedGroupingMinutes = feedGroupingMinutes !== undefined ? feedGroupingMinutes : cur.feedGroupingMinutes;
+		// `timezone` is tri-state: omitted keeps the current value, `null` clears
+		// the preference, a name sets it. `!== undefined` is what keeps those
+		// apart — a `??` here would make clearing impossible.
+		const nextTimezone = timezone !== undefined ? timezone : cur.timezone;
 		await db.execute({
-			sql: 'UPDATE family_settings SET categories = ?, category_options = ?, stage_categories = ?, digest_frequency = ?, share_anonymized_daily = ?, appointment_notifications = ?, feed_grouping_minutes = ?, updated_at = ? WHERE family_id = ?',
-			args: [nextCategories ? JSON.stringify(nextCategories) : null, JSON.stringify(nextOptions ?? {}), nextStageCategories ? JSON.stringify(nextStageCategories) : null, nextDigest, nextShare ? 1 : 0, nextAppointmentNotifications ? 1 : 0, nextFeedGroupingMinutes, isoNow(), NAMESPACE_HOUSEHOLD_ID],
+			sql: 'UPDATE family_settings SET categories = ?, category_options = ?, stage_categories = ?, digest_frequency = ?, share_anonymized_daily = ?, appointment_notifications = ?, feed_grouping_minutes = ?, timezone = ?, updated_at = ? WHERE family_id = ?',
+			args: [nextCategories ? JSON.stringify(nextCategories) : null, JSON.stringify(nextOptions ?? {}), nextStageCategories ? JSON.stringify(nextStageCategories) : null, nextDigest, nextShare ? 1 : 0, nextAppointmentNotifications ? 1 : 0, nextFeedGroupingMinutes, nextTimezone, isoNow(), NAMESPACE_HOUSEHOLD_ID],
 		});
 	}
 
 	const fres = await db.execute({
-		sql: 'SELECT categories, category_options, share_anonymized_daily, stage_categories, digest_frequency, digest_sent_at, appointment_notifications, appointment_notifications_sent_at, feed_grouping_minutes FROM family_settings WHERE family_id = ?',
+		sql: 'SELECT categories, category_options, share_anonymized_daily, stage_categories, digest_frequency, digest_sent_at, appointment_notifications, appointment_notifications_sent_at, feed_grouping_minutes, timezone FROM family_settings WHERE family_id = ?',
 		args: [NAMESPACE_HOUSEHOLD_ID],
 	});
 	return c.json({ message: 'Settings updated', settings: settingsShape(fres.rows[0]), anonymizedPreview: await buildAnonymizedDailyPreview(db) });

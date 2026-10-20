@@ -4,6 +4,7 @@
 	import { authAPI, userAPI, familiesAPI, feedingAPI, diaperAPI, sleepAPI, growthAPI, healthAPI, importsAPI, milestoneAPI, vaccinationAPI, settingsAPI, moodAPI, journalAPI, tokenExpired } from '$lib/api';
 	import { authStore, authActions } from '$lib/stores/authStore';
 	import { uiStore, uiActions } from '$lib/stores/uiStore';
+	import { applyTimezone } from '$lib/stores/timezoneStore';
 	import ToggleSwitch from '$lib/components/ToggleSwitch.svelte';
 	import { CATEGORIES, defaultMemberId } from '$lib/shared';
 	import { Home, Timer, AlertCircle, Check } from 'lucide-svelte';
@@ -330,6 +331,10 @@
 		try {
 			const res = await familiesAPI.getSettings(activeFamilyId);
 			familySettings = res.data.settings;
+			// The family's clock, from the settings already fetched here, so the
+			// times on this page are right on first paint rather than a tick later.
+			const tz = res.data.settings?.timezone;
+			if (typeof tz === 'string' && tz) applyTimezone(tz);
 			// Deliberately does NOT touch activeCategories. Those are the selected
 			// member's own categories; the family-level list is a different thing
 			// that used to overwrite them here.

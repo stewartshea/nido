@@ -1008,6 +1008,27 @@ ALTER TABLE inventory_adjustments ADD COLUMN source TEXT DEFAULT 'manual';
       }
     },
   },
+  {
+    version: 34,
+    name: 'family-timezone',
+    // The family's wall clock, as an IANA name ("America/New_York"). Stored as
+    // an instant-agnostic display preference: every timestamp in the database
+    // stays UTC, and this only decides which clock those instants are read on.
+    //
+    // NULL means "not chosen yet", which is not the same answer as UTC: the web
+    // app treats an unset value as an invitation to detect the device's zone and
+    // offer it, so a family is never silently shown the wrong day. A stored
+    // value is always validated against the runtime's tz database on the way in.
+    //
+    // Guarded like migrations 32/33: a database carrying the column at an
+    // earlier user_version must not throw and block the family from opening.
+    run: (raw) => {
+      const columns = raw.pragma('table_info(family_settings)') as Array<{ name: string }>;
+      if (!columns.some((c) => c.name === 'timezone')) {
+        raw.exec('ALTER TABLE family_settings ADD COLUMN timezone TEXT');
+      }
+    },
+  },
 ];
 
 // ---------------------------------------------------------------------------
