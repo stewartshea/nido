@@ -7,6 +7,7 @@
 	import { DEFAULT_CATEGORY_OPTIONS, milestoneCategory, milestoneCategoryKey, isMilestoneKind } from '$lib/shared';
 	import { convertLength, convertWeight, round1, type GrowthUnitSystem } from '$lib/growth/units';
 	import { buildManualBreastFeed } from '$lib/breast';
+	import { localInputToIso, toLocalInput as sharedToLocalInput } from '$lib/logging/format';
 
 	// Shared edit dialog for every tracking record. `kind` is one of:
 	// feeding | pumping | diaper | sleep | growth | milestone | vaccine | mood | journal
@@ -61,8 +62,10 @@
 		if (!iso) return '';
 		const d = new Date(iso);
 		if (isNaN(d.getTime())) return '';
-		const pad = (n: number) => String(n).padStart(2, '0');
-		return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+		// The shared bridge, so this reads the family's clock: an appointment
+		// edited from a device in another zone still opens on the hour the family
+		// booked, rather than the hour that device happens to be living in.
+		return sharedToLocalInput(d);
 	}
 
 	function initFields() {
@@ -122,7 +125,9 @@
 	})();
 
 	function isoOrNull(local: string): string | undefined {
-		return local ? new Date(local).toISOString() : undefined;
+		// The mirror of toLocalInput: an `input` wall clock becomes the instant
+		// the family meant, on the family's clock.
+		return local ? localInputToIso(local) : undefined;
 	}
 
 	async function save() {

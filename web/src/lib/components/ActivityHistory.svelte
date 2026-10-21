@@ -6,6 +6,7 @@
 	} from '$lib/api';
 	import { CATEGORIES, milestoneCategory } from '$lib/shared';
 	import { formatLength, formatWeight } from '$lib/growth/units';
+	import { zonedOptions } from '$lib/logging/format';
 	import RecordEditModal from '$lib/components/RecordEditModal.svelte';
 	import AttachmentPreview from '$lib/components/AttachmentPreview.svelte';
 	import { breastDetail } from '$lib/breast';
@@ -211,7 +212,7 @@
 		if (!iso) return '—';
 		const d = new Date(iso);
 		if (isNaN(d.getTime())) return '—';
-		return d.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+		return d.toLocaleString(undefined, zonedOptions({ month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }));
 	}
 
 	function formatElapsed(ms: number): string {

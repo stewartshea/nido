@@ -5,6 +5,7 @@
 	import { authAPI, userAPI, familiesAPI, feedingAPI, diaperAPI, sleepAPI, growthAPI, healthAPI, importsAPI, milestoneAPI, vaccinationAPI, settingsAPI, moodAPI, journalAPI, tokenExpired, type PageOptions } from '$lib/api';
 	import { authStore, authActions } from '$lib/stores/authStore';
 	import { uiStore, uiActions } from '$lib/stores/uiStore';
+	import { applyTimezone } from '$lib/stores/timezoneStore';
 	import ToggleSwitch from '$lib/components/ToggleSwitch.svelte';
 	import Avatar from '$lib/components/Avatar.svelte';
 	import { loadListsCache, saveListsCache } from '$lib/cache';
@@ -522,6 +523,10 @@
 		try {
 			const res = await familiesAPI.getSettings(activeFamilyId);
 			familySettings = res.data.settings ?? null;
+			// The family's clock, from the settings already fetched here, so the
+			// times on this page are right on first paint rather than a tick later.
+			const tz = res.data.settings?.timezone;
+			if (typeof tz === 'string' && tz) applyTimezone(tz);
 			// Deliberately does NOT touch activeCategories. Those are the selected
 			// member's own categories, and the family-level list is a different
 			// thing that used to overwrite them here — which is why a newborn

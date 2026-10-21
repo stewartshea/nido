@@ -5,6 +5,8 @@
 	import { authAPI, userAPI, familiesAPI, feedingAPI, diaperAPI, sleepAPI, growthAPI, healthAPI, importsAPI, familyAdminAPI, accountAPI, milestoneAPI, vaccinationAPI, settingsAPI, moodAPI, journalAPI, tokenExpired } from '$lib/api';
 	import { authStore, authActions } from '$lib/stores/authStore';
 	import { uiStore, uiActions } from '$lib/stores/uiStore';
+	import { applyTimezone } from '$lib/stores/timezoneStore';
+	import { detectTimeZone, listTimeZones, zonedOptions } from '$lib/logging/format';
 	import ToggleSwitch from '$lib/components/ToggleSwitch.svelte';
 	import { CATEGORIES, defaultMemberId } from '$lib/shared';
 	import { DIGEST_FREQUENCIES } from '$lib/vocabulary.generated';
@@ -67,7 +69,7 @@
 
 	// Family-scoped tracking settings (categories + per-category option lists).
 	let settingsTab: 'profile' | 'family' | 'import' | 'members' | 'backup' | 'admin' | null = null;
-	let familySettings: { categories: string[] | null; categoryOptions: Record<string, Record<string, string[]>>; defaultCategoryOptions: Record<string, Record<string, string[]>>; stageCategories?: Record<string, string[]> | null; defaultStageCategories?: Record<string, string[]>; digestFrequency?: string; digestSentAt?: string | null; shareAnonymizedDaily?: boolean; appointmentNotifications?: boolean; appointmentNotificationsSentAt?: string | null; feedGroupingMinutes?: number } | null = null;
+	let familySettings: { categories: string[] | null; categoryOptions: Record<string, Record<string, string[]>>; defaultCategoryOptions: Record<string, Record<string, string[]>>; stageCategories?: Record<string, string[]> | null; defaultStageCategories?: Record<string, string[]>; digestFrequency?: string; digestSentAt?: string | null; shareAnonymizedDaily?: boolean; appointmentNotifications?: boolean; appointmentNotificationsSentAt?: string | null; feedGroupingMinutes?: number; timezone?: string | null; digestSendHour?: number | null; appointmentSendHour?: number | null } | null = null;
 	// The stage whose category set is being edited, and a local mirror so toggles
 	// feel instant before the round trip lands.
 	let stageEditor: string | null = null;
@@ -176,7 +178,7 @@
 	function formatTime(iso: string | null): string {
 		if (!iso) return '—';
 		const d = new Date(iso);
-		return d.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+		return d.toLocaleString(undefined, zonedOptions({ month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }));
 	}
 
 
@@ -812,6 +814,106 @@
 		}
 	}
 
+	// ── Local send times ──────────────────────────────────────────────────
+	//
+	// "Send at 09:00" means 9am on the family's own clock, which is the timezone
+	// set just above. A value here is meaningless without it, so the UI says so.
+	//
+	// The empty option is the default and is not a missing value: it means "send
+	// whenever the cadence allows", which is what every family had before this
+	// existed. It is sent as an explicit null rather than omitted, because
+	// omitting a field means "leave it alone" and would make the choice
+	// impossible to undo.
+	const SEND_HOURS = Array.from({ length: 24 }, (_, h) => h);
+
+	/** "09:00", so the option list reads as clock times rather than bare numbers. */
+	function hourLabel(h: number): string {
+		return `${String(h).padStart(2, '0')}:00`;
+	}
+
+	/**
+	 * The one thing that can make a send time behave unexpectedly: no timezone
+	 * has been chosen, so the hour is being read on UTC. Said here rather than
+	 * left for a family to discover from a 4am email.
+	 */
+	function timezoneAdvice(zone: string | null | undefined): string {
+		if (zone) return '';
+		return 'No timezone is set for this family yet, so this is UTC — set one under Family & tracking.';
+	}
+
+	function onSendHourChange(e: Event, which: 'digest' | 'appointment') {
+		const raw = (e.currentTarget as HTMLSelectElement).value;
+		const value = raw === '' ? null : parseInt(raw, 10);
+		void setSendHour(which, Number.isFinite(value as number) ? value : null);
+	}
+
+	async function setSendHour(which: 'digest' | 'appointment', hour: number | null) {
+		if (!activeFamilyId) return;
+		try {
+			const payload = which === 'digest' ? { digestSendHour: hour } : { appointmentSendHour: hour };
+			const res = await familiesAPI.updateSettings(activeFamilyId, payload);
+			if (familySettings) {
+				if (which === 'digest') familySettings.digestSendHour = res.data.settings?.digestSendHour ?? hour;
+				else familySettings.appointmentSendHour = res.data.settings?.appointmentSendHour ?? hour;
+			}
+			notice = hour === null ? 'Sending time cleared — email goes out as soon as it is due.' : `Email will arrive around ${hourLabel(hour)} on the family's clock.`;
+		} catch (err: any) {
+			error = err.response?.data?.error || 'Could not update the sending time.';
+		}
+	}
+
+	// ── The family's clock ────────────────────────────────────────────────
+	//
+	// Every IANA zone this browser knows, offered once, from the one shared list
+	// (which is also what makes UTC pickable). Detected rather than defaulted: the
+	// device's own zone is the right first guess, but it is only a guess, so it is
+	// shown as a suggestion until someone saves it.
+	const TIMEZONES = listTimeZones();
+
+	/** The zone the picker shows: the family's choice, else a detected suggestion. */
+	function timezoneValue(): string {
+		return familySettings?.timezone || detectTimeZone();
+	}
+
+	/** True while nobody has saved a choice and the picker is showing a guess. */
+	function timezoneIsSuggestion(): boolean {
+		return !familySettings?.timezone;
+	}
+
+	/** A worked example so the choice is concrete: the same instant, both ways. */
+	function timezoneExample(zone: string): string {
+		const sample = new Date(Date.now() + 26 * 60 * 60 * 1000);
+		try {
+			return sample.toLocaleString(undefined, { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZone: zone });
+		} catch {
+			return '';
+		}
+	}
+
+	function onTimezoneChange(e: Event) {
+		const value = (e.currentTarget as HTMLSelectElement).value;
+		if (value) void setTimezone(value);
+	}
+
+	async function setTimezone(next: string) {
+		if (!activeFamilyId) return;
+		savingFamilySettings = true;
+		error = '';
+		try {
+			const res = await familiesAPI.updateSettings(activeFamilyId, { timezone: next });
+			const saved = (res.data.settings?.timezone as string | null | undefined) ?? next;
+			if (familySettings) familySettings.timezone = saved;
+			// Applied immediately rather than on the next load, so the appointment
+			// list behind this tab is already reading the new clock.
+			applyTimezone(saved);
+			notice = 'Timezone updated.';
+		} catch (err: any) {
+			error = err.response?.data?.error || 'Could not update the timezone.';
+		} finally {
+			savingFamilySettings = false;
+		}
+	}
+
 	/**
 	 * The weekly appointment reminder is a separate opt-in from the digest: it
 	 * has its own cadence and its own column, so turning one off never turns the
@@ -1274,6 +1376,48 @@
 									</div>
 								{/if}
 								{#if familySettings}
+									<div class="border-t border-line-soft pt-4 mt-5">
+										<h4 class="font-display font-semibold text-sm mb-1">Timezone</h4>
+										<p class="text-sm text-ink-soft mb-3">
+											The clock this family reads times on. Appointments, reminders and logs are
+											recorded as instants, and this decides which hour of which day they show as —
+											so a 9:30am appointment reads 9:30am here, not the server's time.
+										</p>
+										{#if timezoneIsSuggestion()}
+											<p class="text-xs text-ink-soft mb-2">
+												Nothing saved yet — showing what this device reports. Save it if it is right.
+											</p>
+										{/if}
+										<div class="flex flex-wrap items-center gap-2">
+											<label for="family-timezone" class="sr-only">Timezone</label>
+											<select
+												id="family-timezone"
+												value={timezoneValue()}
+												on:change={onTimezoneChange}
+												class="px-3 py-2 border border-line rounded-md max-w-full"
+											>
+												{#if !TIMEZONES.includes(timezoneValue())}
+													<option value={timezoneValue()}>{timezoneValue()}</option>
+												{/if}
+												{#each TIMEZONES as zone}
+													<option value={zone}>{zone}</option>
+												{/each}
+											</select>
+											{#if timezoneIsSuggestion()}
+												<button
+													type="button"
+													on:click={() => setTimezone(detectTimeZone())}
+													disabled={savingFamilySettings}
+													class="h-9 bg-surface2 text-ink-soft px-3 rounded-md font-semibold hover:bg-line-soft disabled:opacity-50"
+												>Use this device's zone</button>
+											{/if}
+										</div>
+										<p class="text-xs text-ink-soft mt-2">
+											Appointments here will read: <span class="text-ink font-medium">{timezoneExample(timezoneValue())}</span>
+										</p>
+									</div>
+								{/if}
+								{#if familySettings}
 									<div class="border-t border-line-soft pt-4">
 										<h4 class="font-display font-semibold text-sm mb-1">Feeding</h4>
 										<p class="text-sm text-ink-soft mb-3">
@@ -1312,8 +1456,30 @@
 												<option value={f}>{f[0].toUpperCase() + f.slice(1)}</option>
 											{/each}
 										</select>
+										<label for="digest-send-hour" class="block text-sm font-medium text-ink-soft mb-1 mt-3">Send at</label>
+										<select
+											id="digest-send-hour"
+											value={familySettings.digestSendHour == null ? '' : String(familySettings.digestSendHour)}
+											on:change={(e) => onSendHourChange(e, 'digest')}
+											disabled={savingFamilySettings}
+											class="w-full px-3 py-2 border border-line rounded-md disabled:opacity-50"
+										>
+											<option value="">As soon as it is due</option>
+											{#each SEND_HOURS as h}
+												<option value={String(h)}>{hourLabel(h)}{#if h === 0} (midnight){/if}</option>
+											{/each}
+										</select>
+										<p class="text-xs text-ink-soft mt-2">
+											{#if familySettings.digestSendHour == null}
+												Email goes out whenever a rule is due, at any hour. Choose a time to have it wait for
+												that hour on the family's clock instead.
+											{:else}
+												Held until around {hourLabel(familySettings.digestSendHour)} in {familySettings.timezone || 'UTC'}.
+												{timezoneAdvice(familySettings.timezone)}
+											{/if}
+										</p>
 										{#if familySettings.digestSentAt}
-											<p class="text-xs text-ink-soft mt-2">Last sent {new Date(familySettings.digestSentAt).toLocaleString()}.</p>
+											<p class="text-xs text-ink-soft mt-2">Last sent {new Date(familySettings.digestSentAt).toLocaleString(undefined, zonedOptions())}.</p>
 										{/if}
 										<div class="border-t border-line-soft pt-4 mt-4">
 											<h4 class="font-display font-semibold text-sm mb-1">Weekly upcoming reminders</h4>
@@ -1329,8 +1495,34 @@
 												description="Off by default. Sent once a week to everyone in the family with a confirmed email address."
 												onToggle={toggleAppointmentNotifications}
 											/>
+											{#if familySettings.appointmentNotifications}
+												<div class="mt-4">
+													<label for="appointment-send-hour" class="block text-sm font-medium text-ink-soft mb-1">Send at</label>
+													<select
+														id="appointment-send-hour"
+														value={familySettings.appointmentSendHour == null ? '' : String(familySettings.appointmentSendHour)}
+														on:change={(e) => onSendHourChange(e, 'appointment')}
+														disabled={savingFamilySettings}
+														class="w-full px-3 py-2 border border-line rounded-md disabled:opacity-50"
+													>
+														<option value="">As soon as it is due</option>
+														{#each SEND_HOURS as h}
+															<option value={String(h)}>{hourLabel(h)}{#if h === 0} (midnight){/if}</option>
+														{/each}
+													</select>
+													<p class="text-xs text-ink-soft mt-2">
+														{#if familySettings.appointmentSendHour == null}
+															Sent whenever the weekly cadence is up. Choose a time to have it wait for
+															that hour on the family's clock instead.
+														{:else}
+															Held until around {hourLabel(familySettings.appointmentSendHour)} in {familySettings.timezone || 'UTC'}.
+															{timezoneAdvice(familySettings.timezone)}
+														{/if}
+													</p>
+												</div>
+											{/if}
 											{#if familySettings.appointmentNotificationsSentAt}
-												<p class="text-xs text-ink-soft mt-2">Last sent {new Date(familySettings.appointmentNotificationsSentAt).toLocaleString()}.</p>
+												<p class="text-xs text-ink-soft mt-2">Last sent {new Date(familySettings.appointmentNotificationsSentAt).toLocaleString(undefined, zonedOptions())}.</p>
 											{/if}
 											<p class="text-xs text-ink-soft mt-2">
 												See everything on the <a href="/appointments" class="text-link underline">upcoming page</a>.

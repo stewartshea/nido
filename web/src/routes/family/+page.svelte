@@ -4,6 +4,7 @@
 	import { authAPI, userAPI, familiesAPI, feedingAPI, diaperAPI, sleepAPI, growthAPI, healthAPI, importsAPI, milestoneAPI, vaccinationAPI, settingsAPI, moodAPI, journalAPI, tokenExpired, remindersAPI, type PageOptions, type Reminder } from '$lib/api';
 	import { authStore, authActions } from '$lib/stores/authStore';
 	import { uiStore, uiActions } from '$lib/stores/uiStore';
+	import { applyTimezone } from '$lib/stores/timezoneStore';
 	import ToggleSwitch from '$lib/components/ToggleSwitch.svelte';
 	import Avatar from '$lib/components/Avatar.svelte';
 	import { loadListsCache, saveListsCache } from '$lib/cache';
@@ -16,6 +17,7 @@
 	import StockGlance from '$lib/components/logging/StockGlance.svelte';
 		import { CATEGORIES, defaultMemberId } from '$lib/shared';
 	import { reminderNoun, reminderPhrase } from '$lib/shared';
+	import { zonedOptions } from '$lib/logging/format';
 	import { Baby, Star, Users, Trash2, Mail, AlertCircle, Activity, Check, CalendarClock } from 'lucide-svelte';
 
 
@@ -581,6 +583,10 @@
 		try {
 			const res = await familiesAPI.getSettings(activeFamilyId);
 			familySettings = res.data.settings;
+			// The family's clock, from the settings already fetched here, so the
+			// times on this page are right on first paint rather than a tick later.
+			const tz = res.data.settings?.timezone;
+			if (typeof tz === 'string' && tz) applyTimezone(tz);
 			// Deliberately does NOT touch activeCategories. Those are the selected
 			// member's own categories; the family-level list is a different thing
 			// that used to overwrite them here.
@@ -944,9 +950,9 @@
 							{#each overdueReminders as o}
 								{#if o.kind === 'inactivity'}
 									{@const what = o.conditions?.length ? reminderPhrase(o.conditions, o.match) : reminderNoun(o.category)}
-									<span class="capitalize">no {what} in {o.hours}h{o.since ? ` (since ${new Date(o.since).toLocaleString()})` : ' (never recorded)'}</span>
+									<span class="capitalize">no {what} in {o.hours}h{o.since ? ` (since ${new Date(o.since).toLocaleString(undefined, zonedOptions())})` : ' (never recorded)'}</span>
 								{:else}
-									<span>{o.label || o.category} — every {o.intervalDays}d{o.since ? ` (last {new Date(o.since).toLocaleString()})` : ' (never done)'}</span>
+									<span>{o.label || o.category} — every {o.intervalDays}d{o.since ? ` (last {new Date(o.since).toLocaleString(undefined, zonedOptions())})` : ' (never done)'}</span>
 								{/if}{o !== overdueReminders[overdueReminders.length - 1] ? ' · ' : ''}
 							{/each}
 						</p>
@@ -1005,7 +1011,7 @@
 								{#each upcomingAppointments as a (a.id)}
 									<li class="flex items-baseline gap-3 text-sm">
 										<span class="tabular-nums text-ink-soft shrink-0 w-28">
-											{new Date(a.date).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}
+											{new Date(a.date).toLocaleDateString(undefined, zonedOptions({ weekday: 'short', month: 'short', day: 'numeric' }))}
 										</span>
 										<span class="text-ink min-w-0">
 											{#if a.memberName}<span class="font-semibold">{a.memberName}</span> · {/if}{a.title}

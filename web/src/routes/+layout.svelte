@@ -9,6 +9,8 @@
 	import BottomNav from '$lib/components/BottomNav.svelte';
 	import { PRIMARY_NAV } from '$lib/nav';
 	import { authStore, authActions } from '$lib/stores/authStore';
+	import { familiesAPI } from '$lib/api';
+	import { applyTimezone, loadFamilyTimezone } from '$lib/stores/timezoneStore';
 	import { notificationCount, refreshNotificationCount, startNotificationCount, stopNotificationCount } from '$lib/stores/notificationCount';
 
 	// Apply saved theme early on the client (avoids a flash of the default palette)
@@ -38,6 +40,24 @@
 				console.error('Service worker registration failed', err);
 			});
 	}
+
+	/**
+	 * Load the family's clock once, here, rather than in each page.
+	 *
+	 * Every view renders times through `$lib/logging/format`, and a zone applied
+	 * per page is a zone some page forgets — which is exactly how an appointment
+	 * ends up on the wrong day in the one view nobody remembered. The layout is
+	 * the one component every authenticated route passes through, so the answer
+	 * is applied before any page below it formats anything.
+	 *
+	 * The family id comes from the JWT (see `currentFamilyId`), not from the
+	 * `nido.familyId` key the family page happens to write: that key is empty on
+	 * a fresh sign-in, which is exactly when this needs to work.
+	 */
+
+	// Re-read when the family changes or a sign-in settles, so switching families
+	// picks up that family's clock without a reload.
+	$: if (browser && $authStore.isAuthenticated && $authStore.user?.id) void loadFamilyTimezone();
 
 	onMount(() => {
 		if (browser) {
