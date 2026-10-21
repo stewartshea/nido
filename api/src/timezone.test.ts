@@ -11,7 +11,7 @@ import app from './server';
 import { DEFAULT_TIMEZONE, effectiveTimezone, isValidTimezone } from './timezone';
 import { renderUpcomingAppointmentsEmail } from './mail-templates';
 
-const ALLOWED_FIELDS = 'categories, category_options, share_anonymized_daily, stage_categories, digest_frequency, digest_sent_at, appointment_notifications, appointment_notifications_sent_at, feed_grouping_minutes, timezone';
+const ALLOWED_FIELDS = 'categories, category_options, share_anonymized_daily, stage_categories, digest_frequency, digest_sent_at, appointment_notifications, appointment_notifications_sent_at, feed_grouping_minutes, timezone, digest_send_hour, appointment_send_hour';
 
 async function call(method: string, token: string, path: string, body?: unknown) {
 	const res = await app.fetch(

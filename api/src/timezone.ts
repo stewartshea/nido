@@ -43,3 +43,40 @@ export function effectiveTimezone(stored: unknown): string {
 	const value = typeof stored === 'string' ? stored.trim() : '';
 	return isValidTimezone(value) ? value : DEFAULT_TIMEZONE;
 }
+
+/**
+ * The local wall-clock parts of an instant, in a named zone.
+ *
+ * `hour` is 0-23, which is what a whole-hour send preference compares against.
+ * Reading the parts through `Intl` rather than adding an offset keeps DST
+ * correct for free: on the day a zone shifts, the same UTC instant is a
+ * different local hour, and only the tz database knows that.
+ */
+export function zonedParts(nowMs: number, timeZone: string): { hour: number; minute: number; day: number } {
+	const parts = new Intl.DateTimeFormat('en-US', {
+		timeZone: effectiveTimezone(timeZone),
+		hour12: false,
+		year: 'numeric', month: '2-digit', day: '2-digit',
+		hour: '2-digit', minute: '2-digit',
+	}).formatToParts(new Date(nowMs));
+	const get = (type: string) => Number(parts.find((p) => p.type === type)?.value ?? '0');
+	// `hour12: false` renders midnight as "24" in some ICU versions; the wall
+	// clock wants 0.
+	return { hour: get('hour') % 24, minute: get('minute'), day: get('day') };
+}
+
+/**
+ * Whether a family is inside the sending window for its chosen local hour.
+ *
+ * The scheduler ticks on a fixed interval, so "send at 09:00" is really "send
+ * when the sweep first lands at or after 09:00 local". A single-hour equality
+ * check would miss that tick unless the interval divided an hour exactly, and
+ * would silently skip a family forever if a sweep were ever slow; a window that
+ * opens at the hour and stays open handles both. The window is bounded by the
+ * following hour, so a family cannot be sent twice in one morning.
+ */
+export function withinSendHour(nowMs: number, timeZone: string, hour: number, toleranceMinutes = 59): boolean {
+	const local = zonedParts(nowMs, timeZone);
+	if (local.hour !== hour) return false;
+	return local.minute <= toleranceMinutes;
+}

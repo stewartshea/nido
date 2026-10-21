@@ -1029,6 +1029,39 @@ ALTER TABLE inventory_adjustments ADD COLUMN source TEXT DEFAULT 'manual';
       }
     },
   },
+  {
+    version: 35,
+    name: 'email-send-hour',
+    // The local wall-clock hour each email should arrive, written next to the
+    // family's timezone: "09" means 9am on the family's own clock, whatever the
+    // API server thinks the time is.
+    //
+    // NULL is the important value and the default for every existing family: it
+    // means "no local constraint, send whenever the cadence allows", which is
+    // exactly what the scheduler did before this existed. An upgrade therefore
+    // changes nobody's inbox, and a family only gets a local send time by
+    // asking for one.
+    //
+    // Two columns rather than one shared hour, because the two emails have
+    // different characters: an inventory alert is a report about something
+    // already wrong, while the weekly appointment list is a forward-looking
+    // nudge that reads better before the week starts. A family that wants its
+    // appointments on Sunday evening need not also silence stock alerts until
+    // then.
+    //
+    // Guarded like migrations 32-34: a database already carrying the columns at
+    // an earlier user_version must not throw and block the family from opening.
+    run: (raw) => {
+      const columns = raw.pragma('table_info(family_settings)') as Array<{ name: string }>;
+      const has = (name: string) => columns.some((c) => c.name === name);
+      if (!has('digest_send_hour')) {
+        raw.exec('ALTER TABLE family_settings ADD COLUMN digest_send_hour INTEGER');
+      }
+      if (!has('appointment_send_hour')) {
+        raw.exec('ALTER TABLE family_settings ADD COLUMN appointment_send_hour INTEGER');
+      }
+    },
+  },
 ];
 
 // ---------------------------------------------------------------------------

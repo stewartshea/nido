@@ -18,7 +18,7 @@ import { getFamilyClient } from './db-namespaces';
 import { familyRecipients, type Recipient } from './inventory-eval';
 import { getAppSettings, smtpConfigured, sendMail, baseUrl } from './mail';
 import { renderUpcomingAppointmentsEmail, type AppointmentEmailLine } from './mail-templates';
-import { effectiveTimezone } from './timezone';
+import { effectiveTimezone, withinSendHour, zonedParts } from './timezone';
 import { log } from './logger';
 
 /**
@@ -198,9 +198,9 @@ export async function runAppointmentDigest(
 
 	const db = getFamilyClient(familyId);
 	const row = (await db.execute({
-		sql: 'SELECT appointment_notifications, appointment_notifications_sent_at, timezone FROM family_settings WHERE family_id = ? LIMIT 1',
+		sql: 'SELECT appointment_notifications, appointment_notifications_sent_at, timezone, appointment_send_hour FROM family_settings WHERE family_id = ? LIMIT 1',
 		args: [1],
-	})).rows[0] as { appointment_notifications?: number | null; appointment_notifications_sent_at?: string | null; timezone?: string | null } | undefined;
+	})).rows[0] as { appointment_notifications?: number | null; appointment_notifications_sent_at?: string | null; timezone?: string | null; appointment_send_hour?: number | null } | undefined;
 
 	const enabled = Number(row?.appointment_notifications ?? 0) === 1;
 	// Read before walking any appointments: most families never opt in, and a
@@ -214,6 +214,15 @@ export async function runAppointmentDigest(
 
 	if (hoursUntilAppointmentEmailDue(true, row?.appointment_notifications_sent_at, nowMs) !== 0) {
 		return result({ skipped: 'not-due', message: 'The next appointment email is not due yet' });
+	}
+
+	// The family's chosen local hour, if it set one. A weekly nudge reads better
+	// at a chosen hour than at whatever hour the sweep happens to run, and the
+	// cadence above is still what keeps it from arriving more than weekly.
+	const sendHour = row?.appointment_send_hour == null ? null : Number(row.appointment_send_hour);
+	if (sendHour !== null && !withinSendHour(nowMs, timeZone, sendHour)) {
+		const local = zonedParts(nowMs, timeZone);
+		return result({ skipped: 'not-due', message: `Waiting for ${sendHour}:00 on the family's clock (now ${local.hour}:00)` });
 	}
 
 	const upcoming = await upcomingAppointmentsForFamily(db, { nowMs, days: APPOINTMENT_EMAIL_LOOKAHEAD_DAYS });

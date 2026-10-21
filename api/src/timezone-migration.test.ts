@@ -27,32 +27,56 @@ beforeAll(async () => {
 	familyId = (jwt.decode(reg.body.token) as any).familyId as string;
 });
 
-describe('the family-timezone migration', () => {
-	it('is registered at a version no other migration already holds', () => {
+describe('the family-timezone and send-hour migrations', () => {
+	it('are registered at versions no other migration already holds', () => {
 		// Two migrations sharing a version means the second is silently skipped
 		// on any database that already ran the first — the trap that the feed
 		// grouping migration was renumbered to avoid.
 		const versions = FAMILY_MIGRATIONS.map((m) => m.version);
 		expect(new Set(versions).size).toBe(versions.length);
 		expect(versions).toContain(34);
+		expect(versions).toContain(35);
 	});
 
-	it('adds the column on a fresh database', async () => {
+	it('adds every column on a fresh database', async () => {
 		const db = getFamilyClient(familyId);
 		const cols = (await db.execute({ sql: 'PRAGMA table_info(family_settings)' })).rows.map((r: any) => r.name);
-		expect(cols).toContain('timezone');
+		for (const name of ['timezone', 'digest_send_hour', 'appointment_send_hour']) {
+			expect(cols).toContain(name);
+		}
 	});
 
-	it('re-runs harmlessly when the column is already there', () => {
+	it('re-runs harmlessly when the columns are already there', () => {
 		// The exact state the guard exists for. Calling the migration body again
 		// must be a no-op rather than a "duplicate column name" throw.
 		const db = getFamilyClient(familyId);
-		const migration = FAMILY_MIGRATIONS.find((m) => m.version === 34)!;
 		const raw = (db as any).raw as RawDatabase;
-		expect(() => migration.run!(raw)).not.toThrow();
 
-		// And it did not lose the data on the way through.
+		for (const version of [34, 35]) {
+			const migration = FAMILY_MIGRATIONS.find((m) => m.version === version)!;
+			expect(() => migration.run!(raw)).not.toThrow();
+		}
+
+		// And it did not duplicate a column on the way through. A second
+		// `timezone` or `digest_send_hour` would make every write ambiguous.
 		const cols = raw.pragma('table_info(family_settings)') as Array<{ name: string }>;
-		expect(cols.filter((c) => c.name === 'timezone')).toHaveLength(1);
+		for (const name of ['timezone', 'digest_send_hour', 'appointment_send_hour']) {
+			expect(cols.filter((c) => c.name === name)).toHaveLength(1);
+		}
+	});
+
+	it('leaves an unset send hour as NULL, not 0', () => {
+		// The distinction the whole "upgrade changes nobody's inbox" claim rests
+		// on: midnight (0) is a legitimate chosen hour, so "unset" must be a
+		// different value. A NOT NULL DEFAULT 0 would silently move every
+		// existing family's alerts to midnight on the family's clock.
+		const db = getFamilyClient(familyId);
+		const raw = (db as any).raw as RawDatabase;
+		const cols = raw.pragma('table_info(family_settings)') as Array<{ name: string; notnull: number; dflt_value: unknown }>;
+		for (const name of ['digest_send_hour', 'appointment_send_hour']) {
+			const col = cols.find((c) => c.name === name)!;
+			expect(col.notnull).toBe(0);
+			expect(col.dflt_value).toBeNull();
+		}
 	});
 });

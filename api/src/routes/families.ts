@@ -164,6 +164,12 @@ function settingsShape(row: any) {
 		// never pins a family to the server's clock. Every read of a timestamp
 		// falls back to UTC (see effectiveTimezone), so a null is never a crash.
 		timezone: row?.timezone ? String(row.timezone) : null,
+		// The local hour each email should arrive, or null for "as soon as the
+		// cadence allows" — the behaviour every family has today. Expressed in the
+		// timezone above, so a number here is meaningless on its own; the pair is
+		// what the UI shows and what the scheduler reads.
+		digestSendHour: row?.digest_send_hour == null ? null : Number(row.digest_send_hour),
+		appointmentSendHour: row?.appointment_send_hour == null ? null : Number(row.appointment_send_hour),
 	};
 }
 
@@ -233,6 +239,11 @@ const settingsSchema = z.object({
 	// is refused while a zone added in a tzdata update is accepted. A null clears
 	// the preference back to "not chosen".
 	timezone: z.string().max(64).refine(isValidTimezone, { message: 'Unknown timezone' }).nullable().optional(),
+	// The local hour each email should arrive, 0-23, or null for "no local
+	// constraint". Bounded to a real hour so a typo cannot park a family at hour
+	// 25 and silently never hear from Nido again.
+	digestSendHour: z.number().int().min(0).max(23).nullable().optional(),
+	appointmentSendHour: z.number().int().min(0).max(23).nullable().optional(),
 });
 
 const HOME_ID_PRIMARY = 1;
@@ -1096,7 +1107,7 @@ async function handleGetSettings(c: Context<AuthEnv>) {
 	if (!role) return c.json({ error: 'No family access' }, 403);
 
 	const res = await db.execute({
-		sql: 'SELECT categories, category_options, share_anonymized_daily, stage_categories, digest_frequency, digest_sent_at, appointment_notifications, appointment_notifications_sent_at, feed_grouping_minutes, timezone FROM family_settings WHERE family_id = ? LIMIT 1',
+		sql: 'SELECT categories, category_options, share_anonymized_daily, stage_categories, digest_frequency, digest_sent_at, appointment_notifications, appointment_notifications_sent_at, feed_grouping_minutes, timezone, digest_send_hour, appointment_send_hour FROM family_settings WHERE family_id = ? LIMIT 1',
 		args: [NAMESPACE_HOUSEHOLD_ID],
 	});
 	const row = res.rows[0] || null;
@@ -1115,13 +1126,13 @@ async function handleUpdateSettings(c: Context<AuthEnv>) {
 	const role = await familyAccess(c);
 	if (!role) return c.json({ error: 'No family access' }, 403);
 
-	const { categories, categoryOptions, stageCategories, shareAnonymizedDaily, digestFrequency, appointmentNotifications, feedGroupingMinutes, timezone } = (c.req as any).valid('json');
+	const { categories, categoryOptions, stageCategories, shareAnonymizedDaily, digestFrequency, appointmentNotifications, feedGroupingMinutes, timezone, digestSendHour, appointmentSendHour } = (c.req as any).valid('json');
 	if (shareAnonymizedDaily !== undefined && !(await familyAccess(c, ['owner', 'admin']))) {
 		return c.json({ error: 'Only an owner or admin can change anonymized sharing' }, 403);
 	}
 
 	const existing = await db.execute({
-		sql: 'SELECT categories, category_options, share_anonymized_daily, stage_categories, digest_frequency, digest_sent_at, appointment_notifications, appointment_notifications_sent_at, feed_grouping_minutes, timezone FROM family_settings WHERE family_id = ?',
+		sql: 'SELECT categories, category_options, share_anonymized_daily, stage_categories, digest_frequency, digest_sent_at, appointment_notifications, appointment_notifications_sent_at, feed_grouping_minutes, timezone, digest_send_hour, appointment_send_hour FROM family_settings WHERE family_id = ?',
 		args: [NAMESPACE_HOUSEHOLD_ID],
 	});
 
@@ -1130,8 +1141,8 @@ async function handleUpdateSettings(c: Context<AuthEnv>) {
 			// Every column has to be listed, or the first write to a family with no
 			// settings row silently drops whichever ones are missing — which is how
 			// the digest frequency failed to persist.
-			sql: 'INSERT INTO family_settings (family_id, categories, category_options, stage_categories, digest_frequency, share_anonymized_daily, appointment_notifications, feed_grouping_minutes, timezone) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-			args: [NAMESPACE_HOUSEHOLD_ID, categories ? JSON.stringify(categories) : null, categoryOptions ? JSON.stringify(categoryOptions) : JSON.stringify({}), stageCategories ? JSON.stringify(stageCategories) : null, digestFrequency ?? null, shareAnonymizedDaily ? 1 : 0, appointmentNotifications ? 1 : 0, feedGroupingMinutes ?? DEFAULT_FEED_GROUPING_MINUTES, timezone ?? null],
+			sql: 'INSERT INTO family_settings (family_id, categories, category_options, stage_categories, digest_frequency, share_anonymized_daily, appointment_notifications, feed_grouping_minutes, timezone, digest_send_hour, appointment_send_hour) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+			args: [NAMESPACE_HOUSEHOLD_ID, categories ? JSON.stringify(categories) : null, categoryOptions ? JSON.stringify(categoryOptions) : JSON.stringify({}), stageCategories ? JSON.stringify(stageCategories) : null, digestFrequency ?? null, shareAnonymizedDaily ? 1 : 0, appointmentNotifications ? 1 : 0, feedGroupingMinutes ?? DEFAULT_FEED_GROUPING_MINUTES, timezone ?? null, digestSendHour ?? null, appointmentSendHour ?? null],
 		});
 	} else {
 		const cur = settingsShape(existing.rows[0]);
@@ -1146,14 +1157,19 @@ async function handleUpdateSettings(c: Context<AuthEnv>) {
 		// the preference, a name sets it. `!== undefined` is what keeps those
 		// apart — a `??` here would make clearing impossible.
 		const nextTimezone = timezone !== undefined ? timezone : cur.timezone;
+		// Tri-state for the same reason as `timezone`: omitted keeps the hour,
+		// `null` returns the family to "send as soon as due", a number sets a
+		// local hour. `??` would make clearing impossible.
+		const nextDigestSendHour = digestSendHour !== undefined ? digestSendHour : cur.digestSendHour;
+		const nextAppointmentSendHour = appointmentSendHour !== undefined ? appointmentSendHour : cur.appointmentSendHour;
 		await db.execute({
-			sql: 'UPDATE family_settings SET categories = ?, category_options = ?, stage_categories = ?, digest_frequency = ?, share_anonymized_daily = ?, appointment_notifications = ?, feed_grouping_minutes = ?, timezone = ?, updated_at = ? WHERE family_id = ?',
-			args: [nextCategories ? JSON.stringify(nextCategories) : null, JSON.stringify(nextOptions ?? {}), nextStageCategories ? JSON.stringify(nextStageCategories) : null, nextDigest, nextShare ? 1 : 0, nextAppointmentNotifications ? 1 : 0, nextFeedGroupingMinutes, nextTimezone, isoNow(), NAMESPACE_HOUSEHOLD_ID],
+			sql: 'UPDATE family_settings SET categories = ?, category_options = ?, stage_categories = ?, digest_frequency = ?, share_anonymized_daily = ?, appointment_notifications = ?, feed_grouping_minutes = ?, timezone = ?, digest_send_hour = ?, appointment_send_hour = ?, updated_at = ? WHERE family_id = ?',
+			args: [nextCategories ? JSON.stringify(nextCategories) : null, JSON.stringify(nextOptions ?? {}), nextStageCategories ? JSON.stringify(nextStageCategories) : null, nextDigest, nextShare ? 1 : 0, nextAppointmentNotifications ? 1 : 0, nextFeedGroupingMinutes, nextTimezone, nextDigestSendHour, nextAppointmentSendHour, isoNow(), NAMESPACE_HOUSEHOLD_ID],
 		});
 	}
 
 	const fres = await db.execute({
-		sql: 'SELECT categories, category_options, share_anonymized_daily, stage_categories, digest_frequency, digest_sent_at, appointment_notifications, appointment_notifications_sent_at, feed_grouping_minutes, timezone FROM family_settings WHERE family_id = ?',
+		sql: 'SELECT categories, category_options, share_anonymized_daily, stage_categories, digest_frequency, digest_sent_at, appointment_notifications, appointment_notifications_sent_at, feed_grouping_minutes, timezone, digest_send_hour, appointment_send_hour FROM family_settings WHERE family_id = ?',
 		args: [NAMESPACE_HOUSEHOLD_ID],
 	});
 	return c.json({ message: 'Settings updated', settings: settingsShape(fres.rows[0]), anonymizedPreview: await buildAnonymizedDailyPreview(db) });
@@ -1228,6 +1244,9 @@ async function handleExportFamily(c: Context<AuthEnv>) {
 		}
 	}
 
+	// Only the four settings the export actually writes are read here. Timezone
+	// and the local send hours are display/routing preferences, not records, and
+	// the export deliberately does not carry them.
 	const familySettingsRow = (await db.execute({ sql: 'SELECT categories, category_options, share_anonymized_daily, stage_categories, digest_frequency, digest_sent_at, appointment_notifications, appointment_notifications_sent_at, feed_grouping_minutes FROM family_settings WHERE family_id = ?', args: [NAMESPACE_HOUSEHOLD_ID] })).rows[0];
 	const invitations = (await db.execute({
 		sql: 'SELECT email, status, created_at FROM family_invitations WHERE family_id = ? ORDER BY created_at',
