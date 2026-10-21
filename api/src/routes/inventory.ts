@@ -7,6 +7,7 @@ import { sendMail, getAppSettings, smtpConfigured, baseUrl } from '../mail';
 import { NAMESPACE_HOUSEHOLD_ID } from '../db-core';
 import { renderInventoryAlertsEmail } from '../mail-templates';
 import { consumptionRate, coverForecast, cadenceRate, dueCycles, nextConsumptionAt, MS_PER_DAY, type AdjustmentRow } from '../inventory';
+import { applyEventConsumption, consumableActivities } from '../inventory-consume';
 import { SIGNALS, signalByName } from '../inventory-signals';
 import {
 	applyScheduledConsumption, evaluateAlerts, loadRulesForFamily, signalContext,
@@ -28,6 +29,12 @@ const createItemSchema = z.object({
 	packSize: z.number().positive().nullish(),
 	leadDays: z.number().int().min(0).max(365).nullish(),
 	eventCategory: z.string().max(40).nullish(),
+	// Narrowing an event link to one option of the activity (a feed of type
+	// 'bottle') or giving it a ratio ("1 for every 4") only means something
+	// against a linked activity, so both are refused without one rather than
+	// stored where they would quietly do nothing.
+	eventOption: z.string().max(40).nullish(),
+	unitsPerDecrement: z.number().int().min(1).max(10000).nullish(),
 	decrementPerEvent: z.number().positive().nullish(),
 	consumeIntervalDays: z.number().int().min(1).max(365).nullish(),
 	expiresAt: z.string().datetime().nullish(),
@@ -37,6 +44,9 @@ const createItemSchema = z.object({
 	// occurrence, so an item uses either a logged event or a cadence, never both.
 	(v) => !(v.eventCategory && v.consumeIntervalDays),
 	{ message: 'Use either a logged event or a "uses up every N days" cadence, not both', path: ['consumeIntervalDays'] },
+).refine(
+	(v) => !((v.eventOption || v.unitsPerDecrement) && !v.eventCategory),
+	{ message: 'Choose a logged activity to go with the option filter or the every-N ratio', path: ['eventCategory'] },
 );
 
 const updateItemSchema = z.object({
@@ -46,13 +56,18 @@ const updateItemSchema = z.object({
 	packSize: z.number().positive().nullish(),
 	leadDays: z.number().int().min(0).max(365).nullish(),
 	eventCategory: z.string().max(40).nullish(),
+	eventOption: z.string().max(40).nullish(),
+	unitsPerDecrement: z.number().int().min(1).max(10000).nullish(),
 	decrementPerEvent: z.number().positive().nullish(),
 	consumeIntervalDays: z.number().int().min(1).max(365).nullish(),
 	consumeStartedAt: z.string().datetime().nullish(),
 	expiresAt: z.string().datetime().nullish(),
 	notes: z.string().max(500).nullish(),
 	active: z.boolean().optional(),
-});
+}).refine(
+	(v) => !((v.eventOption || v.unitsPerDecrement) && v.eventCategory === null),
+	{ message: 'Choose a logged activity to go with the option filter or the every-N ratio', path: ['eventCategory'] },
+);
 
 const adjustSchema = z.object({
 	change: z.number().refine((v) => v !== 0, 'Change cannot be zero'),
@@ -103,6 +118,9 @@ function shapeItem(row: any, forecast: ItemForecast, firing: boolean) {
 		packSize: row.pack_size === null || row.pack_size === undefined ? null : Number(row.pack_size),
 		leadDays: row.lead_days === null || row.lead_days === undefined ? null : Number(row.lead_days),
 		eventCategory: row.event_category ?? null,
+		eventOption: row.event_option ?? null,
+		unitsPerDecrement: row.units_per_decrement === null || row.units_per_decrement === undefined ? null : Number(row.units_per_decrement),
+		consumeCarry: row.consume_carry === null || row.consume_carry === undefined ? 0 : Number(row.consume_carry),
 		decrementPerEvent: row.decrement_per_event === null || row.decrement_per_event === undefined ? null : Number(row.decrement_per_event),
 		active: Number(row.active ?? 1) === 1,
 		consumeIntervalDays: row.consume_interval_days === null || row.consume_interval_days === undefined ? null : Number(row.consume_interval_days),
@@ -218,10 +236,16 @@ inventoryRoutes.post('/notify', async (c) => {
 	});
 });
 
-// The signals a rule can be written against. Data-driven so a new signal
+// GET /signals — the signals a rule can be written against. Data-driven so a new signal
 // appears here automatically.
 inventoryRoutes.get('/signals', (c) =>
 	c.json({ signals: SIGNALS.map(({ name, label, unit, describe }) => ({ name, label, unit, describe })) }));
+
+// GET /activities — the logged activities an item can be consumed by. One
+// entry per table whose route actually bills inventory, so the form's picker
+// never offers an activity that would silently do nothing; labels and option
+// values come from the same registry the reminders catalog uses.
+inventoryRoutes.get('/activities', (c) => c.json({ activities: consumableActivities() }));
 
 // GET / — every active item, its cover forecast, and any rule currently firing.
 inventoryRoutes.get('/', async (c) => {
@@ -267,13 +291,13 @@ inventoryRoutes.post('/', zValidator('json', createItemSchema), async (c) => {
 	const result = await db.execute({
 		sql: `INSERT INTO inventory_items
 		      (subject_id, name, category, variant, quantity, unit, pack_size, lead_days,
-		       event_category, decrement_per_event, consume_interval_days, consume_started_at,
-		       expires_at, notes, created_at, updated_at)
-		      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		       event_category, event_option, units_per_decrement, decrement_per_event,
+		       consume_interval_days, consume_started_at, expires_at, notes, created_at, updated_at)
+		      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		args: [
 			subjectId, body.name.trim(), body.category, body.variant ?? null, body.quantity, body.unit,
 			body.packSize ?? null, body.leadDays ?? null, body.eventCategory ?? null,
-			body.decrementPerEvent ?? null,
+			body.eventOption ?? null, body.unitsPerDecrement ?? null, body.decrementPerEvent ?? null,
 			// A cadence only means anything with an anchor to count from, so
 			// starting it now is the default rather than an extra field to fill in.
 			body.consumeIntervalDays ?? null, body.consumeIntervalDays ? now : null,
@@ -307,6 +331,16 @@ inventoryRoutes.put('/:id{[0-9]+}', zValidator('json', updateItemSchema), async 
 	const id = Number(c.req.param('id'));
 	const body = c.req.valid('json');
 
+	const row = (await db.execute({ sql: 'SELECT * FROM inventory_items WHERE id = ?', args: [id] })).rows[0];
+	if (!row) return c.json({ error: 'Item not found' }, 404);
+
+	// An option filter or an every-N ratio stored against no activity would
+	// quietly do nothing, so it is refused rather than accepted on faith —
+	// the zod refine can only see the body, not what the item links to today.
+	if (!body.eventCategory && !row.event_category && ((body.eventOption ?? body.unitsPerDecrement) != null)) {
+		return c.json({ error: 'Choose a logged activity to go with the option filter or the every-N ratio' }, 400);
+	}
+
 	const updates: string[] = [];
 	const params: unknown[] = [];
 	const push = (col: string, val: unknown) => { updates.push(`${col} = ?`); params.push(val); };
@@ -316,7 +350,30 @@ inventoryRoutes.put('/:id{[0-9]+}', zValidator('json', updateItemSchema), async 
 	if (body.unit !== undefined) push('unit', body.unit);
 	if (body.packSize !== undefined) push('pack_size', body.packSize);
 	if (body.leadDays !== undefined) push('lead_days', body.leadDays);
-	if (body.eventCategory !== undefined) push('event_category', body.eventCategory);
+
+	// The consumption rule is one thing: activity, option, ratio. Changing any
+	// part of it zeroes consume_carry — progress accrued toward "4 bottles"
+	// means nothing against a different activity or a different denominator —
+	// but only a genuine switch clears the parts the caller left out, so a
+	// partial update of the same link does not silently drop its ratio.
+	let ruleTouched = false;
+	if (body.eventCategory !== undefined) {
+		const switched = body.eventCategory !== (row.event_category ?? null);
+		push('event_category', body.eventCategory);
+		if (switched) {
+			ruleTouched = true;
+			push('event_option', body.eventOption ?? null);
+			push('units_per_decrement', body.unitsPerDecrement ?? null);
+		} else {
+			if (body.eventOption !== undefined) push('event_option', body.eventOption);
+			if (body.unitsPerDecrement !== undefined) push('units_per_decrement', body.unitsPerDecrement);
+		}
+	} else {
+		if (body.eventOption !== undefined) { push('event_option', body.eventOption); ruleTouched = true; }
+		if (body.unitsPerDecrement !== undefined) { push('units_per_decrement', body.unitsPerDecrement); ruleTouched = true; }
+	}
+	if (ruleTouched) push('consume_carry', 0);
+
 	if (body.decrementPerEvent !== undefined) push('decrement_per_event', body.decrementPerEvent);
 	if (body.consumeIntervalDays !== undefined) {
 		push('consume_interval_days', body.consumeIntervalDays);
@@ -336,10 +393,10 @@ inventoryRoutes.put('/:id{[0-9]+}', zValidator('json', updateItemSchema), async 
 
 	await db.execute({ sql: `UPDATE inventory_items SET ${updates.join(', ')} WHERE id = ?`, args: params });
 
-	const row = (await db.execute({ sql: 'SELECT * FROM inventory_items WHERE id = ?', args: [id] })).rows[0];
-	if (!row) return c.json({ error: 'Item not found' }, 404);
-	const { forecast } = await itemForecast(db, row, Date.now());
-	return c.json({ message: 'Item updated', item: shapeItem(row, forecast, false) });
+	const fresh = (await db.execute({ sql: 'SELECT * FROM inventory_items WHERE id = ?', args: [id] })).rows[0];
+	if (!fresh) return c.json({ error: 'Item not found' }, 404);
+	const { forecast } = await itemForecast(db, fresh, Date.now());
+	return c.json({ message: 'Item updated', item: shapeItem(fresh, forecast, false) });
 });
 
 // POST /:id/adjust — buy, use, or correct stock by hand.
@@ -600,6 +657,11 @@ inventoryRoutes.post('/:id{[0-9]+}/reset-history', zValidator('json', recountSch
 
 	const now = new Date().toISOString();
 	await db.execute({ sql: 'DELETE FROM inventory_adjustments WHERE item_id = ?', args: [id] });
+	// Forgetting the history also forgets which events were billed against it:
+	// the gate rows would otherwise block a retried event from ever counting,
+	// and accrued carry is progress toward a next use that no longer has a
+	// history to justify it.
+	await db.execute({ sql: 'DELETE FROM inventory_consumption_events WHERE item_id = ?', args: [id] });
 	if (body.quantity > 0) {
 		await db.execute({
 			sql: `INSERT INTO inventory_adjustments (item_id, change, reason, note, created_by, created_at)
@@ -607,7 +669,7 @@ inventoryRoutes.post('/:id{[0-9]+}/reset-history', zValidator('json', recountSch
 			args: [id, body.quantity, body.note ?? 'Reset — opening count', userId, now],
 		});
 	}
-	await db.execute({ sql: 'UPDATE inventory_items SET quantity = ?, updated_at = ? WHERE id = ?', args: [body.quantity, now, id] });
+	await db.execute({ sql: 'UPDATE inventory_items SET quantity = ?, consume_carry = 0, updated_at = ? WHERE id = ?', args: [body.quantity, now, id] });
 
 	const after = await loadItemOr404(db, id);
 	const { forecast } = await itemForecast(db, after, Date.now());
@@ -626,6 +688,7 @@ inventoryRoutes.post('/reset', zValidator('json', z.object({ confirm: z.literal(
 	const removed = (await db.execute({ sql: 'SELECT COUNT(*) AS n FROM inventory_items' })).rows[0] as any;
 	await db.execute({ sql: 'DELETE FROM inventory_rule_recipients' });
 	await db.execute({ sql: 'DELETE FROM inventory_rules' });
+	await db.execute({ sql: 'DELETE FROM inventory_consumption_events' });
 	await db.execute({ sql: 'DELETE FROM inventory_adjustments' });
 	await db.execute({ sql: 'DELETE FROM inventory_items' });
 	return c.json({ message: `Inventory reset. Removed ${Number(removed.n)} item(s) and all rules.` });
@@ -738,44 +801,31 @@ inventoryRoutes.delete('/rules/:id{[0-9]+}', async (c) => {
 	return c.json({ message: 'Rule deleted' });
 });
 
-// POST /consume — called by the diaper log so a change decrements stock.
-// Idempotent per logged event, so a client retry cannot double-count.
+// POST /consume — bill stock for a logged event from any client or route that
+// does not call the helper directly. Idempotent per logged event, so a client
+// retry cannot double-count.
 inventoryRoutes.post('/consume', zValidator('json', z.object({
 	memberId: z.number(),
 	refTable: z.string().max(40),
 	refId: z.number(),
+	// The event's option (a feed's type), when linked items are narrowed to one.
+	option: z.string().max(40).nullish(),
+	// Units the event represents; one logged event is one unit by default.
+	units: z.number().positive().max(100000).nullish(),
 })), async (c) => {
 	const db = c.get('db');
 	const body = c.req.valid('json');
 	const scope = await resolveTrackableMember(db, c.get('userId'), body.memberId);
 	if (!scope) return c.json({ error: 'Member not found or access denied' }, 404);
 
-	const linked = (await db.execute({
-		sql: `SELECT * FROM inventory_items
-		      WHERE active = 1 AND event_category = ? AND subject_id = ?`,
-		args: [body.refTable, scope.subjectId],
-	})).rows as any[];
-
-	const applied: string[] = [];
-	for (const item of linked) {
-		const per = item.decrement_per_event === null || item.decrement_per_event === undefined ? 1 : Number(item.decrement_per_event);
-		try {
-			await db.execute({
-				sql: `INSERT INTO inventory_adjustments (item_id, change, reason, ref_table, ref_id, source) VALUES (?, ?, 'used', ?, ?, 'event')`,
-				args: [item.id, -per, body.refTable, body.refId],
-			});
-		} catch {
-			// The unique index on (ref_table, ref_id) means this event was
-			// already applied. Counting it twice would understate stock.
-			continue;
-		}
-		const now = new Date().toISOString();
-		await db.execute({
-			sql: 'UPDATE inventory_items SET quantity = MAX(0, quantity - ?), updated_at = ? WHERE id = ?',
-			args: [per, now, item.id],
-		});
-		applied.push(item.name);
-	}
+	const applied = await applyEventConsumption(db, {
+		subjectId: scope.subjectId,
+		refTable: body.refTable,
+		refId: body.refId,
+		option: body.option ?? null,
+		units: body.units ?? undefined,
+		createdBy: c.get('userId'),
+	});
 	return c.json({ applied });
 });
 

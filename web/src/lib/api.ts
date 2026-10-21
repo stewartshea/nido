@@ -500,6 +500,12 @@ export interface InventoryItem {
 	packSize: number | null;
 	leadDays: number | null;
 	eventCategory: string | null;
+	/** Option the link is narrowed to (a feed's type), or null for any. */
+	eventOption: string | null;
+	/** Units of the activity that make one whole use (N in "1 per N"). */
+	unitsPerDecrement: number | null;
+	/** Progress toward the next whole use, accrued between logs. */
+	consumeCarry: number;
 	decrementPerEvent: number | null;
 	active: boolean;
 	notes: string | null;
@@ -564,6 +570,16 @@ export interface ReminderCondition {
 	values?: string[];
 }
 
+/** A logged activity an inventory item can be consumed by (GET /inventory/activities). */
+export interface ConsumableActivity {
+	/** What event_category stores — the table the activity's route bills from. */
+	table: string;
+	label: string;
+	/** The column carrying the option a link may narrow to, e.g. a feed's type. */
+	optionColumn: string | null;
+	options: string[];
+}
+
 export interface ReminderCatalogCategory {
 	id: string;
 	label: string;
@@ -622,14 +638,19 @@ export const inventoryAPI = {
 	create: (data: {
 		memberId?: number | null; name: string; category: string; variant?: string | null;
 		quantity?: number; unit?: string; packSize?: number | null; leadDays?: number | null;
-		eventCategory?: string | null; decrementPerEvent?: number | null; consumeIntervalDays?: number | null;
+		eventCategory?: string | null; eventOption?: string | null; unitsPerDecrement?: number | null;
+		decrementPerEvent?: number | null; consumeIntervalDays?: number | null;
 		expiresAt?: string | null; notes?: string | null;
 	}) => api.post('/inventory', data),
 	update: (id: number, data: Partial<{
 		name: string; variant?: string | null; unit: string; packSize?: number | null;
-		leadDays?: number | null; eventCategory?: string | null; decrementPerEvent?: number | null;
+		leadDays?: number | null; eventCategory?: string | null; eventOption?: string | null;
+		unitsPerDecrement?: number | null; decrementPerEvent?: number | null;
 		consumeIntervalDays?: number | null; expiresAt?: string | null; notes?: string | null; active: boolean;
 	}>) => api.put(`/inventory/${id}`, data),
+	// The logged activities an item can be consumed by — served by the API so
+	// the picker never offers an activity that would not actually fire.
+	activities: () => api.get<{ activities: ConsumableActivity[] }>('/inventory/activities'),
 	adjust: (id: number, data: { change: number; reason: 'purchase' | 'used' | 'manual' | 'correction'; note?: string | null }) =>
 		api.post(`/inventory/${id}/adjust`, data),
 	adjustments: (id: number) => api.get(`/inventory/${id}/adjustments`),

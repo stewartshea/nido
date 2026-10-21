@@ -1008,6 +1008,52 @@ ALTER TABLE inventory_adjustments ADD COLUMN source TEXT DEFAULT 'manual';
       }
     },
   },
+  {
+    version: 34,
+    name: 'inventory-consumption-rules',
+    // An item's link to a logged activity grows from a boolean into a rule:
+    // which activity (event_category, as before), optionally narrowed to one
+    // option of it (event_option, e.g. a feed of type 'bottle'), how many
+    // units of that activity make one whole use (units_per_decrement, so
+    // 1 tablet per 4 bottles), and how far toward the next whole use the
+    // logged events have accrued so far (consume_carry, so the fourth bottle
+    // is what bills — not four quarters of one).
+    //
+    // inventory_consumption_events is the idempotency gate for events that do
+    // not yet write a ledger row: the unique index on
+    // inventory_adjustments(item_id, ref_table, ref_id) only fires once a
+    // whole use accrues, so a retried event would otherwise add its partial
+    // progress twice. It also records units, so a future activity that logs a
+    // count ("washed 8 bottles") carries the same gate.
+    //
+    // Guarded like migration 32: a re-run (or a database already carrying the
+    // columns) must not throw and block the family from opening.
+    run: (raw) => {
+      const columns = raw.pragma('table_info(inventory_items)') as Array<{ name: string }>;
+      const has = (name: string) => columns.some((c) => c.name === name);
+      if (!has('event_option')) {
+        raw.exec('ALTER TABLE inventory_items ADD COLUMN event_option TEXT');
+      }
+      if (!has('units_per_decrement')) {
+        raw.exec('ALTER TABLE inventory_items ADD COLUMN units_per_decrement INTEGER');
+      }
+      if (!has('consume_carry')) {
+        raw.exec('ALTER TABLE inventory_items ADD COLUMN consume_carry REAL NOT NULL DEFAULT 0');
+      }
+      raw.exec(`
+        CREATE TABLE IF NOT EXISTS inventory_consumption_events (
+          id          INTEGER PRIMARY KEY AUTOINCREMENT,
+          item_id     INTEGER NOT NULL,
+          ref_table   TEXT NOT NULL,
+          ref_id      INTEGER NOT NULL,
+          units       REAL NOT NULL DEFAULT 1,
+          created_at  TEXT DEFAULT CURRENT_TIMESTAMP,
+          UNIQUE (item_id, ref_table, ref_id),
+          FOREIGN KEY (item_id) REFERENCES inventory_items(id) ON DELETE CASCADE
+        );
+      `);
+    },
+  },
 ];
 
 // ---------------------------------------------------------------------------

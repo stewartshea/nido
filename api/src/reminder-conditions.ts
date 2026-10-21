@@ -85,7 +85,9 @@ function options(category: string, key: string): string[] {
 	return Array.isArray(list) ? [...list] : [];
 }
 
-const SOURCES: Record<string, Source> = {
+// The `table` is what inventory consumption matches on (an item's
+// event_category stores it), so the inventory routes read this registry too.
+export const SOURCES: Record<string, Source> = {
 	// A feed is when the BABY ate: a bottle, formula or solids count, a pump does
 	// not. Pumping is its own question, and `breast_or_pump` is the supply
 	// question — the same three-way split the old switch encoded, now as data.
@@ -115,7 +117,9 @@ const SOURCES: Record<string, Source> = {
 		table: 'diapers',
 		time: 'change_time',
 		optionColumn: 'type',
-		options: ['wet', 'dirty', 'both'],
+		// 'dry' is a loggable type; a rule (or an inventory link) that cannot
+		// name it would silently miss those changes.
+		options: ['wet', 'dirty', 'both', 'dry'],
 	},
 	sleep: {
 		label: 'Sleep',

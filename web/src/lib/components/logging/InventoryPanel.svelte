@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { createEventDispatcher, onMount } from 'svelte';
-	import { inventoryAPI, type InventoryItem, type InventoryAlert, type DiaperBand } from '$lib/api';
+	import { inventoryAPI, type InventoryItem, type InventoryAlert, type DiaperBand, type ConsumableActivity } from '$lib/api';
 	import { defaultMemberId } from '$lib/shared';
 
 	export let members: { id: number | string; name: string; trackable?: boolean }[] = [];
@@ -20,6 +20,15 @@
 	// Any item can be consumed by a logged change — a tub of wipes goes down
 	// when a nappy is changed, and that item's category is not 'diapers'.
 	$: linkedToLogs = autoDecrement;
+
+	// The activity the form links to, and how the rule reads in words —
+	// "every 4 bottle feeds, subtract 1". Activity and options come from the
+	// API's /inventory/activities, which only lists what actually fires.
+	$: currentActivity = activities.find((a) => a.table === eventActivity) ?? null;
+	$: activityN = Math.max(1, Number(eventEvery) || 1);
+	$: activityPhrase = currentActivity
+		? `${eventOption ? `${eventOption} ` : ''}${currentActivity.label.toLowerCase()}${activityN > 1 ? 's' : ''}`
+		: '';
 
 	const CATEGORY_LABELS: Record<string, string> = {
 		diapers: 'Diapers', formula: 'Formula', baby_care: 'Baby care', vitamins: 'Vitamins',
@@ -71,8 +80,15 @@
 	let expiresAt = '';
 	let memberId: number | null = null;
 	let autoDecrement = false;
-	/** How many of this item a single logged change uses. */
+	/** How many of this item one whole use subtracts (X in "X per N"). */
 	let eventQty = '1';
+	/** Units of the activity that make one whole use (N in "X per N"). */
+	let eventEvery = '1';
+	/** The linked activity — its table, e.g. 'feedings'; '' until chosen. */
+	let eventActivity = '';
+	/** Option the link is narrowed to (a feed's type), or '' for any. */
+	let eventOption = '';
+	let activities: ConsumableActivity[] = [];
 	let saving = false;
 
 	async function loadSizes(memberId: number | null) {
@@ -152,11 +168,16 @@
 	async function load() {
 		loading = true;
 		try {
-			const [list, cats] = await Promise.all([inventoryAPI.list(), inventoryAPI.categories()]);
+			const [list, cats, acts] = await Promise.all([
+				inventoryAPI.list(),
+				inventoryAPI.categories(),
+				inventoryAPI.activities(),
+			]);
 			items = list.data.items ?? [];
 			alertList = list.data.alerts ?? [];
 			// Whatever this household already uses, plus the starter list.
 			categories = cats.data.categories ?? Object.keys(CATEGORY_LABELS);
+			activities = acts.data.activities ?? [];
 		} catch (e: any) {
 			error = e?.response?.data?.error || 'Could not load inventory.';
 		} finally {
@@ -228,8 +249,16 @@
 		memberId = BABY_CATEGORIES.has(category) ? selectedMemberId : null;
 		name = ''; variant = ''; quantity = ''; packSize = ''; leadDays = '';
 		consumeQty = '';
-		// Diapers are the obvious linked case; anything else is opt-in.
+		// Diapers are the obvious linked case; anything else is opt-in. The
+		// activity defaults to the category's obvious signal — diaper changes
+		// for diapers, feeds for everything else — and the picker lists only
+		// what the API actually bills stock from.
 		autoDecrement = category === 'diapers';
+		eventActivity = autoDecrement && activities.some((a) => a.table === 'diapers')
+			? 'diapers'
+			: (activities[0]?.table ?? '');
+		eventOption = '';
+		eventEvery = '1';
 		eventQty = '1';
 		error = '';
 		notice = '';
@@ -250,8 +279,10 @@
 				unit,
 				packSize: packSize ? Number(packSize) : null,
 				leadDays: leadDays ? Number(leadDays) : null,
-				eventCategory: linkedToLogs ? 'diapers' : null,
-				decrementPerEvent: linkedToLogs ? Math.max(1, Number(eventQty) || 1) : (consumeQty ? Number(consumeQty) : null),
+				eventCategory: linkedToLogs && eventActivity ? eventActivity : null,
+				eventOption: linkedToLogs && eventOption ? eventOption : null,
+				unitsPerDecrement: linkedToLogs && eventActivity ? Math.max(1, Number(eventEvery) || 1) : null,
+				decrementPerEvent: linkedToLogs && eventActivity ? Math.max(1, Number(eventQty) || 1) : (consumeQty ? Number(consumeQty) : null),
 				consumeIntervalDays: consumeEvery ? Number(consumeEvery) : null,
 				expiresAt: expiresAt ? new Date(expiresAt).toISOString() : null,
 			});
@@ -361,6 +392,15 @@
 		return `about ${Math.round(d)} days left`;
 	}
 
+	/** How an item's rule reads: "1 per 4 bottle feeds", "3 per diaper change". */
+	function linkRule(item: InventoryItem): string {
+		const act = activities.find((a) => a.table === item.eventCategory);
+		const n = item.unitsPerDecrement ?? 1;
+		const per = item.decrementPerEvent ?? 1;
+		const noun = `${item.eventOption ? `${item.eventOption} ` : ''}${(act?.label ?? item.eventCategory ?? 'logged event').toLowerCase()}${n > 1 ? 's' : ''}`;
+		return n > 1 ? `${per} per ${n} ${noun}` : `${per} per ${noun}`;
+	}
+
 	onMount(load);
 </script>
 
@@ -461,14 +501,38 @@
 			<div>
 				<label class="flex items-center gap-2 text-sm text-ink">
 					<input type="checkbox" bind:checked={autoDecrement} class="w-4 h-4 accent-[var(--color-primary)]" />
-					Subtract this when I log a diaper change
+					Subtract this when I log an activity
 				</label>
 				{#if autoDecrement}
-					<div class="mt-2 flex items-center gap-2">
-						<label for="inv-per-event" class="text-sm text-ink-soft">How many each time</label>
-						<input id="inv-per-event" type="number" min="1" step="1" bind:value={eventQty} class="w-20 px-3 py-2 border border-line rounded-md" placeholder="1" />
+					<div class="mt-2 space-y-2">
+						<div class="grid grid-cols-2 gap-3">
+							<div>
+								<label for="inv-activity" class="block text-xs text-ink-soft mb-1">Which log</label>
+								<select id="inv-activity" bind:value={eventActivity} class="w-full px-3 py-2 border border-line rounded-md">
+									{#each activities as a (a.table)}<option value={a.table}>{a.label}</option>{/each}
+								</select>
+							</div>
+							{#if currentActivity && currentActivity.options.length > 0}
+								<div>
+									<label for="inv-activity-option" class="block text-xs text-ink-soft mb-1">Only those that are</label>
+									<select id="inv-activity-option" bind:value={eventOption} class="w-full px-3 py-2 border border-line rounded-md">
+										<option value="">any</option>
+										{#each currentActivity.options as o (o)}<option value={o}>{o}</option>{/each}
+									</select>
+								</div>
+							{/if}
+						</div>
+						<div class="flex flex-wrap items-center gap-2">
+							<label for="inv-event-every" class="text-sm text-ink-soft">Every</label>
+							<input id="inv-event-every" type="number" min="1" step="1" bind:value={eventEvery} class="w-20 px-3 py-2 border border-line rounded-md" placeholder="1" />
+							<label for="inv-per-event" class="text-sm text-ink-soft">{activityPhrase || 'logged events'}, subtract</label>
+							<input id="inv-per-event" type="number" min="1" step="1" bind:value={eventQty} class="w-20 px-3 py-2 border border-line rounded-md" placeholder="1" />
+						</div>
 					</div>
-					<p class="text-xs text-ink-soft mt-1">A tub of wipes set to 3 comes down by 3 for every change you log.</p>
+					<p class="text-xs text-ink-soft mt-1">
+						Partial counts carry over: with 1 per 4, the first three logs change nothing and the fourth takes one off.
+						So 1 per change on a wipes tub, or 1 tablet per 4 bottle feeds.
+					</p>
 				{/if}
 			</div>
 			<div class="flex gap-2">
@@ -659,6 +723,7 @@
 									</div>
 									<p class="text-xs text-ink-soft truncate">
 										{#if item.consumeIntervalDays}uses {item.decrementPerEvent ?? 1} every {item.consumeIntervalDays}d · {/if}
+										{#if item.eventCategory && !item.consumeIntervalDays}uses {linkRule(item)} · {/if}
 										{#if item.expiresAt}expires {new Date(item.expiresAt).toLocaleDateString()} · {/if}
 										{item.unit}
 									</p>
@@ -716,6 +781,9 @@
 									{#if item.consumeIntervalDays}
 										· uses {item.decrementPerEvent ?? 1} every {item.consumeIntervalDays} day{item.consumeIntervalDays === 1 ? '' : 's'}
 										{#if item.nextConsumptionAt}· next {new Date(item.nextConsumptionAt).toLocaleDateString()}{/if}
+									{/if}
+									{#if item.eventCategory && !item.consumeIntervalDays}
+										· uses {linkRule(item)}
 									{/if}
 									{#if item.expiresAt} · expires {new Date(item.expiresAt).toLocaleDateString()}{/if}
 								</p>
