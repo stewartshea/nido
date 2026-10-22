@@ -5,19 +5,19 @@
 //   node scripts/preview.mjs deploy   --pr 42 --sha <full head sha>
 //   node scripts/preview.mjs teardown --pr 42
 //
-// A preview is a namespace named pr-<number> holding one API Deployment,
+// A preview is a namespace named nido-pr-<number> holding one API Deployment,
 // one web Deployment, their Services and an HTTPRoute. It is reached at
 // https://pr-<number>.previews.dev.nido-app.ca.
 //
 // Everything that varies per PR — the namespace, the image tags, the
-// hostname — is rendered into deploy/kubernetes/preview/.render/pr-<number>/
+// hostname — is rendered into deploy/kubernetes/preview/.render/nido-pr-<number>/
 // as a kustomize overlay on top of base/. The base itself never changes
 // shape, so a preview is always the same two Deployments and the same
 // two Services.
 //
 // The cluster side of this (the wildcard certificate, the ServiceAccount CI
 // deploys as, the admission policy that limits that ServiceAccount to
-// pr-<number> namespaces) lives in the ovh-flux repository, not here.
+// nido-pr-<number> namespaces) lives in the ovh-flux repository, not here.
 
 import { spawn } from 'node:child_process';
 import { createHmac } from 'node:crypto';
@@ -99,7 +99,7 @@ function parseArgs(argv) {
 }
 
 function previewNamespace(pr) {
-  return `pr-${pr}`;
+  return `nido-pr-${pr}`;
 }
 
 function previewHostname(pr) {
@@ -119,7 +119,7 @@ function previewHostname(pr) {
 // The salt keeps the derived key out of reach of anyone who can guess the
 // PR number and read the commit history.
 function deriveKey(salt, label, pr, sha) {
-  return createHmac('sha256', salt).update(`${label}:pr-${pr}:${sha}`).digest('hex');
+  return createHmac('sha256', salt).update(`${label}:nido-pr-${pr}:${sha}`).digest('hex');
 }
 
 function namespaceManifest(pr) {
@@ -197,7 +197,7 @@ function kustomization(pr, sha) {
 }
 
 async function render(pr, sha) {
-  const dir = join(RENDER_DIR, `pr-${pr}`);
+  const dir = join(RENDER_DIR, `nido-pr-${pr}`);
   await rm(dir, { recursive: true, force: true });
   await mkdir(dir, { recursive: true });
   await writeFile(join(dir, 'kustomization.yaml'), kustomization(pr, sha), 'utf8');
@@ -339,7 +339,7 @@ async function sweep() {
   console.log(`preview: ${namespaces.length} preview namespace(s) found`);
 
   for (const ns of namespaces) {
-    const match = /^pr-([0-9]+)$/.exec(ns);
+    const match = /^nido-pr-([0-9]+)$/.exec(ns);
     if (!match) {
       // The shared nido-preview namespace carries the same label. It is
       // infrastructure, not a preview, and deleting it would take the

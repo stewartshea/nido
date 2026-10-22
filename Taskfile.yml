@@ -1,0 +1,92 @@
+version: '3'
+
+vars:
+  API_DIR: ./api
+  WEB_DIR: ./web
+
+tasks:
+  default:
+    desc: List available tasks
+    cmds:
+      - task --list
+
+  install:
+    desc: Install dependencies for all workspaces
+    cmds:
+      - npm ci
+
+  dev:
+    desc: Start development environment with docker-compose
+    cmds:
+      - docker-compose up
+
+  build:
+    desc: Build all containers
+    cmds:
+      - docker-compose build
+
+  test:
+    desc: Run all tests
+    cmds:
+      - npm run test
+
+  test:api:
+    desc: Run API tests
+    dir: '{{.API_DIR}}'
+    cmds:
+      - npm test
+
+  test:web:
+    desc: Run web tests
+    dir: '{{.WEB_DIR}}'
+    cmds:
+      - npm test
+
+  db:init:
+    desc: Initialize database
+    dir: '{{.API_DIR}}'
+    cmds:
+      - npm run db:init
+
+  seed:test:
+    desc: Seed test data for development/testing environments
+    dir: '{{.API_DIR}}'
+    env:
+      NIDO_MASTER_KEY:
+        sh: echo "${NIDO_MASTER_KEY:-$(openssl rand -hex 32)}"
+      JWT_SECRET:
+        sh: echo "${JWT_SECRET:-$(openssl rand -hex 32)}"
+      NIDO_DATA_DIR:
+        sh: echo "${NIDO_DATA_DIR:-./data/test-seed}"
+    cmds:
+      - npx tsx scripts/seed-test-data.ts
+
+  seed:validate:
+    desc: Validate that seeded test environment is functional
+    dir: '{{.API_DIR}}'
+    env:
+      NIDO_MASTER_KEY:
+        sh: echo "${NIDO_MASTER_KEY:-$(openssl rand -hex 32)}"
+      JWT_SECRET:
+        sh: echo "${JWT_SECRET:-$(openssl rand -hex 32)}"
+      NIDO_DATA_DIR:
+        sh: echo "${NIDO_DATA_DIR:-./data/test-seed}"
+    cmds:
+      - npx tsx scripts/validate-seed.ts
+
+  env:check:
+    desc: Check environment configuration
+    cmds:
+      - |
+        echo "Checking environment..."
+        [ -n "$NIDO_MASTER_KEY" ] && echo "✓ NIDO_MASTER_KEY set" || echo "✗ NIDO_MASTER_KEY missing"
+        [ -n "$JWT_SECRET" ] && echo "✓ JWT_SECRET set" || echo "✗ JWT_SECRET missing"
+        echo "NIDO_DATA_DIR: ${NIDO_DATA_DIR:-/data (default)}"
+
+  ci:test-env:
+    desc: Full test environment setup and validation (for CI)
+    cmds:
+      - task: db:init
+      - task: seed:test
+      - task: seed:validate
+      - task: test

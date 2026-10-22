@@ -16,15 +16,15 @@ encrypted database.
 
 Everything that varies per pull request — the namespace, the image tags, the
 hostname — is rendered by [`scripts/preview.mjs`](../../../scripts/preview.mjs)
-into `.render/pr-<number>/` as a kustomize overlay on top of `base/`. The
+into `.render/nido-pr-<number>/` as a kustomize overlay on top of `base/`. The
 base never changes shape, so a preview is always the same two Deployments,
 the same two Services and the same HTTPRoute.
 
 ```
 base/                    the same for every preview
-render/pr-42/            generated, not committed
+.render/nido-pr-42/      generated, not committed
   kustomization.yaml     namespace, image tags, hostname
-  namespace.yaml         pr-42, labelled nido-app.ca/preview=true
+  namespace.yaml         nido-pr-42, labelled nido-app.ca/preview=true
 ```
 
 The overlay is rendered into the repository rather than a temporary directory
@@ -35,7 +35,7 @@ the kustomization.
 
 | | |
 | --- | --- |
-| Namespace | `pr-<number>`, labelled `nido-app.ca/preview=true` |
+| Namespace | `nido-pr-<number>`, labelled `nido-app.ca/preview=true` |
 | API | one Deployment and one Service, `Recreate` strategy |
 | Web | one Deployment and one Service, `Recreate` strategy |
 | Data | an `emptyDir` on the API, so a preview starts empty and leaves nothing behind |
@@ -59,7 +59,7 @@ filesystem — SQLite over a shared mount is a corruption risk.
 `NIDO_MASTER_KEY` and `JWT_SECRET` are derived, not random:
 
 ```
-HMAC-SHA256(PREVIEW_KEY_SALT, "<label>:pr-<number>:<commit>")
+<label>:nido-pr-<number>:<commit>")
 ```
 
 Derived, because a random key per deployment leaves the pod holding a key
@@ -76,8 +76,8 @@ mail server, and the namespace is deleted when the pull request closes.
 
 ## The hostname
 
-`pr-<number>.previews.dev.nido-app.ca` is covered by two wildcards, both
-created once and not per pull request:
+`nido-pr-<number>` namespaces are reached at `pr-<number>.previews.dev.nido-app.ca`
+and are covered by two wildcards, both created once and not per pull request:
 
 - `*.previews.dev.nido-app.ca` — a DNS A record pointing at the Traefik
   LoadBalancer. The preview HTTPRoutes deliberately carry **no**
@@ -94,7 +94,7 @@ the only thing that goes in a preview hostname.
 
 The cluster side of this — the wildcard certificate, the ServiceAccount the
 deploy runs as, and the admission policy that limits that ServiceAccount to
-`pr-<number>` namespaces — lives in the private `ovh-flux` repository, not
+`nido-pr-<number>` namespaces — lives in the private `ovh-flux` repository, not
 here.
 
 ## Lifecycle
@@ -119,7 +119,7 @@ and it would degrade the live instances to pay for it.
 ```bash
 # render the overlay and check the manifests build
 node scripts/preview.mjs render --pr 42 --sha "$(git rev-parse HEAD)"
-kubectl kustomize deploy/kubernetes/preview/.render/pr-42
+kubectl kustomize deploy/kubernetes/preview/.render/nido-pr-42
 
 # deploy, against a cluster the current kubeconfig can reach
 PREVIEW_KEY_SALT=... node scripts/preview.mjs deploy --pr 42 --sha "$(git rev-parse HEAD)"
@@ -128,6 +128,6 @@ PREVIEW_KEY_SALT=... node scripts/preview.mjs deploy --pr 42 --sha "$(git rev-pa
 node scripts/preview.mjs teardown --pr 42
 ```
 
-The deploy identity can only create a `pr-<number>` namespace and can only
+The deploy identity can only create a `nido-pr-<number>` namespace and can only
 write inside one. A `kubectl` run with an administrator's kubeconfig is not
 restricted that way.

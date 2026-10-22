@@ -10,6 +10,9 @@ forever with no account — or use [My Nido](https://my.nido-app.ca), the hosted
 version, which is also free and runs in Canada. Both are the same Apache-2.0
 codebase with the same features.
 
+[Join us on Discord](https://discord.gg/yxWQFjZjy) to ask questions, share feedback,
+or follow development.
+
 <!-- prettier-ignore -->
 > **On the name.** *Nido* means "nest" in Spanish and Italian. 巣 (*su*) is the
 > Japanese kanji for "nest" and doubles as the project's mark. The two are a
