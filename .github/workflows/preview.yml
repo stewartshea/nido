@@ -56,12 +56,12 @@ jobs:
 
       # This workflow is independent of the build workflow, so it cannot
       # assume the image is already there. The tag is the same immutable
-      # sha-<commit> tag the build workflow pushes.
+      # sha-<commit> tag the build workflow pushes — the first twelve
+      # characters of the commit, the same shortening.
       - name: Wait for the image
-        env:
-          IMAGE_TAG: sha-${{ github.event.pull_request.head.sha }}
         run: |
           set -euo pipefail
+          IMAGE_TAG="sha-${HEAD_SHA:0:12}"
           for image in ghcr.io/stewartshea/nido/api ghcr.io/stewartshea/nido/web; do
             for attempt in $(seq 1 60); do
               if docker manifest inspect "$image:$IMAGE_TAG" >/dev/null 2>&1; then
