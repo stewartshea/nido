@@ -283,7 +283,7 @@ The picker does not become a query builder:
 | Phase | Contents | Status |
 | --- | --- | --- |
 | **1** | Helper + gate table + rule columns on the item; feeds and diapers wired; picker guarded by `WIRED_TABLES` | **Shipped — PR #42** |
-| **2** | Registry merge, `inventory_consumption_rules`, conditions, per-rule carry/gate, `subject_id NULL` scope, conformance test, migration §6 | This document |
+| **2** | Registry merge, `inventory_consumption_rules`, conditions, per-rule carry/gate, `subject_id NULL` scope, conformance test, migration §6 | **Implemented in this PR** |
 | **3 (optional)** | Trigger-based emission / normalized `activity_events`; numeric `range` conditions; batch `units` from log forms | Deferred |
 
 Phase 1's columns are trivially projectable (§6), so landing PR #42 first

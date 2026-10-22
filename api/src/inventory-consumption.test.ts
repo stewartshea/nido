@@ -49,12 +49,19 @@ describe('inventory: any linked activity can consume stock, at any ratio', () =>
 		expect(tables).toContain('diapers');
 		expect(tables).toContain('feedings');
 
+		// Each activity carries the attributes a rule may filter on, declared
+		// next to the reminders registry so both read the same vocabulary.
 		const feeds = res.body.activities.find((a: any) => a.table === 'feedings');
-		expect(feeds.options).toContain('bottle');
+		expect(feeds.attributes.find((a: any) => a.key === 'type').values).toContain('bottle');
 		const diapers = res.body.activities.find((a: any) => a.table === 'diapers');
 		// 'dry' is a loggable diaper type; a picker missing it could never be
 		// narrowed to those changes.
-		expect(diapers.options).toContain('dry');
+		expect(diapers.attributes.find((a: any) => a.key === 'type').values).toContain('dry');
+
+		// Milestones is one table with two dimensions, so a rule can say "a
+		// routine bath" rather than matching any bath-shaped record.
+		const milestones = res.body.activities.find((a: any) => a.table === 'milestones');
+		expect(milestones.attributes.map((a: any) => a.key)).toEqual(['kind', 'category']);
 	});
 
 	it('refuses an option filter or an every-N ratio with no activity behind it', async () => {

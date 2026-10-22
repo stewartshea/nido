@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { resolveTrackableMember, attachCreatedBy } from '../member-scope';
 import { parsePaging, countMatching } from '../paging';
 import { type AuthEnv } from '../auth';
+import { emitActivity } from '../inventory-consume';
 
 const vaccinationRoutes = new Hono<AuthEnv>();
 
@@ -127,6 +128,22 @@ vaccinationRoutes.post('/', zValidator('json', createVaccinationSchema), async (
         userId
       ]
     });
+    
+    // A vaccination bills stock for anything linked to it — vaccinations carry
+    // no option dimension, so only an unconditional rule matches. The record
+    // is already stored; a consumption failure warns instead of failing.
+    const vaccinationId = Number(result.lastInsertRowid);
+    try {
+      await emitActivity(db, {
+        source: 'vaccinations',
+        refId: vaccinationId,
+        subjectId,
+        attrs: {},
+        createdBy: userId,
+      });
+    } catch (err) {
+      c.get('log').warn('inventory decrement failed', { err });
+    }
     
     // Return the created vaccination
     const vaccinationResult = await db.execute({

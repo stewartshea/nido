@@ -22,13 +22,25 @@
 	$: linkedToLogs = autoDecrement;
 
 	// The activity the form links to, and how the rule reads in words —
-	// "every 4 bottle feeds, subtract 1". Activity and options come from the
-	// API's /inventory/activities, which only lists what actually fires.
+	// "every 4 bottle feeds, subtract 1". Activity, attributes and option
+	// values come from the API's /inventory/activities, which only lists what
+	// actually fires. Each attribute gets its own chosen value ('' = any).
 	$: currentActivity = activities.find((a) => a.table === eventActivity) ?? null;
 	$: activityN = Math.max(1, Number(eventEvery) || 1);
-	$: activityPhrase = currentActivity
-		? `${eventOption ? `${eventOption} ` : ''}${currentActivity.label.toLowerCase()}${activityN > 1 ? 's' : ''}`
+	$: chosenOptions = currentActivity
+		? currentActivity.attributes.map((at) => eventOptions[at.key] ?? '').filter(Boolean).join(' ')
 		: '';
+	$: activityPhrase = currentActivity
+		? `${chosenOptions ? `${chosenOptions} ` : ''}${currentActivity.label.toLowerCase()}${activityN > 1 ? 's' : ''}`
+		: '';
+	// Switching the activity starts its filters fresh: a bottle filter means
+	// nothing against a diaper change.
+	$: if (eventActivity !== lastActivity) {
+		lastActivity = eventActivity;
+		const next: Record<string, string> = {};
+		for (const at of (activities.find((a) => a.table === eventActivity)?.attributes ?? [])) next[at.key] = '';
+		eventOptions = next;
+	}
 
 	const CATEGORY_LABELS: Record<string, string> = {
 		diapers: 'Diapers', formula: 'Formula', baby_care: 'Baby care', vitamins: 'Vitamins',
@@ -86,8 +98,9 @@
 	let eventEvery = '1';
 	/** The linked activity — its table, e.g. 'feedings'; '' until chosen. */
 	let eventActivity = '';
-	/** Option the link is narrowed to (a feed's type), or '' for any. */
-	let eventOption = '';
+	/** Chosen value per attribute key ('type' → 'bottle'); '' for any. */
+	let eventOptions: Record<string, string> = {};
+	let lastActivity = '';
 	let activities: ConsumableActivity[] = [];
 	let saving = false;
 
@@ -257,7 +270,7 @@
 		eventActivity = autoDecrement && activities.some((a) => a.table === 'diapers')
 			? 'diapers'
 			: (activities[0]?.table ?? '');
-		eventOption = '';
+		eventOptions = {};
 		eventEvery = '1';
 		eventQty = '1';
 		error = '';
@@ -279,10 +292,23 @@
 				unit,
 				packSize: packSize ? Number(packSize) : null,
 				leadDays: leadDays ? Number(leadDays) : null,
-				eventCategory: linkedToLogs && eventActivity ? eventActivity : null,
-				eventOption: linkedToLogs && eventOption ? eventOption : null,
-				unitsPerDecrement: linkedToLogs && eventActivity ? Math.max(1, Number(eventEvery) || 1) : null,
-				decrementPerEvent: linkedToLogs && eventActivity ? Math.max(1, Number(eventQty) || 1) : (consumeQty ? Number(consumeQty) : null),
+				// The rule in its real shape: activity, conditions, ratio. Only
+				// the attributes the form chose a value for become conditions.
+				consumptionRule: linkedToLogs && eventActivity
+					? {
+						sourceTable: eventActivity,
+						match: 'all',
+						conditions: currentActivity
+							? currentActivity.attributes
+								.map((at) => ({ attr: at.key, values: [eventOptions[at.key] ?? ''] }))
+								.filter((cond) => cond.values[0] !== '')
+							: [],
+						unitsPerUse: Math.max(1, Number(eventEvery) || 1),
+						amountPerUse: Math.max(1, Number(eventQty) || 1),
+					}
+					: null,
+				// With no activity, the quantity is the calendar cadence's per-period use.
+				decrementPerEvent: !linkedToLogs && consumeQty ? Number(consumeQty) : null,
 				consumeIntervalDays: consumeEvery ? Number(consumeEvery) : null,
 				expiresAt: expiresAt ? new Date(expiresAt).toISOString() : null,
 			});
@@ -392,12 +418,18 @@
 		return `about ${Math.round(d)} days left`;
 	}
 
-	/** How an item's rule reads: "1 per 4 bottle feeds", "3 per diaper change". */
+	/** How an item's rule reads: "1 per 4 bottle feeds", "1 per routine bath milestone". */
 	function linkRule(item: InventoryItem): string {
-		const act = activities.find((a) => a.table === item.eventCategory);
-		const n = item.unitsPerDecrement ?? 1;
-		const per = item.decrementPerEvent ?? 1;
-		const noun = `${item.eventOption ? `${item.eventOption} ` : ''}${(act?.label ?? item.eventCategory ?? 'logged event').toLowerCase()}${n > 1 ? 's' : ''}`;
+		const rule = item.consumptionRule;
+		const table = rule?.sourceTable ?? item.eventCategory ?? '';
+		const act = activities.find((a) => a.table === table);
+		const n = rule?.unitsPerUse ?? item.unitsPerDecrement ?? 1;
+		const per = rule?.amountPerUse ?? item.decrementPerEvent ?? 1;
+		// The conditions in words: every chosen value, then the activity's noun.
+		const filters = rule
+			? rule.conditions.flatMap((cond) => cond.values).join(' ')
+			: (item.eventOption ? `${item.eventOption} ` : '');
+		const noun = `${filters}${(act?.label ?? table ?? 'logged event').toLowerCase()}${n > 1 ? 's' : ''}`;
 		return n > 1 ? `${per} per ${n} ${noun}` : `${per} per ${noun}`;
 	}
 
@@ -512,14 +544,18 @@
 									{#each activities as a (a.table)}<option value={a.table}>{a.label}</option>{/each}
 								</select>
 							</div>
-							{#if currentActivity && currentActivity.options.length > 0}
-								<div>
-									<label for="inv-activity-option" class="block text-xs text-ink-soft mb-1">Only those that are</label>
-									<select id="inv-activity-option" bind:value={eventOption} class="w-full px-3 py-2 border border-line rounded-md">
-										<option value="">any</option>
-										{#each currentActivity.options as o (o)}<option value={o}>{o}</option>{/each}
-									</select>
-								</div>
+							{#if currentActivity && currentActivity.attributes.length > 0}
+								{#each currentActivity.attributes as attr (attr.key)}
+									<div>
+										<label for="inv-attr-{attr.key}" class="block text-xs text-ink-soft mb-1">
+											{currentActivity.attributes.length > 1 ? `${attr.key[0]?.toUpperCase() ?? ''}${attr.key.slice(1)}` : 'Only those that are'}
+										</label>
+										<select id="inv-attr-{attr.key}" bind:value={eventOptions[attr.key]} class="w-full px-3 py-2 border border-line rounded-md">
+											<option value="">any</option>
+											{#each attr.values as v (v)}<option value={v}>{v}</option>{/each}
+										</select>
+									</div>
+								{/each}
 							{/if}
 						</div>
 						<div class="flex flex-wrap items-center gap-2">

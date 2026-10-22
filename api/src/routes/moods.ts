@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 import { type AuthEnv } from '../auth';
+import { emitActivity } from '../inventory-consume';
 import type { MoodRow } from '../db-types';
 import { resolveTrackableMember, attachCreatedBy } from '../member-scope';
 import { parsePaging, countMatching } from '../paging';
@@ -70,6 +71,22 @@ moodRoutes.post('/', zValidator('json', createMoodSchema), async (c) => {
     sql: `INSERT INTO moods (subject_id, mood, recorded_at, notes, created_at, created_by) VALUES (?, ?, ?, ?, ?, ?)`,
     args: [subjectId, mood, recordedAt || now, notes || null, now, userId],
   });
+
+  // A mood bills stock through the same funnel as every other activity, with
+  // the mood as an attribute so a rule can narrow to one. The record is
+  // already stored; a consumption failure warns instead of failing.
+  try {
+    await emitActivity(db, {
+      source: 'moods',
+      refId: Number(ins.lastInsertRowid),
+      subjectId,
+      attrs: { mood },
+      createdBy: userId,
+    });
+  } catch (err) {
+    c.get('log').warn('inventory decrement failed', { err });
+  }
+
   return c.json({ message: 'Mood recorded', mood: { id: Number(ins.lastInsertRowid), memberId: subjectId, mood, recordedAt: recordedAt || now, notes } }, 201);
 });
 

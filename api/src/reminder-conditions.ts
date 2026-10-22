@@ -23,6 +23,34 @@ import {
 	MILESTONE_CATEGORY_IDS,
 	type CategoryId,
 } from './vocabulary';
+import { NAMESPACE_HOUSEHOLD_ID } from './db-core';
+
+/**
+ * One dimension an inventory consumption rule can filter a logged event by.
+ *
+ * Declared next to the reminders registry on purpose: both read the same
+ * tables and the same option lists, so a value ('dry', a custom sleep
+ * location) means the same thing in a reminder and in a stock rule. A
+ * `kind: 'number'` attribute reserves room for range conditions later; the
+ * evaluator is enum-only until a journey asks for more.
+ */
+export interface ActivityAttribute {
+	/** What a condition's `attr` names, e.g. 'type'. */
+	key: string;
+	/** The table column it reads, e.g. 'type'. */
+	column: string;
+	kind: 'enum' | 'number' | 'text';
+	/** Enum values from the vocabulary, before a family's own values merge in. */
+	values?: string[];
+	/** (category, optionKey) pairs whose family-custom values also count. */
+	customKeys?: Array<[string, string]>;
+}
+
+/** A condition on one logged event: attribute values it must carry to bill. */
+export interface ConsumptionCondition {
+	attr: string;
+	values?: string[];
+}
 
 export interface ReminderCondition {
 	category: string;
@@ -67,6 +95,10 @@ interface Source {
 	milestoneKind?: string;
 	/** The family-settings option key, so a family's own values can be merged in. */
 	optionKey?: string;
+	/** Inventory consumption: events from this table can bill stock. */
+	consumable?: boolean;
+	/** Overrides the attribute derived from optionColumn/options, for a table needing more. */
+	attributes?: ActivityAttribute[];
 }
 
 const MILESTONE_LABELS: Record<string, string> = {
@@ -99,6 +131,7 @@ export const SOURCES: Record<string, Source> = {
 		optionColumn: 'type',
 		options: ['breast', 'formula', 'bottle', 'solid'],
 		optionKey: 'type',
+		consumable: true,
 	},
 	pumping: {
 		label: 'Pump',
@@ -120,6 +153,7 @@ export const SOURCES: Record<string, Source> = {
 		// 'dry' is a loggable type; a rule (or an inventory link) that cannot
 		// name it would silently miss those changes.
 		options: ['wet', 'dirty', 'both', 'dry'],
+		consumable: true,
 	},
 	sleep: {
 		label: 'Sleep',
@@ -128,9 +162,13 @@ export const SOURCES: Record<string, Source> = {
 		optionColumn: 'location',
 		options: options('sleep', 'location'),
 		optionKey: 'location',
+		consumable: true,
 	},
-	growth: { label: 'Growth', table: 'growth', time: 'measurement_date' },
-	vaccines: { label: 'Vaccination', table: 'vaccinations', time: 'date_given' },
+	// Growth, vaccinations and journal carry no enum dimension worth filtering
+	// stock by — journal_entries in particular has no `type` column, so unlike
+	// the reminders catalog it declares no attributes rather than a phantom one.
+	growth: { label: 'Growth', table: 'growth', time: 'measurement_date', consumable: true, attributes: [] },
+	vaccines: { label: 'Vaccination', table: 'vaccinations', time: 'date_given', consumable: true, attributes: [] },
 	moods: {
 		label: 'Mood',
 		table: 'moods',
@@ -138,6 +176,7 @@ export const SOURCES: Record<string, Source> = {
 		optionColumn: 'mood',
 		options: options('moods', 'mood'),
 		optionKey: 'mood',
+		consumable: true,
 	},
 	journal: {
 		label: 'Journal entry',
@@ -146,6 +185,8 @@ export const SOURCES: Record<string, Source> = {
 		optionColumn: 'type',
 		options: options('journal', 'type'),
 		optionKey: 'type',
+		consumable: true,
+		attributes: [],
 	},
 };
 
@@ -164,6 +205,25 @@ for (const id of MILESTONE_CATEGORY_IDS) {
 		optionKey: key,
 	};
 }
+
+// One table with two dimensions: a stock rule has to be able to say "a
+// routine bath", not "any bath", so the milestones activity declares both
+// columns instead of deriving the single `category` its per-kind views share.
+const milestoneSource = SOURCES.milestones;
+if (!milestoneSource) throw new Error('milestones missing from the reminder sources registry');
+milestoneSource.consumable = true;
+milestoneSource.attributes = [
+	{ key: 'kind', column: 'kind', kind: 'enum', values: [...MILESTONE_CATEGORY_IDS] },
+	{
+		key: 'category',
+		column: 'category',
+		kind: 'enum',
+		values: MILESTONE_CATEGORY_IDS.flatMap((id) => options(id, CATEGORY_OPTION_KEY[id])),
+		// Each kind stores its list under its own option key, so a family's
+		// custom routine counts here too.
+		customKeys: MILESTONE_CATEGORY_IDS.map((id) => [id, CATEGORY_OPTION_KEY[id as CategoryId]] as [string, string]),
+	},
+];
 
 export function isKnownReminderCategory(category: string): boolean {
 	return Object.prototype.hasOwnProperty.call(SOURCES, category);
@@ -185,6 +245,100 @@ export function reminderCatalog(
 			options: [...new Set([...(src.options ?? []), ...customValues])],
 		};
 	});
+}
+
+/** A logged activity an inventory item can be consumed by, with the dimensions a rule can filter on. */
+export interface ConsumableSource {
+	/** The catalog id of the view declaring it, e.g. 'feeds'. */
+	id: string;
+	/** The table events land in — what a rule's source_table stores. */
+	table: string;
+	label: string;
+	attributes: ActivityAttribute[];
+}
+
+/**
+ * The activities that bill stock, one entry per table.
+ *
+ * The honest list the inventory picker is built from: a table appears here
+ * only when its entry declares `consumable`, and a conformance test posts a
+ * record through each one's route to keep that declaration true. SOURCES may
+ * hold several views of one table ('feeds', 'pumping' and 'breast_or_pump'
+ * all read feedings); the first consumable view per table is the activity.
+ */
+export function consumableSources(
+	custom: Record<string, Record<string, string[]>> = {},
+): ConsumableSource[] {
+	const seen = new Set<string>();
+	const out: ConsumableSource[] = [];
+	for (const [id, src] of Object.entries(SOURCES)) {
+		if (!src.consumable || seen.has(src.table)) continue;
+		seen.add(src.table);
+		const derived: ActivityAttribute[] = src.optionColumn
+			? [{
+				key: src.optionKey ?? src.optionColumn,
+				column: src.optionColumn,
+				kind: 'enum',
+				values: [...(src.options ?? [])],
+				customKeys: src.optionKey ? [[id, src.optionKey]] : [],
+			}]
+			: [];
+		const attributes = (src.attributes ?? derived).map((attr) => ({
+			...attr,
+			values: attr.values
+				? [...new Set([...attr.values, ...(attr.customKeys ?? []).flatMap(([cat, key]) => custom[cat]?.[key] ?? [])])]
+				: undefined,
+		}));
+		out.push({ id, table: src.table, label: src.label, attributes });
+	}
+	return out;
+}
+
+/**
+ * Check a rule's conditions against the registry, or return the reason it is
+ * refused. An unknown table, an unknown attribute or a value outside the
+ * vocabulary would silently never match, so all three are named at the edge.
+ */
+export function validateConsumptionConditions(
+	sourceTable: string,
+	conditions: ConsumptionCondition[],
+	custom: Record<string, Record<string, string[]>> = {},
+): string | null {
+	const activity = consumableSources(custom).find((a) => a.table === sourceTable);
+	if (!activity) return `"${sourceTable}" is not something Nido can bill stock from.`;
+	for (const condition of conditions) {
+		const attr = activity.attributes.find((at) => at.key === condition.attr);
+		if (!attr) return `"${condition.attr}" is not something ${activity.label.toLowerCase()}s can be filtered by.`;
+		if (condition.values?.length && attr.values) {
+			const allowed = new Set(attr.values);
+			for (const value of condition.values) {
+				if (!allowed.has(value)) return `"${value}" is not a valid ${attr.key} option for ${activity.label.toLowerCase()}s.`;
+			}
+		}
+	}
+	return null;
+}
+
+/**
+ * A family's own option values, so a reminder or a stock rule can name a
+ * routine the household invented. Read from the same settings row the
+ * reminders catalog merges over.
+ */
+export async function familyOptionValues(
+	db: any,
+): Promise<Record<string, Record<string, string[]>>> {
+	const res = await db.execute({
+		sql: 'SELECT category_options FROM family_settings WHERE family_id = ? LIMIT 1',
+		args: [NAMESPACE_HOUSEHOLD_ID],
+	});
+	const raw = (res.rows[0] as { category_options?: unknown } | undefined)?.category_options;
+	if (typeof raw !== 'string' || !raw) return {};
+	try {
+		const parsed = JSON.parse(raw);
+		return parsed && typeof parsed === 'object' ? (parsed as Record<string, Record<string, string[]>>) : {};
+	} catch {
+		return {};
+	}
 }
 
 /**

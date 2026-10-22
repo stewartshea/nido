@@ -3,7 +3,7 @@ import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 import { resolveTrackableMember, attachCreatedBy } from '../member-scope';
 import { parsePaging, countMatching } from '../paging';
-import { applyEventConsumption } from '../inventory-consume';
+import { emitActivity } from '../inventory-consume';
 import { type AuthEnv } from '../auth';
 
 const diaperRoutes = new Hono<AuthEnv>();
@@ -131,16 +131,17 @@ diaperRoutes.post('/', zValidator('json', createDiaperSchema), async (c) => {
       ]
     });
     
-    // A logged change is also a unit consumed. Decrement through the shared
-    // helper every consuming route calls, so every client path benefits; it is
-    // idempotent per diaper id, so a retry cannot count the same change twice.
+    // A logged change is also a unit consumed. Every consuming route bills
+    // through the one funnel, so a rule — any rule — matches this event by its
+    // attributes; it is idempotent per rule and diaper id, so a retry cannot
+    // count the same change twice.
     const diaperId = Number(result.lastInsertRowid);
     try {
-      await applyEventConsumption(db, {
-        subjectId,
-        refTable: 'diapers',
+      await emitActivity(db, {
+        source: 'diapers',
         refId: diaperId,
-        option: type,
+        subjectId,
+        attrs: { type },
         createdBy: userId,
       });
     } catch (err: any) {

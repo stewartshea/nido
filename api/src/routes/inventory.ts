@@ -7,7 +7,11 @@ import { sendMail, getAppSettings, smtpConfigured, baseUrl } from '../mail';
 import { NAMESPACE_HOUSEHOLD_ID } from '../db-core';
 import { renderInventoryAlertsEmail } from '../mail-templates';
 import { consumptionRate, coverForecast, cadenceRate, dueCycles, nextConsumptionAt, MS_PER_DAY, type AdjustmentRow } from '../inventory';
-import { applyEventConsumption, consumableActivities } from '../inventory-consume';
+import { emitActivity, parseConsumptionConditions, parseRuleMatch } from '../inventory-consume';
+import {
+	consumableSources, familyOptionValues,
+	validateConsumptionConditions, type ConsumptionCondition,
+} from '../reminder-conditions';
 import { SIGNALS, signalByName } from '../inventory-signals';
 import {
 	applyScheduledConsumption, evaluateAlerts, loadRulesForFamily, signalContext,
@@ -19,6 +23,124 @@ const inventoryRoutes = new Hono<AuthEnv>();
 // A starter list, not a closed set. Households invent their own categories, so
 // the route accepts any short string and seeds these for convenience only.
 
+// The consumption rule as the API takes it: which activity bills this item,
+// optionally narrowed by attribute values ("bottle feeds", "a routine bath"),
+// and the ratio X per N. The same document the reminder form builds for
+// conditions — attribute-level, validated against the activity registry.
+const consumptionRuleSchema = z.object({
+	sourceTable: z.string().min(1).max(40),
+	match: z.enum(['all', 'any']).nullish(),
+	conditions: z.array(z.object({
+		attr: z.string().min(1).max(40),
+		values: z.array(z.string().max(60)).max(50).nullish(),
+	})).max(10).nullish(),
+	unitsPerUse: z.number().int().min(1).max(10000).nullish(),
+	amountPerUse: z.number().positive().max(100000).nullish(),
+});
+
+/** The normalized shape rules are stored and reasoned in. */
+interface RuleSpec {
+	sourceTable: string;
+	match: 'all' | 'any';
+	conditions: ConsumptionCondition[] | null;
+	unitsPerUse: number;
+	amountPerUse: number;
+}
+
+/** A stored rule row, back in spec form. */
+function specOfRule(rule: any): RuleSpec {
+	const conditions = parseConsumptionConditions(rule.conditions);
+	return {
+		sourceTable: String(rule.source_table),
+		match: parseRuleMatch(rule.match),
+		conditions: conditions.length ? conditions : null,
+		unitsPerUse: Number(rule.units_per_use ?? 1) || 1,
+		amountPerUse: Number(rule.amount_per_use ?? 1) || 1,
+	};
+}
+
+/** The single value an option filter narrowed to, for the flattened shape. */
+function singleOptionValue(conditions: ConsumptionCondition[] | null): string | null {
+	const only = conditions && conditions.length === 1 ? conditions[0] : undefined;
+	const values = only?.values;
+	if (values && values.length === 1 && values[0] !== undefined) return values[0];
+	return null;
+}
+
+/** The attribute a legacy eventOption filters, e.g. a feed's type. */
+function legacyAttrFor(sourceTable: string): string | null {
+	return consumableSources().find((a) => a.table === sourceTable)?.attributes[0]?.key ?? null;
+}
+
+/**
+ * The rule implied by an item's mirrored columns, for a row written before
+ * the rules table existed. Only reachable for a database that skipped
+ * migration 35; the projection usually converts these into rule rows.
+ */
+function legacySpecFromRow(row: any): RuleSpec {
+	const sourceTable = String(row.event_category);
+	return {
+		sourceTable,
+		match: 'all',
+		conditions: row.event_option
+			? [{ attr: legacyAttrFor(sourceTable) ?? 'type', values: [String(row.event_option)] }]
+			: null,
+		unitsPerUse: Number(row.units_per_decrement ?? 1) || 1,
+		amountPerUse: Number(row.decrement_per_event ?? 1) || 1,
+	};
+}
+
+/**
+ * A rule from either request shape: the nested document, or the Phase-1
+ * fields (eventCategory/eventOption/unitsPerDecrement), or null for none.
+ * Both stay accepted — reminders set the precedent when `category` grew into
+ * `conditions`.
+ */
+function specFromBody(body: {
+	consumptionRule?: z.infer<typeof consumptionRuleSchema> | null;
+	eventCategory?: string | null;
+	eventOption?: string | null;
+	unitsPerDecrement?: number | null;
+	decrementPerEvent?: number | null;
+}): RuleSpec | null {
+	if (body.consumptionRule) {
+		const r = body.consumptionRule;
+		const conditions = (r.conditions ?? [])
+			.filter((c) => c.attr)
+			.map((c) => ({ attr: c.attr, values: c.values?.length ? c.values : undefined }));
+		return {
+			sourceTable: r.sourceTable,
+			match: parseRuleMatch(r.match),
+			conditions: conditions.length ? conditions : null,
+			unitsPerUse: r.unitsPerUse ?? 1,
+			amountPerUse: r.amountPerUse ?? 1,
+		};
+	}
+	if (body.eventCategory) {
+		return {
+			sourceTable: body.eventCategory,
+			match: 'all',
+			conditions: body.eventOption
+				? [{ attr: legacyAttrFor(body.eventCategory) ?? 'type', values: [body.eventOption] }]
+				: null,
+			unitsPerUse: body.unitsPerDecrement ?? 1,
+			amountPerUse: body.decrementPerEvent ?? 1,
+		};
+	}
+	return null;
+}
+
+// The legacy columns are written from the rule so an older reader stays
+// coherent; they are no longer read back when a rule row exists.
+function legacyColumnsFromSpec(spec: RuleSpec) {
+	return {
+		event_category: spec.sourceTable,
+		event_option: singleOptionValue(spec.conditions),
+		units_per_decrement: spec.unitsPerUse > 1 ? spec.unitsPerUse : null,
+		decrement_per_event: spec.amountPerUse !== 1 ? spec.amountPerUse : null,
+	};
+}
+
 const createItemSchema = z.object({
 	memberId: z.number().nullish(),
 	name: z.string().min(1).max(120),
@@ -28,11 +150,12 @@ const createItemSchema = z.object({
 	unit: z.string().max(20).default('count'),
 	packSize: z.number().positive().nullish(),
 	leadDays: z.number().int().min(0).max(365).nullish(),
-	eventCategory: z.string().max(40).nullish(),
+	consumptionRule: consumptionRuleSchema.nullish(),
 	// Narrowing an event link to one option of the activity (a feed of type
 	// 'bottle') or giving it a ratio ("1 for every 4") only means something
 	// against a linked activity, so both are refused without one rather than
 	// stored where they would quietly do nothing.
+	eventCategory: z.string().max(40).nullish(),
 	eventOption: z.string().max(40).nullish(),
 	unitsPerDecrement: z.number().int().min(1).max(10000).nullish(),
 	decrementPerEvent: z.number().positive().nullish(),
@@ -42,10 +165,10 @@ const createItemSchema = z.object({
 }).refine(
 	// Two consumption mechanisms on one item would decrement it twice per
 	// occurrence, so an item uses either a logged event or a cadence, never both.
-	(v) => !(v.eventCategory && v.consumeIntervalDays),
+	(v) => !((v.consumptionRule || v.eventCategory) && v.consumeIntervalDays),
 	{ message: 'Use either a logged event or a "uses up every N days" cadence, not both', path: ['consumeIntervalDays'] },
 ).refine(
-	(v) => !((v.eventOption || v.unitsPerDecrement) && !v.eventCategory),
+	(v) => !((v.eventOption || v.unitsPerDecrement) && !v.eventCategory && !v.consumptionRule),
 	{ message: 'Choose a logged activity to go with the option filter or the every-N ratio', path: ['eventCategory'] },
 );
 
@@ -55,6 +178,9 @@ const updateItemSchema = z.object({
 	unit: z.string().max(20).optional(),
 	packSize: z.number().positive().nullish(),
 	leadDays: z.number().int().min(0).max(365).nullish(),
+	// Present (even as null) replaces the whole rule; absent leaves it to the
+	// legacy fields below.
+	consumptionRule: consumptionRuleSchema.nullish(),
 	eventCategory: z.string().max(40).nullish(),
 	eventOption: z.string().max(40).nullish(),
 	unitsPerDecrement: z.number().int().min(1).max(10000).nullish(),
@@ -65,7 +191,7 @@ const updateItemSchema = z.object({
 	notes: z.string().max(500).nullish(),
 	active: z.boolean().optional(),
 }).refine(
-	(v) => !((v.eventOption || v.unitsPerDecrement) && v.eventCategory === null),
+	(v) => !((v.eventOption || v.unitsPerDecrement) && v.eventCategory === null && !v.consumptionRule),
 	{ message: 'Choose a logged activity to go with the option filter or the every-N ratio', path: ['eventCategory'] },
 );
 
@@ -106,7 +232,17 @@ async function resolveBabyId(db: any, memberId: number | null | undefined, userI
 
 type ItemForecast = ReturnType<typeof coverForecast> & { ledgerQuantity: number | null };
 
-function shapeItem(row: any, forecast: ItemForecast, firing: boolean) {
+/**
+ * One item for the API, with the rule shown two ways.
+ *
+ * `consumptionRule` is the real shape — activity table, match mode, a
+ * condition list, the ratio. The flattened fields beside it (eventCategory,
+ * eventOption, unitsPerDecrement) are the Phase-1 view derived from that rule,
+ * kept so older readers and the existing panel code don't break; a rule row
+ * always wins over the mirrored columns when both exist.
+ */
+function shapeItem(row: any, forecast: ItemForecast, firing: boolean, rule: any | null = null) {
+	const spec = rule ? specOfRule(rule) : null;
 	return {
 		id: Number(row.id),
 		memberId: row.subject_id === null || row.subject_id === undefined ? null : Number(row.subject_id),
@@ -117,11 +253,27 @@ function shapeItem(row: any, forecast: ItemForecast, firing: boolean) {
 		unit: row.unit ?? 'count',
 		packSize: row.pack_size === null || row.pack_size === undefined ? null : Number(row.pack_size),
 		leadDays: row.lead_days === null || row.lead_days === undefined ? null : Number(row.lead_days),
-		eventCategory: row.event_category ?? null,
-		eventOption: row.event_option ?? null,
-		unitsPerDecrement: row.units_per_decrement === null || row.units_per_decrement === undefined ? null : Number(row.units_per_decrement),
-		consumeCarry: row.consume_carry === null || row.consume_carry === undefined ? 0 : Number(row.consume_carry),
-		decrementPerEvent: row.decrement_per_event === null || row.decrement_per_event === undefined ? null : Number(row.decrement_per_event),
+		eventCategory: spec ? spec.sourceTable : row.event_category ?? null,
+		eventOption: spec ? singleOptionValue(spec.conditions) : row.event_option ?? null,
+		unitsPerDecrement: spec
+			? (spec.unitsPerUse > 1 ? spec.unitsPerUse : null)
+			: row.units_per_decrement === null || row.units_per_decrement === undefined ? null : Number(row.units_per_decrement),
+		consumeCarry: spec
+			? Number(rule.consume_carry ?? 0)
+			: row.consume_carry === null || row.consume_carry === undefined ? 0 : Number(row.consume_carry),
+		decrementPerEvent: spec
+			? (spec.amountPerUse !== 1 ? spec.amountPerUse : null)
+			: row.decrement_per_event === null || row.decrement_per_event === undefined ? null : Number(row.decrement_per_event),
+		consumptionRule: spec
+			? {
+				sourceTable: spec.sourceTable,
+				match: spec.match,
+				conditions: spec.conditions ?? [],
+				unitsPerUse: spec.unitsPerUse,
+				amountPerUse: spec.amountPerUse,
+				consumeCarry: Number(rule.consume_carry ?? 0),
+			}
+			: null,
 		active: Number(row.active ?? 1) === 1,
 		consumeIntervalDays: row.consume_interval_days === null || row.consume_interval_days === undefined ? null : Number(row.consume_interval_days),
 		consumeStartedAt: row.consume_started_at ?? null,
@@ -144,6 +296,14 @@ function shapeItem(row: any, forecast: ItemForecast, firing: boolean) {
 		// data-driven, not baked in here.
 		alerting: firing,
 	};
+}
+
+/** An item's consumption rule, for shaping responses after a mutation. */
+async function ruleForItem(db: any, itemId: number) {
+	return (await db.execute({
+		sql: 'SELECT * FROM inventory_consumption_rules WHERE item_id = ? AND active = 1 ORDER BY id LIMIT 1',
+		args: [itemId],
+	})).rows[0] ?? null;
 }
 
 async function itemForecast(db: any, row: any, nowMs: number) {
@@ -241,11 +401,27 @@ inventoryRoutes.post('/notify', async (c) => {
 inventoryRoutes.get('/signals', (c) =>
 	c.json({ signals: SIGNALS.map(({ name, label, unit, describe }) => ({ name, label, unit, describe })) }));
 
-// GET /activities — the logged activities an item can be consumed by. One
-// entry per table whose route actually bills inventory, so the form's picker
-// never offers an activity that would silently do nothing; labels and option
-// values come from the same registry the reminders catalog uses.
-inventoryRoutes.get('/activities', (c) => c.json({ activities: consumableActivities() }));
+// GET /activities — the logged activities an item can be consumed by, with the
+// attributes a rule can filter on. One entry per table whose route actually
+// bills inventory, so the form's picker never offers an activity that would
+// silently do nothing; labels, attribute keys and option values come from the
+// same registry the reminders catalog uses, a family's own option values
+// merged in the same way. A conformance test posts a record through each
+// entry's route to keep the declaration true.
+inventoryRoutes.get('/activities', async (c) => {
+	const custom = await familyOptionValues(c.get('db'));
+	return c.json({
+		activities: consumableSources(custom).map((a) => ({
+			table: a.table,
+			label: a.label,
+			attributes: a.attributes.map((at) => ({
+				key: at.key,
+				kind: at.kind,
+				values: at.values ?? [],
+			})),
+		})),
+	});
+});
 
 // GET / — every active item, its cover forecast, and any rule currently firing.
 inventoryRoutes.get('/', async (c) => {
@@ -258,12 +434,22 @@ inventoryRoutes.get('/', async (c) => {
 	const items = [];
 	const valuesByItem = new Map<number, Map<string, number | null>>();
 	const namesByItem = new Map<number, string>();
+	// One query for every rule rather than one per item; an item may hold
+	// several, and the first active one is what the form shows.
+	const ruleRows = (await db.execute({
+		sql: 'SELECT * FROM inventory_consumption_rules WHERE active = 1 ORDER BY id',
+	})).rows as any[];
+	const ruleByItem = new Map<number, any>();
+	for (const r of ruleRows) {
+		const item = Number(r.item_id);
+		if (!ruleByItem.has(item)) ruleByItem.set(item, r);
+	}
 
 	for (const row of res.rows as any[]) {
 		await applyScheduledConsumption(db, row, userId, nowMs);
 		const fresh = (await db.execute({ sql: 'SELECT * FROM inventory_items WHERE id = ?', args: [row.id] })).rows[0];
 		const { forecast } = await itemForecast(db, fresh, nowMs);
-		const shaped = shapeItem(fresh, forecast, false);
+		const shaped = shapeItem(fresh, forecast, false, ruleByItem.get(Number(row.id)) ?? null);
 		shaped.nextConsumptionAt = nextConsumptionAt(fresh as any, nowMs);
 		items.push(shaped);
 
@@ -287,6 +473,22 @@ inventoryRoutes.post('/', zValidator('json', createItemSchema), async (c) => {
 	const { subjectId, error } = await resolveBabyId(db, body.memberId, userId);
 	if (error) return c.json({ error }, 404);
 
+	// Whichever request shape arrived, the rule normalizes once here. An
+	// unknown activity, attribute or option value is named at the edge rather
+	// than stored where it could silently never match.
+	const spec = specFromBody(body);
+	if (spec) {
+		const custom = await familyOptionValues(db);
+		const invalid = validateConsumptionConditions(spec.sourceTable, spec.conditions ?? [], custom);
+		if (invalid) return c.json({ error: invalid }, 400);
+	}
+	const mirror = spec ? legacyColumnsFromSpec(spec) : {
+		event_category: body.eventCategory ?? null,
+		event_option: body.eventOption ?? null,
+		units_per_decrement: body.unitsPerDecrement ?? null,
+		decrement_per_event: body.decrementPerEvent ?? null,
+	};
+
 	const now = new Date().toISOString();
 	const result = await db.execute({
 		sql: `INSERT INTO inventory_items
@@ -296,8 +498,8 @@ inventoryRoutes.post('/', zValidator('json', createItemSchema), async (c) => {
 		      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		args: [
 			subjectId, body.name.trim(), body.category, body.variant ?? null, body.quantity, body.unit,
-			body.packSize ?? null, body.leadDays ?? null, body.eventCategory ?? null,
-			body.eventOption ?? null, body.unitsPerDecrement ?? null, body.decrementPerEvent ?? null,
+			body.packSize ?? null, body.leadDays ?? null, mirror.event_category,
+			mirror.event_option, mirror.units_per_decrement, mirror.decrement_per_event,
 			// A cadence only means anything with an anchor to count from, so
 			// starting it now is the default rather than an extra field to fill in.
 			body.consumeIntervalDays ?? null, body.consumeIntervalDays ? now : null,
@@ -306,6 +508,19 @@ inventoryRoutes.post('/', zValidator('json', createItemSchema), async (c) => {
 		],
 	});
 	const itemId = Number(result.lastInsertRowid);
+
+	if (spec) {
+		await db.execute({
+			sql: `INSERT INTO inventory_consumption_rules
+			      (item_id, source_table, subject_id, match, conditions, units_per_use, amount_per_use, created_at, updated_at)
+			      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			args: [
+				itemId, spec.sourceTable, subjectId, spec.match,
+				spec.conditions ? JSON.stringify(spec.conditions) : null,
+				spec.unitsPerUse, spec.amountPerUse, now, now,
+			],
+		});
+	}
 
 	// Opening stock is a ledger row, not just a column value, so the first
 	// purchase is as visible as every later one.
@@ -318,8 +533,9 @@ inventoryRoutes.post('/', zValidator('json', createItemSchema), async (c) => {
 	}
 
 	const row = (await db.execute({ sql: 'SELECT * FROM inventory_items WHERE id = ?', args: [itemId] })).rows[0];
+	const rule = await ruleForItem(db, itemId);
 	const { forecast } = await itemForecast(db, row, nowMs());
-	return c.json({ message: 'Item added', item: shapeItem(row, forecast, false) }, 201);
+	return c.json({ message: 'Item added', item: shapeItem(row, forecast, false, rule) }, 201);
 });
 
 function nowMs() {
@@ -334,11 +550,114 @@ inventoryRoutes.put('/:id{[0-9]+}', zValidator('json', updateItemSchema), async 
 	const row = (await db.execute({ sql: 'SELECT * FROM inventory_items WHERE id = ?', args: [id] })).rows[0];
 	if (!row) return c.json({ error: 'Item not found' }, 404);
 
+	const currentRule = await ruleForItem(db, id);
+	const current = currentRule ? specOfRule(currentRule) : null;
+	const linkedTo = current?.sourceTable ?? row.event_category ?? null;
+
 	// An option filter or an every-N ratio stored against no activity would
 	// quietly do nothing, so it is refused rather than accepted on faith —
 	// the zod refine can only see the body, not what the item links to today.
-	if (!body.eventCategory && !row.event_category && ((body.eventOption ?? body.unitsPerDecrement) != null)) {
+	if (!body.consumptionRule && !body.eventCategory && !linkedTo && ((body.eventOption ?? body.unitsPerDecrement) != null)) {
 		return c.json({ error: 'Choose a logged activity to go with the option filter or the every-N ratio' }, 400);
+	}
+
+	// Resolve the rule this update leaves behind: a nested document replaces
+	// wholesale, the legacy fields merge against what is there, and undefined
+	// means this body does not address the rule at all.
+	let next: RuleSpec | null | undefined = undefined;
+	if (body.consumptionRule !== undefined) {
+		next = body.consumptionRule === null
+			? null
+			: specFromBody({ consumptionRule: body.consumptionRule });
+	} else if (body.eventCategory !== undefined) {
+		if (body.eventCategory === null) {
+			next = null; // unlink
+		} else if (body.eventCategory !== linkedTo) {
+			// Switching activities clears the parts the caller left out: a
+			// bottle filter means nothing against a diaper change.
+			next = {
+				sourceTable: body.eventCategory,
+				match: 'all',
+				conditions: body.eventOption
+					? [{ attr: legacyAttrFor(body.eventCategory) ?? 'type', values: [body.eventOption] }]
+					: null,
+				unitsPerUse: body.unitsPerDecrement ?? 1,
+				amountPerUse: body.decrementPerEvent ?? current?.amountPerUse ?? 1,
+			};
+		} else {
+			const base = current ?? legacySpecFromRow(row);
+			next = {
+				...base,
+				conditions: body.eventOption !== undefined
+					? (body.eventOption ? [{ attr: legacyAttrFor(body.eventCategory) ?? 'type', values: [body.eventOption] }] : null)
+					: base.conditions,
+				unitsPerUse: body.unitsPerDecrement ?? base.unitsPerUse,
+				amountPerUse: body.decrementPerEvent ?? base.amountPerUse,
+			};
+		}
+	} else if (current && (body.eventOption !== undefined || body.unitsPerDecrement !== undefined || body.decrementPerEvent !== undefined)) {
+		// Partial update of the existing link: keep whatever was left out.
+		next = {
+			...current,
+			conditions: body.eventOption !== undefined
+				? (body.eventOption ? [{ attr: legacyAttrFor(current.sourceTable) ?? 'type', values: [body.eventOption] }] : null)
+				: current.conditions,
+			unitsPerUse: body.unitsPerDecrement ?? current.unitsPerUse,
+			amountPerUse: body.decrementPerEvent ?? current.amountPerUse,
+		};
+	}
+	if (next) {
+		const custom = await familyOptionValues(db);
+		const invalid = validateConsumptionConditions(next.sourceTable, next.conditions ?? [], custom);
+		if (invalid) return c.json({ error: invalid }, 400);
+	}
+
+	// Persist the rule. A change to what the event costs (activity, filter,
+	// denominator) zeroes its accrued carry — progress toward "4 bottles"
+	// means nothing against a different activity or denominator — but an
+	// unlink is stronger: the rule goes, and the event rows it wrote hand
+	// their rule_id back to NULL so the item-level fallback keeps reading
+	// them as already applied if the activity is ever linked again.
+	const finalRule: RuleSpec | null = next !== undefined ? next : current;
+	let mirrorCarry: number | null = null;
+	if (next !== undefined) {
+		const nowRule = new Date().toISOString();
+		if (next === null) {
+			if (currentRule) {
+				await db.execute({ sql: 'UPDATE inventory_adjustments SET rule_id = NULL WHERE rule_id = ?', args: [currentRule.id] });
+				// Explicit rather than left to ON DELETE CASCADE: whether a
+				// connection enforces foreign keys decides that, and an
+				// orphaned gate row would never be reached by a reset either.
+				await db.execute({ sql: 'DELETE FROM inventory_consumption_events WHERE rule_id = ?', args: [currentRule.id] });
+				await db.execute({ sql: 'DELETE FROM inventory_consumption_rules WHERE id = ?', args: [currentRule.id] });
+			}
+		} else {
+			const costChanged = !!current && (
+				current.sourceTable !== next.sourceTable
+				|| JSON.stringify(current.conditions) !== JSON.stringify(next.conditions)
+				|| current.unitsPerUse !== next.unitsPerUse
+			);
+			const carry = costChanged ? 0 : Number(currentRule?.consume_carry ?? 0);
+			mirrorCarry = carry;
+			if (currentRule) {
+				await db.execute({
+					sql: `UPDATE inventory_consumption_rules
+					      SET source_table = ?, match = ?, conditions = ?, units_per_use = ?, amount_per_use = ?, consume_carry = ?, updated_at = ?
+					      WHERE id = ?`,
+					args: [next.sourceTable, next.match, next.conditions ? JSON.stringify(next.conditions) : null,
+						next.unitsPerUse, next.amountPerUse, carry, nowRule, currentRule.id],
+				});
+			} else {
+				await db.execute({
+					sql: `INSERT INTO inventory_consumption_rules
+					      (item_id, source_table, subject_id, match, conditions, units_per_use, amount_per_use, consume_carry, created_at, updated_at)
+					      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+					args: [id, next.sourceTable, row.subject_id ?? null, next.match,
+						next.conditions ? JSON.stringify(next.conditions) : null,
+						next.unitsPerUse, next.amountPerUse, 0, nowRule, nowRule],
+				});
+			}
+		}
 	}
 
 	const updates: string[] = [];
@@ -351,30 +670,26 @@ inventoryRoutes.put('/:id{[0-9]+}', zValidator('json', updateItemSchema), async 
 	if (body.packSize !== undefined) push('pack_size', body.packSize);
 	if (body.leadDays !== undefined) push('lead_days', body.leadDays);
 
-	// The consumption rule is one thing: activity, option, ratio. Changing any
-	// part of it zeroes consume_carry — progress accrued toward "4 bottles"
-	// means nothing against a different activity or a different denominator —
-	// but only a genuine switch clears the parts the caller left out, so a
-	// partial update of the same link does not silently drop its ratio.
-	let ruleTouched = false;
-	if (body.eventCategory !== undefined) {
-		const switched = body.eventCategory !== (row.event_category ?? null);
-		push('event_category', body.eventCategory);
-		if (switched) {
-			ruleTouched = true;
-			push('event_option', body.eventOption ?? null);
-			push('units_per_decrement', body.unitsPerDecrement ?? null);
-		} else {
-			if (body.eventOption !== undefined) push('event_option', body.eventOption);
-			if (body.unitsPerDecrement !== undefined) push('units_per_decrement', body.unitsPerDecrement);
-		}
-	} else {
-		if (body.eventOption !== undefined) { push('event_option', body.eventOption); ruleTouched = true; }
-		if (body.unitsPerDecrement !== undefined) { push('units_per_decrement', body.unitsPerDecrement); ruleTouched = true; }
+	// Mirror the rule onto the legacy columns in lockstep, so a reader that
+	// predates the rules table still sees one coherent story. Unlink nulls
+	// them the way Phase 1 did; with no rule addressed, decrement_per_event
+	// stays the cadence's per-period use count.
+	if (finalRule) {
+		const mirror = legacyColumnsFromSpec(finalRule);
+		push('event_category', mirror.event_category);
+		push('event_option', mirror.event_option);
+		push('units_per_decrement', mirror.units_per_decrement);
+		push('decrement_per_event', mirror.decrement_per_event);
+		if (mirrorCarry !== null) push('consume_carry', mirrorCarry);
+	} else if (next === null) {
+		push('event_category', null);
+		push('event_option', null);
+		push('units_per_decrement', null);
+	} else if (body.decrementPerEvent !== undefined) {
+		push('decrement_per_event', body.decrementPerEvent);
 	}
-	if (ruleTouched) push('consume_carry', 0);
+	if (next === null) push('consume_carry', 0);
 
-	if (body.decrementPerEvent !== undefined) push('decrement_per_event', body.decrementPerEvent);
 	if (body.consumeIntervalDays !== undefined) {
 		push('consume_interval_days', body.consumeIntervalDays);
 		// Setting a cadence restarts the count, so switching from daily to
@@ -395,8 +710,9 @@ inventoryRoutes.put('/:id{[0-9]+}', zValidator('json', updateItemSchema), async 
 
 	const fresh = (await db.execute({ sql: 'SELECT * FROM inventory_items WHERE id = ?', args: [id] })).rows[0];
 	if (!fresh) return c.json({ error: 'Item not found' }, 404);
+	const rule = await ruleForItem(db, id);
 	const { forecast } = await itemForecast(db, fresh, Date.now());
-	return c.json({ message: 'Item updated', item: shapeItem(fresh, forecast, false) });
+	return c.json({ message: 'Item updated', item: shapeItem(fresh, forecast, false, rule) });
 });
 
 // POST /:id/adjust — buy, use, or correct stock by hand.
@@ -426,7 +742,7 @@ inventoryRoutes.post('/:id{[0-9]+}/adjust', zValidator('json', adjustSchema), as
 
 	const after = (await db.execute({ sql: 'SELECT * FROM inventory_items WHERE id = ?', args: [id] })).rows[0];
 	const { forecast } = await itemForecast(db, after, Date.now());
-	return c.json({ message: 'Stock adjusted', item: shapeItem(after, forecast, false) });
+	return c.json({ message: 'Stock adjusted', item: shapeItem(after, forecast, false, await ruleForItem(db, id)) });
 });
 
 // GET /:id/adjustments — the ledger behind the forecast.
@@ -634,7 +950,7 @@ inventoryRoutes.post('/:id{[0-9]+}/recount', zValidator('json', recountSchema), 
 
 	const after = await loadItemOr404(db, id);
 	const { forecast } = await itemForecast(db, after, Date.now());
-	return c.json({ message: 'Count corrected', item: shapeItem(after, forecast, false) });
+	return c.json({ message: 'Count corrected', item: shapeItem(after, forecast, false, await ruleForItem(db, id)) });
 });
 
 /**
@@ -660,8 +976,13 @@ inventoryRoutes.post('/:id{[0-9]+}/reset-history', zValidator('json', recountSch
 	// Forgetting the history also forgets which events were billed against it:
 	// the gate rows would otherwise block a retried event from ever counting,
 	// and accrued carry is progress toward a next use that no longer has a
-	// history to justify it.
-	await db.execute({ sql: 'DELETE FROM inventory_consumption_events WHERE item_id = ?', args: [id] });
+	// history to justify it. The gate is keyed by rule now, so it is reached
+	// through the item's rules; the rule itself stays, minus its carry.
+	await db.execute({
+		sql: 'DELETE FROM inventory_consumption_events WHERE rule_id IN (SELECT id FROM inventory_consumption_rules WHERE item_id = ?)',
+		args: [id],
+	});
+	await db.execute({ sql: 'UPDATE inventory_consumption_rules SET consume_carry = 0, updated_at = ? WHERE item_id = ?', args: [now, id] });
 	if (body.quantity > 0) {
 		await db.execute({
 			sql: `INSERT INTO inventory_adjustments (item_id, change, reason, note, created_by, created_at)
@@ -673,7 +994,7 @@ inventoryRoutes.post('/:id{[0-9]+}/reset-history', zValidator('json', recountSch
 
 	const after = await loadItemOr404(db, id);
 	const { forecast } = await itemForecast(db, after, Date.now());
-	return c.json({ message: 'History reset', item: shapeItem(after, forecast, false) });
+	return c.json({ message: 'History reset', item: shapeItem(after, forecast, false, await ruleForItem(db, id)) });
 });
 
 /**
@@ -689,6 +1010,7 @@ inventoryRoutes.post('/reset', zValidator('json', z.object({ confirm: z.literal(
 	await db.execute({ sql: 'DELETE FROM inventory_rule_recipients' });
 	await db.execute({ sql: 'DELETE FROM inventory_rules' });
 	await db.execute({ sql: 'DELETE FROM inventory_consumption_events' });
+	await db.execute({ sql: 'DELETE FROM inventory_consumption_rules' });
 	await db.execute({ sql: 'DELETE FROM inventory_adjustments' });
 	await db.execute({ sql: 'DELETE FROM inventory_items' });
 	return c.json({ message: `Inventory reset. Removed ${Number(removed.n)} item(s) and all rules.` });
@@ -803,7 +1125,8 @@ inventoryRoutes.delete('/rules/:id{[0-9]+}', async (c) => {
 
 // POST /consume — bill stock for a logged event from any client or route that
 // does not call the helper directly. Idempotent per logged event, so a client
-// retry cannot double-count.
+// retry cannot double-count. The `option` shorthand maps onto the activity's
+// first attribute (a feed's type) for clients that predate conditions.
 inventoryRoutes.post('/consume', zValidator('json', z.object({
 	memberId: z.number(),
 	refTable: z.string().max(40),
@@ -818,11 +1141,14 @@ inventoryRoutes.post('/consume', zValidator('json', z.object({
 	const scope = await resolveTrackableMember(db, c.get('userId'), body.memberId);
 	if (!scope) return c.json({ error: 'Member not found or access denied' }, 404);
 
-	const applied = await applyEventConsumption(db, {
-		subjectId: scope.subjectId,
-		refTable: body.refTable,
+	const activity = consumableSources().find((a) => a.table === body.refTable);
+	const firstAttr = activity?.attributes[0];
+	const attrs = body.option && firstAttr ? { [firstAttr.key]: body.option } : {};
+	const applied = await emitActivity(db, {
+		source: body.refTable,
 		refId: body.refId,
-		option: body.option ?? null,
+		subjectId: scope.subjectId,
+		attrs,
 		units: body.units ?? undefined,
 		createdBy: c.get('userId'),
 	});

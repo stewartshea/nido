@@ -1054,7 +1054,136 @@ ALTER TABLE inventory_adjustments ADD COLUMN source TEXT DEFAULT 'manual';
       `);
     },
   },
+  {
+    version: 35,
+    name: 'inventory-consumption-rules-table',
+    run: (raw) => migrateToConsumptionRulesTable(raw),
+  },
 ];
+
+/**
+ * Move an item's consumption rule off the item and into its own table.
+ *
+ * Phase 1 of the generalized rules stored everything on inventory_items:
+ * event_category, event_option, units_per_decrement, consume_carry. That caps
+ * every item at exactly one rule and matches on one scalar option, so Phase 2
+ * gives the rule a row of its own (inventory_consumption_rules) with a
+ * condition document, per-rule carry, and a gate keyed by rule — which is
+ * what lets one event bill several rules, and a household-scoped item follow
+ * any member's events (subject_id NULL).
+ *
+ * Three moves, all forward-compatible with data written by Phase 1:
+ *   1. Every linked item projects to exactly one rule row (conditions from
+ *      event_option; the only attribute Phase 1 could filter on was a route-
+ *      chosen single option, which both wired sources store in `type`).
+ *   2. The idempotency gate re-keys (item_id, ref_table, ref_id) →
+ *      (rule_id, ref_table, ref_id). Gate rows move onto the item's rule.
+ *   3. inventory_adjustments gains a nullable rule_id: event-sourced rows
+ *      backfill it, and the unique index becomes rule-scoped so two rules on
+ *      one item can both bill the same event. The gate is the idempotency
+ *      authority; the ledger keeps its (item_id, …) index dropped in favour
+ *      of the partial rule-scoped one.
+ *
+ * Idempotent at every step (column checks, NOT EXISTS, shape checks), so a
+ * re-run or a database already carrying the new shape must not throw and
+ * block the family from opening. Exported for tests: a fresh database runs
+ * this with no linked items, so the projection itself needs a seeded caller.
+ */
+export function migrateToConsumptionRulesTable(raw: {
+  exec(sql: string): unknown;
+  pragma(sql: string): unknown;
+}) {
+  raw.exec(`
+    CREATE TABLE IF NOT EXISTS inventory_consumption_rules (
+      id             INTEGER PRIMARY KEY AUTOINCREMENT,
+      item_id        INTEGER NOT NULL,
+      source_table   TEXT NOT NULL,
+      subject_id     INTEGER,
+      match          TEXT NOT NULL DEFAULT 'all',
+      conditions     TEXT,
+      units_per_use  INTEGER NOT NULL DEFAULT 1,
+      amount_per_use REAL NOT NULL DEFAULT 1,
+      consume_carry  REAL NOT NULL DEFAULT 0,
+      active         INTEGER NOT NULL DEFAULT 1,
+      created_at     TEXT DEFAULT CURRENT_TIMESTAMP,
+      updated_at     TEXT DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (item_id) REFERENCES inventory_items(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_inv_consume_rules_item
+      ON inventory_consumption_rules(item_id, active);
+  `);
+
+  // 1. Project linked items. An item that already has a rule is left alone,
+  //    so a crashed migration resumes where it stopped.
+  raw.exec(`
+    INSERT INTO inventory_consumption_rules
+      (item_id, source_table, subject_id, match, conditions,
+       units_per_use, amount_per_use, consume_carry, created_at, updated_at)
+    SELECT id, event_category, subject_id, 'all',
+           CASE WHEN event_option IS NULL THEN NULL
+                ELSE json_array(json_object('attr', 'type', 'values', json_array(event_option))) END,
+           COALESCE(NULLIF(units_per_decrement, 0), 1),
+           COALESCE(NULLIF(decrement_per_event, 0), 1),
+           COALESCE(consume_carry, 0),
+           CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+    FROM inventory_items
+    WHERE event_category IS NOT NULL
+      AND NOT EXISTS (SELECT 1 FROM inventory_consumption_rules r WHERE r.item_id = inventory_items.id)
+  `);
+
+  // 2. Re-key the gate. A Phase-1 gate row moves onto its item's single rule;
+  //    a row whose item lost its link is dropped with that link.
+  const gate = raw.pragma('table_info(inventory_consumption_events)') as Array<{ name: string }>;
+  if (gate.length === 0) {
+    raw.exec(`
+      CREATE TABLE IF NOT EXISTS inventory_consumption_events (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        rule_id    INTEGER NOT NULL,
+        ref_table  TEXT NOT NULL,
+        ref_id     INTEGER NOT NULL,
+        units      REAL NOT NULL DEFAULT 1,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE (rule_id, ref_table, ref_id),
+        FOREIGN KEY (rule_id) REFERENCES inventory_consumption_rules(id) ON DELETE CASCADE
+      );
+    `);
+  } else if (gate.some((c) => c.name === 'item_id')) {
+    raw.exec(`
+      CREATE TABLE inventory_consumption_events_v2 (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        rule_id    INTEGER NOT NULL,
+        ref_table  TEXT NOT NULL,
+        ref_id     INTEGER NOT NULL,
+        units      REAL NOT NULL DEFAULT 1,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE (rule_id, ref_table, ref_id),
+        FOREIGN KEY (rule_id) REFERENCES inventory_consumption_rules(id) ON DELETE CASCADE
+      );
+      INSERT INTO inventory_consumption_events_v2 (rule_id, ref_table, ref_id, units, created_at)
+        SELECT r.id, e.ref_table, e.ref_id, e.units, e.created_at
+        FROM inventory_consumption_events e
+        JOIN inventory_consumption_rules r ON r.item_id = e.item_id;
+      DROP TABLE inventory_consumption_events;
+      ALTER TABLE inventory_consumption_events_v2 RENAME TO inventory_consumption_events;
+    `);
+  }
+
+  // 3. Ledger rows learn their rule. Rows carrying a ref were written by an
+  //    event, and at migration time an item has at most one rule, so the
+  //    subquery names it; manual and scheduled rows keep rule_id NULL.
+  const adj = raw.pragma('table_info(inventory_adjustments)') as Array<{ name: string }>;
+  if (adj.length > 0 && !adj.some((c) => c.name === 'rule_id')) {
+    raw.exec(`
+      ALTER TABLE inventory_adjustments ADD COLUMN rule_id INTEGER;
+      UPDATE inventory_adjustments
+      SET rule_id = (SELECT r.id FROM inventory_consumption_rules r WHERE r.item_id = inventory_adjustments.item_id)
+      WHERE rule_id IS NULL AND ref_table IS NOT NULL AND ref_id IS NOT NULL;
+      DROP INDEX IF EXISTS idx_inventory_adj_ref;
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_inventory_adj_rule_ref
+        ON inventory_adjustments(rule_id, ref_table, ref_id) WHERE rule_id IS NOT NULL;
+    `);
+  }
+}
 
 // ---------------------------------------------------------------------------
 let registryClient: SqliteFacade | null = null;

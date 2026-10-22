@@ -4,7 +4,7 @@ import { z } from 'zod';
 import type { FeedingRow } from '../db-types';
 import { resolveTrackableMember, attachCreatedBy } from '../member-scope';
 import { parsePaging, countMatching } from '../paging';
-import { applyEventConsumption } from '../inventory-consume';
+import { emitActivity } from '../inventory-consume';
 import { type AuthEnv } from '../auth';
 
 const feedingRoutes = new Hono<AuthEnv>();
@@ -180,17 +180,17 @@ feedingRoutes.post('/', zValidator('json', createFeedingSchema), async (c) => {
     });
     
     // A bottle fed is a bottle to wash, so a linked item bills stock from this
-    // log the same way the diaper log does — through the shared helper, with
-    // the feed's type as the option so a link can narrow to bottle feeds only.
-    // The feeding is already stored; a consumption failure warns instead of
-    // failing the request.
+    // log the same way every other activity does — through the emitActivity
+    // funnel, with the feed's type among the event's attributes so a rule can
+    // narrow to bottle feeds only. The feeding is already stored; a consumption
+    // failure warns instead of failing the request.
     const feedingId = Number(result.lastInsertRowid);
     try {
-      await applyEventConsumption(db, {
-        subjectId: scope.subjectId,
-        refTable: 'feedings',
+      await emitActivity(db, {
+        source: 'feedings',
         refId: feedingId,
-        option: type,
+        subjectId: scope.subjectId,
+        attrs: { type },
         createdBy: userId,
       });
     } catch (err) {
