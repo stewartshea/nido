@@ -19,13 +19,46 @@ jobs:
     steps:
       - name: Send Discord notification
         if: env.DISCORD_WEBHOOK != ''
-        uses: Ilshidur/action-discord@master
-        env:
-          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
-        with:
-          args: |
-            **${{ github.event.workflow_run.name || github.workflow }}** - ${{ github.event.workflow_run.conclusion == 'success' && '✅ Success' || github.event.workflow_run.conclusion == 'failure' && '❌ Failed' || '📢 Update' }}
-            Repository: ${{ github.repository }}
-            ${{ github.event.workflow_run.head_branch && format('Branch: {0}', github.event.workflow_run.head_branch) || format('Branch: {0}', github.ref_name) }}
-            Actor: ${{ github.event.workflow_run.actor.login || github.actor }}
-            ${{ github.event.workflow_run.html_url && format('[View Run]({0})', github.event.workflow_run.html_url) || format('[View]({0})', github.event.repository.html_url) }}
+        run: |
+          set -e
+          if [ "${{ github.event_name }}" = "workflow_run" ]; then
+            NAME="${{ github.event.workflow_run.name }}"
+            CONCLUSION="${{ github.event.workflow_run.conclusion }}"
+            BRANCH="${{ github.event.workflow_run.head_branch }}"
+            ACTOR="${{ github.event.workflow_run.actor.login }}"
+            URL="${{ github.event.workflow_run.html_url }}"
+            if [ "$CONCLUSION" = "success" ]; then
+              STATUS="✅ Success"
+            elif [ "$CONCLUSION" = "failure" ]; then
+              STATUS="❌ Failed"
+            else
+              STATUS="⏳ $CONCLUSION"
+            fi
+            MSG="**$NAME** - $STATUS\nRepository: ${{ github.repository }}\nBranch: $BRANCH\nActor: $ACTOR\n[View Run]($URL)"
+          elif [ "${{ github.event_name }}" = "pull_request" ]; then
+            ACTION="${{ github.event.action }}"
+            PR="${{ github.event.pull_request.number }}"
+            TITLE="${{ github.event.pull_request.title }}"
+            ACTOR="${{ github.event.pull_request.user.login }}"
+            URL="${{ github.event.pull_request.html_url }}"
+            if [ "$ACTION" = "opened" ]; then
+              MSG="**Pull Request Opened** - #$PR\n$TITLE\nAuthor: $ACTOR\n[View PR]($URL)"
+            elif [ "$ACTION" = "closed" ]; then
+              if [ "${{ github.event.pull_request.merged }}" = "true" ]; then
+                MSG="**Pull Request Merged** - #$PR\n$TITLE\nMerged by: $ACTOR\n[View PR]($URL)"
+              else
+                MSG="**Pull Request Closed** - #$PR\n$TITLE\nClosed by: $ACTOR\n[View PR]($URL)"
+              fi
+            elif [ "$ACTION" = "reopened" ]; then
+              MSG="**Pull Request Reopened** - #$PR\n$TITLE\nBy: $ACTOR\n[View PR]($URL)"
+            else
+              MSG="**Pull Request $ACTION** - #$PR\n$TITLE\n[View PR]($URL)"
+            fi
+          elif [ "${{ github.event_name }}" = "push" ]; then
+            BRANCH="${{ github.ref_name }}"
+            ACTOR="${{ github.actor }}"
+            MSG="**Push to $BRANCH**\nRepository: ${{ github.repository }}\nBy: $ACTOR\n[View Commit](${{ github.event.head_commit.url }})"
+          else
+            MSG="**${{ github.workflow }}**\nRepository: ${{ github.repository }}\nActor: ${{ github.actor }}"
+          fi
+          curl -H "Content-Type: application/json" -X POST -d "{\"content\":\"$MSG\"}" "$DISCORD_WEBHOOK"
