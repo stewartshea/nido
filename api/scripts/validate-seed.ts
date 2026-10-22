@@ -36,6 +36,10 @@ async function validateSeed() {
     }
     console.log(`✓ ${members.rows.length} family member(s) exist`);
     
+    // Check subject exists
+    const subjects = await familyDb.execute({ sql: 'SELECT * FROM subjects' });
+    console.log(`✓ ${subjects.rows.length} subject(s) exist`);
+    
     // Check data exists
     const feedings = await familyDb.execute({ sql: 'SELECT COUNT(*) as count FROM feedings' });
     const diapers = await familyDb.execute({ sql: 'SELECT COUNT(*) as count FROM diapers' });
