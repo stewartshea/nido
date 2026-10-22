@@ -93,7 +93,8 @@ jobs:
         run: |
           set -euo pipefail
           node scripts/preview.mjs deploy --pr "$PR_NUMBER" --sha "$HEAD_SHA" | tee /tmp/preview-deploy.log
-          grep '^PREVIEW_URL=' /tmp/preview-deploy.log | cut -d= -f2- >> "$GITHUB_OUTPUT"
+          # The line is already in the `name=value` form the runner wants.
+          grep '^PREVIEW_URL=' /tmp/preview-deploy.log >> "$GITHUB_OUTPUT"
 
       - name: Report the URL on the pull request
         uses: actions/github-script@v7
