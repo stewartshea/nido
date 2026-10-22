@@ -58,23 +58,23 @@ async function seedTestData() {
     const memberId = Number(memberResult.lastInsertRowid);
     
     // Add some sample feedings
-    const now = Date.now();
+    const nowMs = Date.now();
     await familyDb.execute({
       sql: `INSERT INTO feedings (baby_id, start_time, end_time, duration, amount, type) 
             VALUES (?, ?, ?, ?, ?, ?)`,
-      args: [memberId, new Date(now - 2 * 3600 * 1000).toISOString(), new Date(now - 2 * 3600 * 1000 + 30 * 60 * 1000).toISOString(), 30, 4.5, 'bottle'],
+      args: [memberId, new Date(nowMs - 2 * 3600 * 1000).toISOString(), new Date(nowMs - 2 * 3600 * 1000 + 30 * 60 * 1000).toISOString(), 30, 4.5, 'bottle'],
     });
     
     // Add some sample diapers
     await familyDb.execute({
       sql: `INSERT INTO diapers (baby_id, change_time, type) VALUES (?, ?, ?)`,
-      args: [memberId, new Date(now - 1 * 3600 * 1000).toISOString(), 'wet'],
+      args: [memberId, new Date(nowMs - 1 * 3600 * 1000).toISOString(), 'wet'],
     });
     
     // Add some sample sleep
     await familyDb.execute({
       sql: `INSERT INTO sleep (baby_id, start_time, end_time, duration) VALUES (?, ?, ?, ?)`,
-      args: [memberId, new Date(now - 8 * 3600 * 1000).toISOString(), new Date(now - 3 * 3600 * 1000).toISOString(), 300],
+      args: [memberId, new Date(nowMs - 8 * 3600 * 1000).toISOString(), new Date(nowMs - 3 * 3600 * 1000).toISOString(), 300],
     });
     
     console.log('✅ Test data seeded successfully!');
