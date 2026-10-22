@@ -42,9 +42,11 @@ async function seedTestData() {
     
     // Add user to registry routing
     const registry = await ensureRegistry();
+    const now = new Date().toISOString();
     await registry.execute({
-      sql: `INSERT OR REPLACE INTO user_routing (user_id, family_id, role) VALUES (?, ?, ?)`,
-      args: [userId, familyId, 'owner'],
+      sql: `INSERT OR REPLACE INTO user_routing (id, email, family_id, user_id, role, is_platform_admin, created_at, updated_at) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      args: [randomUUID(), email, familyId, userId, 'owner', 0, now, now],
     });
     
     // Create a test baby/member
