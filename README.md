@@ -131,6 +131,25 @@ cd web && npm run dev
 `npm run db:init` creates the registry database. Per-family databases are
 created on first access.
 
+### Commit sign-off
+
+Every commit message needs a `Signed-off-by:` trailer — the Developer
+Certificate of Origin. `git commit --signoff` (or `-s`) adds it.
+
+A git hook enforces this locally, so a commit that GitHub's DCO check would
+reject never leaves the machine. The hook is armed by `npm install`, which
+runs the `prepare` script; it can also be armed by hand:
+
+```bash
+git config core.hooksPath .githooks
+```
+
+To sign off every commit on a branch at once:
+
+```bash
+git rebase --signoff main
+```
+
 ### Tests
 
 ```bash
@@ -164,11 +183,28 @@ docs/   Design specs and backlog
 - [`deploy/docker-compose`](deploy/docker-compose/) — single-host Compose
 - [`deploy/kubernetes`](deploy/kubernetes/) — single-pod and multi-pod
   manifests
+- [`deploy/kubernetes/preview`](deploy/kubernetes/preview/) — per-pull-request
+  preview environments
 
 Images are published to GHCR on every push to `main` as `:main` (floating,
 unreleased), and under a date-based tag — `:v2026.10.08` — when the `Release`
 workflow is run. `:latest` tracks the newest release, so pin a version for
 anything you rely on.
+
+### Preview environments
+
+Every pull request gets a preview: a real deployment of the branch, in the
+cluster, with a database of its own, at
+
+```
+https://pr-<number>.previews.dev.nido-app.ca
+```
+
+Both tiers are deployed, so a change can be exercised end to end before it
+merges. The URL is posted as a comment on the pull request, and the preview
+is deleted when the pull request closes or merges. See
+[`deploy/kubernetes/preview`](deploy/kubernetes/preview/) for how it is put
+together.
 
 ## Security notes
 
@@ -197,6 +233,10 @@ A few things worth knowing before deploying:
 Contributions are welcome. Please read [`AGENTS.md`](AGENTS.md) first — it
 documents the design system, the tenant boundary, and the key-derivation rules
 that the rest of the codebase depends on.
+
+Sign off your commits (`git commit --signoff`). GitHub's DCO check requires
+a `Signed-off-by:` trailer on every commit in a pull request, and a git hook
+enforces it locally — see [Commit sign-off](#commit-sign-off).
 
 ## Roadmap
 

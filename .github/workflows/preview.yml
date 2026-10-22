@@ -1,0 +1,223 @@
+name: Preview environment
+
+# A preview is a real deployment of a pull request, in the cluster, with its
+# own database. It exists so a change can be exercised end to end — API and
+# web, against real storage — before it merges.
+#
+# It is deployed on every push to the branch, and destroyed when the pull
+# request is closed or merged. `pull_request: closed` covers both, because a
+# merged pull request is a closed pull request.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, closed]
+  schedule:
+    # Nightly, at 04:17 UTC. The teardown on `closed` is the normal path;
+    # this catches the previews it missed. Early morning UTC is quiet for
+    # the repository and off the hour, so it does not pile onto every other
+    # scheduled job on the platform.
+    - cron: '17 4 * * *'
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Deploy preview
+    # A pull request from a fork gets a read-only GITHUB_TOKEN, so the
+    # image is never pushed and there is nothing to deploy. Skipping it
+    # here also keeps the cluster credential out of a fork's workflow run.
+    if: >-
+      github.event.action != 'closed' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+      pull-requests: write
+    concurrency:
+      # One deployment per pull request, and a new push supersedes the
+      # deployment in flight rather than queueing behind it.
+      group: preview-deploy-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
+    env:
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+      HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # This workflow is independent of the build workflow, so it cannot
+      # assume the image is already there. The tag is the same immutable
+      # sha-<commit> tag the build workflow pushes.
+      - name: Wait for the image
+        env:
+          IMAGE_TAG: sha-${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          for image in ghcr.io/stewartshea/nido/api ghcr.io/stewartshea/nido/web; do
+            for attempt in $(seq 1 60); do
+              if docker manifest inspect "$image:$IMAGE_TAG" >/dev/null 2>&1; then
+                echo "$image:$IMAGE_TAG is in the registry"
+                break
+              fi
+              if [ "$attempt" -eq 60 ]; then
+                echo "::error::$image:$IMAGE_TAG never appeared in the registry. The build probably failed — check the build workflow."
+                exit 1
+              fi
+              echo "waiting for $image:$IMAGE_TAG ($attempt/60)"
+              sleep 10
+            done
+          done
+
+      - name: Write the cluster kubeconfig
+        env:
+          PREVIEW_KUBECONFIG: ${{ secrets.PREVIEW_KUBECONFIG }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/.kube"
+          printf '%s\n' "$PREVIEW_KUBECONFIG" > "$HOME/.kube/config"
+          chmod 600 "$HOME/.kube/config"
+
+      - name: Deploy the preview
+        id: deploy
+        env:
+          PREVIEW_KEY_SALT: ${{ secrets.PREVIEW_KEY_SALT }}
+        run: |
+          set -euo pipefail
+          node scripts/preview.mjs deploy --pr "$PR_NUMBER" --sha "$HEAD_SHA" | tee /tmp/preview-deploy.log
+          grep '^PREVIEW_URL=' /tmp/preview-deploy.log | cut -d= -f2- >> "$GITHUB_OUTPUT"
+
+      - name: Report the URL on the pull request
+        uses: actions/github-script@v7
+        env:
+          PREVIEW_URL: ${{ steps.deploy.outputs.preview_url }}
+        with:
+          script: |
+            const marker = '<!-- nido-preview -->';
+            const url = process.env.PREVIEW_URL;
+            const sha = process.env.HEAD_SHA.slice(0, 7);
+            const body = [
+              marker,
+              '### Preview environment',
+              '',
+              `- **URL:** ${url}`,
+              `- **Commit:** \`${sha}\``,
+              '',
+              'A real deployment of this pull request, in the cluster, with a',
+              'database of its own. It is rebuilt on every push and deleted when',
+              'the pull request is closed or merged.',
+              '',
+              'Register with any email address — the preview has no mail server,',
+              'so there is no verification step. The data is disposable and goes',
+              'away with the namespace.',
+              '',
+            ].join('\n');
+            const { owner, repo } = context.repo;
+            const issue_number = context.issue.number;
+            const { data } = await github.rest.issues.listComments({
+              owner,
+              repo,
+              issue_number,
+              per_page: 100,
+            });
+            const existing = data.find((comment) => comment.body && comment.body.includes(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
+            } else {
+              await github.rest.issues.createComment({ owner, repo, issue_number, body });
+            }
+
+      - name: Add to the run summary
+        env:
+          PREVIEW_URL: ${{ steps.deploy.outputs.preview_url }}
+        run: |
+          printf '### Preview environment\n\n%s\n' "$PREVIEW_URL" >> "$GITHUB_STEP_SUMMARY"
+
+  sweep:
+    name: Sweep orphaned previews
+    # The backstop for a teardown that did not run.
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Write the cluster kubeconfig
+        env:
+          PREVIEW_KUBECONFIG: ${{ secrets.PREVIEW_KUBECONFIG }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/.kube"
+          printf '%s\n' "$PREVIEW_KUBECONFIG" > "$HOME/.kube/config"
+          chmod 600 "$HOME/.kube/config"
+
+      - name: Delete previews whose pull request is gone
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: node scripts/preview.mjs sweep
+
+  teardown:
+    name: Tear down preview
+    # `closed` covers merged and abandoned pull requests alike. Both leave a
+    # namespace behind that nothing else will ever clean up.
+    if: >-
+      github.event.action == 'closed' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Write the cluster kubeconfig
+        env:
+          PREVIEW_KUBECONFIG: ${{ secrets.PREVIEW_KUBECONFIG }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/.kube"
+          printf '%s\n' "$PREVIEW_KUBECONFIG" > "$HOME/.kube/config"
+          chmod 600 "$HOME/.kube/config"
+
+      - name: Delete the preview namespace
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: node scripts/preview.mjs teardown --pr "$PR_NUMBER"
+
+      - name: Say so on the pull request
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const marker = '<!-- nido-preview -->';
+            const body = [
+              marker,
+              '### Preview environment',
+              '',
+              'Removed. The namespace for this pull request has been deleted.',
+              '',
+            ].join('\n');
+            const { owner, repo } = context.repo;
+            const issue_number = context.issue.number;
+            const { data } = await github.rest.issues.listComments({
+              owner,
+              repo,
+              issue_number,
+              per_page: 100,
+            });
+            const existing = data.find((comment) => comment.body && comment.body.includes(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
+            }

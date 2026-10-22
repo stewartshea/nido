@@ -1,0 +1,118 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nido-preview-api
+  labels:
+    app: nido-preview-api
+spec:
+  replicas: 1
+  # Recreate, not RollingUpdate. This cluster is a single node whose memory
+  # working set is already at 98%, so two API pods during a rollout is two
+  # pods' worth of memory for a preview that only ever needs one. Recreate
+  # also avoids the RWO volume problem the old StatefulSet had: with
+  # Recreate the old pod is gone before the new one starts.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: nido-preview-api
+  template:
+    metadata:
+      labels:
+        app: nido-preview-api
+    spec:
+      # Evicted before anything real if the node comes under pressure, and
+      # never preempts another pod to get scheduled.
+      priorityClassName: nido-preview
+      # prod-saz is a single node that intermittently raises
+      # node.kubernetes.io/memory-pressure:NoSchedule. NoSchedule only blocks
+      # NEW pods, so a preview with no toleration would sit Unschedulable and
+      # the URL would 502 while the pod looked fine in `kubectl get pods`.
+      # The same toleration the live instances carry.
+      tolerations:
+        - key: node.kubernetes.io/memory-pressure
+          operator: Exists
+          effect: NoSchedule
+      containers:
+      - name: api
+        image: ghcr.io/stewartshea/nido/api:dev
+        # The tag is replaced per PR with an immutable sha-<commit> tag, so
+        # there is nothing to re-resolve. Always would mean a registry round
+        # trip on every pod start for no benefit.
+        imagePullPolicy: IfNotPresent
+        ports:
+        - name: api
+          containerPort: 3000
+          protocol: TCP
+        env:
+        # The data directory holds the registry database, the per-family
+        # encrypted databases, and (by default) the blob store, which is
+        # NIDO_BLOB_DIR or <NIDO_DATA_DIR>/blobs. All of it on an emptyDir,
+        # so a preview starts from nothing and leaves nothing behind.
+        - name: NIDO_DATA_DIR
+          value: /data/
+        # Derived from a repository secret and the pull request's commit,
+        # not random per deployment, so a redeploy of the same commit does
+        # not leave the pod holding a key that no longer matches the Secret.
+        # A preview's data is disposable and never has to be decryptable by
+        # anyone else.
+        - name: NIDO_MASTER_KEY
+          valueFrom:
+            secretKeyRef:
+              name: preview-secrets
+              key: NIDO_MASTER_KEY
+        - name: JWT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: preview-secrets
+              key: JWT_SECRET
+        - name: PUBLIC_URL
+          valueFrom:
+            configMapKeyRef:
+              name: preview-config
+              key: PUBLIC_URL
+        - name: ADMIN_EMAIL
+          valueFrom:
+            configMapKeyRef:
+              name: preview-config
+              key: ADMIN_EMAIL
+        # Empty means "the database setting decides". The default is
+        # signup_enabled = 1 and email_verification = 0, so a reviewer can
+        # register and use the preview without a mail server.
+        - name: SIGNUP_ENABLED
+          value: ""
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 3000
+          initialDelaySeconds: 2
+          periodSeconds: 5
+          timeoutSeconds: 2
+          successThreshold: 1
+          failureThreshold: 12
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 3000
+          initialDelaySeconds: 15
+          periodSeconds: 20
+          timeoutSeconds: 3
+          failureThreshold: 6
+        resources:
+          requests:
+            cpu: 25m
+            memory: 64Mi
+          limits:
+            cpu: 200m
+            memory: 384Mi
+        volumeMounts:
+        - name: data
+          mountPath: /data
+      volumes:
+      - name: data
+        # A disk-backed emptyDir, not memory. The database must stay on a
+        # local filesystem — SQLite over a shared mount is a corruption risk,
+        # and a tmpfs would spend the node's RAM on it. The sizeLimit is a
+        # hard cap: a preview cannot fill the node's disk.
+        emptyDir:
+          sizeLimit: 512Mi

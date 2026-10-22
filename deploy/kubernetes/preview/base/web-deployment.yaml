@@ -1,0 +1,91 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nido-preview-web
+  labels:
+    app: nido-preview-web
+spec:
+  replicas: 1
+  # Recreate, for the same reason as the API: a RollingUpdate would run two
+  # web pods at once on a single node that has almost no headroom.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: nido-preview-web
+  template:
+    metadata:
+      labels:
+        app: nido-preview-web
+    spec:
+      priorityClassName: nido-preview
+      # prod-saz is a single node that intermittently raises
+      # node.kubernetes.io/memory-pressure:NoSchedule. NoSchedule only blocks
+      # NEW pods, so a preview with no toleration would sit Unschedulable and
+      # the URL would 404 while the pod looked fine in `kubectl get pods`.
+      # The same toleration the live instances carry.
+      tolerations:
+        - key: node.kubernetes.io/memory-pressure
+          operator: Exists
+          effect: NoSchedule
+      containers:
+        - name: web
+          image: ghcr.io/stewartshea/nido/web:dev
+          # The tag is replaced per PR with an immutable sha-<commit> tag, so
+          # there is nothing to re-resolve on start.
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: web
+              containerPort: 3001
+              protocol: TCP
+          env:
+            # The browser calls same-origin /api/v1, and src/hooks.server.ts
+            # forwards it to the API Service in this namespace.
+            - name: API_PROXY_TARGET
+              valueFrom:
+                configMapKeyRef:
+                  name: preview-config
+                  key: API_PROXY_TARGET
+            - name: PUBLIC_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: preview-config
+                  key: PUBLIC_URL
+            - name: ADMIN_EMAIL
+              valueFrom:
+                configMapKeyRef:
+                  name: preview-config
+                  key: ADMIN_EMAIL
+            # Only read by the Vite dev server (web/vite.config.js), and the
+            # production image runs `node build`, so this is documentation
+            # rather than behaviour. It is set anyway so the value a dev
+            # server would need is visible in one place.
+            - name: ALLOWED_HOSTS
+              valueFrom:
+                configMapKeyRef:
+                  name: preview-config
+                  key: HOSTNAME
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 3001
+            initialDelaySeconds: 3
+            periodSeconds: 5
+            timeoutSeconds: 5
+            successThreshold: 1
+            failureThreshold: 12
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 3001
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 6
+          resources:
+            requests:
+              cpu: 25m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 256Mi

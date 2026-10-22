@@ -40,7 +40,19 @@ jobs:
         id: meta
         env:
           SERVICE: ${{ matrix.service }}
-          SHA: ${{ github.sha }}
+          # The head commit of the pull request, not the merge commit.
+          #
+          # On a pull_request event github.sha is the merge commit GitHub
+          # synthesises (refs/pull/N/merge). Tagging the image with that
+          # means the image for pull request #42 is "#42 merged into
+          # whatever main was when the build ran" — so the tag changes
+          # every time main moves, even though the branch did not, and the
+          # tag does not identify a commit that exists on the branch.
+          #
+          # The head sha is the commit the branch actually points at. It is
+          # what the preview environment deploys, and it is stable for as
+          # long as the branch is.
+          SHA: ${{ github.event.pull_request.head.sha || github.sha }}
           EVENT: ${{ github.event_name }}
           REF: ${{ github.ref }}
           REF_TYPE: ${{ github.ref_type }}

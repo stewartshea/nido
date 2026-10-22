@@ -1,0 +1,58 @@
+#!/bin/sh
+#
+# Refuse a commit that is not signed off.
+#
+# The Developer Certificate of Origin requires every commit message to carry
+# a "Signed-off-by:" trailer naming the author. GitHub's DCO app checks
+# every commit in a pull request and will not let it merge if one is
+# missing.
+#
+# The trailer is one flag away — `git commit --signoff` — and much cheaper
+# to add now than to fix later, where the only remedy is rewriting the
+# branch's history and force-pushing it.
+#
+# Bypass with `git commit --no-verify` if you really mean it.
+
+set -eu
+
+message_file="${1:-}"
+
+if [ -z "$message_file" ] || [ ! -f "$message_file" ]; then
+	exit 0
+fi
+
+# Nothing to check in an empty message; git rejects the commit anyway.
+if [ -z "$(tr -d '[:space:]' < "$message_file")" ]; then
+	exit 0
+fi
+
+# A trailer, not merely a mention of the words: it has to be on a line of
+# its own, and it has to name somebody.
+if grep -qiE '^[[:space:]]*Signed-off-by:[[:space:]]*.+[[:space:]]*<[^<>[:space:]]+@[^<>[:space:]]+>' "$message_file"; then
+	exit 0
+fi
+
+cat >&2 <<'EOF'
+The commit message is missing a Signed-off-by trailer.
+
+The Developer Certificate of Origin requires one on every commit, and
+GitHub's DCO check will not let a pull request with an unsigned commit
+merge.
+
+To fix the commit you just made:
+
+  git commit --amend --signoff
+
+If it was already pushed, amend and force-push the branch:
+
+  git commit --amend --signoff
+  git push --force-with-lease
+
+To sign off every commit on a branch at once:
+
+  git rebase --signoff <base-branch>
+
+Bypass this hook with --no-verify if you really mean it.
+EOF
+
+exit 1
