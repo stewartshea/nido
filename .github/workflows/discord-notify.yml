@@ -2,23 +2,28 @@ name: Discord Notifications
 
 on:
   workflow_run:
-    workflows: ["Build Nido containers", "Preview environment", "Deploy Nido docs", "Release"]
+    workflows: ["Build Nido containers", "Preview environment", "Deploy Nido docs", "Release", "Discord Notifications"]
     types:
       - completed
+  push:
+    branches: [main]
+  pull_request:
+    types: [opened, closed, reopened]
 
 jobs:
   notify:
     runs-on: ubuntu-latest
-    if: ${{ github.event.workflow_run.conclusion != 'skipped' }}
+    if: always()
     steps:
       - name: Send Discord notification
+        if: ${{ secrets.DISCORD_WEBHOOK != '' }}
         uses: Ilshidur/action-discord@master
         env:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
         with:
           args: |
-            **${{ github.event.workflow_run.name }}** - ${{ github.event.workflow_run.conclusion == 'success' && '✅ Success' || '❌ Failed' }}
+            **${{ github.event.workflow_run.name || github.workflow }}** - ${{ github.event.workflow_run.conclusion == 'success' && '✅ Success' || github.event.workflow_run.conclusion == 'failure' && '❌ Failed' || '📢 Update' }}
             Repository: ${{ github.repository }}
-            Branch: ${{ github.event.workflow_run.head_branch }}
-            Actor: ${{ github.event.workflow_run.actor.login }}
-            [View Run](${{ github.event.workflow_run.html_url }})
+            ${{ github.event.workflow_run.head_branch && format('Branch: {0}', github.event.workflow_run.head_branch) || format('Branch: {0}', github.ref_name) }}
+            Actor: ${{ github.event.workflow_run.actor.login || github.actor }}
+            ${{ github.event.workflow_run.html_url && format('[View Run]({0})', github.event.workflow_run.html_url) || format('[View]({0})', github.event.repository.html_url) }}
