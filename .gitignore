@@ -67,3 +67,6 @@ data/
 # QA harness output (Playwright MCP + OpenChamber screenshots)
 .playwright-mcp/
 .openchamber/
+
+# Rendered per-PR preview overlays (scripts/preview.mjs)
+deploy/kubernetes/preview/.render/

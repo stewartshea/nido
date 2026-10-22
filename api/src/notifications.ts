@@ -7,6 +7,7 @@ import { getAppSettings, smtpConfigured, sendMail, baseUrl } from './mail';
 import { DIGEST_FREQUENCY_MS, type DigestFrequency } from './vocabulary';
 import { renderInventoryAlertsEmail } from './mail-templates';
 import type { InventoryRule } from './inventory-signals';
+import { effectiveTimezone, withinSendHour, zonedParts } from './timezone';
 import { log } from './logger';
 
 /**
@@ -73,6 +74,25 @@ async function digestCadence(db: ReturnType<typeof getFamilyClient>, nowMs: numb
 	return { due: hoursUntil === 0, hoursUntil };
 }
 
+/**
+ * The local hour a family wants its digest, read from settings.
+ *
+ * Kept separate from the cadence so the two gates read as two questions: the
+ * cadence asks "has enough time passed", this asks "is it a reasonable hour to
+ * interrupt someone". Null means no local constraint, which is every family
+ * until one asks otherwise.
+ */
+async function digestSendHour(db: ReturnType<typeof getFamilyClient>): Promise<{ hour: number | null; timeZone: string }> {
+	const row = (await db.execute({
+		sql: 'SELECT digest_send_hour, timezone FROM family_settings WHERE family_id = ? LIMIT 1',
+		args: [1],
+	})).rows[0] as { digest_send_hour?: number | null; timezone?: string | null } | undefined;
+	return {
+		hour: row?.digest_send_hour == null ? null : Number(row.digest_send_hour),
+		timeZone: effectiveTimezone(row?.timezone),
+	};
+}
+
 export async function runFamilyDigest(
 	familyId: string,
 	opts: { actorId?: string | null; nowMs?: number; logger?: DigestLogger } = {},
@@ -96,6 +116,15 @@ export async function runFamilyDigest(
 	const cadence = await digestCadence(db, nowMs);
 	if (!cadence.due) {
 		return result({ skipped: 'not-due', message: `Next digest is due in ${cadence.hoursUntil} hour(s)` });
+	}
+
+	// The family's local hour, if it set one. Checked after the cadence, so a
+	// family that is not due yet is not woken for nothing, and before the items,
+	// so the sweep stays cheap for families waiting on the clock.
+	const send = await digestSendHour(db);
+	if (send.hour !== null && !withinSendHour(nowMs, send.timeZone, send.hour)) {
+		const local = zonedParts(nowMs, send.timeZone);
+		return result({ skipped: 'not-due', message: `Waiting for ${send.hour}:00 on the family's clock (now ${local.hour}:00)` });
 	}
 
 	// Checked before walking any items: most families will never configure a

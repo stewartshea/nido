@@ -12,6 +12,8 @@ export interface RenderedEmail {
 	html: string;
 }
 
+import { isValidTimezone } from './timezone';
+
 const BRAND = {
 	ink: '#1E2A1D',
 	cream: '#F7F5F0',
@@ -303,15 +305,21 @@ export interface AppointmentEmailLine {
  *
  * `toLocaleString` is deliberate: an appointment is a wall-clock event
  * ("Thursday at 9:30"), so the day it falls on matters more than the absolute
- * instant. Anything unparseable is passed through rather than shown as
- * "Invalid Date".
+ * instant. The `timeZone` is passed explicitly because the alternative is the
+ * *server's* zone, which is wrong for every family that is not sitting next to
+ * the API — and silently wrong, a plausible-looking hour on the wrong day.
+ * Anything unparseable is passed through rather than shown as "Invalid Date".
  */
-function appointmentWhen(iso: string): string {
+function appointmentWhen(iso: string, timeZone?: string): string {
 	const t = Date.parse(iso);
 	if (!Number.isFinite(t)) return iso;
-	return new Date(t).toLocaleString(undefined, {
+	const options: Intl.DateTimeFormatOptions = {
 		weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
-	});
+	};
+	// An unmappable name must not blank the whole line; falling back to the
+	// default leaves a readable time rather than an exception in a mail sweep.
+	if (timeZone && isValidTimezone(timeZone)) options.timeZone = timeZone;
+	return new Date(t).toLocaleString('en-US', options);
 }
 
 /**
@@ -326,11 +334,13 @@ export function renderUpcomingAppointmentsEmail(opts: {
 	firstName?: string | null;
 	appointments: AppointmentEmailLine[];
 	appointmentsUrl: string;
+	/** The family's wall clock; the times in the mail are read on it. */
+	timeZone?: string;
 }): RenderedEmail {
 	const describe = (a: AppointmentEmailLine) => {
 		const who = a.memberName ? `${a.memberName}: ` : '';
 		const category = a.category ? ` (${a.category})` : '';
-		return `${who}${a.title}${category} — ${appointmentWhen(a.when)}`;
+		return `${who}${a.title}${category} — ${appointmentWhen(a.when, opts.timeZone)}`;
 	};
 
 	const lines = opts.appointments.map((a) => `- ${describe(a)}`);

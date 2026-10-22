@@ -2,6 +2,7 @@
 	import { createEventDispatcher, onMount } from 'svelte';
 	import { inventoryAPI, type InventoryItem, type InventoryAlert, type DiaperBand, type ConsumableActivity } from '$lib/api';
 	import { defaultMemberId } from '$lib/shared';
+	import { zonedOptions } from '$lib/logging/format';
 
 	export let members: { id: number | string; name: string; trackable?: boolean }[] = [];
 
@@ -759,8 +760,8 @@
 									</div>
 									<p class="text-xs text-ink-soft truncate">
 										{#if item.consumeIntervalDays}uses {item.decrementPerEvent ?? 1} every {item.consumeIntervalDays}d · {/if}
-										{#if item.eventCategory && !item.consumeIntervalDays}uses {linkRule(item)} · {/if}
-										{#if item.expiresAt}expires {new Date(item.expiresAt).toLocaleDateString()} · {/if}
+									{#if item.eventCategory && !item.consumeIntervalDays}uses {linkRule(item)} · {/if}
+										{#if item.expiresAt}expires {new Date(item.expiresAt).toLocaleDateString(undefined, zonedOptions())} · {/if}
 										{item.unit}
 									</p>
 								</td>
@@ -816,12 +817,12 @@
 									{#if item.lowConfidence} · based on very little usage{/if}
 									{#if item.consumeIntervalDays}
 										· uses {item.decrementPerEvent ?? 1} every {item.consumeIntervalDays} day{item.consumeIntervalDays === 1 ? '' : 's'}
-										{#if item.nextConsumptionAt}· next {new Date(item.nextConsumptionAt).toLocaleDateString()}{/if}
+										{#if item.nextConsumptionAt}· next {new Date(item.nextConsumptionAt).toLocaleDateString(undefined, zonedOptions())}{/if}
 									{/if}
 									{#if item.eventCategory && !item.consumeIntervalDays}
 										· uses {linkRule(item)}
 									{/if}
-									{#if item.expiresAt} · expires {new Date(item.expiresAt).toLocaleDateString()}{/if}
+									{#if item.expiresAt} · expires {new Date(item.expiresAt).toLocaleDateString(undefined, zonedOptions())}{/if}
 								</p>
 								{#if item.drift}
 									<p class="text-xs text-danger-text">

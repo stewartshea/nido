@@ -1010,7 +1010,61 @@ ALTER TABLE inventory_adjustments ADD COLUMN source TEXT DEFAULT 'manual';
   },
   {
     version: 34,
-    name: 'inventory-consumption-rules',
+    name: 'family-timezone',
+    // The family's wall clock, as an IANA name ("America/New_York"). Stored as
+    // an instant-agnostic display preference: every timestamp in the database
+    // stays UTC, and this only decides which clock those instants are read on.
+    //
+    // NULL means "not chosen yet", which is not the same answer as UTC: the web
+    // app treats an unset value as an invitation to detect the device's zone and
+    // offer it, so a family is never silently shown the wrong day. A stored
+    // value is always validated against the runtime's tz database on the way in.
+    //
+    // Guarded like migrations 32/33: a database carrying the column at an
+    // earlier user_version must not throw and block the family from opening.
+    run: (raw) => {
+      const columns = raw.pragma('table_info(family_settings)') as Array<{ name: string }>;
+      if (!columns.some((c) => c.name === 'timezone')) {
+        raw.exec('ALTER TABLE family_settings ADD COLUMN timezone TEXT');
+      }
+    },
+  },
+  {
+    version: 35,
+    name: 'email-send-hour',
+    // The local wall-clock hour each email should arrive, written next to the
+    // family's timezone: "09" means 9am on the family's own clock, whatever the
+    // API server thinks the time is.
+    //
+    // NULL is the important value and the default for every existing family: it
+    // means "no local constraint, send whenever the cadence allows", which is
+    // exactly what the scheduler did before this existed. An upgrade therefore
+    // changes nobody's inbox, and a family only gets a local send time by
+    // asking for one.
+    //
+    // Two columns rather than one shared hour, because the two emails have
+    // different characters: an inventory alert is a report about something
+    // already wrong, while the weekly appointment list is a forward-looking
+    // nudge that reads better before the week starts. A family that wants its
+    // appointments on Sunday evening need not also silence stock alerts until
+    // then.
+    //
+    // Guarded like migrations 32-34: a database already carrying the columns at
+    // an earlier user_version must not throw and block the family from opening.
+    run: (raw) => {
+      const columns = raw.pragma('table_info(family_settings)') as Array<{ name: string }>;
+      const has = (name: string) => columns.some((c) => c.name === name);
+      if (!has('digest_send_hour')) {
+        raw.exec('ALTER TABLE family_settings ADD COLUMN digest_send_hour INTEGER');
+      }
+      if (!has('appointment_send_hour')) {
+        raw.exec('ALTER TABLE family_settings ADD COLUMN appointment_send_hour INTEGER');
+      }
+    },
+  },
+  {
+    version: 36,
+    name: 'inventory-consumption-rule-columns',
     // An item's link to a logged activity grows from a boolean into a rule:
     // which activity (event_category, as before), optionally narrowed to one
     // option of it (event_option, e.g. a feed of type 'bottle'), how many
@@ -1055,7 +1109,7 @@ ALTER TABLE inventory_adjustments ADD COLUMN source TEXT DEFAULT 'manual';
     },
   },
   {
-    version: 35,
+    version: 37,
     name: 'inventory-consumption-rules-table',
     run: (raw) => migrateToConsumptionRulesTable(raw),
   },

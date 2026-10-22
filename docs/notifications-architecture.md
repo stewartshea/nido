@@ -129,6 +129,40 @@ Why a timer rather than a queue: a self-hosted install is one API container and
 one volume. A queue would add an operator-managed dependency for no benefit at
 that size.
 
+### Sending at a local hour
+
+The interval decides how *often* Nido looks; it does not decide *when* a family
+hears from it. A family can pin each email to an hour on its own clock
+(`digest_send_hour`, `appointment_send_hour`), and the two are independent: a
+weekly appointment list reads well on Sunday evening, while a stock alert is a
+report about something already wrong and the family may want it as it happens.
+
+The two gates are deliberately separate questions, asked in this order:
+
+1. **Cadence** — has enough time passed since the last send? (`digest_frequency`,
+   the weekly appointment rule). This is what keeps a family from being mailed
+   twice.
+2. **Local hour** — is this a reasonable hour on the family's clock? Reads the
+   chosen hour together with `family_settings.timezone`.
+
+`NULL` in either column is the default and means *no local constraint* — send as
+soon as the cadence allows, which is exactly what the scheduler did before this
+existed. An upgrade therefore moves nobody's mail. `0` is midnight as a real
+choice, so "unset" had to be a different value or every existing family's alerts
+would have slid to midnight.
+
+The hour is a **window, not an instant**. The sweep ticks on a fixed interval, so
+"09:00" is really "send on the first tick at or after 09:00 local"; a single-hour
+equality check would miss a 09:30 tick and could skip a family forever after a
+slow sweep. `withinSendHour` (in `api/src/timezone.ts`) opens the window on the
+hour and closes it at the following one, so the same morning cannot send twice.
+The local hour is read through `Intl`, so DST and non-whole-hour offsets
+(e.g. `Asia/Kathmandu`, +05:45) are handled by the tz database rather than a
+hard-coded offset.
+
+This is still not a cron. A family chooses an *hour*, not a minute, and the
+feature only exists when the timer is running at all.
+
 ## 6. Crossing the tenant boundary
 
 The digest normally runs inside a request, where `familyId` comes from a verified
@@ -207,9 +241,10 @@ level, not family level: one timer sweeps every family.
 
 ## 10. Deliberately not built
 
-- **Cron expressions / per-timezone send times.** `NOTIFY_INTERVAL_MINUTES` is a
-  fixed interval. "07:00 in the family's timezone" is a different feature and a
-  real design question, not a small addition.
+- **Cron expressions / per-minute scheduling.** A family can set a send *hour*
+  (§5), but not a cron expression. `NOTIFY_INTERVAL_MINUTES` is still a fixed
+  interval; a finer gate than "the tick at or after HH:00" would need a different
+  timer.
 - **A queue or broker.** See §8.
 - **Per-person rules nobody else can see.** See §3 — the audience exists, but the
   rule and its state stay shared.
@@ -222,6 +257,8 @@ level, not family level: one timer sweeps every family.
 | `api/src/scheduler.ts` | Timer, config, lease, sweep. The only thing a queue replaces. |
 | `api/src/notifications.ts` | `runFamilyDigest(familyId)` — the unit of work. |
 | `api/src/appointments.ts` | `runAppointmentDigest(familyId)` and the upcoming-appointments queries. |
+| `api/src/timezone.ts` | The family's clock: zone validation, `zonedParts`, and the `withinSendHour` gate both digests use. |
+| `api/src/send-hour.test.ts` | The local-hour gate: DST, non-hour offsets, the hour window, and the setting round-trip. |
 | `api/src/appointments.test.ts` | Upcoming query shape, weekly cadence, and the settings opt-in. |
 | `api/src/inventory-eval.ts` | Family-scoped evaluation, plus audience resolution and per-recipient notification state. |
 | `api/src/inventory-audience.test.ts` | Audience, verified-address filtering, per-recipient state. |

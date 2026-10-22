@@ -3,6 +3,7 @@
 	import { goto } from '$app/navigation';
 	import { inventoryAPI, notificationsAPI, remindersAPI, type InventoryAlert, type NotifySchedule, type Reminder } from '$lib/api';
 	import { reminderNoun, reminderPhrase } from '$lib/shared';
+	import { zonedOptions } from '$lib/logging/format';
 	import ActivityRules from '$lib/components/logging/ActivityRules.svelte';
 	import InventoryRules from '$lib/components/logging/InventoryRules.svelte';
 	import { refreshNotificationCount } from '$lib/stores/notificationCount';
@@ -48,9 +49,9 @@
 			const what = r.conditions?.length
 				? reminderPhrase(r.conditions, r.match)
 				: reminderNoun(r.category);
-			return `No ${what} in ${r.hours}h${r.since ? ` (since ${new Date(r.since).toLocaleString()})` : ' — never recorded'}`;
+			return `No ${what} in ${r.hours}h${r.since ? ` (since ${new Date(r.since).toLocaleString(undefined, zonedOptions())})` : ' — never recorded'}`;
 		}
-		return `${r.label || r.category} — every ${r.intervalDays}d${r.since ? ` (last ${new Date(r.since).toLocaleString()})` : ' — never done'}`;
+		return `${r.label || r.category} — every ${r.intervalDays}d${r.since ? ` (last ${new Date(r.since).toLocaleString(undefined, zonedOptions())})` : ' — never done'}`;
 	}
 
 	$: firingActivity = activity.filter((r) => r.enabled && r.overdue);

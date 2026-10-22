@@ -2,6 +2,8 @@
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { milestoneAPI } from '$lib/api';
+	import { dayKeyOffset, dayKeyToDate, todayKey, zonedDayKey, zonedOptions } from '$lib/logging/format';
+	import { loadFamilyTimezone, timezoneStore } from '$lib/stores/timezoneStore';
 	import { CalendarClock, AlertCircle } from 'lucide-svelte';
 
 	/**
@@ -31,6 +33,12 @@
 
 	async function load() {
 		try {
+			// The clock first: this page is reachable by a direct link (and from the
+			// tile, and from a mail), so it cannot rely on the dashboard or the
+			// layout having already loaded the family's settings. Reading it here
+			// means the first paint is already on the right day.
+			await loadFamilyTimezone();
+
 			const res = await milestoneAPI.getUpcoming({ days });
 			appointments = res.data.appointments ?? [];
 			days = res.data.days ?? days;
@@ -45,11 +53,20 @@
 	// Grouped by calendar day so "what is this week" reads at a glance. The list
 	// arrives sorted ascending, and Map preserves insertion order, so the groups
 	// come out in the same order.
+	//
+	// The day is the *family's* day, not the device's: an appointment logged for
+	// 9:30 in the morning is stored as an instant, and reading that instant on a
+	// device that has travelled would file it under the wrong heading. zonedDayKey
+	// asks the chosen zone which date the instant falls on.
+	//
+	// `$timezoneStore` is read so this recomputes when the zone arrives or
+	// changes: the list can land before the family's settings do, and without the
+	// dependency the grouping would keep the device's day from that first pass.
 	$: byDay = (() => {
+		void $timezoneStore;
 		const groups = new Map<string, UpcomingAppointment[]>();
 		for (const a of appointments) {
-			const d = new Date(a.date);
-			const key = Number.isFinite(d.getTime()) ? d.toDateString() : 'Unknown date';
+			const key = zonedDayKey(a.date) || 'Unknown date';
 			const list = groups.get(key) ?? [];
 			list.push(a);
 			groups.set(key, list);
@@ -59,18 +76,15 @@
 
 	function dayLabel(key: string): string {
 		if (key === 'Unknown date') return key;
-		const d = new Date(key);
-		const today = new Date();
-		const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate() + 1);
-		if (d.toDateString() === today.toDateString()) return 'Today';
-		if (d.toDateString() === tomorrow.toDateString()) return 'Tomorrow';
-		return d.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
+		if (key === todayKey()) return 'Today';
+		if (key === dayKeyOffset(todayKey(), 1)) return 'Tomorrow';
+		return dayKeyToDate(key).toLocaleDateString(undefined, zonedOptions({ weekday: 'long', month: 'long', day: 'numeric' }));
 	}
 
 	function timeLabel(iso: string): string {
 		const d = new Date(iso);
 		return Number.isFinite(d.getTime())
-			? d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
+			? d.toLocaleTimeString(undefined, zonedOptions({ hour: 'numeric', minute: '2-digit' }))
 			: '';
 	}
 
