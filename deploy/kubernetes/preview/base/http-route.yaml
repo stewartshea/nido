@@ -1,0 +1,46 @@
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: nido-preview
+  labels:
+    app: nido-preview
+  # No external-dns.kubernetes.io/hostname annotation, on purpose.
+  #
+  # external-dns would try to own this hostname's DNS record. It does not
+  # need to: a single wildcard A record, *.previews.dev.nido-app.ca, already
+  # resolves every preview hostname to the Traefik LoadBalancer, so a new
+  # preview URL works the moment its namespace exists instead of after a DNS
+  # propagation delay. Leaving the annotation off also keeps external-dns
+  # from managing one record per PR.
+spec:
+  parentRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: traefik
+      namespace: traefik
+      sectionName: websecure
+  hostnames:
+    # Replaced per PR by the overlay. `.invalid` is reserved by RFC 2606, so
+    # a preview deployed without the overlay applied cannot be reached.
+    - preview-placeholder.invalid
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /api
+      backendRefs:
+        - group: ""
+          kind: Service
+          name: nido-preview-api
+          port: 3000
+          weight: 1
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - group: ""
+          kind: Service
+          name: nido-preview-web
+          port: 80
+          weight: 1

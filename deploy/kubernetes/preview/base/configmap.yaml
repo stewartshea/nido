@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: preview-config
+  labels:
+    app: nido-preview
+data:
+  # Overwritten per PR by the overlay. The placeholder is deliberately
+  # unresolvable: `.invalid` is reserved by RFC 2606, so a preview that was
+  # deployed without the overlay applied cannot be reached by accident.
+  HOSTNAME: preview-placeholder.invalid
+  PUBLIC_URL: https://preview-placeholder.invalid
+  # Same-namespace Service, so the web tier's runtime proxy finds the API
+  # even for a request that reaches the web tier before the HTTPRoute's
+  # /api rule does. The name is the same in every preview namespace, so
+  # this value never has to be rewritten.
+  API_PROXY_TARGET: http://nido-preview-api:3000
+  ADMIN_EMAIL: stewart.shea@gmail.com

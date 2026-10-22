@@ -13,7 +13,8 @@
     "start": "docker-compose up -d",
     "test": "npm run test --workspaces --if-present",
     "vocab:generate": "tsx scripts/generate-vocabulary.ts",
-    "vocab:check": "tsx scripts/generate-vocabulary.ts --check"
+    "vocab:check": "tsx scripts/generate-vocabulary.ts --check",
+    "prepare": "node scripts/setup-git-hooks.mjs"
   },
   "keywords": [
     "family",
