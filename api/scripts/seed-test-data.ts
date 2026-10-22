@@ -57,24 +57,31 @@ async function seedTestData() {
     });
     const memberId = Number(memberResult.lastInsertRowid);
     
+    // Create subject entry
+    const subjectResult = await familyDb.execute({
+      sql: `INSERT INTO subjects (household_id, name, birth_date, gender, type) VALUES (?, ?, ?, ?, ?)`,
+      args: [NAMESPACE_HOUSEHOLD_ID, 'Baby Test', '2024-01-01', 'other', 'child'],
+    });
+    const subjectId = Number(subjectResult.lastInsertRowid);
+    
     // Add some sample feedings
     const nowMs = Date.now();
     await familyDb.execute({
-      sql: `INSERT INTO feedings (baby_id, start_time, end_time, duration, amount, type) 
-            VALUES (?, ?, ?, ?, ?, ?)`,
-      args: [memberId, new Date(nowMs - 2 * 3600 * 1000).toISOString(), new Date(nowMs - 2 * 3600 * 1000 + 30 * 60 * 1000).toISOString(), 30, 4.5, 'bottle'],
+      sql: `INSERT INTO feedings (subject_id, start_time, end_time, duration, amount, amount_unit, type) 
+            VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      args: [subjectId, new Date(nowMs - 2 * 3600 * 1000).toISOString(), new Date(nowMs - 2 * 3600 * 1000 + 30 * 60 * 1000).toISOString(), 30, 4.5, 'oz', 'bottle'],
     });
     
     // Add some sample diapers
     await familyDb.execute({
-      sql: `INSERT INTO diapers (baby_id, change_time, type) VALUES (?, ?, ?)`,
-      args: [memberId, new Date(nowMs - 1 * 3600 * 1000).toISOString(), 'wet'],
+      sql: `INSERT INTO diapers (subject_id, change_time, type) VALUES (?, ?, ?)`,
+      args: [subjectId, new Date(nowMs - 1 * 3600 * 1000).toISOString(), 'wet'],
     });
     
     // Add some sample sleep
     await familyDb.execute({
-      sql: `INSERT INTO sleep (baby_id, start_time, end_time, duration) VALUES (?, ?, ?, ?)`,
-      args: [memberId, new Date(nowMs - 8 * 3600 * 1000).toISOString(), new Date(nowMs - 3 * 3600 * 1000).toISOString(), 300],
+      sql: `INSERT INTO sleep (subject_id, start_time, end_time, duration) VALUES (?, ?, ?, ?)`,
+      args: [subjectId, new Date(nowMs - 8 * 3600 * 1000).toISOString(), new Date(nowMs - 3 * 3600 * 1000).toISOString(), 300],
     });
     
     console.log('✅ Test data seeded successfully!');
