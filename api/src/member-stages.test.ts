@@ -262,6 +262,28 @@ describe('quick links belong to the person, not the account', () => {
 	});
 });
 
+describe('what a member tracks is editable after they exist', () => {
+	// The stage template only decides what a new profile starts with. Changing
+	// what someone already tracks is the member's own list, which is what the
+	// log forms read — the settings page writes it back through this route.
+	it('turns a category off and reads the member back without it', async () => {
+		const made = await add(token, { type: 'adult', name: 'Toggler', trackable: true });
+		const id = made.body.member.id;
+		expect(made.body.member.categories).toContain('vitamins');
+
+		const off = await call('PUT', token, `/api/v1/families/${familyId}/members/${id}`, {
+			categories: ['medication', 'appointments'],
+		});
+		expect(off.status).toBe(200);
+		expect(off.body.member.categories).toEqual(['medication', 'appointments']);
+
+		const list = await call('GET', token, `/api/v1/families/${familyId}/members`);
+		const mine = list.body.members.find((m: any) => m.id === id);
+		expect(mine.categories).toEqual(['medication', 'appointments']);
+		expect(mine.categories).not.toContain('vitamins');
+	});
+});
+
 describe('changing stage never rewrites categories', () => {
 	it('records the new stage but leaves a deliberately chosen list alone', async () => {
 		const made = await add(token, { type: 'child', name: 'Turner', categories: ['journal'] });
