@@ -92,11 +92,11 @@ CREATE INDEX idx_events_category      ON events(category, occurred_at);
 - **`category` is the only discriminator.** `kind` dies. A vitamin row *is*
   category `vitamins`; no migration can ever reclassify it, because there is
   nowhere else for it to be.
-- **`occurred_at` is one column.** "Upcoming" stops being a milestone-only
-  feature: any future-dated event surfaces, which is what the appointments
-  page always claimed to want ("a forward-dated medical visit or routine is
-  booked exactly like an appointment" — now that is true of every category,
-  by construction rather than by special case).
+- **`occurred_at` is one column, and it is always in the past at write time.**
+  An event is a thing that happened; the future is expressed by a *plan*, not
+  by a future-dated event (§3.6). Upcoming therefore reads plans — it works
+  for every bookable category, and no consumer has to filter the future back
+  out of the past.
 - **`subject_id` XOR `item_id`.** The CHECK is deliberate: two nullable
   foreign keys that might both be set is exactly the "two ids that only
   sometimes coincide" trap the `babies`→`subjects` rename avoided. An event is
@@ -130,7 +130,7 @@ export const CATEGORIES = {
     ],
     customOptions: 'type',                   // family's own values merge here, as today
     consumable: true,                        // inventory can be linked to it
-    upcoming: true,                          // future-dated rows surface as upcoming
+    tense: ['record', 'book'],               // §3.6: log it, and schedule it
   },
   feeds: {
     storage: { table: 'feedings' },          // stays typed in Phase 1 — see §5
@@ -149,9 +149,9 @@ lists and the `MILESTONE_KINDS`/`TITLED_BY_CATEGORY` switches), the stage
 templates (`STAGE_CATEGORIES` survives unchanged — it is about which
 categories a profile starts with, orthogonal to storage), the reminders
 catalog, the inventory activity picker (`consumable` entries, one per
-category — the `presetConditions` hack is deleted, not ported), the upcoming
-list (`upcoming` entries), and export. `CATEGORY_OPTIONS` and
-`CATEGORY_OPTION_KEY` dissolve into `fields` + `customOptions`.
+category — the `presetConditions` hack is deleted, not ported), the log
+form's schedule option (`tense` entries, §3.6), and export. `CATEGORY_OPTIONS`
+and `CATEGORY_OPTION_KEY` dissolve into `fields` + `customOptions`.
 
 ### 3.3 `items` — stock and assets, one table
 
@@ -218,6 +218,86 @@ per 2 furnace services" scope to the furnace without a second rule engine —
 and it is the one amendment the journeys in §4 exposed; everything else in
 this section stood as designed.
 
+### 3.6 Records and plans — two tenses, two tables
+
+An event is a thing that happened. A plan is a thing that is going to. The
+current model stores both in one column: a future `achieved_date` means
+"scheduled", a past one means "happened", and every consumer has to tell them
+apart by comparing against now. The symptoms are already on the books:
+
+- the summary tiles had to learn to exclude future rows (PR #36) because a
+  booked appointment was sorting as the "last medical entry" — a filter
+  convention standing in for an invariant;
+- "upcoming" is built on the pun (PR #34: *any* future-dated activity) rather
+  than on a thing that is actually a booking;
+- nothing stops a feed or a pump being logged into the future —
+  `z.string().datetime()` checks the shape of the timestamp, not its tense —
+  so nonsense rows sit at the top of every newest-first list;
+- and one column cannot hold both the scheduled time and the time something
+  actually happened, so correcting an appointment to reality erases what it
+  was booked for.
+
+One column meaning two things is the same disease as one table meaning eight
+kinds, and the cure is the same: make the distinction structural.
+
+```sql
+CREATE TABLE plans (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  subject_id      INTEGER REFERENCES subjects(id),  -- the same XOR as events
+  item_id         REFERENCES items(id),
+  category        TEXT NOT NULL,                     -- the same vocabulary ids
+  scheduled_at    TEXT NOT NULL,                     -- what it is booked for
+  title           TEXT,
+  notes           TEXT,
+  data            TEXT NOT NULL DEFAULT '{}',
+  status          TEXT NOT NULL DEFAULT 'planned',   -- planned | fulfilled | cancelled
+  fulfilled_by    INTEGER REFERENCES events(id),     -- the event that happened
+  origin_event_id INTEGER REFERENCES events(id),     -- e.g. the dose that scheduled the next
+  created_by      TEXT,
+  created_at      TEXT DEFAULT CURRENT_TIMESTAMP,    -- when it was booked —
+  CHECK (subject_id IS NOT NULL OR item_id IS NOT NULL) -- deliberately a second
+);                                                       -- time column, not a default
+CREATE INDEX idx_plans_due ON plans(status, scheduled_at);
+```
+
+The invariants this states, none of which the one-column model can:
+
+- **`events.occurred_at` is always past at write time.** The registry's zod
+  refuses a future timestamp for record categories, so a feed cannot be
+  future-logged — not filtered out later, refused at the edge (with a small
+  skew tolerance, so clock drift does not turn into rejections). Newest-first
+  is then correct everywhere by construction, not by remembered filters.
+- **Booked-at and booked-for are separate facts.** `created_at` is when the
+  record was made; `scheduled_at` is the appointment. Book today for March,
+  reschedule twice — neither fact destroys the other.
+- **Scheduled ≠ actual is representable.** The plan was for 09:00; the event
+  that fulfils it happened at 09:20. `fulfilled_by` links them, and both
+  times survive.
+- **Overdue is a first-class state** — `status = 'planned'` with
+  `scheduled_at` in the past — which today is invisible: a future-dated row
+  silently becomes a past row and drifts into the "last" tiles.
+- **Upcoming reads one thing**: plans with `status = 'planned'`, ordered by
+  `scheduled_at`. No `WHERE date >= now` scattered across categories;
+  fulfilling or cancelling removes the row from the list by changing status.
+
+A category declares which tenses make sense of it:
+
+```ts
+feeds:        { tense: ['record'] }            // log only; the future is refused
+appointments: { tense: ['record', 'book'] }    // log the visit, or book it
+maintenance:  { tense: ['record', 'book'] }
+```
+
+Booking is the same gesture with a different verb: the log sheet offers
+"schedule" for `book`-capable categories, the row lands in `plans`, and on
+the day "mark done" writes the event and links it. Fulfilment runs the
+ordinary path — the new event bills stock, resets reminder clocks, feeds the
+tiles — because plans never touch rules; only the events their fulfilment
+creates do. A vaccination logged with a `nextDue` creates the plan for the
+next dose (`origin_event_id` pointing back), which is what lets `nextDue`
+stop being a promoted field: upcoming no longer reads it, §3.4's promotion
+rule no longer applies, and the field goes back to being data.
+
 ## 4. The same journey, four times
 
 The model's claim is that every tracked thing gets the same shape. Here is
@@ -263,10 +343,12 @@ neither the app nor the rules know or care which.)
   shows one, and the digest email carries it — daily at 09:00 on the family's
   own clock, because timezone and send-hour are family settings that already
   exist. Logging the next feed clears it.
-- *Upcoming.* The six-month checkup, logged as a future-dated
-  `{ category: 'medical', occurred_at: '…12-14T09:00', data: { visitType: 'wellness' } }`,
-  appears on the upcoming page and in the Monday-morning weekly email. One
-  rule for every category, because `occurred_at` is one column.
+- *Upcoming.* The six-month checkup is *booked*, not future-logged:
+  `{ category: 'medical', scheduled_at: '…12-14T09:00', data: { visitType: 'wellness' } }`
+  lands in `plans` (§3.6), appears on the upcoming page and in the
+  Monday-morning weekly email, and on the day "mark done" writes the medical
+  event at 09:20 — the schedule and the actual time both kept, linked by
+  `fulfilled_by`.
 - *Reports.* The bottle merges with the breast feed forty minutes earlier into
   one feed for the rate (the grouping window), the "Last feed" tile reads
   14:32, and the wipes item now has real usage, so days-of-cover switches
@@ -294,8 +376,9 @@ registry entries.
 a notification and a line in the inventory email. The "grooming every 21
 days" reminder starts its clock from the trim. And her rabies booster —
 `{ category: 'vaccines', data: { route: 'subcutaneous', nextDue: '2027-10-01' } }`
-— keeps `nextDue` as a promoted field (§3.4: upcoming reads it), so the next
-booster surfaces fourteen months out.
+— schedules the next dose as a plan (`origin_event_id` pointing back at the
+dose that scheduled it), so the booster surfaces on upcoming fourteen months
+out and `nextDue` stays plain data (§3.6).
 
 ### 4.3 An adult: Jennifer
 
@@ -340,10 +423,11 @@ to her, through the XOR in §3.5.
 **What fires next.** The Subaru's `warranty_until` is an item-field alert
 ("within 60 days") — the low-stock engine watching a date instead of a
 quantity. The "car maintenance every 180 days" reminder is the inactivity
-rule again, scoped to the car item; the winter-tires swap, logged with a
-future `occurred_at`, lands on the upcoming page like a dentist appointment.
-Seasonal-upkeep templates, when the home module ships, are pre-seeded rows in
-the same three rule tables.
+rule again, scoped to the car item; the winter-tires swap is *booked* as a
+maintenance plan (§3.6) and lands on the upcoming page like a dentist
+appointment, then becomes an event when it is marked done. Seasonal-upkeep
+templates, when the home module ships, are pre-seeded rows in the same three
+rule tables — plus, for a booked instance, a plan.
 
 ### 4.5 What growth costs
 
@@ -359,7 +443,8 @@ gains a row and nothing else changes.
 | --- | --- | --- |
 | Log a vitamin | `POST /milestones` with `kind:'vitamins'` | `POST /events` with `category:'vitamins'`, body validated by the registry's zod |
 | Inventory emit | 9 routes each call `emitActivity`; conformance fixtures keep them honest | The events route emits once, for everything in it; typed routes keep their call until Phase 2 |
-| Upcoming | future-dated milestone rows only | future-dated events whose category is `upcoming` — every category, no special case |
+| Upcoming | future-dated milestone rows only | `plans` where `status = 'planned'` — one query, every bookable category, overdue visible |
+| Future-dated log | accepted for every category, filtered out later by convention | refused at the edge by the registry's zod for record categories (§3.6); sorts are honest by construction |
 | Summary tiles | one hand-written query per table; window-function query for the 8 kinds | one query over `events` for the migrated kinds; typed tables unchanged until Phase 2 |
 | Activity history / search | union over tables + milestone kinds | one table for migrated kinds |
 | Attachments | `ref_type='milestone'` for all 8 kinds | `ref_type='event'`, backfilled |
@@ -374,16 +459,30 @@ machinery is the one that shipped v10 and v25.
 **Phase 1 — remove the catch-all (the redesign):**
 
 1. Create `events` (§3.1).
-2. Backfill from `milestones`, one `INSERT … SELECT` per kind:
+2. Backfill from `milestones`, one `INSERT … SELECT` per kind — past rows
+   into events, future rows into plans, split at the now boundary so nobody's
+   booked checkup becomes a fake "last visit":
 
 ```sql
 INSERT INTO events (id, subject_id, category, occurred_at, title, notes, data, tags, created_by, created_at)
 SELECT id, subject_id, 'vitamins', achieved_date, title, description,
        json_object('type', category), tags, created_by, created_at
-FROM milestones WHERE kind = 'vitamins';
+FROM milestones WHERE kind = 'vitamins' AND achieved_date <= now;
 -- …the same for routines, firsts, milestones, medical, medication,
 -- appointments, grooming. Ids are preserved, so ref_ids stay valid.
+
+INSERT INTO plans (subject_id, category, scheduled_at, title, notes, data, created_by, created_at)
+SELECT subject_id, 'appointments', achieved_date, title, description,
+       json_object('type', category), created_by, created_at
+FROM milestones WHERE kind = 'appointments' AND achieved_date > now;
+-- the same split for every bookable kind (§3.6): its future rows are
+-- bookings, and plans take fresh ids.
 ```
+
+   Every vaccination's `next_due_date` becomes a plan with
+   `origin_event_id` set to the dose that scheduled it, so upcoming keeps
+   working the day the promotion on `nextDue` is dropped. Attachments on
+   future rows re-point to `ref_type = 'plan'`.
 
 3. Rewrite the join keys: `inventory_consumption_rules` rows with
    `source_table='milestones'` become `source_category = <the folded kind>`
@@ -433,6 +532,9 @@ blocked on Phase 2 — and if it never happens, the model still holds.
   nobody can read or test.
 - **Per-category tables as the default answer.** They remain the *promotion*
   target (§3.4), not the starting point.
+- **Plans are not a calendar.** No attendees, no invitations, no ICS feed — a
+  plan is one family's booking, shared with exactly the people the app
+  already shares everything with.
 
 ## 9. Open questions
 
@@ -444,3 +546,11 @@ blocked on Phase 2 — and if it never happens, the model still holds.
   Leaning: rename early (it is one line), `kind` with the module.
 - The offline queue's edit path (when it exists) must write through the
   registry's zod like every other writer.
+- The skew tolerance for record timestamps (§3.6): minutes, as a constant in
+  the registry — not a setting. Leaning five.
+- Which categories are bookable beyond the obvious four (appointments,
+  medical, vaccines, maintenance)? Grooming and routines can argue either
+  way. Leaning: any category may declare `book`, ship with the obvious four.
+- Recurring plans: does fulfilling a dentist plan generate the next one?
+  Leaning yes (`recurring_every_days` on the plan); the alternative — a
+  reminder rule — already exists and stays for cadence-without-a-date.
