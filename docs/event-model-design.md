@@ -17,6 +17,10 @@ which proposed an `activity_events` shadow table fed by routes. That sketch
 kept the catch-all and added a second copy of every record; this one removes
 the catch-alls instead.
 
+§4 walks the model end to end through four user journeys — an infant, a dog,
+an adult, and a home asset — including the inventory decrement and the
+notification paths, so the data flow can be read against the schema.
+
 ---
 
 ## 1. The problem, in bugs it has already caused
@@ -202,9 +206,154 @@ table-vs-kind split that made milestones special:
   the same validator for free when the home module adds asset conditions.
 
 One evaluator, three rule kinds: **reminder** (inactivity), **consumption**
-(event decrements an item), **alert** (an item crosses a threshold).
+(event decrements an item), **alert** (an item crosses a threshold —
+`inventory_rules` already stores exactly this: signal, comparator,
+threshold).
 
-## 4. What each subsystem looks like after Phase 1
+Rules also inherit the events' target XOR (§3.1): a rule watches one subject,
+one item, or the whole household. `inventory_consumption_rules` gains the
+same `subject_id`/`item_id` pair events carry, and `reminders` already has a
+generic `target_type`/`target_id` to say it with. This is what lets "1 filter
+per 2 furnace services" scope to the furnace without a second rule engine —
+and it is the one amendment the journeys in §4 exposed; everything else in
+this section stood as designed.
+
+## 4. The same journey, four times
+
+The model's claim is that every tracked thing gets the same shape. Here is
+that shape, walked end to end four ways: an infant, a dog, an adult, and a
+car. Every journey is the identical pipeline — an action writes an event,
+rules evaluate against the registry, surfaces update — and the only
+differences are *data*: which categories, which fields, which items.
+
+### 4.1 A baby: Nia, five months
+
+**Setup.** Nia is added as `type: child, stage: infant`, so she starts with
+the infant template's ten categories and her Quick Actions are pinned per
+member. Stock on the shelf, already linked:
+
+```jsonc
+// items
+{ name: 'Wipes tub',       kind: 'stock', quantity: 512, unit: 'count' }
+{ name: 'Formula serving', kind: 'stock', quantity: 24,  unit: 'count' }
+// inventory_consumption_rules
+{ source_category: 'diapers', conditions: [], amount_per_use: 3 } // 3 per change
+{ source_category: 'feeds',   conditions: [{ attr: 'type', values: ['bottle'] }], amount_per_use: 1 }
+```
+
+**A change and a feed.** Her parent logs a wet nappy and, twenty minutes
+later, a 150 ml bottle. Two events, two documents:
+
+```jsonc
+{ category: 'diapers', subject_id: Nia, occurred_at: '…T14:10', data: { type: 'wet', consistency: 'soft' } }
+{ category: 'feeds',   subject_id: Nia, occurred_at: '…T14:32', data: { type: 'bottle', amount: 150, unit: 'ml', duration: 22 } }
+```
+
+The diapers rule has no conditions, so the change bills it: the tub goes
+512 → 509 and one `used` row lands in the ledger. The feed's rule matches
+`type = bottle`, so a serving comes off the tin. (Phase 1 keeps feeds and
+diapers behind their typed tables — the registry says where they live, and
+neither the app nor the rules know or care which.)
+
+**What fires next.**
+
+- *Reminder.* The family's "no feed or pump in 3 hours" rule (conditions over
+  `feeds` and `pumping`, `match: any`) reads Nia's newest matching event,
+  finds 14:32, and is satisfied. At 17:32 it is overdue: the in-app badge
+  shows one, and the digest email carries it — daily at 09:00 on the family's
+  own clock, because timezone and send-hour are family settings that already
+  exist. Logging the next feed clears it.
+- *Upcoming.* The six-month checkup, logged as a future-dated
+  `{ category: 'medical', occurred_at: '…12-14T09:00', data: { visitType: 'wellness' } }`,
+  appears on the upcoming page and in the Monday-morning weekly email. One
+  rule for every category, because `occurred_at` is one column.
+- *Reports.* The bottle merges with the breast feed forty minutes earlier into
+  one feed for the rate (the grouping window), the "Last feed" tile reads
+  14:32, and the wipes item now has real usage, so days-of-cover switches
+  from "no usage recorded yet" to a number.
+
+### 4.2 A dog: Maple
+
+**Setup.** `type: pet` implies the pet stage: grooming and medication in,
+nappies out. Stock: `Flea treatment ×3`, rule
+`{ source_category: 'medication', conditions: [{ attr: 'type', values: ['dose'] }] }`.
+
+**A dose and a trim.**
+
+```jsonc
+{ category: 'medication', subject_id: Maple, title: 'Flea treatment', data: { type: 'dose' } }
+{ category: 'grooming',  subject_id: Maple, title: 'Nail trim',      data: { type: 'trim' } }
+```
+
+The dose bills the pack 3 → 2. Neither event is special: the same
+`POST /events` call with a different category, validated by a different zod,
+rendered by a different form descriptor — all projected from Maple's
+registry entries.
+
+**What fires next.** The low-stock rule on the pack (`quantity ≤ 1`) becomes
+a notification and a line in the inventory email. The "grooming every 21
+days" reminder starts its clock from the trim. And her rabies booster —
+`{ category: 'vaccines', data: { route: 'subcutaneous', nextDue: '2027-10-01' } }`
+— keeps `nextDue` as a promoted field (§3.4: upcoming reads it), so the next
+booster surfaces fourteen months out.
+
+### 4.3 An adult: Jennifer
+
+**Setup.** Adult stage: medication, vitamins, appointments, medical,
+vaccines, growth, routines, moods, journal. The stage editor sets what *new*
+adults start with; Jennifer's own list is hers (the per-member Tracks).
+
+**The original bug, now impossible.** She logs her vitamin:
+
+```jsonc
+{ category: 'vitamins', subject_id: Jennifer, title: 'Vitamin D', data: { type: 'dose', amount: 1000, unit: 'IU' } }
+```
+
+There is no `kind` column anywhere to misread, and no migration that can
+reclassify this row as a routine: the category *is* the row. The
+`Vitamin D ×90` rule takes it to 89, her daily-vitamins reminder resets, and
+when the bottle crosses 20 the low-stock alert fires with a forecast built
+from *her* rate — the same three rule kinds as Nia's wipes, different data.
+
+### 4.4 A home asset: the Subaru, and the furnace
+
+**Setup.** The home module's entities are items, not new tables:
+
+```jsonc
+{ name: '2022 Subaru',   kind: 'asset', data: { model: 'Outback', warranty_until: '2028-06-30' } }
+{ name: 'Furnace',       kind: 'asset', data: { installed: '2021-10', filter_size: '16x25x1' } }
+{ name: 'Furnace filters', kind: 'stock', quantity: 2 }
+```
+
+**A service.**
+
+```jsonc
+{ category: 'maintenance', item_id: Furnace, title: 'Annual service', data: { type: 'service' } }
+```
+
+The filters rule —
+`{ source_category: 'maintenance', conditions: [{ attr: 'type', values: ['service'] }], units_per_use: 2, amount_per_use: 1 }`
+— carries: the first service changes nothing, the second takes one filter.
+The rule is scoped to the furnace the same way Nia's formula rule is scoped
+to her, through the XOR in §3.5.
+
+**What fires next.** The Subaru's `warranty_until` is an item-field alert
+("within 60 days") — the low-stock engine watching a date instead of a
+quantity. The "car maintenance every 180 days" reminder is the inactivity
+rule again, scoped to the car item; the winter-tires swap, logged with a
+future `occurred_at`, lands on the upcoming page like a dentist appointment.
+Seasonal-upkeep templates, when the home module ships, are pre-seeded rows in
+the same three rule tables.
+
+### 4.5 What growth costs
+
+A pool, a garden, a second home, a trailer: each is new *categories* and new
+*item kinds* — registry entries and rows, not tables, routes, unions, or rule
+engines. On the old model each of the four journeys above needed either a new
+table or a new arm of the `kind` switch in every consumer. Here, the matrix
+gains a row and nothing else changes.
+
+## 5. What each subsystem looks like after Phase 1
 
 | Subsystem | Today | After |
 | --- | --- | --- |
@@ -217,7 +366,7 @@ One evaluator, three rule kinds: **reminder** (inactivity), **consumption**
 | Export/import | per-table sections | one `events` section for migrated kinds |
 | Picker ("used up by") | one entry per table + `presetConditions` hack | one entry per `consumable` category |
 
-## 5. Migration
+## 6. Migration
 
 Per-family SQLite, so this is a versioned migration that runs at open — the
 machinery is the one that shipped v10 and v25.
@@ -258,7 +407,7 @@ blocked on Phase 2 — and if it never happens, the model still holds.
 
 **Home module:** arrives as categories and an item kind, not as new tables.
 
-## 6. What this gives up, honestly
+## 7. What this gives up, honestly
 
 - **Shape enforcement moves from schema to zod.** The database will not stop a
   malformed vitamin. The registry validates at the edge and a fixture-per-
@@ -275,7 +424,7 @@ blocked on Phase 2 — and if it never happens, the model still holds.
   and one migration. That is the cost of the model being wrong for eight
   categories; paying it once is cheaper than paying per-feature forever.
 
-## 7. Non-goals
+## 8. Non-goals
 
 - **Append-only event sourcing.** Records are editable; the ledger stays.
 - **Cross-family analytics.** The tenant boundary stays a file.
@@ -285,7 +434,7 @@ blocked on Phase 2 — and if it never happens, the model still holds.
 - **Per-category tables as the default answer.** They remain the *promotion*
   target (§3.4), not the starting point.
 
-## 8. Open questions
+## 9. Open questions
 
 - Do journal and moods fold in during Phase 1 (they are trivially shaped) or
   wait for Phase 2? Leaning Phase 2, to keep the first migration auditable.
