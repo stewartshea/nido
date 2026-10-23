@@ -26,7 +26,7 @@
 	// "every 4 bottle feeds, subtract 1". Activity, attributes and option
 	// values come from the API's /inventory/activities, which only lists what
 	// actually fires. Each attribute gets its own chosen value ('' = any).
-	$: currentActivity = activities.find((a) => a.table === eventActivity) ?? null;
+	$: currentActivity = activities.find((a) => a.id === eventActivity) ?? null;
 	$: activityN = Math.max(1, Number(eventEvery) || 1);
 	$: chosenOptions = currentActivity
 		? currentActivity.attributes.map((at) => eventOptions[at.key] ?? '').filter(Boolean).join(' ')
@@ -39,7 +39,7 @@
 	$: if (eventActivity !== lastActivity) {
 		lastActivity = eventActivity;
 		const next: Record<string, string> = {};
-		for (const at of (activities.find((a) => a.table === eventActivity)?.attributes ?? [])) next[at.key] = '';
+		for (const at of (activities.find((a) => a.id === eventActivity)?.attributes ?? [])) next[at.key] = '';
 		eventOptions = next;
 	}
 
@@ -268,9 +268,9 @@
 		// for diapers, feeds for everything else — and the picker lists only
 		// what the API actually bills stock from.
 		autoDecrement = category === 'diapers';
-		eventActivity = autoDecrement && activities.some((a) => a.table === 'diapers')
+		eventActivity = autoDecrement && activities.some((a) => a.id === 'diapers')
 			? 'diapers'
-			: (activities[0]?.table ?? '');
+			: (activities[0]?.id ?? '');
 		eventOptions = {};
 		eventEvery = '1';
 		eventQty = '1';
@@ -295,15 +295,19 @@
 				leadDays: leadDays ? Number(leadDays) : null,
 				// The rule in its real shape: activity, conditions, ratio. Only
 				// the attributes the form chose a value for become conditions.
-				consumptionRule: linkedToLogs && eventActivity
+				consumptionRule: linkedToLogs && currentActivity
 					? {
-						sourceTable: eventActivity,
+						sourceTable: currentActivity.table,
 						match: 'all',
-						conditions: currentActivity
-							? currentActivity.attributes
+						// The activity's own conditions first — "vitamins" means
+						// milestones where kind is 'vitamins' — then whatever the
+						// form narrowed further.
+						conditions: [
+							...(currentActivity.presetConditions ?? []),
+							...currentActivity.attributes
 								.map((at) => ({ attr: at.key, values: [eventOptions[at.key] ?? ''] }))
-								.filter((cond) => cond.values[0] !== '')
-							: [],
+								.filter((cond) => cond.values[0] !== ''),
+						],
 						unitsPerUse: Math.max(1, Number(eventEvery) || 1),
 						amountPerUse: Math.max(1, Number(eventQty) || 1),
 					}
@@ -419,18 +423,43 @@
 		return `about ${Math.round(d)} days left`;
 	}
 
-	/** How an item's rule reads: "1 per 4 bottle feeds", "1 per routine bath milestone". */
-	function linkRule(item: InventoryItem): string {
+	/**
+	 * The picker entry an item's rule was written from.
+	 *
+	 * Several entries share the milestones table, so matching on the table alone
+	 * would read a vitamin rule back as "Milestone". The entry whose own preset
+	 * conditions the rule satisfies wins, and the most specific one of those.
+	 */
+	function activityFor(item: InventoryItem): ConsumableActivity | undefined {
 		const rule = item.consumptionRule;
 		const table = rule?.sourceTable ?? item.eventCategory ?? '';
-		const act = activities.find((a) => a.table === table);
+		const conds = rule?.conditions ?? [];
+		const candidates = activities.filter((a) => a.table === table);
+		let best: ConsumableActivity | undefined = candidates[0];
+		let bestPresets = -1;
+		for (const a of candidates) {
+			const preset = a.presetConditions ?? [];
+			const holds = preset.every((p) =>
+				conds.some((c) => c.attr === p.attr && p.values.every((v) => c.values.includes(v))),
+			);
+			if (holds && preset.length > bestPresets) { best = a; bestPresets = preset.length; }
+		}
+		return best;
+	}
+
+	/** How an item's rule reads: "1 per 4 bottle feeds", "1 per vitamin". */
+	function linkRule(item: InventoryItem): string {
+		const rule = item.consumptionRule;
+		const act = activityFor(item);
 		const n = rule?.unitsPerUse ?? item.unitsPerDecrement ?? 1;
 		const per = rule?.amountPerUse ?? item.decrementPerEvent ?? 1;
-		// The conditions in words: every chosen value, then the activity's noun.
+		// A preset attribute is the activity's own name ("kind is vitamins"), not
+		// a filter the family chose, so it does not belong in the words.
+		const presetAttrs = new Set((act?.presetConditions ?? []).map((p) => p.attr));
 		const filters = rule
-			? rule.conditions.flatMap((cond) => cond.values).join(' ')
+			? rule.conditions.filter((c) => !presetAttrs.has(c.attr)).flatMap((cond) => cond.values).join(' ')
 			: (item.eventOption ? `${item.eventOption} ` : '');
-		const noun = `${filters}${(act?.label ?? table ?? 'logged event').toLowerCase()}${n > 1 ? 's' : ''}`;
+		const noun = `${filters}${(act?.label ?? rule?.sourceTable ?? item.eventCategory ?? 'logged event').toLowerCase()}${n > 1 ? 's' : ''}`;
 		return n > 1 ? `${per} per ${n} ${noun}` : `${per} per ${noun}`;
 	}
 
@@ -542,7 +571,7 @@
 							<div>
 								<label for="inv-activity" class="block text-xs text-ink-soft mb-1">Which log</label>
 								<select id="inv-activity" bind:value={eventActivity} class="w-full px-3 py-2 border border-line rounded-md">
-									{#each activities as a (a.table)}<option value={a.table}>{a.label}</option>{/each}
+									{#each activities as a (a.id)}<option value={a.id}>{a.label}</option>{/each}
 								</select>
 							</div>
 							{#if currentActivity && currentActivity.attributes.length > 0}

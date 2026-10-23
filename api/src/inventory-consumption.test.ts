@@ -64,6 +64,26 @@ describe('inventory: any linked activity can consume stock, at any ratio', () =>
 		expect(milestones.attributes.map((a: any) => a.key)).toEqual(['kind', 'category']);
 	});
 
+	it('lists every loggable activity that can bill stock, not one per table', async () => {
+		const res = await call('GET', token, '/api/v1/inventory/activities');
+		const ids = res.body.activities.map((a: any) => a.id);
+
+		// A family links a "vitamins" item to vitamins, not to "milestones
+		// where kind is vitamins". The milestone-backed kinds are pickable by
+		// name, each carrying the kind it fixes so the rule can be written
+		// without asking.
+		for (const kind of ['vitamins', 'medication', 'routines', 'appointments', 'grooming', 'firsts', 'medical']) {
+			expect(ids, `${kind} missing from the picker`).toContain(kind);
+			const entry = res.body.activities.find((a: any) => a.id === kind);
+			expect(entry.table).toBe('milestones');
+			expect(entry.presetConditions).toEqual([{ attr: 'kind', values: [kind] }]);
+		}
+
+		// The generic milestones entry stays, for "any milestone at all", and
+		// carries both dimensions.
+		expect(ids).toContain('milestones');
+	});
+
 	it('refuses an option filter or an every-N ratio with no activity behind it', async () => {
 		const noActivity = await call('POST', token, '/api/v1/inventory', {
 			memberId, name: 'Loose rule', category: 'cleaning', quantity: 5,

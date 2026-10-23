@@ -255,6 +255,15 @@ export interface ConsumableSource {
 	table: string;
 	label: string;
 	attributes: ActivityAttribute[];
+	/**
+	 * Conditions every event of this activity already satisfies.
+	 *
+	 * A milestone-backed category is one table seen through a fixed `kind`
+	 * ("vitamins" is milestones where kind = 'vitamins'), so the picker entry
+	 * carries that `kind` and the form folds it into the saved rule. Absent on
+	 * the plain per-table activities, which match on nothing but the table.
+	 */
+	presetConditions?: ConsumptionCondition[];
 }
 
 /**
@@ -290,6 +299,47 @@ export function consumableSources(
 				: undefined,
 		}));
 		out.push({ id, table: src.table, label: src.label, attributes });
+	}
+	return out;
+}
+
+/**
+ * Everything the inventory picker offers, which is every loggable thing that can
+ * bill stock — not one row per table.
+ *
+ * `consumableSources` answers "which tables bill stock", which is what a rule
+ * stores and what `emitActivity` looks up. The picker is asked a different
+ * question — "what did this get used by" — and a family answers "vitamins", not
+ * "milestones where kind is vitamins". So each milestone-backed category gets
+ * its own entry carrying the `kind` it fixes, listed beside the generic
+ * `milestones` entry for "any milestone at all".
+ *
+ * A kind that has no options of its own still appears: the list is about what
+ * can be logged, and a vitamin with no subtypes is still a vitamin.
+ */
+export function consumableActivities(
+	custom: Record<string, Record<string, string[]>> = {},
+): ConsumableSource[] {
+	const out: ConsumableSource[] = [];
+	for (const source of consumableSources(custom)) {
+		out.push(source);
+		if (source.table !== 'milestones') continue;
+		for (const id of MILESTONE_CATEGORY_IDS) {
+			// The generic `milestones` entry already is this kind, with both
+			// dimensions selectable; adding it again would duplicate the id.
+			if (id === 'milestones') continue;
+			const key = CATEGORY_OPTION_KEY[id as CategoryId] ?? 'type';
+			const values = [...new Set([...options(id, key), ...(custom[id]?.[key] ?? [])])];
+			out.push({
+				id,
+				table: 'milestones',
+				label: MILESTONE_LABELS[id] ?? id,
+				presetConditions: [{ attr: 'kind', values: [id] }],
+				attributes: values.length
+					? [{ key: 'category', column: 'category', kind: 'enum', values }]
+					: [],
+			});
+		}
 	}
 	return out;
 }

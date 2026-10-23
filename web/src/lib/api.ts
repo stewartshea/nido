@@ -605,9 +605,17 @@ export interface ActivityAttribute {
 
 /** A logged activity an inventory item can be consumed by (GET /inventory/activities). */
 export interface ConsumableActivity {
+	/** Unique per pickable entry — several share a table ('vitamins' is a milestone). */
+	id: string;
 	/** What the rule's source_table stores — the table the activity's route bills from. */
 	table: string;
 	label: string;
+	/**
+	 * Conditions every event of this entry already satisfies, folded into the
+	 * saved rule. A milestone-backed category fixes its `kind` here, so choosing
+	 * "vitamins" writes kind = 'vitamins' without asking.
+	 */
+	presetConditions: ConsumptionCondition[];
 	/** Dimensions a rule may narrow to; empty for an activity with no options (growth, journal). */
 	attributes: ActivityAttribute[];
 }

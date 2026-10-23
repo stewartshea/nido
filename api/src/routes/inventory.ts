@@ -9,7 +9,7 @@ import { renderInventoryAlertsEmail } from '../mail-templates';
 import { consumptionRate, coverForecast, cadenceRate, dueCycles, nextConsumptionAt, MS_PER_DAY, type AdjustmentRow } from '../inventory';
 import { emitActivity, parseConsumptionConditions, parseRuleMatch } from '../inventory-consume';
 import {
-	consumableSources, familyOptionValues,
+	consumableSources, consumableActivities, familyOptionValues,
 	validateConsumptionConditions, type ConsumptionCondition,
 } from '../reminder-conditions';
 import { SIGNALS, signalByName } from '../inventory-signals';
@@ -411,9 +411,11 @@ inventoryRoutes.get('/signals', (c) =>
 inventoryRoutes.get('/activities', async (c) => {
 	const custom = await familyOptionValues(c.get('db'));
 	return c.json({
-		activities: consumableSources(custom).map((a) => ({
+		activities: consumableActivities(custom).map((a) => ({
+			id: a.id,
 			table: a.table,
 			label: a.label,
+			presetConditions: a.presetConditions ?? [],
 			attributes: a.attributes.map((at) => ({
 				key: at.key,
 				kind: at.kind,
