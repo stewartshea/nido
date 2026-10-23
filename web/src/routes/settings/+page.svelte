@@ -86,6 +86,10 @@
 	let editMemberBirthDate = '';
 	let editMemberGender = '';
 	let editMemberEmail = '';
+	// The categories this member tracks, edited in place. Per member rather than
+	// per stage: the stage template only decides what a *new* profile starts
+	// with, and an existing person's own list is what the log forms actually read.
+	let editMemberCategories: string[] = [];
 
 	// Family onboarding
 	let familyName = '';
@@ -941,13 +945,31 @@
 		}
 	}
 
-	function stageSetFor(stage: string | null): string[] {
+	/**
+	 * The categories a stage starts a new profile with: an in-flight edit first,
+	 * then this family's saved set, then the built-in template.
+	 *
+	 * Its inputs are arguments rather than captured variables on purpose.
+	 * Svelte's dependency tracking is syntactic, so a template expression that
+	 * only read `stageSetFor(stageEditor)` would depend on `stageEditor` alone —
+	 * a toggle updated `stageDraft` and the API, but the switch on screen never
+	 * moved. Deriving the set in a reactive statement that names `stageDraft`
+	 * and `familySettings` gives the binding something to depend on.
+	 */
+	function stageCategoriesFor(
+		stage: string | null,
+		draft: Record<string, string[]>,
+		settings: typeof familySettings,
+	): string[] {
 		if (!stage) return [];
-		return stageDraft[stage]
-			?? familySettings?.stageCategories?.[stage]
-			?? familySettings?.defaultStageCategories?.[stage]
+		return draft[stage]
+			?? settings?.stageCategories?.[stage]
+			?? settings?.defaultStageCategories?.[stage]
 			?? [];
 	}
+
+	/** The stage currently open in the editor, as a value the template can depend on. */
+	$: editorStageCategories = stageCategoriesFor(stageEditor, stageDraft, familySettings);
 
 	/**
 	 * Turn a category on or off for a whole stage.
@@ -959,7 +981,7 @@
 	 */
 	async function toggleStageCategory(stage: string | null, catId: string) {
 		if (!activeFamilyId || !stage) return;
-		const cur = stageSetFor(stage);
+		const cur = stageCategoriesFor(stage, stageDraft, familySettings);
 		const on = cur.includes(catId);
 		const nextSet = on ? cur.filter((c) => c !== catId) : [...cur, catId];
 		// Keep the vocabulary's order, so the template's sense of "most important
@@ -1044,11 +1066,26 @@
 		editMemberBirthDate = baby.birth_date ? baby.birth_date.slice(0, 10) : '';
 		editMemberGender = baby.gender || '';
 		editMemberEmail = baby.email || '';
+		editMemberCategories = Array.isArray(baby.categories) ? [...baby.categories] : [];
 		error = '';
 	}
 
 	function closeEditMember() {
 		editingMember = null;
+	}
+
+	/**
+	 * Turn one tracked category on or off for the member being edited.
+	 *
+	 * Saved with the rest of the form rather than on each tap, so the whole
+	 * member is one round trip and Cancel really cancels. The order is the
+	 * vocabulary's, so the tiles that follow a person stay sensible.
+	 */
+	function toggleEditMemberCategory(catId: string) {
+		const next = editMemberCategories.includes(catId)
+			? editMemberCategories.filter((c) => c !== catId)
+			: [...editMemberCategories, catId];
+		editMemberCategories = CATEGORIES.map((c) => c.id).filter((id) => next.includes(id));
 	}
 
 	async function toggleMemberTracking(baby: any) {
@@ -1087,6 +1124,7 @@
 				birthDate,
 				gender: editMemberGender || null,
 				email: editMemberEmail.trim() || null,
+				categories: editMemberCategories,
 			});
 			notice = 'Member updated.';
 			editingMember = null;
@@ -1366,7 +1404,7 @@
 											<div class="flex flex-col gap-2">
 												{#each CATEGORIES as cat}
 													<ToggleSwitch
-														checked={stageSetFor(stageEditor).includes(cat.id)}
+														checked={editorStageCategories.includes(cat.id)}
 														label={cat.label}
 														onToggle={() => toggleStageCategory(stageEditor, cat.id)}
 													/>
@@ -1722,6 +1760,22 @@
 											<div>
 												<label for="edit-member-email" class="block text-sm font-medium text-ink-soft mb-1">Email</label>
 												<input id="edit-member-email" type="email" bind:value={editMemberEmail} class="w-full px-3 py-2 border border-line rounded-md" placeholder="optional@email.com" />
+											</div>
+											<div class="border-t border-line-soft pt-3">
+												<p class="text-sm font-medium text-ink-soft mb-1">Tracks</p>
+												<p class="text-xs text-ink-soft mb-2">
+													What this person's log forms offer. Turning one off removes it from their tabs and Quick
+													Actions; the records already kept stay.
+												</p>
+												<div class="flex flex-col gap-1 max-h-64 overflow-y-auto pr-1">
+													{#each CATEGORIES as cat}
+														<ToggleSwitch
+															checked={editMemberCategories.includes(cat.id)}
+															label={cat.label}
+															onToggle={() => toggleEditMemberCategory(cat.id)}
+														/>
+													{/each}
+												</div>
 											</div>
 											<div>
 												<label for="edit-member-avatar" class="block text-sm font-medium text-ink-soft mb-1">Photo</label>

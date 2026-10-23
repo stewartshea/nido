@@ -59,7 +59,7 @@ tasks:
       NIDO_DATA_DIR:
         sh: echo "${NIDO_DATA_DIR:-./data/test-seed}"
     cmds:
-      - npx tsx scripts/seed-test-data.ts
+      - npx tsx src/scripts/seed-test-data.ts
 
   seed:validate:
     desc: Validate that seeded test environment is functional
@@ -72,7 +72,7 @@ tasks:
       NIDO_DATA_DIR:
         sh: echo "${NIDO_DATA_DIR:-./data/test-seed}"
     cmds:
-      - npx tsx scripts/validate-seed.ts
+      - npx tsx src/scripts/validate-seed.ts
 
   env:check:
     desc: Check environment configuration

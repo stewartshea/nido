@@ -1,7 +1,6 @@
-#!/usr/bin/env tsx
-// scripts/validate-seed.ts
+// src/scripts/validate-seed.ts
 // Validates that seeded test environment is functional
-import { ensureRegistry, getFamilyClient } from '../src/db-namespaces';
+import { ensureRegistry, getFamilyClient } from '../db-namespaces';
 import jwt from 'jsonwebtoken';
 
 const JWT_SECRET = process.env.JWT_SECRET ?? 'nido-test-secret';

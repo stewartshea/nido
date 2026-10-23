@@ -515,8 +515,20 @@ export interface InventoryItem {
 	unit: string;
 	packSize: number | null;
 	leadDays: number | null;
+	/**
+	 * The rule's activity, mirrored from consumptionRule for older readers.
+	 * Null when the item is not consumed by logged events.
+	 */
 	eventCategory: string | null;
+	/** The single option the rule narrowed to, when one attribute is filtered to one value. */
+	eventOption: string | null;
+	/** Units of the activity that make one whole use (N in "1 per N"). */
+	unitsPerDecrement: number | null;
+	/** Progress toward the next whole use, accrued between logs. */
+	consumeCarry: number;
 	decrementPerEvent: number | null;
+	/** The real rule — activity, conditions, ratio — or null when unlinked. */
+	consumptionRule: ConsumptionRule | null;
 	active: boolean;
 	notes: string | null;
 	consumptionPerDay: number;
@@ -580,6 +592,54 @@ export interface ReminderCondition {
 	values?: string[];
 }
 
+/** One dimension of an activity a rule can filter on (a feed's type, a milestone's kind). */
+export interface ActivityAttribute {
+	/** What the condition names, e.g. 'type' or 'kind'. */
+	key: string;
+	/** The column the route stores it in; where emitActivity reads the event's value. */
+	column: string;
+	kind: 'enum' | 'text' | 'datetime';
+	/** Known values for enum attributes, the registry's vocabulary merged with the family's own. */
+	values: string[];
+}
+
+/** A logged activity an inventory item can be consumed by (GET /inventory/activities). */
+export interface ConsumableActivity {
+	/** Unique per pickable entry — several share a table ('vitamins' is a milestone). */
+	id: string;
+	/** What the rule's source_table stores — the table the activity's route bills from. */
+	table: string;
+	label: string;
+	/**
+	 * Conditions every event of this entry already satisfies, folded into the
+	 * saved rule. A milestone-backed category fixes its `kind` here, so choosing
+	 * "vitamins" writes kind = 'vitamins' without asking.
+	 */
+	presetConditions: ConsumptionCondition[];
+	/** Dimensions a rule may narrow to; empty for an activity with no options (growth, journal). */
+	attributes: ActivityAttribute[];
+}
+
+/** One requirement an event's attributes must meet: its 'type' among these values. */
+export interface ConsumptionCondition {
+	attr: string;
+	values: string[];
+}
+
+/** The rule stored beside an item: subtract X for every N units of logged activity Y. */
+export interface ConsumptionRule {
+	sourceTable: string;
+	/** 'all' conditions must hold; 'any' at least one. Empty conditions match every event. */
+	match: 'all' | 'any';
+	conditions: ConsumptionCondition[];
+	/** Units of the activity that make one whole use (N in "X per N"). */
+	unitsPerUse: number;
+	/** How many items one whole use subtracts (X in "X per N"). */
+	amountPerUse: number;
+	/** Accrued progress toward the next whole use. */
+	consumeCarry: number;
+}
+
 export interface ReminderCatalogCategory {
 	id: string;
 	label: string;
@@ -638,14 +698,25 @@ export const inventoryAPI = {
 	create: (data: {
 		memberId?: number | null; name: string; category: string; variant?: string | null;
 		quantity?: number; unit?: string; packSize?: number | null; leadDays?: number | null;
-		eventCategory?: string | null; decrementPerEvent?: number | null; consumeIntervalDays?: number | null;
+		/** Preferred: the full rule. Conditions optional; empty matches every event of the activity. */
+		consumptionRule?: Omit<ConsumptionRule, 'consumeCarry'> | null;
+		/** Flattened Phase-1 fields, still accepted; ignored when consumptionRule is present. */
+		eventCategory?: string | null; eventOption?: string | null; unitsPerDecrement?: number | null;
+		decrementPerEvent?: number | null; consumeIntervalDays?: number | null;
 		expiresAt?: string | null; notes?: string | null;
 	}) => api.post('/inventory', data),
 	update: (id: number, data: Partial<{
 		name: string; variant?: string | null; unit: string; packSize?: number | null;
-		leadDays?: number | null; eventCategory?: string | null; decrementPerEvent?: number | null;
+		leadDays?: number | null;
+		/** Replaces the rule wholesale when present; null unlinks the activity. */
+		consumptionRule?: Omit<ConsumptionRule, 'consumeCarry'> | null;
+		eventCategory?: string | null; eventOption?: string | null;
+		unitsPerDecrement?: number | null; decrementPerEvent?: number | null;
 		consumeIntervalDays?: number | null; expiresAt?: string | null; notes?: string | null; active: boolean;
 	}>) => api.put(`/inventory/${id}`, data),
+	// The logged activities an item can be consumed by — served by the API so
+	// the picker never offers an activity that would not actually fire.
+	activities: () => api.get<{ activities: ConsumableActivity[] }>('/inventory/activities'),
 	adjust: (id: number, data: { change: number; reason: 'purchase' | 'used' | 'manual' | 'correction'; note?: string | null }) =>
 		api.post(`/inventory/${id}/adjust`, data),
 	adjustments: (id: number) => api.get(`/inventory/${id}/adjustments`),

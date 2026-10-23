@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { resolveTrackableMember, attachCreatedBy } from '../member-scope';
 import { parsePaging, countMatching } from '../paging';
 import { type AuthEnv } from '../auth';
+import { emitActivity } from '../inventory-consume';
 import { MILESTONE_CATEGORY_IDS } from '../vocabulary';
 import { upcomingAppointmentsForSubject, upcomingAppointmentsForFamily, APPOINTMENT_LIST_LOOKAHEAD_DAYS } from '../appointments';
 
@@ -141,6 +142,23 @@ milestoneRoutes.post('/', zValidator('json', createMilestoneSchema), async (c) =
         userId
       ]
     });
+    
+    // A milestone bills stock through the same funnel as everything else, with
+    // both of its dimensions — so a rule for "a routine bath" matches only a
+    // routine whose category is bath, not any record that happens to say bath.
+    // The record is already stored; a failure warns instead of failing.
+    const milestoneId = Number(result.lastInsertRowid);
+    try {
+      await emitActivity(db, {
+        source: 'milestones',
+        refId: milestoneId,
+        subjectId,
+        attrs: { kind: kind || 'milestones', category: category || null },
+        createdBy: userId,
+      });
+    } catch (err) {
+      c.get('log').warn('inventory decrement failed', { err });
+    }
     
     // Return the created milestone
     const milestoneResult = await db.execute({

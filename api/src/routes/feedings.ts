@@ -4,6 +4,7 @@ import { z } from 'zod';
 import type { FeedingRow } from '../db-types';
 import { resolveTrackableMember, attachCreatedBy } from '../member-scope';
 import { parsePaging, countMatching } from '../paging';
+import { emitActivity } from '../inventory-consume';
 import { type AuthEnv } from '../auth';
 
 const feedingRoutes = new Hono<AuthEnv>();
@@ -178,6 +179,24 @@ feedingRoutes.post('/', zValidator('json', createFeedingSchema), async (c) => {
       ]
     });
     
+    // A bottle fed is a bottle to wash, so a linked item bills stock from this
+    // log the same way every other activity does — through the emitActivity
+    // funnel, with the feed's type among the event's attributes so a rule can
+    // narrow to bottle feeds only. The feeding is already stored; a consumption
+    // failure warns instead of failing the request.
+    const feedingId = Number(result.lastInsertRowid);
+    try {
+      await emitActivity(db, {
+        source: 'feedings',
+        refId: feedingId,
+        subjectId: scope.subjectId,
+        attrs: { type },
+        createdBy: userId,
+      });
+    } catch (err) {
+      c.get('log').warn('inventory decrement failed', { err });
+    }
+
     // Return the created feeding
     const feedingResult = await db.execute({
       sql: `
@@ -185,7 +204,7 @@ feedingRoutes.post('/', zValidator('json', createFeedingSchema), async (c) => {
       FROM feedings
       WHERE id = ?
     `,
-      args: [Number(result.lastInsertRowid)]
+      args: [feedingId]
     });
     
     return c.json({ 

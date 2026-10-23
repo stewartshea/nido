@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { createEventDispatcher, onMount } from 'svelte';
-	import { inventoryAPI, type InventoryItem, type InventoryAlert, type DiaperBand } from '$lib/api';
+	import { inventoryAPI, type InventoryItem, type InventoryAlert, type DiaperBand, type ConsumableActivity } from '$lib/api';
 	import { defaultMemberId } from '$lib/shared';
 	import { zonedOptions } from '$lib/logging/format';
 
@@ -21,6 +21,27 @@
 	// Any item can be consumed by a logged change — a tub of wipes goes down
 	// when a nappy is changed, and that item's category is not 'diapers'.
 	$: linkedToLogs = autoDecrement;
+
+	// The activity the form links to, and how the rule reads in words —
+	// "every 4 bottle feeds, subtract 1". Activity, attributes and option
+	// values come from the API's /inventory/activities, which only lists what
+	// actually fires. Each attribute gets its own chosen value ('' = any).
+	$: currentActivity = activities.find((a) => a.id === eventActivity) ?? null;
+	$: activityN = Math.max(1, Number(eventEvery) || 1);
+	$: chosenOptions = currentActivity
+		? currentActivity.attributes.map((at) => eventOptions[at.key] ?? '').filter(Boolean).join(' ')
+		: '';
+	$: activityPhrase = currentActivity
+		? `${chosenOptions ? `${chosenOptions} ` : ''}${currentActivity.label.toLowerCase()}${activityN > 1 ? 's' : ''}`
+		: '';
+	// Switching the activity starts its filters fresh: a bottle filter means
+	// nothing against a diaper change.
+	$: if (eventActivity !== lastActivity) {
+		lastActivity = eventActivity;
+		const next: Record<string, string> = {};
+		for (const at of (activities.find((a) => a.id === eventActivity)?.attributes ?? [])) next[at.key] = '';
+		eventOptions = next;
+	}
 
 	const CATEGORY_LABELS: Record<string, string> = {
 		diapers: 'Diapers', formula: 'Formula', baby_care: 'Baby care', vitamins: 'Vitamins',
@@ -72,8 +93,16 @@
 	let expiresAt = '';
 	let memberId: number | null = null;
 	let autoDecrement = false;
-	/** How many of this item a single logged change uses. */
+	/** How many of this item one whole use subtracts (X in "X per N"). */
 	let eventQty = '1';
+	/** Units of the activity that make one whole use (N in "X per N"). */
+	let eventEvery = '1';
+	/** The linked activity — its table, e.g. 'feedings'; '' until chosen. */
+	let eventActivity = '';
+	/** Chosen value per attribute key ('type' → 'bottle'); '' for any. */
+	let eventOptions: Record<string, string> = {};
+	let lastActivity = '';
+	let activities: ConsumableActivity[] = [];
 	let saving = false;
 
 	async function loadSizes(memberId: number | null) {
@@ -153,11 +182,16 @@
 	async function load() {
 		loading = true;
 		try {
-			const [list, cats] = await Promise.all([inventoryAPI.list(), inventoryAPI.categories()]);
+			const [list, cats, acts] = await Promise.all([
+				inventoryAPI.list(),
+				inventoryAPI.categories(),
+				inventoryAPI.activities(),
+			]);
 			items = list.data.items ?? [];
 			alertList = list.data.alerts ?? [];
 			// Whatever this household already uses, plus the starter list.
 			categories = cats.data.categories ?? Object.keys(CATEGORY_LABELS);
+			activities = acts.data.activities ?? [];
 		} catch (e: any) {
 			error = e?.response?.data?.error || 'Could not load inventory.';
 		} finally {
@@ -229,8 +263,16 @@
 		memberId = BABY_CATEGORIES.has(category) ? selectedMemberId : null;
 		name = ''; variant = ''; quantity = ''; packSize = ''; leadDays = '';
 		consumeQty = '';
-		// Diapers are the obvious linked case; anything else is opt-in.
+		// Diapers are the obvious linked case; anything else is opt-in. The
+		// activity defaults to the category's obvious signal — diaper changes
+		// for diapers, feeds for everything else — and the picker lists only
+		// what the API actually bills stock from.
 		autoDecrement = category === 'diapers';
+		eventActivity = autoDecrement && activities.some((a) => a.id === 'diapers')
+			? 'diapers'
+			: (activities[0]?.id ?? '');
+		eventOptions = {};
+		eventEvery = '1';
 		eventQty = '1';
 		error = '';
 		notice = '';
@@ -251,8 +293,27 @@
 				unit,
 				packSize: packSize ? Number(packSize) : null,
 				leadDays: leadDays ? Number(leadDays) : null,
-				eventCategory: linkedToLogs ? 'diapers' : null,
-				decrementPerEvent: linkedToLogs ? Math.max(1, Number(eventQty) || 1) : (consumeQty ? Number(consumeQty) : null),
+				// The rule in its real shape: activity, conditions, ratio. Only
+				// the attributes the form chose a value for become conditions.
+				consumptionRule: linkedToLogs && currentActivity
+					? {
+						sourceTable: currentActivity.table,
+						match: 'all',
+						// The activity's own conditions first — "vitamins" means
+						// milestones where kind is 'vitamins' — then whatever the
+						// form narrowed further.
+						conditions: [
+							...(currentActivity.presetConditions ?? []),
+							...currentActivity.attributes
+								.map((at) => ({ attr: at.key, values: [eventOptions[at.key] ?? ''] }))
+								.filter((cond) => cond.values[0] !== ''),
+						],
+						unitsPerUse: Math.max(1, Number(eventEvery) || 1),
+						amountPerUse: Math.max(1, Number(eventQty) || 1),
+					}
+					: null,
+				// With no activity, the quantity is the calendar cadence's per-period use.
+				decrementPerEvent: !linkedToLogs && consumeQty ? Number(consumeQty) : null,
 				consumeIntervalDays: consumeEvery ? Number(consumeEvery) : null,
 				expiresAt: expiresAt ? new Date(expiresAt).toISOString() : null,
 			});
@@ -362,6 +423,46 @@
 		return `about ${Math.round(d)} days left`;
 	}
 
+	/**
+	 * The picker entry an item's rule was written from.
+	 *
+	 * Several entries share the milestones table, so matching on the table alone
+	 * would read a vitamin rule back as "Milestone". The entry whose own preset
+	 * conditions the rule satisfies wins, and the most specific one of those.
+	 */
+	function activityFor(item: InventoryItem): ConsumableActivity | undefined {
+		const rule = item.consumptionRule;
+		const table = rule?.sourceTable ?? item.eventCategory ?? '';
+		const conds = rule?.conditions ?? [];
+		const candidates = activities.filter((a) => a.table === table);
+		let best: ConsumableActivity | undefined = candidates[0];
+		let bestPresets = -1;
+		for (const a of candidates) {
+			const preset = a.presetConditions ?? [];
+			const holds = preset.every((p) =>
+				conds.some((c) => c.attr === p.attr && p.values.every((v) => c.values.includes(v))),
+			);
+			if (holds && preset.length > bestPresets) { best = a; bestPresets = preset.length; }
+		}
+		return best;
+	}
+
+	/** How an item's rule reads: "1 per 4 bottle feeds", "1 per vitamin". */
+	function linkRule(item: InventoryItem): string {
+		const rule = item.consumptionRule;
+		const act = activityFor(item);
+		const n = rule?.unitsPerUse ?? item.unitsPerDecrement ?? 1;
+		const per = rule?.amountPerUse ?? item.decrementPerEvent ?? 1;
+		// A preset attribute is the activity's own name ("kind is vitamins"), not
+		// a filter the family chose, so it does not belong in the words.
+		const presetAttrs = new Set((act?.presetConditions ?? []).map((p) => p.attr));
+		const filters = rule
+			? rule.conditions.filter((c) => !presetAttrs.has(c.attr)).flatMap((cond) => cond.values).join(' ')
+			: (item.eventOption ? `${item.eventOption} ` : '');
+		const noun = `${filters}${(act?.label ?? rule?.sourceTable ?? item.eventCategory ?? 'logged event').toLowerCase()}${n > 1 ? 's' : ''}`;
+		return n > 1 ? `${per} per ${n} ${noun}` : `${per} per ${noun}`;
+	}
+
 	onMount(load);
 </script>
 
@@ -462,14 +563,42 @@
 			<div>
 				<label class="flex items-center gap-2 text-sm text-ink">
 					<input type="checkbox" bind:checked={autoDecrement} class="w-4 h-4 accent-[var(--color-primary)]" />
-					Subtract this when I log a diaper change
+					Subtract this when I log an activity
 				</label>
 				{#if autoDecrement}
-					<div class="mt-2 flex items-center gap-2">
-						<label for="inv-per-event" class="text-sm text-ink-soft">How many each time</label>
-						<input id="inv-per-event" type="number" min="1" step="1" bind:value={eventQty} class="w-20 px-3 py-2 border border-line rounded-md" placeholder="1" />
+					<div class="mt-2 space-y-2">
+						<div class="grid grid-cols-2 gap-3">
+							<div>
+								<label for="inv-activity" class="block text-xs text-ink-soft mb-1">Which log</label>
+								<select id="inv-activity" bind:value={eventActivity} class="w-full px-3 py-2 border border-line rounded-md">
+									{#each activities as a (a.id)}<option value={a.id}>{a.label}</option>{/each}
+								</select>
+							</div>
+							{#if currentActivity && currentActivity.attributes.length > 0}
+								{#each currentActivity.attributes as attr (attr.key)}
+									<div>
+										<label for="inv-attr-{attr.key}" class="block text-xs text-ink-soft mb-1">
+											{currentActivity.attributes.length > 1 ? `${attr.key[0]?.toUpperCase() ?? ''}${attr.key.slice(1)}` : 'Only those that are'}
+										</label>
+										<select id="inv-attr-{attr.key}" bind:value={eventOptions[attr.key]} class="w-full px-3 py-2 border border-line rounded-md">
+											<option value="">any</option>
+											{#each attr.values as v (v)}<option value={v}>{v}</option>{/each}
+										</select>
+									</div>
+								{/each}
+							{/if}
+						</div>
+						<div class="flex flex-wrap items-center gap-2">
+							<label for="inv-event-every" class="text-sm text-ink-soft">Every</label>
+							<input id="inv-event-every" type="number" min="1" step="1" bind:value={eventEvery} class="w-20 px-3 py-2 border border-line rounded-md" placeholder="1" />
+							<label for="inv-per-event" class="text-sm text-ink-soft">{activityPhrase || 'logged events'}, subtract</label>
+							<input id="inv-per-event" type="number" min="1" step="1" bind:value={eventQty} class="w-20 px-3 py-2 border border-line rounded-md" placeholder="1" />
+						</div>
 					</div>
-					<p class="text-xs text-ink-soft mt-1">A tub of wipes set to 3 comes down by 3 for every change you log.</p>
+					<p class="text-xs text-ink-soft mt-1">
+						Partial counts carry over: with 1 per 4, the first three logs change nothing and the fourth takes one off.
+						So 1 per change on a wipes tub, or 1 tablet per 4 bottle feeds.
+					</p>
 				{/if}
 			</div>
 			<div class="flex gap-2">
@@ -660,6 +789,7 @@
 									</div>
 									<p class="text-xs text-ink-soft truncate">
 										{#if item.consumeIntervalDays}uses {item.decrementPerEvent ?? 1} every {item.consumeIntervalDays}d · {/if}
+									{#if item.eventCategory && !item.consumeIntervalDays}uses {linkRule(item)} · {/if}
 										{#if item.expiresAt}expires {new Date(item.expiresAt).toLocaleDateString(undefined, zonedOptions())} · {/if}
 										{item.unit}
 									</p>
@@ -717,6 +847,9 @@
 									{#if item.consumeIntervalDays}
 										· uses {item.decrementPerEvent ?? 1} every {item.consumeIntervalDays} day{item.consumeIntervalDays === 1 ? '' : 's'}
 										{#if item.nextConsumptionAt}· next {new Date(item.nextConsumptionAt).toLocaleDateString(undefined, zonedOptions())}{/if}
+									{/if}
+									{#if item.eventCategory && !item.consumeIntervalDays}
+										· uses {linkRule(item)}
 									{/if}
 									{#if item.expiresAt} · expires {new Date(item.expiresAt).toLocaleDateString(undefined, zonedOptions())}{/if}
 								</p>

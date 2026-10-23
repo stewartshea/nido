@@ -5,6 +5,7 @@ import { resolveTrackableMember, attachCreatedBy } from '../member-scope';
 import { parsePaging, countMatching } from '../paging';
 import { bandsAtAge, percentileFor } from '../growth-percentile';
 import { type AuthEnv } from '../auth';
+import { emitActivity } from '../inventory-consume';
 import type { SubjectRow, GrowthRow, GrowthWithSubjectRow } from '../db-types';
 
 const growthRoutes = new Hono<AuthEnv>();
@@ -347,6 +348,22 @@ growthRoutes.post('/', zValidator('json', createGrowthSchema), async (c) => {
         userId
       ]
     });
+    
+    // A growth measurement bills stock for anything linked to it — growth has
+    // no option dimension, so only an unconditional rule matches. The record
+    // is already stored; a consumption failure warns instead of failing.
+    const growthId = Number(result.lastInsertRowid);
+    try {
+      await emitActivity(db, {
+        source: 'growth',
+        refId: growthId,
+        subjectId,
+        attrs: {},
+        createdBy: userId,
+      });
+    } catch (err) {
+      c.get('log').warn('inventory decrement failed', { err });
+    }
     
     // Return the created growth record with WHO/CDC comparisons
     const growthResult = await db.execute({

@@ -5,6 +5,7 @@ import type { SleepRow } from '../db-types';
 import { resolveTrackableMember, attachCreatedBy } from '../member-scope';
 import { parsePaging, countMatching } from '../paging';
 import { type AuthEnv } from '../auth';
+import { emitActivity } from '../inventory-consume';
 
 const sleepRoutes = new Hono<AuthEnv>();
 
@@ -156,6 +157,23 @@ sleepRoutes.post('/', zValidator('json', createSleepSchema), async (c) => {
         userId
       ]
     });
+    
+    // A logged sleep bills stock for anything linked to it, through the same
+    // funnel every activity uses; the location rides along so a rule can
+    // narrow to crib naps. The record is already stored, so a consumption
+    // failure warns instead of failing the request.
+    const sleepId = Number(result.lastInsertRowid);
+    try {
+      await emitActivity(db, {
+        source: 'sleep',
+        refId: sleepId,
+        subjectId,
+        attrs: { location: location || null },
+        createdBy: userId,
+      });
+    } catch (err) {
+      c.get('log').warn('inventory decrement failed', { err });
+    }
     
     // Return the created sleep record
     const sleepResult = await db.execute({

@@ -2,9 +2,9 @@ import { Hono } from 'hono';
 import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 import { type AuthEnv } from '../auth';
-import { NAMESPACE_HOUSEHOLD_ID } from '../db-core';
 import {
 	evaluateReminder,
+	familyOptionValues,
 	parseConditions,
 	parseMatch,
 	reminderCatalog,
@@ -56,25 +56,6 @@ async function familyAccess(db: any, familyId: number, userId: string): Promise<
 	return res.rows.length > 0;
 }
 
-function parseJson<T>(value: unknown, fallback: T): T {
-	if (typeof value !== 'string' || !value.trim()) return fallback;
-	try {
-		return JSON.parse(value) as T;
-	} catch {
-		return fallback;
-	}
-}
-
-/** A family's own option values, so a rule can watch a routine it invented. */
-async function familyOptionOverrides(db: any): Promise<Record<string, Record<string, string[]>>> {
-	const res = await db.execute({
-		sql: 'SELECT category_options FROM family_settings WHERE family_id = ? LIMIT 1',
-		args: [NAMESPACE_HOUSEHOLD_ID],
-	});
-	const raw = (res.rows[0] as { category_options?: unknown } | undefined)?.category_options;
-	return parseJson<Record<string, Record<string, string[]>>>(raw, {});
-}
-
 function shape(r: any, ev: { overdue: boolean; since: number | null }) {
 	const conditions: ReminderCondition[] =
 		r?.kind === 'inactivity' ? parseConditions(r?.conditions, r?.category) : [];
@@ -104,7 +85,7 @@ function shape(r: any, ev: { overdue: boolean; since: number | null }) {
 // category or a family's own routine option shows up without a code change.
 reminderRoutes.get('/catalog', async (c) => {
 	const db = c.get('db');
-	const custom = await familyOptionOverrides(db);
+	const custom = await familyOptionValues(db);
 	return c.json({ categories: reminderCatalog(custom) });
 });
 
@@ -154,7 +135,7 @@ reminderRoutes.post('/', zValidator('json', createReminderSchema), async (c) => 
 		conditions = v.conditions ?? [];
 	}
 	if (conditions.length) {
-		const custom = await familyOptionOverrides(db);
+		const custom = await familyOptionValues(db);
 		const invalid = validateConditions(conditions, custom);
 		if (invalid) return c.json({ error: invalid }, 400);
 	} else if (v.kind === 'inactivity') {
@@ -201,7 +182,7 @@ reminderRoutes.put('/:id{[0-9]+}', zValidator('json', updateReminderSchema), asy
 	const v = c.req.valid('json');
 
 	if (v.conditions !== undefined && v.conditions !== null) {
-		const custom = await familyOptionOverrides(db);
+		const custom = await familyOptionValues(db);
 		const invalid = validateConditions(v.conditions, custom);
 		if (invalid) return c.json({ error: invalid }, 400);
 	}

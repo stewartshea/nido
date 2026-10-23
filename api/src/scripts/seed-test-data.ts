@@ -1,10 +1,15 @@
-#!/usr/bin/env tsx
-// scripts/seed-test-data.ts
-// Seeds comprehensive test data for development and CI validation
+// src/scripts/seed-test-data.ts
+//
+// Seeds comprehensive test data for development and CI validation.
+//
+// Lives under src/ rather than scripts/ so `tsc` compiles it into dist/ with
+// the rest of the server, which is what lets a preview deployment run it inside
+// its own pod (see scripts/preview.mjs). scripts/ is for the one-off tooling
+// that never has to run in the image.
 import { randomUUID } from 'node:crypto';
 import bcrypt from 'bcryptjs';
-import { ensureRegistry, provisionFamily, getFamilyClient } from '../src/db-namespaces';
-import { NAMESPACE_HOUSEHOLD_ID } from '../src/db-core';
+import { ensureRegistry, provisionFamily, getFamilyClient } from '../db-namespaces';
+import { NAMESPACE_HOUSEHOLD_ID } from '../db-core';
 
 async function seedTestData() {
   console.log('🌱 Seeding comprehensive test data...');
@@ -12,11 +17,31 @@ async function seedTestData() {
   try {
     // Ensure registry exists
     await ensureRegistry();
-    
+
     // Create test family
     const familyId = '00000000-0000-4000-8000-000000000001';
     const familyName = 'Test Family';
-    
+    const email = 'test@example.com';
+
+    // Seed once, then leave it alone.
+    //
+    // A preview redeploys on every push against the same namespace, so this
+    // runs repeatedly against a database that already holds the fixtures — and
+    // possibly a reviewer's own family beside them. Re-inserting would
+    // duplicate every record (the ids are autoincrement) and the user replace
+    // would break the foreign keys that reference it. Seeding is a one-time
+    // fill of an empty database; if the account is already there, there is
+    // nothing to do. Delete the data directory to start over.
+    const registry = await ensureRegistry();
+    const alreadySeeded = await registry.execute({
+      sql: 'SELECT user_id FROM user_routing WHERE email = ? LIMIT 1',
+      args: [email],
+    });
+    if (alreadySeeded.rows.length > 0) {
+      console.log(`✅ Test data already present (${email}) — nothing to seed.`);
+      process.exit(0);
+    }
+
     console.log(`Creating test family: ${familyId}`);
     await provisionFamily(familyId, familyName);
     
@@ -24,7 +49,6 @@ async function seedTestData() {
     
     // Create a test user
     const userId = randomUUID();
-    const email = 'test@example.com';
     const passwordHash = await bcrypt.hash('TestPass123!', 10);
     
     await familyDb.execute({
@@ -40,7 +64,6 @@ async function seedTestData() {
     });
     
     // Add user to registry routing
-    const registry = await ensureRegistry();
     const now = new Date().toISOString();
     await registry.execute({
       sql: `INSERT OR REPLACE INTO user_routing (id, email, family_id, user_id, role, is_platform_admin, created_at, updated_at) 

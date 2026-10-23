@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 import { type AuthEnv } from '../auth';
+import { emitActivity } from '../inventory-consume';
 import type { JournalEntryRow } from '../db-types';
 import { resolveTrackableMember, attachCreatedBy } from '../member-scope';
 import { parsePaging, countMatching } from '../paging';
@@ -70,6 +71,22 @@ journalRoutes.post('/', zValidator('json', createJournalSchema), async (c) => {
     sql: `INSERT INTO journal_entries (subject_id, title, body, entry_date, created_at, created_by) VALUES (?, ?, ?, ?, ?, ?)`,
     args: [subjectId, title || null, body || null, entryDate || now, now, userId],
   });
+
+  // A journal entry bills stock through the same funnel as every other
+  // activity; it carries no option dimension, so only an unconditional rule
+  // matches. Already stored; a consumption failure warns instead of failing.
+  try {
+    await emitActivity(db, {
+      source: 'journal_entries',
+      refId: Number(ins.lastInsertRowid),
+      subjectId,
+      attrs: {},
+      createdBy: userId,
+    });
+  } catch (err) {
+    c.get('log').warn('inventory decrement failed', { err });
+  }
+
   return c.json({ message: 'Journal entry saved', entry: { id: Number(ins.lastInsertRowid), memberId: subjectId, title, body, entryDate: entryDate || now } }, 201);
 });
 
