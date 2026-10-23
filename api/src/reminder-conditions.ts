@@ -1,6 +1,8 @@
 // reminder-conditions.ts
 //
-// What a tracking rule watches, and how it is evaluated.
+// The evaluator for tracking rules. The categories and their shapes live in
+// registry.ts now — this module reads them and decides whether a rule is
+// overdue.
 //
 // A rule used to name exactly one hard-coded category, and `latestFor` was a
 // switch over five of them. Anything else — a routine like a bath, a category
@@ -10,47 +12,13 @@
 // in 7 days" (a routine, not one of the five) and "no pump or feed in 3 hours"
 // (two conditions OR'd, which one category could not express).
 //
-// So the categories are data now. Each one names the table a record lands in,
-// the column that carries its time, and the option column a condition may filter
-// on. The list is derived from the same vocabulary the log forms use, and the
-// evaluator walks a list of conditions with OR semantics: any one of them having
-// happened recently clears the rule. Adding a category, or a family's custom
-// option, makes it selectable and evaluable with no change here.
+// So a rule carries a list of conditions, any one of which having happened
+// recently clears it, and what a condition may name comes from the registry —
+// adding a category, or a family's custom option, makes it selectable and
+// evaluable with no change here.
 
-import {
-	CATEGORY_OPTIONS,
-	CATEGORY_OPTION_KEY,
-	MILESTONE_CATEGORY_IDS,
-	type CategoryId,
-} from './vocabulary';
+import { SOURCES, reminderCatalog, type Source } from './registry';
 import { NAMESPACE_HOUSEHOLD_ID } from './db-core';
-
-/**
- * One dimension an inventory consumption rule can filter a logged event by.
- *
- * Declared next to the reminders registry on purpose: both read the same
- * tables and the same option lists, so a value ('dry', a custom sleep
- * location) means the same thing in a reminder and in a stock rule. A
- * `kind: 'number'` attribute reserves room for range conditions later; the
- * evaluator is enum-only until a journey asks for more.
- */
-export interface ActivityAttribute {
-	/** What a condition's `attr` names, e.g. 'type'. */
-	key: string;
-	/** The table column it reads, e.g. 'type'. */
-	column: string;
-	kind: 'enum' | 'number' | 'text';
-	/** Enum values from the vocabulary, before a family's own values merge in. */
-	values?: string[];
-	/** (category, optionKey) pairs whose family-custom values also count. */
-	customKeys?: Array<[string, string]>;
-}
-
-/** A condition on one logged event: attribute values it must carry to bill. */
-export interface ConsumptionCondition {
-	attr: string;
-	values?: string[];
-}
 
 export interface ReminderCondition {
 	category: string;
@@ -72,301 +40,6 @@ export type ReminderMatch = 'any' | 'all';
 
 export function parseMatch(raw: unknown): ReminderMatch {
 	return raw === 'all' ? 'all' : 'any';
-}
-
-export interface ReminderCatalogCategory {
-	id: string;
-	label: string;
-	/** Option values this category can be narrowed to; empty when it has none. */
-	options: string[];
-}
-
-interface Source {
-	label: string;
-	table: string;
-	time: string;
-	/** Fixed predicate over the source table's columns (feeds excludes the pump; pumping is only the pump). */
-	baseWhere?: string;
-	/** Column a condition's values filter on. */
-	optionColumn?: string;
-	/** Default values for that column, before a family customises them. */
-	options?: string[];
-	/** For milestone-backed categories, the `milestones.kind` value. */
-	milestoneKind?: string;
-	/** The family-settings option key, so a family's own values can be merged in. */
-	optionKey?: string;
-	/** Inventory consumption: events from this table can bill stock. */
-	consumable?: boolean;
-	/** Overrides the attribute derived from optionColumn/options, for a table needing more. */
-	attributes?: ActivityAttribute[];
-}
-
-const MILESTONE_LABELS: Record<string, string> = {
-	routines: 'Routine',
-	firsts: 'First',
-	milestones: 'Milestone',
-	medical: 'Medical entry',
-	medication: 'Medication',
-	vitamins: 'Vitamin',
-	appointments: 'Appointment',
-	grooming: 'Grooming',
-};
-
-function options(category: string, key: string): string[] {
-	const list = CATEGORY_OPTIONS[category]?.[key];
-	return Array.isArray(list) ? [...list] : [];
-}
-
-// The `table` is what inventory consumption matches on (an item's
-// event_category stores it), so the inventory routes read this registry too.
-export const SOURCES: Record<string, Source> = {
-	// A feed is when the BABY ate: a bottle, formula or solids count, a pump does
-	// not. Pumping is its own question, and `breast_or_pump` is the supply
-	// question — the same three-way split the old switch encoded, now as data.
-	feeds: {
-		label: 'Feed',
-		table: 'feedings',
-		time: 'start_time',
-		baseWhere: "type != 'pump'",
-		optionColumn: 'type',
-		options: ['breast', 'formula', 'bottle', 'solid'],
-		optionKey: 'type',
-		consumable: true,
-	},
-	pumping: {
-		label: 'Pump',
-		table: 'feedings',
-		time: 'start_time',
-		baseWhere: "type = 'pump'",
-	},
-	breast_or_pump: {
-		label: 'Breast feed or pump',
-		table: 'feedings',
-		time: 'start_time',
-		baseWhere: "type IN ('breast', 'pump')",
-	},
-	diapers: {
-		label: 'Diaper change',
-		table: 'diapers',
-		time: 'change_time',
-		optionColumn: 'type',
-		// 'dry' is a loggable type; a rule (or an inventory link) that cannot
-		// name it would silently miss those changes.
-		options: ['wet', 'dirty', 'both', 'dry'],
-		consumable: true,
-	},
-	sleep: {
-		label: 'Sleep',
-		table: 'sleep',
-		time: 'start_time',
-		optionColumn: 'location',
-		options: options('sleep', 'location'),
-		optionKey: 'location',
-		consumable: true,
-	},
-	// Growth, vaccinations and journal carry no enum dimension worth filtering
-	// stock by — journal_entries in particular has no `type` column, so unlike
-	// the reminders catalog it declares no attributes rather than a phantom one.
-	growth: { label: 'Growth', table: 'growth', time: 'measurement_date', consumable: true, attributes: [] },
-	vaccines: { label: 'Vaccination', table: 'vaccinations', time: 'date_given', consumable: true, attributes: [] },
-	moods: {
-		label: 'Mood',
-		table: 'moods',
-		time: 'recorded_at',
-		optionColumn: 'mood',
-		options: options('moods', 'mood'),
-		optionKey: 'mood',
-		consumable: true,
-	},
-	journal: {
-		label: 'Journal entry',
-		table: 'journal_entries',
-		time: 'entry_date',
-		optionColumn: 'type',
-		options: options('journal', 'type'),
-		optionKey: 'type',
-		consumable: true,
-		attributes: [],
-	},
-};
-
-// Milestone-family records — routines, firsts, medical, medication and friends —
-// are one table with a `kind` and a `category`. The category column holds the
-// option value (a routine's "bath"), which is what a condition narrows on.
-for (const id of MILESTONE_CATEGORY_IDS) {
-	const key = CATEGORY_OPTION_KEY[id as CategoryId] ?? 'type';
-	SOURCES[id] = {
-		label: MILESTONE_LABELS[id] ?? id,
-		table: 'milestones',
-		time: 'achieved_date',
-		milestoneKind: id,
-		optionColumn: 'category',
-		options: options(id, key),
-		optionKey: key,
-	};
-}
-
-// One table with two dimensions: a stock rule has to be able to say "a
-// routine bath", not "any bath", so the milestones activity declares both
-// columns instead of deriving the single `category` its per-kind views share.
-const milestoneSource = SOURCES.milestones;
-if (!milestoneSource) throw new Error('milestones missing from the reminder sources registry');
-milestoneSource.consumable = true;
-milestoneSource.attributes = [
-	{ key: 'kind', column: 'kind', kind: 'enum', values: [...MILESTONE_CATEGORY_IDS] },
-	{
-		key: 'category',
-		column: 'category',
-		kind: 'enum',
-		values: MILESTONE_CATEGORY_IDS.flatMap((id) => options(id, CATEGORY_OPTION_KEY[id])),
-		// Each kind stores its list under its own option key, so a family's
-		// custom routine counts here too.
-		customKeys: MILESTONE_CATEGORY_IDS.map((id) => [id, CATEGORY_OPTION_KEY[id as CategoryId]] as [string, string]),
-	},
-];
-
-export function isKnownReminderCategory(category: string): boolean {
-	return Object.prototype.hasOwnProperty.call(SOURCES, category);
-}
-
-/**
- * The categories a rule can watch, with the option values each accepts. A
- * family's own option values are merged over the defaults, so a routine the
- * household invented is selectable like any built-in one.
- */
-export function reminderCatalog(
-	custom: Record<string, Record<string, string[]>> = {},
-): ReminderCatalogCategory[] {
-	return Object.entries(SOURCES).map(([id, src]) => {
-		const customValues = src.optionKey ? custom[id]?.[src.optionKey] ?? [] : [];
-		return {
-			id,
-			label: src.label,
-			options: [...new Set([...(src.options ?? []), ...customValues])],
-		};
-	});
-}
-
-/** A logged activity an inventory item can be consumed by, with the dimensions a rule can filter on. */
-export interface ConsumableSource {
-	/** The catalog id of the view declaring it, e.g. 'feeds'. */
-	id: string;
-	/** The table events land in — what a rule's source_table stores. */
-	table: string;
-	label: string;
-	attributes: ActivityAttribute[];
-	/**
-	 * Conditions every event of this activity already satisfies.
-	 *
-	 * A milestone-backed category is one table seen through a fixed `kind`
-	 * ("vitamins" is milestones where kind = 'vitamins'), so the picker entry
-	 * carries that `kind` and the form folds it into the saved rule. Absent on
-	 * the plain per-table activities, which match on nothing but the table.
-	 */
-	presetConditions?: ConsumptionCondition[];
-}
-
-/**
- * The activities that bill stock, one entry per table.
- *
- * The honest list the inventory picker is built from: a table appears here
- * only when its entry declares `consumable`, and a conformance test posts a
- * record through each one's route to keep that declaration true. SOURCES may
- * hold several views of one table ('feeds', 'pumping' and 'breast_or_pump'
- * all read feedings); the first consumable view per table is the activity.
- */
-export function consumableSources(
-	custom: Record<string, Record<string, string[]>> = {},
-): ConsumableSource[] {
-	const seen = new Set<string>();
-	const out: ConsumableSource[] = [];
-	for (const [id, src] of Object.entries(SOURCES)) {
-		if (!src.consumable || seen.has(src.table)) continue;
-		seen.add(src.table);
-		const derived: ActivityAttribute[] = src.optionColumn
-			? [{
-				key: src.optionKey ?? src.optionColumn,
-				column: src.optionColumn,
-				kind: 'enum',
-				values: [...(src.options ?? [])],
-				customKeys: src.optionKey ? [[id, src.optionKey]] : [],
-			}]
-			: [];
-		const attributes = (src.attributes ?? derived).map((attr) => ({
-			...attr,
-			values: attr.values
-				? [...new Set([...attr.values, ...(attr.customKeys ?? []).flatMap(([cat, key]) => custom[cat]?.[key] ?? [])])]
-				: undefined,
-		}));
-		out.push({ id, table: src.table, label: src.label, attributes });
-	}
-	return out;
-}
-
-/**
- * Everything the inventory picker offers, which is every loggable thing that can
- * bill stock — not one row per table.
- *
- * `consumableSources` answers "which tables bill stock", which is what a rule
- * stores and what `emitActivity` looks up. The picker is asked a different
- * question — "what did this get used by" — and a family answers "vitamins", not
- * "milestones where kind is vitamins". So each milestone-backed category gets
- * its own entry carrying the `kind` it fixes, listed beside the generic
- * `milestones` entry for "any milestone at all".
- *
- * A kind that has no options of its own still appears: the list is about what
- * can be logged, and a vitamin with no subtypes is still a vitamin.
- */
-export function consumableActivities(
-	custom: Record<string, Record<string, string[]>> = {},
-): ConsumableSource[] {
-	const out: ConsumableSource[] = [];
-	for (const source of consumableSources(custom)) {
-		out.push(source);
-		if (source.table !== 'milestones') continue;
-		for (const id of MILESTONE_CATEGORY_IDS) {
-			// The generic `milestones` entry already is this kind, with both
-			// dimensions selectable; adding it again would duplicate the id.
-			if (id === 'milestones') continue;
-			const key = CATEGORY_OPTION_KEY[id as CategoryId] ?? 'type';
-			const values = [...new Set([...options(id, key), ...(custom[id]?.[key] ?? [])])];
-			out.push({
-				id,
-				table: 'milestones',
-				label: MILESTONE_LABELS[id] ?? id,
-				presetConditions: [{ attr: 'kind', values: [id] }],
-				attributes: values.length
-					? [{ key: 'category', column: 'category', kind: 'enum', values }]
-					: [],
-			});
-		}
-	}
-	return out;
-}
-
-/**
- * Check a rule's conditions against the registry, or return the reason it is
- * refused. An unknown table, an unknown attribute or a value outside the
- * vocabulary would silently never match, so all three are named at the edge.
- */
-export function validateConsumptionConditions(
-	sourceTable: string,
-	conditions: ConsumptionCondition[],
-	custom: Record<string, Record<string, string[]>> = {},
-): string | null {
-	const activity = consumableSources(custom).find((a) => a.table === sourceTable);
-	if (!activity) return `"${sourceTable}" is not something Nido can bill stock from.`;
-	for (const condition of conditions) {
-		const attr = activity.attributes.find((at) => at.key === condition.attr);
-		if (!attr) return `"${condition.attr}" is not something ${activity.label.toLowerCase()}s can be filtered by.`;
-		if (condition.values?.length && attr.values) {
-			const allowed = new Set(attr.values);
-			for (const value of condition.values) {
-				if (!allowed.has(value)) return `"${value}" is not a valid ${attr.key} option for ${activity.label.toLowerCase()}s.`;
-			}
-		}
-	}
-	return null;
 }
 
 /**
@@ -537,7 +210,7 @@ async function latestForCondition(
 	condition: ReminderCondition,
 	targetId: number | null,
 ): Promise<number | null> {
-	const src = SOURCES[condition.category];
+	const src: Source | undefined = SOURCES[condition.category];
 	if (!src) return null;
 
 	const params: Array<number | string> = [familyId];

@@ -5,7 +5,7 @@ import { resolveTrackableMember, attachCreatedBy } from '../member-scope';
 import { parsePaging, countMatching } from '../paging';
 import { type AuthEnv } from '../auth';
 import { emitActivity } from '../inventory-consume';
-import { MILESTONE_CATEGORY_IDS } from '../vocabulary';
+import { MILESTONE_CATEGORY_IDS } from '../registry';
 import { upcomingAppointmentsForSubject, upcomingAppointmentsForFamily, APPOINTMENT_LIST_LOOKAHEAD_DAYS } from '../appointments';
 
 const milestoneRoutes = new Hono<AuthEnv>();

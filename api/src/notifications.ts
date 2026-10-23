@@ -4,7 +4,7 @@ import {
 	recordNotified, resolveRecipients, type Recipient,
 } from './inventory-eval';
 import { getAppSettings, smtpConfigured, sendMail, baseUrl } from './mail';
-import { DIGEST_FREQUENCY_MS, type DigestFrequency } from './vocabulary';
+import { DIGEST_FREQUENCY_MS, type DigestFrequency } from './registry';
 import { renderInventoryAlertsEmail } from './mail-templates';
 import type { InventoryRule } from './inventory-signals';
 import { effectiveTimezone, withinSendHour, zonedParts } from './timezone';

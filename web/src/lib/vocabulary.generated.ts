@@ -1,6 +1,6 @@
 // AUTO-GENERATED — do not edit.
 //
-// Source: api/src/vocabulary.ts
+// Source: api/src/registry.ts
 // Regenerate: npx tsx scripts/generate-vocabulary.ts
 //
 // Hand-editing this file will be undone, and a test fails if it is out of date.
@@ -28,9 +28,9 @@ export const CATEGORY_IDS = [
 export type CategoryId = (typeof CATEGORY_IDS)[number];
 
 export const MILESTONE_CATEGORY_IDS = [
-	'milestones',
-	'firsts',
 	'routines',
+	'firsts',
+	'milestones',
 	'medical',
 	'medication',
 	'vitamins',
