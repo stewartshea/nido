@@ -144,6 +144,11 @@ This creates a test family with credentials:
 - **Email:** `test@example.com`
 - **Password:** `TestPass123!`
 
+The same account is seeded into every pull-request preview, so the credentials
+above work on `pr-<number>.previews.dev.nido-app.ca` too. The seeder is
+idempotent: a redeploy leaves an already-seeded database alone rather than
+duplicating records, and deleting the data directory is how you start over.
+
 ### Commit sign-off
 
 Every commit message needs a `Signed-off-by:` trailer — the Developer
