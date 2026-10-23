@@ -134,6 +134,16 @@ cd web && npm run dev
 `npm run db:init` creates the registry database. Per-family databases are
 created on first access.
 
+To seed test data for local development:
+
+```bash
+npm run seed:test
+```
+
+This creates a test family with credentials:
+- **Email:** `test@example.com`
+- **Password:** `TestPass123!`
+
 ### Commit sign-off
 
 Every commit message needs a `Signed-off-by:` trailer — the Developer
