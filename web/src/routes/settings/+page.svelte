@@ -945,13 +945,31 @@
 		}
 	}
 
-	function stageSetFor(stage: string | null): string[] {
+	/**
+	 * The categories a stage starts a new profile with: an in-flight edit first,
+	 * then this family's saved set, then the built-in template.
+	 *
+	 * Its inputs are arguments rather than captured variables on purpose.
+	 * Svelte's dependency tracking is syntactic, so a template expression that
+	 * only read `stageSetFor(stageEditor)` would depend on `stageEditor` alone —
+	 * a toggle updated `stageDraft` and the API, but the switch on screen never
+	 * moved. Deriving the set in a reactive statement that names `stageDraft`
+	 * and `familySettings` gives the binding something to depend on.
+	 */
+	function stageCategoriesFor(
+		stage: string | null,
+		draft: Record<string, string[]>,
+		settings: typeof familySettings,
+	): string[] {
 		if (!stage) return [];
-		return stageDraft[stage]
-			?? familySettings?.stageCategories?.[stage]
-			?? familySettings?.defaultStageCategories?.[stage]
+		return draft[stage]
+			?? settings?.stageCategories?.[stage]
+			?? settings?.defaultStageCategories?.[stage]
 			?? [];
 	}
+
+	/** The stage currently open in the editor, as a value the template can depend on. */
+	$: editorStageCategories = stageCategoriesFor(stageEditor, stageDraft, familySettings);
 
 	/**
 	 * Turn a category on or off for a whole stage.
@@ -963,7 +981,7 @@
 	 */
 	async function toggleStageCategory(stage: string | null, catId: string) {
 		if (!activeFamilyId || !stage) return;
-		const cur = stageSetFor(stage);
+		const cur = stageCategoriesFor(stage, stageDraft, familySettings);
 		const on = cur.includes(catId);
 		const nextSet = on ? cur.filter((c) => c !== catId) : [...cur, catId];
 		// Keep the vocabulary's order, so the template's sense of "most important
@@ -1386,7 +1404,7 @@
 											<div class="flex flex-col gap-2">
 												{#each CATEGORIES as cat}
 													<ToggleSwitch
-														checked={stageSetFor(stageEditor).includes(cat.id)}
+														checked={editorStageCategories.includes(cat.id)}
 														label={cat.label}
 														onToggle={() => toggleStageCategory(stageEditor, cat.id)}
 													/>
