@@ -9,23 +9,32 @@
 // on a single scalar option — enough for "1 wipe per change", not for "a
 // routine bath" or "any member's bottle feeds".
 //
-// So a rule is now a row of its own (inventory_consumption_rules) with a
+// So a rule is a row of its own (inventory_consumption_rules) with a
 // condition document against the activity registry, and every route emits
-// through emitActivity instead of calling a helper shaped for one table. The
-// arithmetic — carry, floor(carry / N), ledger-on-whole-use — is unchanged;
-// only what it matches against generalized. A conformance test posts a record
-// through every consumable registry entry's route, so "this activity bills
-// stock" cannot silently stop being true.
+// through emitActivity instead of calling a helper shaped for one table. A
+// rule names a category ('vitamins'), while the gate and ledger name the
+// table its record landed in ('events') — the two were the same string until
+// Phase 1b, and keeping them distinct is what lets one table carry many
+// billable categories. The arithmetic — carry, floor(carry / N),
+// ledger-on-whole-use — is unchanged. A conformance test posts a record
+// through every consumable category's route, so "this activity bills stock"
+// cannot silently stop being true.
 
-import { consumableSources, type ConsumptionCondition } from './registry';
+import { consumableCategories, type ConsumptionCondition } from './registry';
 
 export type { ConsumptionCondition };
 
 export type RuleMatch = 'all' | 'any';
 
 export interface ActivityEmit {
-	/** The registry table the record landed in, e.g. 'feedings'. */
-	source: string;
+	/** The category the record belongs to, e.g. 'feeds' — what a rule names. */
+	category: string;
+	/**
+	 * The table the record landed in, e.g. 'feedings' or 'events' — what the
+	 * idempotency gate and the ledger store, so a vitamins event's rows say
+	 * 'events' while its rule says 'vitamins'.
+	 */
+	refTable: string;
 	/** The record's id — the idempotency key together with the table. */
 	refId: number;
 	subjectId: number;
@@ -83,9 +92,9 @@ export function matchesConditions(
 /**
  * Bill every rule this event satisfies, and return the item names applied.
  *
- * A rule matches when it is active, its source_table is the event's table,
- * its subject is either the event's member or NULL (household stock follows
- * any member's events), and its conditions hold against the record's
+ * A rule matches when it is active, its source_category is the event's
+ * category, its subject is either the event's member or NULL (household stock
+ * follows any member's events), and its conditions hold against the record's
  * attributes.
  *
  * The rule's own fields decide what the event costs: `amount_per_use` (X, 1
@@ -102,15 +111,16 @@ export function matchesConditions(
 export async function emitActivity(db: any, emit: ActivityEmit): Promise<string[]> {
 	const units = Number(emit.units ?? 1);
 	if (!Number.isFinite(units) || units <= 0) return [];
-	// An undeclared table bills nothing, by design: consumableSources is the
-	// same list the picker offers, and a conformance test keeps it true.
-	const activity = consumableSources().find((a) => a.table === emit.source);
+	// An unconsumable category bills nothing, by design:
+	// consumableCategories is the same list the picker offers, and a
+	// conformance test keeps it true.
+	const activity = consumableCategories().find((a) => a.id === emit.category);
 	if (!activity) return [];
 
 	const rules = (await db.execute({
 		sql: `SELECT * FROM inventory_consumption_rules
-		      WHERE active = 1 AND source_table = ? AND (subject_id IS NULL OR subject_id = ?)`,
-		args: [emit.source, emit.subjectId],
+		      WHERE active = 1 AND source_category = ? AND (subject_id IS NULL OR subject_id = ?)`,
+		args: [emit.category, emit.subjectId],
 	})).rows as any[];
 
 	const applied: string[] = [];
@@ -128,14 +138,14 @@ export async function emitActivity(db: any, emit: ActivityEmit): Promise<string[
 		const legacy = await db.execute({
 			sql: `SELECT 1 FROM inventory_adjustments
 			      WHERE item_id = ? AND ref_table = ? AND ref_id = ? AND (rule_id IS NULL OR rule_id = ?)`,
-			args: [rule.item_id, emit.source, emit.refId, rule.id],
+			args: [rule.item_id, emit.refTable, emit.refId, rule.id],
 		});
 		if (legacy.rows.length) continue;
 
 		try {
 			await db.execute({
 				sql: 'INSERT INTO inventory_consumption_events (rule_id, ref_table, ref_id, units, created_at) VALUES (?, ?, ?, ?, ?)',
-				args: [rule.id, emit.source, emit.refId, units, new Date().toISOString()],
+				args: [rule.id, emit.refTable, emit.refId, units, new Date().toISOString()],
 			});
 		} catch {
 			// The unique gate: this event was already applied to this rule.
@@ -156,7 +166,7 @@ export async function emitActivity(db: any, emit: ActivityEmit): Promise<string[
 			await db.execute({
 				sql: `INSERT INTO inventory_adjustments (item_id, rule_id, change, reason, ref_table, ref_id, created_by, created_at, source)
 				      VALUES (?, ?, ?, 'used', ?, ?, ?, ?, 'event')`,
-				args: [rule.item_id, rule.id, change, emit.source, emit.refId, emit.createdBy ?? null, now],
+				args: [rule.item_id, rule.id, change, emit.refTable, emit.refId, emit.createdBy ?? null, now],
 			});
 			await db.execute({
 				sql: 'UPDATE inventory_items SET quantity = MAX(0, quantity - ?), updated_at = ? WHERE id = ?',

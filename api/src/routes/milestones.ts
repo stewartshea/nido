@@ -1,27 +1,39 @@
+// routes/milestones.ts
+//
+// The alias for one release (docs/event-model-design.md §6, step 4): every
+// kind the milestones catch-all used to hold is a category of `events` now,
+// and this route translates the old vocabulary — `kind`, and a bare
+// `category` option value — onto it, so callers written before the event
+// model keep working. Phase 1c deletes this file along with the table.
+//
+// One behavioral break is deliberate: a future `achievedDate` used to mean
+// "scheduled", silently, by punning on one column (§3.6). It is refused here
+// with a pointer at /plans, where booking lives — records are always past.
 import { Hono } from 'hono';
 import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 import { resolveTrackableMember, attachCreatedBy } from '../member-scope';
-import { parsePaging, countMatching } from '../paging';
+import { parsePaging } from '../paging';
 import { type AuthEnv } from '../auth';
-import { emitActivity } from '../inventory-consume';
-import { MILESTONE_CATEGORY_IDS } from '../registry';
-import { upcomingAppointmentsForSubject, upcomingAppointmentsForFamily, APPOINTMENT_LIST_LOOKAHEAD_DAYS } from '../appointments';
+import { CATEGORIES, EVENT_KIND_CATEGORIES, RECORD_SKEW_MS, type CategoryId } from '../registry';
+import {
+	upcomingAppointmentsForSubject, upcomingAppointmentsForFamily, APPOINTMENT_LIST_LOOKAHEAD_DAYS,
+} from '../appointments';
+import { createEvent, shapeEventRow } from './events';
 
 const milestoneRoutes = new Hono<AuthEnv>();
 
-// Zod schemas for validation
-// The kinds that share this entity are the milestone-backed categories, defined
-// once in vocabulary.ts. Deriving rather than listing is the point: a category
-// added there is loggable here without anyone remembering to come back.
-const MILESTONE_KINDS = MILESTONE_CATEGORY_IDS;
+// The kinds that share this route are exactly the events categories — the
+// zod is derived rather than listed, so a category moved onto events is
+// loggable here the day it moves.
+const MILESTONE_KINDS = EVENT_KIND_CATEGORIES;
 
 const createMilestoneSchema = z.object({
   memberId: z.number(),
   title: z.string().min(1),
   description: z.string().optional(),
   achievedDate: z.string().datetime(),
-  kind: z.enum(MILESTONE_KINDS).optional(),
+  kind: z.enum(MILESTONE_KINDS as unknown as [string, ...string[]]).optional(),
   category: z.string().max(80).optional(),
   tags: z.array(z.string().max(40)).max(10).optional(),
 });
@@ -30,45 +42,66 @@ const updateMilestoneSchema = z.object({
   title: z.string().min(1).optional(),
   description: z.string().optional(),
   achievedDate: z.string().datetime().optional(),
-  kind: z.enum(MILESTONE_KINDS).optional(),
+  kind: z.enum(MILESTONE_KINDS as unknown as [string, ...string[]]).optional(),
   category: z.string().max(80).optional(),
   tags: z.array(z.string().max(40)).max(10).optional(),
 });
 
-// Get all milestones for a baby
+/** The data document for a kind's option value, under the kind's own key. */
+function dataForKind(kind: string, option: string | undefined) {
+	return option ? { [CATEGORIES[kind as CategoryId].optionKey]: option } : {};
+}
+
+/** A shaped event row in the old milestones response shape. */
+function legacyRow(shaped: any) {
+	return {
+		id: shaped.id,
+		subject_id: shaped.subject_id,
+		title: shaped.title,
+		description: shaped.description,
+		achieved_date: shaped.achieved_date,
+		kind: shaped.kind,
+		category: shaped.option,
+		tags: shaped.tags,
+		created_at: shaped.created_at,
+		created_by: shaped.created_by,
+	};
+}
+
+// Get all milestones for a member
 milestoneRoutes.get('/', async (c) => {
   try {
     const userId = c.get('userId');
     const db = c.get('db');
     const memberId = parseInt(c.req.query('memberId') || '0');
-    
+
     if (!memberId) {
       return c.json({ error: 'Member ID is required' }, 400);
     }
-    
+
     const scope = await resolveTrackableMember(db, userId, memberId);
     if (!scope) {
       return c.json({ error: 'Member not found or access denied' }, 404);
     }
-    const subjectId = scope.subjectId;
-    
-    // Get milestones for the baby
+
     const { limit, offset } = parsePaging((k) => c.req.query(k));
 
-    const milestonesResult = await db.execute({
+    const rows = (await db.execute({
       sql: `
-      SELECT id, subject_id, title, description, achieved_date, kind, category, tags, created_at, created_by
-      FROM milestones
-      WHERE subject_id = ?
-      ORDER BY achieved_date DESC, id DESC
+      SELECT * FROM events
+      WHERE subject_id = ? AND category IN (${MILESTONE_KINDS.map(() => '?').join(', ')})
+      ORDER BY occurred_at DESC, id DESC
       LIMIT ? OFFSET ?
     `,
-      args: [subjectId, limit, offset]
-    });
-    const total = await countMatching(db, 'milestones', [subjectId]);
+      args: [scope.subjectId, ...MILESTONE_KINDS, limit, offset]
+    })).rows as any[];
+    const total = Number(((await db.execute({
+      sql: `SELECT COUNT(*) AS n FROM events WHERE subject_id = ? AND category IN (${MILESTONE_KINDS.map(() => '?').join(', ')})`,
+      args: [scope.subjectId, ...MILESTONE_KINDS],
+    })).rows[0] as { n?: number }).n ?? 0);
 
-    const milestones = milestonesResult.rows as any[];
-
+    const milestones = [];
+    for (const row of rows) milestones.push(legacyRow(await shapeEventRow(db, row)));
     await attachCreatedBy(db, milestones);
     return c.json({ milestones, total });
   } catch (error) {
@@ -83,25 +116,23 @@ milestoneRoutes.get('/:id{[0-9]+}', async (c) => {
     const milestoneId = parseInt(c.req.param('id'));
     const userId = c.get('userId');
     const db = c.get('db');
-    
-    // Verify user has access to this milestone
-    const milestoneResult = await db.execute({
+
+    const row = (await db.execute({
       sql: `
-      SELECT m.id, m.subject_id, m.title, m.description, m.achieved_date, m.kind, m.category, m.created_at, m.created_by
-      FROM milestones m
-      JOIN subjects b ON m.subject_id = b.id
+      SELECT e.* FROM events e
+      JOIN subjects b ON e.subject_id = b.id
       JOIN households h ON b.household_id = h.id
       JOIN user_households uh ON h.id = uh.household_id
-      WHERE m.id = ? AND uh.user_id = ?
+      WHERE e.id = ? AND uh.user_id = ?
     `,
       args: [milestoneId, userId]
-    });
-    
-    if (milestoneResult.rows.length === 0) {
+    })).rows[0];
+
+    if (!row) {
       return c.json({ error: 'Milestone not found or access denied' }, 404);
     }
-    
-    return c.json({ milestone: milestoneResult.rows[0] });
+
+    return c.json({ milestone: legacyRow(await shapeEventRow(db, row)) });
   } catch (error) {
     c.get('log').error('get milestone failed', { err: error });
     return c.json({ error: 'Failed to fetch milestone' }, 500);
@@ -112,68 +143,25 @@ milestoneRoutes.get('/:id{[0-9]+}', async (c) => {
 milestoneRoutes.post('/', zValidator('json', createMilestoneSchema), async (c) => {
   try {
     const { memberId, title, description, achievedDate, kind, category, tags } = c.req.valid('json');
-    const userId = c.get('userId');
     const db = c.get('db');
-    
-    const scope = await resolveTrackableMember(db, userId, memberId);
-    if (!scope) {
-      return c.json({ error: 'Member not found or access denied' }, 404);
+    const made = await createEvent(db, c.get('userId'), {
+      memberId,
+      category: (kind ?? 'milestones') as CategoryId,
+      occurredAt: achievedDate,
+      title,
+      notes: description,
+      data: dataForKind(kind ?? 'milestones', category),
+      tags,
+    });
+    if (made.error) {
+      // The statuses are the events route's: 404 for a member the caller
+      // cannot see, 409 for the future-date refusal that carries the way out.
+      return c.json({ error: made.error }, made.status);
     }
-    const subjectId = scope.subjectId;
-    
-    const tagsJson = tags?.length ? JSON.stringify(tags) : null;
-
-    // Insert new milestone
-    const result = await db.execute({
-      sql: `
-        INSERT INTO milestones (
-          subject_id, title, description, achieved_date, kind, category, tags, created_at, created_by
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `,
-      args: [
-        subjectId, 
-        title, 
-        description || null, 
-        achievedDate, 
-        kind || 'milestones',
-        category || null,
-        tagsJson,
-        new Date().toISOString(),
-        userId
-      ]
-    });
-    
-    // A milestone bills stock through the same funnel as everything else, with
-    // both of its dimensions — so a rule for "a routine bath" matches only a
-    // routine whose category is bath, not any record that happens to say bath.
-    // The record is already stored; a failure warns instead of failing.
-    const milestoneId = Number(result.lastInsertRowid);
-    try {
-      await emitActivity(db, {
-        source: 'milestones',
-        refId: milestoneId,
-        subjectId,
-        attrs: { kind: kind || 'milestones', category: category || null },
-        createdBy: userId,
-      });
-    } catch (err) {
-      c.get('log').warn('inventory decrement failed', { err });
-    }
-    
-    // Return the created milestone
-    const milestoneResult = await db.execute({
-      sql: `
-      SELECT id, subject_id, title, description, achieved_date, kind, category, created_at, created_by
-      FROM milestones
-      WHERE id = ?
-    `,
-      args: [Number(result.lastInsertRowid)]
-    });
-    
-    return c.json({ 
-      message: 'Milestone recorded successfully', 
-      milestone: milestoneResult.rows[0] 
-    });
+    return c.json({
+      message: 'Milestone recorded successfully',
+      milestone: legacyRow(made.row),
+    }, 201);
   } catch (error) {
     c.get('log').error('create milestone failed', { err: error });
     return c.json({ error: 'Failed to record milestone' }, 500);
@@ -187,84 +175,53 @@ milestoneRoutes.put('/:id{[0-9]+}', zValidator('json', updateMilestoneSchema), a
     const { title, description, achievedDate, kind, category, tags } = c.req.valid('json');
     const userId = c.get('userId');
     const db = c.get('db');
-    
-    // Verify user has access to this milestone
-    const milestoneCheck = await db.execute({
+
+    const row = (await db.execute({
       sql: `
-      SELECT m.id, m.subject_id
-      FROM milestones m
-      JOIN subjects b ON m.subject_id = b.id
+      SELECT e.* FROM events e
+      JOIN subjects b ON e.subject_id = b.id
       JOIN households h ON b.household_id = h.id
       JOIN user_households uh ON h.id = uh.household_id
-      WHERE m.id = ? AND uh.user_id = ?
+      WHERE e.id = ? AND uh.user_id = ?
     `,
       args: [milestoneId, userId]
-    });
-    
-    if (milestoneCheck.rows.length === 0) {
+    })).rows[0];
+    if (!row) {
       return c.json({ error: 'Milestone not found or access denied' }, 404);
     }
-    
-    // Build dynamic update query
-    const updates = [];
-    const params = [];
-    
-    if (title !== undefined) {
-      updates.push('title = ?');
-      params.push(title);
-    }
-    
-    if (description !== undefined) {
-      updates.push('description = ?');
-      params.push(description);
-    }
-    
-    if (achievedDate !== undefined) {
-      updates.push('achieved_date = ?');
-      params.push(achievedDate);
-    }
-    
-    if (kind !== undefined) {
-      updates.push('kind = ?');
-      params.push(kind);
+
+    if (achievedDate && new Date(achievedDate).getTime() - Date.now() > RECORD_SKEW_MS) {
+      return c.json({ error: 'That time is still in the future — schedule it instead (POST /plans).' }, 409);
     }
 
-    if (category !== undefined) {
-      updates.push('category = ?');
-      params.push(category);
-    }
+    // The alias lets `kind` move a row between events categories, which the
+    // events route deliberately does not, so it owns its own UPDATE.
+    const updates: string[] = [];
+    const params: unknown[] = [];
+    if (title !== undefined) { updates.push('title = ?'); params.push(title); }
+    if (achievedDate !== undefined) { updates.push('occurred_at = ?'); params.push(achievedDate); }
+    if (description !== undefined) { updates.push('notes = ?'); params.push(description); }
+    if (tags !== undefined) { updates.push('tags = ?'); params.push(tags.length ? JSON.stringify(tags) : null); }
+    const nextCategory = kind ?? String(row.category);
+    const nextData = category !== undefined
+      ? dataForKind(nextCategory, category || undefined)
+      : JSON.parse(typeof row.data === 'string' && row.data ? row.data : '{}');
+    updates.push('category = ?', 'data = ?');
+    params.push(nextCategory, JSON.stringify(nextData));
+    params.push(milestoneId);
 
-    if (tags !== undefined) {
-      updates.push('tags = ?');
-      params.push(tags.length ? JSON.stringify(tags) : null);
-    }
-    
-    if (updates.length === 0) {
-      return c.json({ message: 'No updates provided' });
-    }
-    
-    params.push(milestoneId); // For WHERE clause
-    
-    const query = `UPDATE milestones SET ${updates.join(', ')} WHERE id = ?`;
-    
     await db.execute({
-      sql: query,
+      sql: `UPDATE events SET ${updates.join(', ')} WHERE id = ?`,
       args: params
     });
-    
-    // Return updated milestone
-    const updatedMilestoneResult = await db.execute({
-      sql: `
-      SELECT id, subject_id, title, description, achieved_date, kind, category, created_at, created_by
-      FROM milestones
-      WHERE id = ?
-    `,
+
+    const updated = (await db.execute({
+      sql: 'SELECT * FROM events WHERE id = ?',
       args: [milestoneId]
-    });
-    
-    return c.json({ 
-      message: 'Milestone updated successfully', 
-      milestone: updatedMilestoneResult.rows[0] 
+    })).rows[0];
+    return c.json({
+      message: 'Milestone updated successfully',
+      milestone: legacyRow(await shapeEventRow(db, updated))
     });
   } catch (error) {
     c.get('log').error('update milestone failed', { err: error });
@@ -278,30 +235,26 @@ milestoneRoutes.delete('/:id{[0-9]+}', async (c) => {
     const milestoneId = parseInt(c.req.param('id'));
     const userId = c.get('userId');
     const db = c.get('db');
-    
-    // Verify user has access to this milestone
-    const milestoneCheck = await db.execute({
+
+    const row = (await db.execute({
       sql: `
-      SELECT m.id
-      FROM milestones m
-      JOIN subjects b ON m.subject_id = b.id
+      SELECT e.id FROM events e
+      JOIN subjects b ON e.subject_id = b.id
       JOIN households h ON b.household_id = h.id
       JOIN user_households uh ON h.id = uh.household_id
-      WHERE m.id = ? AND uh.user_id = ?
+      WHERE e.id = ? AND uh.user_id = ?
     `,
       args: [milestoneId, userId]
-    });
-    
-    if (milestoneCheck.rows.length === 0) {
+    })).rows[0];
+    if (!row) {
       return c.json({ error: 'Milestone not found or access denied' }, 404);
     }
-    
-    // Delete the milestone
+
     await db.execute({
-      sql: 'DELETE FROM milestones WHERE id = ?',
+      sql: 'DELETE FROM events WHERE id = ?',
       args: [milestoneId]
     });
-    
+
     return c.json({ message: 'Milestone deleted successfully' });
   } catch (error) {
     c.get('log').error('delete milestone failed', { err: error });
@@ -309,13 +262,9 @@ milestoneRoutes.delete('/:id{[0-9]+}', async (c) => {
   }
 });
 
-// Get upcoming appointments: future-dated milestone rows whose kind is
-// 'appointments'. Kept beside /categories and /trends; the numeric /:id route
+// Get upcoming appointments: open plans, whatever category they were booked
+// under. Kept beside /categories and /trends; the numeric /:id route
 // matches digits only, so a literal path here is never shadowed.
-//
-// With a memberId it lists one person's appointments; without one it lists the
-// whole family's, each labelled with who it is for. The family-wide form backs
-// both the appointments page and, in spirit, the weekly email.
 milestoneRoutes.get('/upcoming', async (c) => {
   try {
     const userId = c.get('userId');
@@ -343,20 +292,27 @@ milestoneRoutes.get('/categories', async (c) => {
     const userId = c.get('userId');
     const db = c.get('db');
 
-    const res = await db.execute({
+    // The option values a family has actually used, across every kind. The
+    // value lives in the data document under the kind's own key now, so the
+    // distinct set is extracted per row rather than by one column.
+    const rows = (await db.execute({
       sql: `
-      SELECT DISTINCT category FROM milestones m
-      JOIN subjects b ON m.subject_id = b.id
+      SELECT e.category, e.data FROM events e
+      JOIN subjects b ON e.subject_id = b.id
       JOIN households h ON b.household_id = h.id
       JOIN user_households uh ON h.id = uh.household_id
-      WHERE uh.user_id = ? AND m.category IS NOT NULL AND trim(m.category) <> ''
-      ORDER BY category
+      WHERE uh.user_id = ? AND e.category IN (${MILESTONE_KINDS.map(() => '?').join(', ')})
     `,
-      args: [userId],
-    });
-    const categories = res.rows.map((r: any) => ({
-      id: String(r.category),
-      name: String(r.category).charAt(0).toUpperCase() + String(r.category).slice(1),
+      args: [userId, ...MILESTONE_KINDS]
+    })).rows as any[];
+    const seen = new Set<string>();
+    for (const row of rows) {
+      const shaped = await shapeEventRow(db, row);
+      if (shaped.option) seen.add(String(shaped.option));
+    }
+    const categories = [...seen].sort().map((value) => ({
+      id: value,
+      name: value.charAt(0).toUpperCase() + value.slice(1),
     }));
     return c.json({ categories });
   } catch (error) {
@@ -377,21 +333,23 @@ milestoneRoutes.get('/trends', async (c) => {
 
     const scope = await resolveTrackableMember(db, userId, memberId);
     if (!scope) return c.json({ error: 'Member not found or access denied' }, 404);
-    const subjectId = scope.subjectId;
 
     const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+    const rows = (await db.execute({
+      sql: `SELECT category, data FROM events
+            WHERE subject_id = ? AND occurred_at >= ? AND category IN (${MILESTONE_KINDS.map(() => '?').join(', ')})`,
+      args: [scope.subjectId, since, ...MILESTONE_KINDS],
+    })).rows as any[];
 
-    let sql = 'SELECT category, COUNT(*) as count FROM milestones WHERE subject_id = ? AND achieved_date >= ?';
-    const args: any[] = [subjectId, since];
-    if (category) { sql += ' AND category = ?'; args.push(category); }
-    sql += ' GROUP BY category ORDER BY count DESC';
-
-    const res = await db.execute({ sql, args });
-    const trends = res.rows.map((r: any) => ({
-      category: String(r.category || 'uncategorized'),
-      count: Number(r.count || 0),
-    }));
-
+    const counts = new Map<string, number>();
+    for (const row of rows) {
+      const shaped = await shapeEventRow(db, row);
+      const key = String(shaped.option ?? 'uncategorized');
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+    const trends = [...counts.entries()]
+      .map(([value, count]) => ({ category: value, count }))
+      .sort((a, b) => b.count - a.count);
     const total = trends.reduce((s, t) => s + t.count, 0);
     return c.json({ trends, total, days, memberId, since });
   } catch (error) {

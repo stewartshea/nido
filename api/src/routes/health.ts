@@ -3,6 +3,7 @@ import type { SubjectRow, SleepAggRow, DiaperAggRow, FeedingAggRow } from '../db
 import { resolveTrackableMember, attachCreatedBy } from '../member-scope';
 import { type AuthEnv } from '../auth';
 import { NAMESPACE_HOUSEHOLD_ID, DEFAULT_FEED_GROUPING_MINUTES } from '../db-core';
+import { EVENT_KIND_CATEGORIES as MILESTONE_KINDS, CATEGORY_OPTION_KEY, RECORD_SKEW_MS } from '../registry';
 
 const healthRoutes = new Hono<AuthEnv>();
 
@@ -114,10 +115,10 @@ healthRoutes.get('/summary/:memberId{[0-9]+}', async (c) => {
     // Get latest milestones
     const latestMilestones = await db.execute({
       sql: `
-      SELECT title, description, achieved_date, category
-      FROM milestones
-      WHERE subject_id = ?
-      ORDER BY achieved_date DESC
+      SELECT title, notes, occurred_at, category, data
+      FROM events
+      WHERE subject_id = ? AND category IN ('milestones', 'firsts')
+      ORDER BY occurred_at DESC
       LIMIT 5
     `,
       args: [subjectId]
@@ -135,48 +136,57 @@ healthRoutes.get('/summary/:memberId{[0-9]+}', async (c) => {
       args: [subjectId]
     });
 
-    // Get the most recent *past* milestone row per milestone-backed kind
+    // Get the most recent *past* event row per milestone-backed kind
 	// (medication, vitamins, grooming, appointments, medical, milestones,
-	// firsts, routines).
+	// firsts, routines) — every kind the catch-all held is a category of
+	// `events` now, so one query covers them all.
 	//
-	// "Last X" means "most recently happened", so future-dated rows must not
-	// qualify: a forward-dated visit that happens to sort after everything
-	// would otherwise read as the last medical entry "just now". Future rows
-	// belong to upcomingAppointments below, not to these tiles.
-	const nowIso = new Date().toISOString();
+	// "Last X" means "most recently happened", so future rows must not
+	// qualify — and after §3.6 they cannot exist: records are past at write
+	// time, and the future is a plan. The skew tolerance is what lets a
+	// just-written row qualify at all. The option value comes out of the data
+	// document under each category's own key, so the rows are shaped here
+	// rather than in one SQL expression.
+	const nowIso = new Date(Date.now() + RECORD_SKEW_MS).toISOString();
 
-    const latestMilestoneKinds = await db.execute({
+    const latestMilestoneKindsRaw = await db.execute({
       sql: `
-      SELECT kind, title, description, achieved_date, category
+      SELECT category, title, notes, occurred_at, data
       FROM (
-        SELECT kind, title, description, achieved_date, category,
-               ROW_NUMBER() OVER (PARTITION BY kind ORDER BY achieved_date DESC, id DESC) rn
-        FROM milestones
-        WHERE subject_id = ? AND achieved_date <= ?
+        SELECT category, title, notes, occurred_at, data,
+               ROW_NUMBER() OVER (PARTITION BY category ORDER BY occurred_at DESC, id DESC) rn
+        FROM events
+        WHERE subject_id = ? AND category IN (${MILESTONE_KINDS.map(() => '?').join(', ')}) AND occurred_at <= ?
       )
       WHERE rn = 1
-      ORDER BY achieved_date DESC
+      ORDER BY occurred_at DESC
     `,
-      args: [subjectId, nowIso]
+      args: [subjectId, ...MILESTONE_KINDS, nowIso]
+    });
+    const latestMilestoneKindsRows = (latestMilestoneKindsRaw.rows as any[]).map((r) => {
+      const data = typeof r.data === 'string' && r.data ? JSON.parse(r.data) : {};
+      const optionKey = (CATEGORY_OPTION_KEY as Record<string, string>)[r.category] ?? 'type';
+      return {
+        kind: r.category,
+        title: r.title,
+        description: r.notes,
+        achieved_date: r.occurred_at,
+        category: data[optionKey] ?? null,
+      };
     });
 
-    // Get the milestone rows still ahead of this member, soonest first.
-    //
-    // This is deliberately separate from latestByKind: that one is "the most
-    // recent past row per kind", which for a future-dated row is a different
-    // thing entirely. A tile that promises the *next* thing has to sort
-    // ascending and start from now — and it must not require an "appointments"
-    // category, because a forward-dated medical visit or routine is booked
-    // exactly like an appointment and should surface the same way.
+    // Get the plans still open for this member, soonest first — overdue
+    // first in practice, which is the point: the prompt rises to the top
+    // instead of aging out of sight. Shaped like the appointments page rows.
     const upcomingAppointments = await db.execute({
       sql: `
-      SELECT id, title, description, achieved_date, kind, category
-      FROM milestones
-      WHERE subject_id = ? AND achieved_date >= ?
-      ORDER BY achieved_date ASC, id ASC
+      SELECT id, title, notes, category, data, scheduled_at, status
+      FROM plans
+      WHERE subject_id = ? AND status = 'planned'
+      ORDER BY scheduled_at ASC, id ASC
       LIMIT 5
     `,
-      args: [subjectId, nowIso]
+      args: [subjectId]
     });
     
     // Calculate age in weeks
@@ -192,9 +202,25 @@ healthRoutes.get('/summary/:memberId{[0-9]+}', async (c) => {
 
     // Build a map for easy lookup by kind on the web.
     const latestByKind: Record<string, any> = {};
-    for (const r of latestMilestoneKinds.rows as any[]) {
+    for (const r of latestMilestoneKindsRows) {
       latestByKind[r.kind] = r;
     }
+
+    // Both upcoming tiles and the "recent" list keep the old milestones-era
+    // field names, so the web keeps reading one shape while the storage
+    // under it moved.
+    const shapeUpcoming = (r: any) => {
+      const data = typeof r.data === 'string' && r.data ? JSON.parse(r.data) : {};
+      return {
+        id: r.id,
+        title: r.title,
+        description: r.notes,
+        achieved_date: r.scheduled_at,
+        kind: r.category,
+        category: data[(CATEGORY_OPTION_KEY as Record<string, string>)[r.category] ?? 'type'] ?? null,
+      };
+    };
+    const upcomingAppointmentsShaped = (upcomingAppointments.rows as any[]).map(shapeUpcoming);
 
     const healthSummary = {
       baby: {
@@ -209,10 +235,19 @@ healthRoutes.get('/summary/:memberId{[0-9]+}', async (c) => {
       latestDiaper: latestDiaper.rows[0] || null,
       latestSleep: latestSleep.rows[0] || null,
       latestGrowth: latestGrowth.rows[0] || null,
-      recentMilestones: latestMilestones.rows,
+      recentMilestones: (latestMilestones.rows as any[]).map((r) => {
+        const data = typeof r.data === 'string' && r.data ? JSON.parse(r.data) : {};
+        return {
+          title: r.title,
+          description: r.notes,
+          achieved_date: r.occurred_at,
+          kind: r.category,
+          category: data[(CATEGORY_OPTION_KEY as Record<string, string>)[r.category] ?? 'type'] ?? null,
+        };
+      }),
       upcomingVaccinations: upcomingVaccinations.rows,
-      upcomingAppointments: upcomingAppointments.rows,
-      latestMilestoneKinds: latestMilestoneKinds.rows,
+      upcomingAppointments: upcomingAppointmentsShaped,
+      latestMilestoneKinds: latestMilestoneKindsRows,
       latestByKind,
       lastUpdated: new Date().toISOString()
     };

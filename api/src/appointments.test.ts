@@ -40,15 +40,14 @@ beforeAll(async () => {
 	});
 	childId = member.body.member.id;
 
-	// A future appointment, a future first, and a past appointment. Only the
-	// two future-dated rows should appear, soonest first — a future "first"
-	// counts exactly as much as a future appointment, because "upcoming" is
-	// about the date, not the log category.
-	await call('POST', token, '/api/v1/milestones', {
-		memberId: childId, title: 'Six-week check', achievedDate: inDays(5), kind: 'appointments', category: 'checkup',
+	// Two bookings and a past record. The bookings are plans (§3.6) — one an
+	// appointment, one a medical visit, so the list still proves "any kind,
+	// not just appointments"; the past record must not appear.
+	await call('POST', token, '/api/v1/plans', {
+		memberId: childId, title: 'Six-week check', scheduledAt: inDays(5), category: 'appointments', data: { type: 'checkup' },
 	});
-	await call('POST', token, '/api/v1/milestones', {
-		memberId: childId, title: 'First smile', achievedDate: inDays(3), kind: 'firsts',
+	await call('POST', token, '/api/v1/plans', {
+		memberId: childId, title: 'Ear check', scheduledAt: inDays(3), category: 'medical', data: { visitType: 'follow-up' },
 	});
 	await call('POST', token, '/api/v1/milestones', {
 		memberId: childId, title: 'Old visit', achievedDate: inDays(-5), kind: 'appointments', category: 'checkup',
@@ -56,13 +55,13 @@ beforeAll(async () => {
 });
 
 describe('GET /milestones/upcoming', () => {
-	it('returns any future-dated entry, soonest first, past omitted', async () => {
+	it('returns any open booking, soonest first, past records omitted', async () => {
 		const res = await call('GET', token, `/api/v1/milestones/upcoming?memberId=${childId}`);
 		expect(res.status).toBe(200);
 		expect(res.body.total).toBe(2);
-		expect(res.body.appointments.map((a: any) => a.title)).toEqual(['First smile', 'Six-week check']);
-		// The kind travels with the row so the list can say what it was.
-		expect(res.body.appointments[0].kind).toBe('firsts');
+		expect(res.body.appointments.map((a: any) => a.title)).toEqual(['Ear check', 'Six-week check']);
+		// The category travels with the plan so the list can say what it was.
+		expect(res.body.appointments[0].kind).toBe('medical');
 		expect(res.body.appointments[1].kind).toBe('appointments');
 		expect(res.body.appointments[1].category).toBe('checkup');
 	});
@@ -71,7 +70,7 @@ describe('GET /milestones/upcoming', () => {
 		const res = await call('GET', token, '/api/v1/milestones/upcoming');
 		expect(res.status).toBe(200);
 		expect(res.body.total).toBe(2);
-		expect(res.body.appointments[0].title).toBe('First smile');
+		expect(res.body.appointments[0].title).toBe('Ear check');
 		expect(res.body.appointments[0].memberName).toBe('Nest');
 	});
 

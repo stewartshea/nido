@@ -19,6 +19,12 @@ import {
   runMigrations,
   type Migration,
 } from './db-core';
+import {
+  CATEGORIES,
+  EVENT_KIND_CATEGORIES,
+  consumableCategories,
+  type CategoryId,
+} from './registry';
 
 const CODE_CHARS = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'; // no I/L/O/0/1 — avoids confusion
 
@@ -1113,6 +1119,11 @@ ALTER TABLE inventory_adjustments ADD COLUMN source TEXT DEFAULT 'manual';
     name: 'inventory-consumption-rules-table',
     run: (raw) => migrateToConsumptionRulesTable(raw),
   },
+  {
+    version: 38,
+    name: 'events-and-plans',
+    run: (raw) => migrateToEventsAndPlans(raw),
+  },
 ];
 
 /**
@@ -1452,4 +1463,177 @@ export async function markFamilyAbandonedIfUnoccupied(familyId: string): Promise
     });
   }
   return Number(res.rowsAffected ?? 0) > 0;
+}
+
+/**
+ * Phase 1b of the event model (docs/event-model-design.md §3.1, §3.6, §6):
+ * records and plans become their own tables, and the milestone catch-all
+ * empties into them, split at the now boundary.
+ *
+ * An event is a thing that happened; a plan is a thing that is going to. The
+ * old table held both in one `achieved_date` column — past meant "happened",
+ * future meant "scheduled" — which is why the Last tiles had to learn to
+ * filter the future back out and why a booked checkup could sort as the last
+ * medical entry. The split makes the tenses structural.
+ *
+ * Four moves, all id-preserving so every reference stays valid:
+ *
+ *   1. `events` and `plans` are created (§3.1, §3.6). `item_id` is a plain
+ *      column with no foreign key yet: items are renamed in the home module,
+ *      and an FK with ON DELETE would fight the subject/item CHECK the day
+ *      an item is deleted. Nothing writes item events until then.
+ *   2. Every milestone row moves: past rows into `events` (kind becomes the
+ *      category; the option value moves from the `category` column into the
+ *      data document under the kind's option key), future rows into `plans`
+ *      as bookings with their `status` still `planned`. Ids are disjoint —
+ *      a row is either past or future — so both tables keep them. The old
+ *      rows stay in `milestones`, unread, until Phase 1c drops the table one
+ *      release after this has run in production.
+ *   3. Attachments flip `ref_type` from 'milestone' to 'event' or 'plan' by
+ *      which table now owns the id.
+ *   4. Consumption rules stop naming tables: `source_category` is added and
+ *      backfilled. A rule that smuggled its kind inside a condition
+ *      ('milestones' + kind: vitamins) folds into the category itself
+ *      ('vitamins'), its option condition renames from the old column attr
+ *      to the kind's data key, and a rule naming a plain table maps to the
+ *      category that writes it. `source_table` lingers unread until 1c.
+ *
+ * Vaccination `next_due_date` deliberately does NOT become plans here:
+ * vaccinations are still a typed table in this phase, so a plan would be a
+ * second representation of a fact that lives in `vaccinations` — the exact
+ * drift this migration exists to remove. It moves with vaccinations when
+ * they fold into events (design §3.6's end state).
+ *
+ * Idempotent at every step (CREATE IF NOT EXISTS, NOT EXISTS, guarded ALTER),
+ * so a re-run or a database already carrying the new shape must not throw
+ * and block the family from opening. Exported for tests: a fresh database
+ * runs this with an empty milestones table, so the backfill itself needs a
+ * seeded caller.
+ */
+export function migrateToEventsAndPlans(raw: {
+  exec(sql: string): unknown;
+  pragma(sql: string): unknown;
+  prepare(sql: string): { all(...args: unknown[]): unknown[]; run(...args: unknown[]): unknown };
+}) {
+  raw.exec(`
+    CREATE TABLE IF NOT EXISTS events (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      subject_id  INTEGER,
+      item_id     INTEGER,
+      category    TEXT NOT NULL,
+      occurred_at TEXT NOT NULL,
+      title       TEXT,
+      notes       TEXT,
+      data        TEXT NOT NULL DEFAULT '{}',
+      tags        TEXT,
+      created_by  TEXT,
+      created_at  TEXT DEFAULT CURRENT_TIMESTAMP,
+      CHECK (subject_id IS NOT NULL OR item_id IS NOT NULL)
+    );
+    CREATE INDEX IF NOT EXISTS idx_events_subject_time ON events(subject_id, occurred_at);
+    CREATE INDEX IF NOT EXISTS idx_events_category ON events(category, occurred_at);
+
+    CREATE TABLE IF NOT EXISTS plans (
+      id              INTEGER PRIMARY KEY AUTOINCREMENT,
+      subject_id      INTEGER,
+      item_id         INTEGER,
+      category        TEXT NOT NULL,
+      scheduled_at    TEXT NOT NULL,
+      title           TEXT,
+      notes           TEXT,
+      data            TEXT NOT NULL DEFAULT '{}',
+      status          TEXT NOT NULL DEFAULT 'planned',
+      fulfilled_by    INTEGER,
+      origin_event_id INTEGER,
+      created_by      TEXT,
+      created_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+      CHECK (subject_id IS NOT NULL OR item_id IS NOT NULL)
+    );
+    CREATE INDEX IF NOT EXISTS idx_plans_due ON plans(status, scheduled_at);
+  `);
+
+  // The now boundary in SQL, so it is the migration's own run time, not the
+  // process start. String comparison is honest here: a date-only value on a
+  // future day sorts after any instant today, and one on a past day before.
+  const NOW = "strftime('%Y-%m-%dT%H:%M:%fZ','now')";
+  for (const kind of EVENT_KIND_CATEGORIES) {
+    const key = CATEGORIES[kind].optionKey;
+    raw.exec(`
+      INSERT INTO events (id, subject_id, category, occurred_at, title, notes, data, tags, created_by, created_at)
+      SELECT id, subject_id, '${kind}', achieved_date, title, description,
+             json_object('${key}', category), tags, created_by, created_at
+      FROM milestones
+      WHERE kind = '${kind}'
+        AND achieved_date <= ${NOW}
+        AND NOT EXISTS (SELECT 1 FROM events WHERE events.id = milestones.id);
+    `);
+    raw.exec(`
+      INSERT INTO plans (id, subject_id, category, scheduled_at, title, notes, data, created_by, created_at)
+      SELECT id, subject_id, '${kind}', achieved_date, title, description,
+             json_object('${key}', category), created_by, created_at
+      FROM milestones
+      WHERE kind = '${kind}'
+        AND achieved_date > ${NOW}
+        AND NOT EXISTS (SELECT 1 FROM plans WHERE plans.id = milestones.id);
+    `);
+  }
+
+  // Attachments follow their rows: 'milestone' splits on which table owns
+  // the id now. Any ref_type still 'milestone' afterwards was already an
+  // orphan and stays one, visibly rather than silently.
+  raw.exec(`
+    UPDATE attachments SET ref_type = 'event'
+    WHERE ref_type = 'milestone' AND ref_id IN (SELECT id FROM events);
+    UPDATE attachments SET ref_type = 'plan'
+    WHERE ref_type = 'milestone' AND ref_id IN (SELECT id FROM plans);
+  `);
+
+  const ruleCols = raw.pragma('table_info(inventory_consumption_rules)') as Array<{ name: string }>;
+  if (!ruleCols.some((c) => c.name === 'source_category')) {
+    raw.exec('ALTER TABLE inventory_consumption_rules ADD COLUMN source_category TEXT');
+  }
+  // Which category writes each table: the first consumable one, which is how
+  // the old per-table picker presented it (feeds, not pumping).
+  const tableCategory: Record<string, string> = {};
+  for (const source of consumableCategories()) {
+    if (!(source.table in tableCategory)) tableCategory[source.table] = source.id;
+  }
+  const rules = raw.prepare('SELECT id, source_table, conditions FROM inventory_consumption_rules').all() as Array<{
+    id: number;
+    source_table: string;
+    conditions: string | null;
+  }>;
+  const update = raw.prepare('UPDATE inventory_consumption_rules SET source_category = ?, conditions = ? WHERE id = ?');
+  for (const rule of rules) {
+    let category: string;
+    let conditions: string | null = rule.conditions;
+    if (rule.source_table === 'milestones') {
+      let parsed: Array<{ attr?: string; values?: string[] }> = [];
+      try {
+        parsed = conditions ? JSON.parse(conditions) : [];
+      } catch {
+        parsed = [];
+      }
+      const kindCondition = parsed.find((c) => c && c.attr === 'kind');
+      const kinds = kindCondition?.values ?? [];
+      // One kind folds into the category it always meant. Several kinds
+      // cannot: no events category spans them, so the rule widens to any
+      // milestone — the honest reading, rather than a condition that would
+      // silently never match.
+      category = kinds.length === 1 ? kinds[0]! : 'milestones';
+      const rest = parsed.filter((c) => c !== kindCondition);
+      // The option condition named the old `category` column; on the events
+      // table it lives in the data document under the kind's option key.
+      const optionKey = CATEGORIES[category as CategoryId]?.optionKey;
+      for (const condition of rest) {
+        if (condition.attr === 'category' && optionKey && optionKey !== 'category') {
+          condition.attr = optionKey;
+        }
+      }
+      conditions = rest.length ? JSON.stringify(rest) : null;
+    } else {
+      category = tableCategory[rule.source_table] ?? rule.source_table;
+    }
+    update.run(category, conditions, rule.id);
+  }
 }

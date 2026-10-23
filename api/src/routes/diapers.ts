@@ -138,7 +138,8 @@ diaperRoutes.post('/', zValidator('json', createDiaperSchema), async (c) => {
     const diaperId = Number(result.lastInsertRowid);
     try {
       await emitActivity(db, {
-        source: 'diapers',
+        category: 'diapers',
+        refTable: 'diapers',
         refId: diaperId,
         subjectId,
         attrs: { type },
