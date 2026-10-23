@@ -1,17 +1,18 @@
 // src/scripts/validate-seed.ts
 // Validates that seeded test environment is functional
 import { ensureRegistry, getFamilyClient } from '../db-namespaces';
+import { TEST_FAMILY_ID, TEST_EMAIL } from './seed-test-data';
 import jwt from 'jsonwebtoken';
 
 const JWT_SECRET = process.env.JWT_SECRET ?? 'nido-test-secret';
 
 async function validateSeed() {
   console.log('🔍 Validating test environment...');
-  
+
   try {
     await ensureRegistry();
-    
-    const familyId = '00000000-0000-4000-8000-000000000001';
+
+    const familyId = TEST_FAMILY_ID;
     const familyDb = getFamilyClient(familyId);
     
     // Check family exists
@@ -22,7 +23,7 @@ async function validateSeed() {
     console.log('✓ Household exists');
     
     // Check user exists
-    const user = await familyDb.execute({ sql: "SELECT * FROM users WHERE email = 'test@example.com'" });
+    const user = await familyDb.execute({ sql: 'SELECT * FROM users WHERE email = ?', args: [TEST_EMAIL] });
     if (user.rows.length === 0) {
       throw new Error('Test user not found');
     }
