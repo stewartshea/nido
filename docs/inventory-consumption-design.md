@@ -7,6 +7,9 @@ every N units of logged activity Y"* — 1 dishwasher tablet per 4 bottle feeds,
 **Status.** Phase 1 (the shipped journey) lives in PR #42 / issue #40. This
 document records what shipped, why it stops scaling, and the target model for
 Phase 2 — the tables, their relationships, and the migration path between them.
+The Phase 3 sketch below (a normalized `activity_events` shadow table) is
+superseded by `event-model-design.md`, which removes the shared-table
+workaround instead of copying it.
 
 ---
 
