@@ -55,6 +55,7 @@ export default defineConfig({
 			},
 			social: [
 				{ icon: 'github', label: 'GitHub', href: `https://github.com/${REPO}` },
+				{ icon: 'discord', label: 'Discord', href: 'https://discord.gg/yxWQFjZjy' },
 				{
 					icon: 'heart',
 					label: 'Sponsor on Ko-fi',

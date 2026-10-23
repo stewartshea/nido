@@ -14,7 +14,11 @@
     "test": "npm run test --workspaces --if-present",
     "vocab:generate": "tsx scripts/generate-vocabulary.ts",
     "vocab:check": "tsx scripts/generate-vocabulary.ts --check",
-    "prepare": "node scripts/setup-git-hooks.mjs"
+    "prepare": "node scripts/setup-git-hooks.mjs",
+    "task": "task",
+    "seed:test": "task seed:test",
+    "seed:validate": "task seed:validate",
+    "ci:test-env": "task ci:test-env"
   },
   "keywords": [
     "family",
