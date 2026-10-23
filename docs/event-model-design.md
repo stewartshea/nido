@@ -250,7 +250,7 @@ CREATE TABLE plans (
   title           TEXT,
   notes           TEXT,
   data            TEXT NOT NULL DEFAULT '{}',
-  status          TEXT NOT NULL DEFAULT 'planned',   -- planned | fulfilled | cancelled
+  status          TEXT NOT NULL DEFAULT 'planned',   -- planned | fulfilled | missed | cancelled
   fulfilled_by    INTEGER REFERENCES events(id),     -- the event that happened
   origin_event_id INTEGER REFERENCES events(id),     -- e.g. the dose that scheduled the next
   created_by      TEXT,
@@ -297,6 +297,38 @@ creates do. A vaccination logged with a `nextDue` creates the plan for the
 next dose (`origin_event_id` pointing back), which is what lets `nextDue`
 stop being a promoted field: upcoming no longer reads it, §3.4's promotion
 rule no longer applies, and the field goes back to being data.
+
+**Confirmation — a plan is a question, not just a row.** A booking is a claim
+about the future, and the future is under no obligation to comply. The plan
+is answerable from the moment it is booked (a furnace serviced a day early
+is fulfilled early, with the real `occurred_at`), and once `scheduled_at` has
+passed while `status` is still `planned`, it becomes a *prompt*: the
+upcoming list shows it as overdue and the badge asks one question — did it
+happen? The notification surface reads plans directly — a query, not a rule,
+because every overdue plan is worth asking about; that is an invariant, not a
+condition — and the question clears only by being answered:
+
+- **done** — opens the ordinary log form pre-filled from the plan (category,
+  subject or item, `data`), `occurred_at` defaulting to `scheduled_at` and
+  editable. Saving writes the event, sets `fulfilled_by`, and the ordinary
+  path runs: stock bills, reminder clocks reset, tiles update. Confirming a
+  booked vitamin dose is what takes the bottle down — the prompt is where
+  record and plan finally meet.
+- **reschedule** — a new `scheduled_at`, still `planned`; the question comes
+  back on the new day.
+- **missed** — it did not happen and will not. No event, no billing; the
+  status *is* the fact, and a reportable one ("two missed doses this
+  quarter") in a way a deleted or edited row never was. The `missed` option
+  some categories offer as an event *type* stays for an ad-hoc miss nobody
+  booked — two gestures, two representations, not one fact in two places.
+- **cancel** — it is no longer expected at all; it leaves upcoming and keeps
+  its history.
+
+Fulfilment is never inferred. An unlinked event logged near a plan does not
+quietly mark it done — the link is made by the person who knows whether the
+garage actually came, either from the plan row or the pre-filled form.
+Whether the log sheet should *suggest* the link when a fresh event matches an
+open plan is §9; the first release asks instead of guesses.
 
 ## 4. The same journey, four times
 
@@ -444,6 +476,7 @@ gains a row and nothing else changes.
 | Log a vitamin | `POST /milestones` with `kind:'vitamins'` | `POST /events` with `category:'vitamins'`, body validated by the registry's zod |
 | Inventory emit | 9 routes each call `emitActivity`; conformance fixtures keep them honest | The events route emits once, for everything in it; typed routes keep their call until Phase 2 |
 | Upcoming | future-dated milestone rows only | `plans` where `status = 'planned'` — one query, every bookable category, overdue visible |
+| "Did it happen?" | nothing — a future row silently becomes a past one | overdue plans prompt, answered with done / reschedule / missed / cancel (§3.6); `done` pre-fills the log form and links `fulfilled_by` |
 | Future-dated log | accepted for every category, filtered out later by convention | refused at the edge by the registry's zod for record categories (§3.6); sorts are honest by construction |
 | Summary tiles | one hand-written query per table; window-function query for the 8 kinds | one query over `events` for the migrated kinds; typed tables unchanged until Phase 2 |
 | Activity history / search | union over tables + milestone kinds | one table for migrated kinds |
@@ -554,3 +587,7 @@ blocked on Phase 2 — and if it never happens, the model still holds.
 - Recurring plans: does fulfilling a dentist plan generate the next one?
   Leaning yes (`recurring_every_days` on the plan); the alternative — a
   reminder rule — already exists and stays for cadence-without-a-date.
+- Should the log sheet suggest linking a fresh event to an open plan when
+  the two match (same category, same subject, near in time)? Leaning no for
+  the first release: the overdue prompt already asks, and a wrong suggestion
+  writes a fact nobody confirmed.
