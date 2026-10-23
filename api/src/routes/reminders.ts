@@ -7,10 +7,10 @@ import {
 	familyOptionValues,
 	parseConditions,
 	parseMatch,
-	reminderCatalog,
 	validateConditions,
 	type ReminderCondition,
 } from '../reminder-conditions';
+import { reminderCatalog } from '../registry';
 
 const reminderRoutes = new Hono<AuthEnv>();
 

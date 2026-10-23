@@ -9,9 +9,10 @@ import { renderInventoryAlertsEmail } from '../mail-templates';
 import { consumptionRate, coverForecast, cadenceRate, dueCycles, nextConsumptionAt, MS_PER_DAY, type AdjustmentRow } from '../inventory';
 import { emitActivity, parseConsumptionConditions, parseRuleMatch } from '../inventory-consume';
 import {
-	consumableSources, consumableActivities, familyOptionValues,
+	consumableSources, consumableActivities,
 	validateConsumptionConditions, type ConsumptionCondition,
-} from '../reminder-conditions';
+} from '../registry';
+import { familyOptionValues } from '../reminder-conditions';
 import { SIGNALS, signalByName } from '../inventory-signals';
 import {
 	applyScheduledConsumption, evaluateAlerts, loadRulesForFamily, signalContext,

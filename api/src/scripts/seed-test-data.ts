@@ -10,18 +10,25 @@ import { randomUUID } from 'node:crypto';
 import bcrypt from 'bcryptjs';
 import { ensureRegistry, provisionFamily, getFamilyClient } from '../db-namespaces';
 import { NAMESPACE_HOUSEHOLD_ID } from '../db-core';
+import { categoryTemplate } from '../registry';
+
+// The fixtures' fixed identity, shared with validate-seed.ts so the two
+// scripts cannot disagree about which family they are talking about.
+export const TEST_FAMILY_ID = '00000000-0000-4000-8000-000000000001';
+export const TEST_EMAIL = 'test@example.com';
+export const TEST_PASSWORD = 'TestPass123!';
 
 async function seedTestData() {
   console.log('🌱 Seeding comprehensive test data...');
-  
+
   try {
     // Ensure registry exists
     await ensureRegistry();
 
     // Create test family
-    const familyId = '00000000-0000-4000-8000-000000000001';
+    const familyId = TEST_FAMILY_ID;
     const familyName = 'Test Family';
-    const email = 'test@example.com';
+    const email = TEST_EMAIL;
 
     // Seed once, then leave it alone.
     //
@@ -49,7 +56,7 @@ async function seedTestData() {
     
     // Create a test user
     const userId = randomUUID();
-    const passwordHash = await bcrypt.hash('TestPass123!', 10);
+    const passwordHash = await bcrypt.hash(TEST_PASSWORD, 10);
     
     await familyDb.execute({
       sql: `INSERT OR REPLACE INTO users (id, email, password_hash, first_name, last_name, email_verified) 
@@ -71,30 +78,33 @@ async function seedTestData() {
       args: [randomUUID(), email, familyId, userId, 'owner', 0, now, now],
     });
     
-    // Create family members
+    // Create family members, each starting with the category set their stage
+    // implies — the same template a real member gets, so a preview exercises
+    // the stage model rather than the fallback list. (An adult used to land on
+    // the child default, which made the vitamins tile look broken.)
     const member1Result = await familyDb.execute({
-      sql: `INSERT INTO family_members (household_id, name, member_type, birth_date, gender) 
-            VALUES (?, ?, ?, ?, ?)`,
-      args: [NAMESPACE_HOUSEHOLD_ID, 'Baby Test', 'child', '2024-01-01', 'other'],
+      sql: `INSERT INTO family_members (household_id, name, member_type, birth_date, gender, stage, categories)
+            VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      args: [NAMESPACE_HOUSEHOLD_ID, 'Baby Test', 'child', '2024-01-01', 'other', null, JSON.stringify(categoryTemplate(null))],
     });
     const member1Id = Number(member1Result.lastInsertRowid);
-    
+
     await familyDb.execute({
-      sql: `INSERT INTO family_members (household_id, name, member_type, birth_date, gender) 
-            VALUES (?, ?, ?, ?, ?)`,
-      args: [NAMESPACE_HOUSEHOLD_ID, 'Test Parent', 'adult', '1990-01-01', 'female'],
+      sql: `INSERT INTO family_members (household_id, name, member_type, birth_date, gender, stage, categories)
+            VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      args: [NAMESPACE_HOUSEHOLD_ID, 'Test Parent', 'adult', '1990-01-01', 'female', 'adult', JSON.stringify(categoryTemplate('adult'))],
     });
-    
+
     // Create subject entries
     const subject1Result = await familyDb.execute({
-      sql: `INSERT INTO subjects (household_id, name, birth_date, gender, type) VALUES (?, ?, ?, ?, ?)`,
-      args: [NAMESPACE_HOUSEHOLD_ID, 'Baby Test', '2024-01-01', 'other', 'child'],
+      sql: `INSERT INTO subjects (household_id, name, birth_date, gender, type, categories) VALUES (?, ?, ?, ?, ?, ?)`,
+      args: [NAMESPACE_HOUSEHOLD_ID, 'Baby Test', '2024-01-01', 'other', 'child', JSON.stringify(categoryTemplate(null))],
     });
     const subjectId = Number(subject1Result.lastInsertRowid);
-    
+
     await familyDb.execute({
-      sql: `INSERT INTO subjects (household_id, name, birth_date, gender, type) VALUES (?, ?, ?, ?, ?)`,
-      args: [NAMESPACE_HOUSEHOLD_ID, 'Test Pet', '2023-06-01', 'male', 'pet'],
+      sql: `INSERT INTO subjects (household_id, name, birth_date, gender, type, categories) VALUES (?, ?, ?, ?, ?, ?)`,
+      args: [NAMESPACE_HOUSEHOLD_ID, 'Test Pet', '2023-06-01', 'male', 'pet', JSON.stringify(categoryTemplate('pet'))],
     });
     
     // Add comprehensive sample data
@@ -183,9 +193,9 @@ async function seedTestData() {
     
     console.log('✅ Comprehensive test data seeded successfully!');
     console.log(`   Family ID: ${familyId}`);
-    console.log(`   User: ${email} / TestPass123!`);
-    console.log(`   Members: Baby Test (child), Test Parent (adult)`);
-    console.log(`   Subjects: Baby Test, Test Pet`);
+    console.log(`   User: ${email} / ${TEST_PASSWORD}`);
+    console.log(`   Members: Baby Test (child), Test Parent (adult, adult categories)`);
+    console.log(`   Subjects: Baby Test, Test Pet (pet categories)`);
     console.log(`   Added: 10 feedings, 15 diapers, 7 sleep records, 2 growth records, 2 milestones, 5 moods, journal entry, reminder`);
     
     process.exit(0);
@@ -195,4 +205,10 @@ async function seedTestData() {
   }
 }
 
-seedTestData();
+// Run only as the entry point (`node dist/scripts/seed-test-data.js`), not
+// when imported for its constants — validate-seed.ts reads TEST_FAMILY_ID and
+// friends and must not seed as a side effect. The dist is CommonJS, where the
+// entry-point check is require.main rather than import.meta.
+if (require.main === module) {
+  seedTestData();
+}

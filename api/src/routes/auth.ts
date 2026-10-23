@@ -5,7 +5,7 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { NAMESPACE_HOUSEHOLD_ID } from '../db-core';
-import { STAGE_CATEGORIES } from '../vocabulary';
+import { STAGE_CATEGORIES } from '../registry';
 import {
   ensureRegistry,
   getFamilyClient,

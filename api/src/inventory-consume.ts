@@ -17,7 +17,7 @@
 // through every consumable registry entry's route, so "this activity bills
 // stock" cannot silently stop being true.
 
-import { consumableSources, type ConsumptionCondition } from './reminder-conditions';
+import { consumableSources, type ConsumptionCondition } from './registry';
 
 export type { ConsumptionCondition };
 
