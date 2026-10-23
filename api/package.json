@@ -10,6 +10,8 @@
     "lint": "eslint src --ext ts",
     "test": "vitest",
     "db:init": "tsx scripts/init-db.ts",
+    "db:seed": "node dist/scripts/seed-test-data.js",
+    "db:seed:validate": "node dist/scripts/validate-seed.js",
     "db:backup": "node dist/backup-cli.js backup",
     "db:restore": "node dist/backup-cli.js restore"
   },

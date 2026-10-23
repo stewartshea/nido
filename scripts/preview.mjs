@@ -240,6 +240,34 @@ async function waitForRollout(pr, deployment) {
   }
 }
 
+// Fill the preview's empty database with the same fixed test family the local
+// and CI environments use.
+//
+// A preview starts from nothing, so without this the credentials in the README
+// are a 401 on a preview and a reviewer has no data to exercise. The script is
+// compiled into the image (api/src/scripts/) and reads the pod's own
+// NIDO_MASTER_KEY and NIDO_DATA_DIR, so it writes the same database the running
+// API serves.
+//
+// Best effort on purpose: a preview with no fixtures is still a working
+// preview, and failing the deploy over seed data would take the URL away too.
+async function seed(pr) {
+  try {
+    const { stdout } = await kubectl([
+      '-n',
+      previewNamespace(pr),
+      'exec',
+      'deployment/nido-preview-api',
+      '--',
+      'node',
+      'dist/scripts/seed-test-data.js',
+    ]);
+    console.log(stdout.trim());
+  } catch (error) {
+    console.warn(`preview: seeding failed — the preview is up but has no test data\n${error.message}`);
+  }
+}
+
 async function deploy(args) {
   const pr = args.pr;
   const sha = args.sha;
@@ -274,6 +302,7 @@ async function deploy(args) {
 
   await waitForRollout(pr, 'nido-preview-api');
   await waitForRollout(pr, 'nido-preview-web');
+  await seed(pr);
 
   const url = `https://${previewHostname(pr)}`;
   console.log(`\npreview: ${url}`);

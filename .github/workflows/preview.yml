@@ -117,9 +117,11 @@ jobs:
               'database of its own. It is rebuilt on every push and deleted when',
               'the pull request is closed or merged.',
               '',
-              'Register with any email address — the preview has no mail server,',
-              'so there is no verification step. The data is disposable and goes',
-              'away with the namespace.',
+              '**Test account:** `test@example.com` / `TestPass123!` — seeded with',
+              'sample data. Register with any email address instead if you want a',
+              'clean family; the preview has no mail server, so there is no',
+              'verification step. The data is disposable and goes away with the',
+              'namespace.',
               '',
             ].join('\n');
             const { owner, repo } = context.repo;
