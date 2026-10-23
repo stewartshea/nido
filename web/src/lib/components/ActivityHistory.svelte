@@ -109,7 +109,7 @@
 			case 'diaper': return 'diaper';
 			case 'sleep': return 'sleep';
 			case 'growth': return 'growth';
-			case 'milestone': return 'milestone';
+			case 'milestone': return 'event';
 			case 'vaccine': return 'vaccination';
 			case 'mood': return 'mood';
 			case 'journal': return 'journal';

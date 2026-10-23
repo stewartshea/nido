@@ -509,13 +509,18 @@ SELECT subject_id, 'appointments', achieved_date, title, description,
        json_object('type', category), created_by, created_at
 FROM milestones WHERE kind = 'appointments' AND achieved_date > now;
 -- the same split for every bookable kind (§3.6): its future rows are
--- bookings, and plans take fresh ids.
+-- bookings. Past and future ids are disjoint sets, so both tables keep
+-- them and every reference stays valid.
 ```
 
-   Every vaccination's `next_due_date` becomes a plan with
-   `origin_event_id` set to the dose that scheduled it, so upcoming keeps
-   working the day the promotion on `nextDue` is dropped. Attachments on
-   future rows re-point to `ref_type = 'plan'`.
+   Vaccination `next_due_date` deliberately does **not** become plans in this
+   phase: vaccinations are still a typed table (they fold into events in
+   Phase 2), so a plan would be a second representation of a fact that lives
+   in `vaccinations` — the exact drift this migration exists to remove. It
+   moves with the vaccinations fold-in, when the dose is an event and
+   `origin_event_id` can point at it. Attachments on future rows re-point to
+   `ref_type = 'plan'` — ids are preserved on both sides of the now boundary,
+   so every reference stays valid without a remap.
 
 3. Rewrite the join keys: `inventory_consumption_rules` rows with
    `source_table='milestones'` become `source_category = <the folded kind>`
