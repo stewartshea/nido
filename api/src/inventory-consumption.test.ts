@@ -42,45 +42,45 @@ describe('inventory: any linked activity can consume stock, at any ratio', () =>
 		memberId = member.body.member.id;
 	});
 
-	it('offers only the activities whose routes actually bill stock', async () => {
+	it('offers only the categories whose routes actually bill stock', async () => {
 		const res = await call('GET', token, '/api/v1/inventory/activities');
 		expect(res.status).toBe(200);
-		const tables = res.body.activities.map((a: any) => a.table);
-		expect(tables).toContain('diapers');
-		expect(tables).toContain('feedings');
+		const ids = res.body.activities.map((a: any) => a.id);
+		expect(ids).toContain('diapers');
+		expect(ids).toContain('feeds');
 
-		// Each activity carries the attributes a rule may filter on, declared
-		// next to the reminders registry so both read the same vocabulary.
-		const feeds = res.body.activities.find((a: any) => a.table === 'feedings');
+		// Each category carries the attributes a rule may filter on, declared
+		// in the registry so every layer reads the same vocabulary.
+		const feeds = res.body.activities.find((a: any) => a.id === 'feeds');
+		expect(feeds.table).toBe('feedings');
 		expect(feeds.attributes.find((a: any) => a.key === 'type').values).toContain('bottle');
-		const diapers = res.body.activities.find((a: any) => a.table === 'diapers');
+		const diapers = res.body.activities.find((a: any) => a.id === 'diapers');
 		// 'dry' is a loggable diaper type; a picker missing it could never be
 		// narrowed to those changes.
 		expect(diapers.attributes.find((a: any) => a.key === 'type').values).toContain('dry');
 
-		// Milestones is one table with two dimensions, so a rule can say "a
-		// routine bath" rather than matching any bath-shaped record.
-		const milestones = res.body.activities.find((a: any) => a.table === 'milestones');
-		expect(milestones.attributes.map((a: any) => a.key)).toEqual(['kind', 'category']);
+		// A category on the events table filters by its own data key — the
+		// dimensions the milestones kind column used to smuggle are the
+		// category itself now.
+		const routines = res.body.activities.find((a: any) => a.id === 'routines');
+		expect(routines.table).toBe('events');
+		expect(routines.attributes.map((a: any) => a.key)).toEqual(['type']);
 	});
 
-	it('lists every loggable activity that can bill stock, not one per table', async () => {
+	it('lists every loggable category that can bill stock, one entry each', async () => {
 		const res = await call('GET', token, '/api/v1/inventory/activities');
 		const ids = res.body.activities.map((a: any) => a.id);
 
-		// A family links a "vitamins" item to vitamins, not to "milestones
-		// where kind is vitamins". The milestone-backed kinds are pickable by
-		// name, each carrying the kind it fixes so the rule can be written
-		// without asking.
+		// A family links a "vitamins" item to vitamins — the category is the
+		// rule's source, with no preset to fold and nothing to ask about.
 		for (const kind of ['vitamins', 'medication', 'routines', 'appointments', 'grooming', 'firsts', 'medical']) {
 			expect(ids, `${kind} missing from the picker`).toContain(kind);
 			const entry = res.body.activities.find((a: any) => a.id === kind);
-			expect(entry.table).toBe('milestones');
-			expect(entry.presetConditions).toEqual([{ attr: 'kind', values: [kind] }]);
+			expect(entry.table).toBe('events');
+			expect(entry.presetConditions, 'the preset hack died with the kind column').toBeUndefined();
 		}
 
-		// The generic milestones entry stays, for "any milestone at all", and
-		// carries both dimensions.
+		// The generic milestones entry stays, for "any milestone at all".
 		expect(ids).toContain('milestones');
 	});
 

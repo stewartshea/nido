@@ -7,10 +7,11 @@
 // and its address is authenticated, which is what the older plaintext `photos`
 // directory does not do.
 //
-// `ref_type` names the table the file hangs off, not the tracking category. An
-// appointment, a medication dose and a vaccination report are all milestone
-// rows, so they are all ref_type='milestone' — which is why adding attachments
-// here covers the vet visit and the GP appointment without new entities.
+// `ref_type` names the table the file hangs off, not the tracking category.
+// A vitamin dose, a vet appointment and a GP visit are all events rows, so
+// they are all ref_type='event' — which is why adding attachments here
+// covers all of them without new entities. A booked-but-not-yet-happened
+// plan is 'plan'.
 import { Hono } from 'hono';
 import { Readable } from 'node:stream';
 import type { SqliteFacade } from '../db-core';
@@ -26,7 +27,12 @@ const REF_TABLES: Record<string, string> = {
 	diaper: 'diapers',
 	sleep: 'sleep',
 	growth: 'growth',
-	milestone: 'milestones',
+	// The events/plans split (§3.6): a record is an 'event', a booking a
+	// 'plan'. 'milestone' stays for one release because rows written before
+	// the migration are gone from the picker but not from history.
+	milestone: 'events',
+	event: 'events',
+	plan: 'plans',
 	vaccination: 'vaccinations',
 	mood: 'moods',
 	journal: 'journal_entries',

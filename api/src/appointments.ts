@@ -3,10 +3,10 @@
 // What is booked ahead, and the email that reminds a family about it.
 //
 // "Upcoming" is not its own entity and not its own log category: it is any
-// milestone row whose `achieved_date` is still in the future, whatever kind it
-// was recorded under. Logging a forward-dated medical visit, routine or
-// appointment is the same "schedule this" gesture, so all of them surface here
-// with no second table and no special option to hunt for in the log sheet.
+// open plan (§3.6) — whatever category the family booked, a medical visit or
+// a routine or an appointment — so all of them surface here with no second
+// table and no special option to hunt for in the log sheet. Booking is the
+// same gesture as recording, with a different verb.
 //
 // The reminder is deliberately separate from the inventory digest in
 // notifications.ts: they gate on different settings and different columns, and
@@ -19,6 +19,7 @@ import { familyRecipients, type Recipient } from './inventory-eval';
 import { getAppSettings, smtpConfigured, sendMail, baseUrl } from './mail';
 import { renderUpcomingAppointmentsEmail, type AppointmentEmailLine } from './mail-templates';
 import { effectiveTimezone, withinSendHour, zonedParts } from './timezone';
+import { CATEGORY_OPTION_KEY } from './registry';
 import { log } from './logger';
 
 /**
@@ -56,13 +57,15 @@ interface QueryOptions {
 }
 
 /**
- * What is booked for one tracked profile: milestone rows of any kind whose
- * date is still ahead. "Appointment" here is not a log category — it is simply
- * a future-dated entry, however it was recorded, so a forward-dated medical
- * visit or routine shows up next to a scheduled appointment with no extra
- * plumbing.
+ * What is booked for one tracked profile: open plans. "Appointment" here is not
+ * a log category — it is anything the family booked (§3.6), a plan whose status
+ * is still `planned`, whatever category it was booked under, so a booked
+ * medical visit or routine shows up beside a scheduled appointment with no
+ * extra plumbing. Overdue plans (scheduled_at already past, still open) are
+ * included on purpose: they are the prompt, and the mail is the thing that
+ * should be nagging about them, not silently letting them age out.
  *
- * Scoped by `subject_id`, the way every other milestone read is, because the
+ * Scoped by `subject_id`, the way every other member read is, because the
  * caller has already been through resolveTrackableMember.
  */
 export async function upcomingAppointmentsForSubject(
@@ -72,37 +75,28 @@ export async function upcomingAppointmentsForSubject(
 ): Promise<UpcomingAppointment[]> {
 	const nowMs = opts.nowMs ?? Date.now();
 	const days = opts.days ?? APPOINTMENT_LIST_LOOKAHEAD_DAYS;
-	const from = new Date(nowMs).toISOString();
 	const to = new Date(nowMs + days * 24 * 60 * 60 * 1000).toISOString();
 
 	const res = await db.execute({
 		sql: `
-			SELECT id, title, description, achieved_date, kind, category
-			FROM milestones
+			SELECT id, title, notes, category, data, scheduled_at, status
+			FROM plans
 			WHERE subject_id = ?
-			  AND achieved_date >= ? AND achieved_date <= ?
-			ORDER BY achieved_date ASC, id ASC
+			  AND status = 'planned'
+			  AND scheduled_at <= ?
+			ORDER BY scheduled_at ASC, id ASC
 		`,
-		args: [subjectId, from, to],
+		args: [subjectId, to],
 	});
-	return (res.rows as any[]).map((r) => ({
-		id: Number(r.id),
-		title: String(r.title ?? ''),
-		date: String(r.achieved_date ?? ''),
-		kind: String(r.kind ?? ''),
-		category: r.category ?? null,
-		description: r.description ?? null,
-		memberId: null,
-		memberName: null,
-	}));
+	return (res.rows as any[]).map((r) => planToAppointment(r));
 }
 
 /**
- * What is booked across every trackable member of a family: any milestone-kind
- * row whose date is still ahead. The scheduler — which has a family id and no
- * session — calls this too, so the weekly email and the in-app list read the
- * same rows. The join mirrors resolveTrackableMember's write path: a record
- * lands on `COALESCE(legacy_subject_id, the member's aligned subject id)`.
+ * What is booked across every trackable member of a family: open plans. The
+ * scheduler — which has a family id and no session — calls this too, so the
+ * weekly email and the in-app list read the same rows. The join mirrors
+ * resolveTrackableMember's write path: a plan lands on
+ * `COALESCE(legacy_subject_id, the member's aligned subject id)`.
  */
 export async function upcomingAppointmentsForFamily(
 	db: any,
@@ -110,32 +104,46 @@ export async function upcomingAppointmentsForFamily(
 ): Promise<UpcomingAppointment[]> {
 	const nowMs = opts.nowMs ?? Date.now();
 	const days = opts.days ?? APPOINTMENT_LIST_LOOKAHEAD_DAYS;
-	const from = new Date(nowMs).toISOString();
 	const to = new Date(nowMs + days * 24 * 60 * 60 * 1000).toISOString();
 
 	const res = await db.execute({
 		sql: `
-			SELECT m.id, m.title, m.description, m.achieved_date, m.kind, m.category,
+			SELECT p.id, p.title, p.notes, p.category, p.data, p.scheduled_at, p.status,
 			       fm.id AS member_id, fm.name AS member_name
-			FROM milestones m
+			FROM plans p
 			JOIN family_members fm
-			  ON COALESCE(fm.legacy_subject_id, fm.id) = m.subject_id
+			  ON COALESCE(fm.legacy_subject_id, fm.id) = p.subject_id
 			WHERE COALESCE(fm.trackable, 1) = 1
-			  AND m.achieved_date >= ? AND m.achieved_date <= ?
-			ORDER BY m.achieved_date ASC, m.id ASC
+			  AND p.status = 'planned'
+			  AND p.scheduled_at <= ?
+			ORDER BY p.scheduled_at ASC, p.id ASC
 		`,
-		args: [from, to],
+		args: [to],
 	});
-	return (res.rows as any[]).map((r) => ({
+	return (res.rows as any[]).map((r) => planToAppointment(r));
+}
+
+/**
+ * A plan row in the appointments response shape, which the web and the email
+ * already speak: `kind` is the plan's category, `category` its option value
+ * (under the category's own data key), `date` the booked-for time. `overdue`
+ * is additive — the plan is the prompt once its time has passed — and callers
+ * that ignore it are unaffected.
+ */
+function planToAppointment(r: any): UpcomingAppointment & { overdue?: boolean } {
+	const data = typeof r.data === 'string' && r.data ? (JSON.parse(r.data) as Record<string, unknown>) : {};
+	const optionKey = (CATEGORY_OPTION_KEY as Record<string, string>)[r.category] ?? 'type';
+	return {
 		id: Number(r.id),
 		title: String(r.title ?? ''),
-		date: String(r.achieved_date ?? ''),
-		kind: String(r.kind ?? ''),
-		category: r.category ?? null,
-		description: r.description ?? null,
+		date: String(r.scheduled_at ?? ''),
+		kind: String(r.category ?? ''),
+		category: (data[optionKey] as string | undefined) ?? null,
+		description: r.notes ?? null,
 		memberId: r.member_id != null ? Number(r.member_id) : null,
 		memberName: r.member_name != null ? String(r.member_name) : null,
-	}));
+		overdue: r.status === 'planned' && new Date(String(r.scheduled_at)).getTime() <= Date.now(),
+	};
 }
 
 export interface AppointmentDigestOutcome {

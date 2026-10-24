@@ -135,7 +135,8 @@ vaccinationRoutes.post('/', zValidator('json', createVaccinationSchema), async (
     const vaccinationId = Number(result.lastInsertRowid);
     try {
       await emitActivity(db, {
-        source: 'vaccinations',
+        category: 'vaccines',
+        refTable: 'vaccinations',
         refId: vaccinationId,
         subjectId,
         attrs: {},

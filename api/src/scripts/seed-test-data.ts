@@ -160,14 +160,15 @@ async function seedTestData() {
       args: [subjectId, new Date(nowMs - 60 * day).toISOString().split('T')[0], 10.2, 22.8, 15.8, 'imperial'],
     });
     
-    // Milestones
+    // Milestones — events rows now, one per category, with the option value
+    // in the data document under the category's own key.
     await familyDb.execute({
-      sql: `INSERT INTO milestones (subject_id, title, description, achieved_date, category) VALUES (?, ?, ?, ?, ?)`,
-      args: [subjectId, 'First Smile', 'Smiled for the first time', new Date(nowMs - 45 * day).toISOString().split('T')[0], 'social'],
+      sql: `INSERT INTO events (subject_id, category, occurred_at, title, notes, data, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      args: [subjectId, 'milestones', new Date(nowMs - 45 * day).toISOString().split('T')[0], 'First Smile', 'Smiled for the first time', JSON.stringify({ category: 'social' }), new Date().toISOString()],
     });
     await familyDb.execute({
-      sql: `INSERT INTO milestones (subject_id, title, description, achieved_date, category) VALUES (?, ?, ?, ?, ?)`,
-      args: [subjectId, 'Rolling Over', 'Rolled from back to stomach', new Date(nowMs - 20 * day).toISOString().split('T')[0], 'motor'],
+      sql: `INSERT INTO events (subject_id, category, occurred_at, title, notes, data, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      args: [subjectId, 'vitamins', new Date(nowMs - 1 * day).toISOString(), 'Vitamin D', null, JSON.stringify({ type: 'dose' }), new Date().toISOString()],
     });
     
     // Moods
@@ -185,6 +186,13 @@ async function seedTestData() {
       args: [subjectId, 'Great day', 'Baby had a great day today, lots of smiles!', new Date(nowMs - 2 * day).toISOString().split('T')[0]],
     });
     
+    // A booked appointment, so the preview's upcoming list has something to
+    // show and the plan prompt is exercisable end to end.
+    await familyDb.execute({
+      sql: `INSERT INTO plans (subject_id, category, scheduled_at, title, data, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
+      args: [subjectId, 'appointments', new Date(nowMs + 7 * day).toISOString(), 'Six-month checkup', JSON.stringify({ type: 'checkup' }), new Date().toISOString()],
+    });
+
     // Reminders
     await familyDb.execute({
       sql: `INSERT INTO reminders (family_id, kind, label, interval_days, enabled) VALUES (?, ?, ?, ?, ?)`,
@@ -196,7 +204,7 @@ async function seedTestData() {
     console.log(`   User: ${email} / ${TEST_PASSWORD}`);
     console.log(`   Members: Baby Test (child), Test Parent (adult, adult categories)`);
     console.log(`   Subjects: Baby Test, Test Pet (pet categories)`);
-    console.log(`   Added: 10 feedings, 15 diapers, 7 sleep records, 2 growth records, 2 milestones, 5 moods, journal entry, reminder`);
+    console.log(`   Added: 10 feedings, 15 diapers, 7 sleep records, 2 growth records, a milestone + a vitamin event, 5 moods, journal entry, a booked checkup, reminder`);
     
     process.exit(0);
   } catch (error) {

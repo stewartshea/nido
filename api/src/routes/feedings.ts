@@ -187,7 +187,8 @@ feedingRoutes.post('/', zValidator('json', createFeedingSchema), async (c) => {
     const feedingId = Number(result.lastInsertRowid);
     try {
       await emitActivity(db, {
-        source: 'feedings',
+        category: 'feeds',
+        refTable: 'feedings',
         refId: feedingId,
         subjectId: scope.subjectId,
         attrs: { type },

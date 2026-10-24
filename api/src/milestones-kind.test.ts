@@ -45,7 +45,7 @@ describe('milestone kind', () => {
 			kind: 'routines',
 			category: 'bath',
 		});
-		expect(created.status).toBe(200);
+		expect(created.status).toBe(201);
 		expect(created.body.milestone.kind).toBe('routines');
 		expect(created.body.milestone.category).toBe('bath');
 	});

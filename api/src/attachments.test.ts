@@ -47,7 +47,7 @@ beforeAll(async () => {
 	const pet = await call('POST', token, '/api/v1/families/members', { type: 'pet', name: 'Rex' });
 	subjectId = pet.body.member.id;
 
-	// A vet visit: a milestone row with the appointments kind.
+	// A vet visit: an events row with the appointments category.
 	const appt = await call('POST', token, '/api/v1/milestones', {
 		memberId: subjectId, title: 'Annual check-up', achievedDate: '2026-04-01T00:00:00.000Z', kind: 'appointments',
 	});
@@ -56,19 +56,19 @@ beforeAll(async () => {
 
 describe('a file can be attached to a record', () => {
 	it('takes an upload against a vet appointment and lists it back', async () => {
-		const up = await upload(token, 'milestone', appointmentId, 'vaccination-report.pdf', 'REPORT-BYTES');
+		const up = await upload(token, 'event', appointmentId, 'vaccination-report.pdf', 'REPORT-BYTES');
 		expect(up.status).toBe(201);
 		expect(up.body.attachment.filename).toBe('vaccination-report.pdf');
 		expect(up.body.attachment.size).toBe('REPORT-BYTES'.length);
 
-		const list = await call('GET', token, `/api/v1/attachments?refType=milestone&refId=${appointmentId}`);
+		const list = await call('GET', token, `/api/v1/attachments?refType=event&refId=${appointmentId}`);
 		expect(list.status).toBe(200);
 		expect(list.body.attachments.length).toBe(1);
 		expect(list.body.attachments[0].filename).toBe('vaccination-report.pdf');
 	});
 
 	it('returns exactly the bytes that were uploaded', async () => {
-		const up = await upload(token, 'milestone', appointmentId, 'second.pdf', 'SECOND-FILE');
+		const up = await upload(token, 'event', appointmentId, 'second.pdf', 'SECOND-FILE');
 		const res = await app.fetch(
 			new Request(`http://localhost/api/v1/attachments/${up.body.attachment.id}/file`, {
 				headers: { Authorization: `Bearer ${token}` },
@@ -85,7 +85,7 @@ describe('a file can be attached to a record', () => {
 	});
 
 	it('removes the row and the bytes on delete', async () => {
-		const up = await upload(token, 'milestone', appointmentId, 'temp.pdf', 'TEMP');
+		const up = await upload(token, 'event', appointmentId, 'temp.pdf', 'TEMP');
 		const id = up.body.attachment.id;
 		const del = await call('DELETE', token, `/api/v1/attachments/${id}`);
 		expect(del.status).toBe(200);
@@ -127,12 +127,12 @@ describe('the boundary holds', () => {
 	});
 
 	it('refuses to attach to a record that does not exist', async () => {
-		const res = await upload(token, 'milestone', 999999, 'x.pdf', 'X');
+		const res = await upload(token, 'event', 999999, 'x.pdf', 'X');
 		expect(res.status).toBe(404);
 	});
 
 	it('will not let another family read the file', async () => {
-		const up = await upload(token, 'milestone', appointmentId, 'private.pdf', 'PRIVATE');
+		const up = await upload(token, 'event', appointmentId, 'private.pdf', 'PRIVATE');
 		const id = up.body.attachment.id;
 
 		const other = await call('POST', '', '/api/v1/auth/register', {

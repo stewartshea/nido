@@ -219,13 +219,19 @@ async function latestForCondition(
 		where += ' AND fm.id = ?';
 		params.push(targetId);
 	}
-	if (src.milestoneKind) {
-		where += ' AND x.kind = ?';
-		params.push(src.milestoneKind);
+	if (src.eventsCategory) {
+		// The kind the milestones table used to encode is the events
+		// category now — a plain equality, not a second dimension.
+		where += ' AND x.category = ?';
+		params.push(src.eventsCategory);
 	}
 	if (src.baseWhere) where += ` AND ${src.baseWhere}`;
-	if (src.optionColumn && condition.values?.length) {
-		where += ` AND x.${src.optionColumn} IN (${condition.values.map(() => '?').join(', ')})`;
+	// A plain column narrows as x.<column>; an events-backed option value is
+	// a whole expression (see the registry), used as-is. Either way the
+	// values are parameters — no input is ever interpolated.
+	const optionTarget = src.optionExpr ?? (src.optionColumn ? `x.${src.optionColumn}` : null);
+	if (optionTarget && condition.values?.length) {
+		where += ` AND ${optionTarget} IN (${condition.values.map(() => '?').join(', ')})`;
 		params.push(...condition.values);
 	}
 

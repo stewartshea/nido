@@ -293,21 +293,15 @@
 				unit,
 				packSize: packSize ? Number(packSize) : null,
 				leadDays: leadDays ? Number(leadDays) : null,
-				// The rule in its real shape: activity, conditions, ratio. Only
+				// The rule in its real shape: category, conditions, ratio. Only
 				// the attributes the form chose a value for become conditions.
 				consumptionRule: linkedToLogs && currentActivity
 					? {
-						sourceTable: currentActivity.table,
+						sourceCategory: currentActivity.id,
 						match: 'all',
-						// The activity's own conditions first — "vitamins" means
-						// milestones where kind is 'vitamins' — then whatever the
-						// form narrowed further.
-						conditions: [
-							...(currentActivity.presetConditions ?? []),
-							...currentActivity.attributes
-								.map((at) => ({ attr: at.key, values: [eventOptions[at.key] ?? ''] }))
-								.filter((cond) => cond.values[0] !== ''),
-						],
+						conditions: currentActivity.attributes
+							.map((at) => ({ attr: at.key, values: [eventOptions[at.key] ?? ''] }))
+							.filter((cond) => cond.values[0] !== ''),
 						unitsPerUse: Math.max(1, Number(eventEvery) || 1),
 						amountPerUse: Math.max(1, Number(eventQty) || 1),
 					}
@@ -424,27 +418,13 @@
 	}
 
 	/**
-	 * The picker entry an item's rule was written from.
-	 *
-	 * Several entries share the milestones table, so matching on the table alone
-	 * would read a vitamin rule back as "Milestone". The entry whose own preset
-	 * conditions the rule satisfies wins, and the most specific one of those.
+	 * The picker entry an item's rule was written from: the rule names the
+	 * category, so the match is a lookup — the preset-folding that made this
+	 * a search died with the milestones kind column.
 	 */
 	function activityFor(item: InventoryItem): ConsumableActivity | undefined {
-		const rule = item.consumptionRule;
-		const table = rule?.sourceTable ?? item.eventCategory ?? '';
-		const conds = rule?.conditions ?? [];
-		const candidates = activities.filter((a) => a.table === table);
-		let best: ConsumableActivity | undefined = candidates[0];
-		let bestPresets = -1;
-		for (const a of candidates) {
-			const preset = a.presetConditions ?? [];
-			const holds = preset.every((p) =>
-				conds.some((c) => c.attr === p.attr && p.values.every((v) => c.values.includes(v))),
-			);
-			if (holds && preset.length > bestPresets) { best = a; bestPresets = preset.length; }
-		}
-		return best;
+		const id = item.consumptionRule?.sourceCategory ?? item.eventCategory ?? '';
+		return activities.find((a) => a.id === id);
 	}
 
 	/** How an item's rule reads: "1 per 4 bottle feeds", "1 per vitamin". */
@@ -453,13 +433,10 @@
 		const act = activityFor(item);
 		const n = rule?.unitsPerUse ?? item.unitsPerDecrement ?? 1;
 		const per = rule?.amountPerUse ?? item.decrementPerEvent ?? 1;
-		// A preset attribute is the activity's own name ("kind is vitamins"), not
-		// a filter the family chose, so it does not belong in the words.
-		const presetAttrs = new Set((act?.presetConditions ?? []).map((p) => p.attr));
 		const filters = rule
-			? rule.conditions.filter((c) => !presetAttrs.has(c.attr)).flatMap((cond) => cond.values).join(' ')
+			? rule.conditions.flatMap((cond) => cond.values).join(' ')
 			: (item.eventOption ? `${item.eventOption} ` : '');
-		const noun = `${filters}${(act?.label ?? rule?.sourceTable ?? item.eventCategory ?? 'logged event').toLowerCase()}${n > 1 ? 's' : ''}`;
+		const noun = `${filters}${(act?.label ?? rule?.sourceCategory ?? item.eventCategory ?? 'logged event').toLowerCase()}${n > 1 ? 's' : ''}`;
 		return n > 1 ? `${per} per ${n} ${noun}` : `${per} per ${noun}`;
 	}
 

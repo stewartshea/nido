@@ -8,7 +8,7 @@ import { randomBytes } from 'node:crypto';
 import jwt from 'jsonwebtoken';
 import { type AuthEnv, jwtSecret } from '../auth';
 import { NAMESPACE_HOUSEHOLD_ID, DEFAULT_FEED_GROUPING_MINUTES } from '../db-core';
-import { CATEGORY_OPTIONS, DIGEST_FREQUENCIES, DEFAULT_CATEGORIES, STAGES, STAGE_CATEGORIES, defaultStage, categoryTemplate, isStage, type DigestFrequency } from '../registry';
+import { CATEGORY_OPTIONS, CATEGORY_OPTION_KEY, DIGEST_FREQUENCIES, DEFAULT_CATEGORIES, EVENT_KIND_CATEGORIES, STAGES, STAGE_CATEGORIES, defaultStage, categoryTemplate, isStage, type DigestFrequency } from '../registry';
 import { ensureRegistry, getFamilyClient, markFamilyAbandonedIfUnoccupied } from '../db-namespaces';
 import { isValidTimezone } from '../timezone';
 import { EncryptedBlobStore } from '../blob-store';
@@ -283,10 +283,10 @@ async function buildAnonymizedDailyPreview(db: ReturnType<typeof getFamilyClient
 				(SELECT COUNT(*) FROM growth WHERE created_at >= ?) AS growth,
 				(SELECT COUNT(*) FROM moods WHERE created_at >= ?) AS moods,
 				(SELECT COUNT(*) FROM journal_entries WHERE created_at >= ?) AS journal,
-				(SELECT COUNT(*) FROM milestones WHERE created_at >= ?) AS milestones,
+				(SELECT COUNT(*) FROM events WHERE created_at >= ? AND category IN (${EVENT_KIND_CATEGORIES.map(() => '?').join(', ')})) AS milestones,
 				(SELECT COUNT(*) FROM vaccinations WHERE created_at >= ?) AS vaccinations
 		`,
-		args: [NAMESPACE_HOUSEHOLD_ID, NAMESPACE_HOUSEHOLD_ID, since, since, since, since, since, since, since, since],
+		args: [NAMESPACE_HOUSEHOLD_ID, NAMESPACE_HOUSEHOLD_ID, since, since, since, since, since, since, since, since, ...Array(EVENT_KIND_CATEGORIES.length).fill(since)],
 	})).rows[0] as any;
 
 	const feedTypes = (await db.execute({
@@ -1364,7 +1364,11 @@ await db.execute({ sql: `INSERT INTO feedings (subject_id, start_time, end_time,
 				} else if (table === 'growth') {
 					await db.execute({ sql: `INSERT INTO growth (subject_id, measurement_date, weight, height, head_circumference, unit_system, notes, created_at, created_by) VALUES (?,?,?,?,?,?,?,?,?)`, args: [subjectId, rec.measurement_date, rec.weight, rec.height, rec.head_circumference, rec.unit_system, rec.notes, rec.created_at ?? isoNow(), rec.created_by ?? userId] });
 				} else if (table === 'milestones') {
-					await db.execute({ sql: `INSERT INTO milestones (subject_id, title, description, achieved_date, kind, category, created_at, created_by) VALUES (?,?,?,?,?,?,?,?)`, args: [subjectId, rec.title, rec.description, rec.achieved_date, rec.kind ?? 'milestones', rec.category, rec.created_at ?? isoNow(), rec.created_by ?? userId] });
+					// A restored milestone row lands on events: kind becomes the category,
+					// the option value moves into the data document under the kind's key.
+					const kind = String(rec.kind ?? 'milestones');
+					const dataKey = (CATEGORY_OPTION_KEY as Record<string, string>)[kind] ?? 'type';
+					await db.execute({ sql: `INSERT INTO events (subject_id, category, occurred_at, title, notes, data, created_at, created_by) VALUES (?,?,?,?,?,?,?,?)`, args: [subjectId, kind, rec.achieved_date, rec.title, rec.description, JSON.stringify(rec.category ? { [dataKey]: rec.category } : {}), rec.created_at ?? isoNow(), rec.created_by ?? userId] });
 				} else if (table === 'vaccinations') {
 					await db.execute({ sql: `INSERT INTO vaccinations (subject_id, name, date_given, next_due_date, administered_by, notes, created_at, created_by) VALUES (?,?,?,?,?,?,?,?)`, args: [subjectId, rec.name, rec.date_given, rec.next_due_date ?? rec.nextDueDate, rec.administered_by, rec.notes, rec.created_at ?? isoNow(), rec.created_by ?? userId] });
 				} else if (table === 'moods') {

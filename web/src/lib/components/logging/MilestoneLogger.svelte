@@ -58,24 +58,34 @@
 			dispatch('error', { message: `${copy.nameLabel} is required.` });
 			return;
 		}
+		// A record is a thing that happened (design §3.6): the future is a
+		// booking, not a future-dated record. The guard is minutes-tolerant on
+		// the client for the same reason the server's skew is — clock drift
+		// must not read as prophecy.
+		const whenIso = localInputToIso(when);
+		if (new Date(whenIso).getTime() - Date.now() > 5 * 60 * 1000) {
+			dispatch('error', { message: 'That time is still ahead — records are for things that happened. Book it from the Upcoming page instead.' });
+			return;
+		}
 		busy = true;
 		try {
 			const created = await milestoneAPI.create({
 				memberId,
 				title: name.trim(),
-				achievedDate: localInputToIso(when),
+				achievedDate: whenIso,
 				kind,
 				category: category || undefined,
 				description: notes || undefined,
 			});
 			// The record has to exist before a file can hang off it, so the upload
 			// follows the create. A failed upload must not lose the record, so it is
-			// reported but not thrown.
+			// reported but not thrown. Attachments name the events table now;
+			// the server still accepts the old word for one release.
 			let attachNote = '';
 			const id = created?.data?.milestone?.id;
 			if (file && id) {
 				try {
-					await attachmentsAPI.upload('milestone', id, file);
+					await attachmentsAPI.upload('event', id, file);
 				} catch {
 					attachNote = ' The record was saved, but the file did not upload.';
 				}

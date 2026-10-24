@@ -123,13 +123,28 @@ export interface CategoryEntry {
 	schema: z.ZodObject<z.ZodRawShape>;
 }
 
-/** Builds the data-document zod from the form fields, so shape cannot drift. */
+/**
+ * How far past "now" a record's timestamp may sit and still be a record —
+ * clock drift between devices must not turn into rejections (§3.6). A constant
+ * in the registry, deliberately not a setting: it exists to keep honest logs
+ * honest, not to be tuned.
+ */
+export const RECORD_SKEW_MS = 5 * 60 * 1000;
+
+/**
+ * Builds the data-document zod from the form fields, so shape cannot drift.
+ *
+ * It validates *shape*, not membership: an enum field's `options` are the
+ * built-in suggestions, and a family's own values merge in at the edges —
+ * the settings UI, the pickers, the rule validators — exactly as option
+ * lists have always worked. Closing the zod over the built-ins would reject
+ * a custom routine the household invented, which is the opposite of what
+ * the option merge exists for.
+ */
 function schemaOf(fields: FieldDescriptor[]): z.ZodObject<z.ZodRawShape> {
 	const shape: z.ZodRawShape = {};
 	for (const field of fields) {
 		if (field.kind === 'number') shape[field.key] = z.number().optional();
-		else if (field.kind === 'enum' && field.options?.length)
-			shape[field.key] = z.enum(field.options as [string, ...string[]]).optional();
 		else shape[field.key] = z.string().optional();
 	}
 	return z.object(shape);
@@ -233,8 +248,9 @@ export const CATEGORIES = {
 		[{ key: 'type', kind: 'enum', options: ['tummy time', 'bath', 'story time', 'walk', 'other'] }],
 		{
 			label: 'Routine',
-			storage: { table: 'milestones', time: 'achieved_date', kind: 'routines' },
+			storage: { table: 'events', time: 'occurred_at', kind: 'routines' },
 			filter: { column: 'category', key: 'type', values: ['tummy time', 'bath', 'story time', 'walk', 'other'], customKey: 'type' },
+			consumable: true,
 			options: { type: ['tummy time', 'bath', 'story time', 'walk', 'other'] },
 			optionKey: 'type',
 			tense: ['record'],
@@ -244,35 +260,24 @@ export const CATEGORIES = {
 		[{ key: 'type', kind: 'enum', options: ['smile', 'roll over', 'crawl', 'first step', 'tooth', 'other'] }],
 		{
 			label: 'First',
-			storage: { table: 'milestones', time: 'achieved_date', kind: 'firsts' },
+			storage: { table: 'events', time: 'occurred_at', kind: 'firsts' },
 			filter: { column: 'category', key: 'type', values: ['smile', 'roll over', 'crawl', 'first step', 'tooth', 'other'], customKey: 'type' },
+			consumable: true,
 			options: { type: ['smile', 'roll over', 'crawl', 'first step', 'tooth', 'other'] },
 			optionKey: 'type',
 			tense: ['record'],
 		},
 	),
-	// One table with two dimensions: a stock rule has to be able to say "a
-	// routine bath", not "any bath", so the generic milestones entry declares
-	// both columns instead of deriving the single one its per-kind views share.
+	// The generic milestone entry: any milestone at all, for rules that do not
+	// care which kind. The `kind` filter dimension it used to declare is gone —
+	// the kinds are categories of their own now, so a rule names 'vitamins'
+	// instead of "milestones where kind is vitamins".
 	milestones: category(
 		[{ key: 'category', kind: 'enum', options: ['physical', 'social', 'language', 'cognitive', 'other'] }],
 		{
 			label: 'Milestone',
-			storage: { table: 'milestones', time: 'achieved_date', kind: 'milestones' },
+			storage: { table: 'events', time: 'occurred_at', kind: 'milestones' },
 			filter: { column: 'category', key: 'category', values: ['physical', 'social', 'language', 'cognitive', 'other'], customKey: 'category' },
-			attributes: [
-				{ key: 'kind', column: 'kind', kind: 'enum', values: [] },
-				{
-					key: 'category',
-					column: 'category',
-					kind: 'enum',
-					// Filled in below, once MILESTONE_CATEGORY_IDS exists: every
-					// kind's own option list, and the (kind, optionKey) pairs whose
-					// family-custom values count.
-					values: [],
-					customKeys: [],
-				},
-			],
 			consumable: true,
 			options: { category: ['physical', 'social', 'language', 'cognitive', 'other'] },
 			optionKey: 'category',
@@ -283,8 +288,9 @@ export const CATEGORIES = {
 		[{ key: 'visitType', kind: 'enum', options: ['wellness', 'sick visit', 'follow-up', 'other'] }],
 		{
 			label: 'Medical entry',
-			storage: { table: 'milestones', time: 'achieved_date', kind: 'medical' },
+			storage: { table: 'events', time: 'occurred_at', kind: 'medical' },
 			filter: { column: 'category', key: 'visitType', values: ['wellness', 'sick visit', 'follow-up', 'other'], customKey: 'visitType' },
+			consumable: true,
 			options: { visitType: ['wellness', 'sick visit', 'follow-up', 'other'] },
 			optionKey: 'visitType',
 			tense: ['record', 'book'],
@@ -339,8 +345,9 @@ export const CATEGORIES = {
 		],
 		{
 			label: 'Medication',
-			storage: { table: 'milestones', time: 'achieved_date', kind: 'medication' },
+			storage: { table: 'events', time: 'occurred_at', kind: 'medication' },
 			filter: { column: 'category', key: 'type', values: ['dose', 'refill', 'missed', 'other'], customKey: 'type' },
+			consumable: true,
 			options: { type: ['dose', 'refill', 'missed', 'other'] },
 			optionKey: 'type',
 			tense: ['record'],
@@ -353,8 +360,9 @@ export const CATEGORIES = {
 		],
 		{
 			label: 'Vitamin',
-			storage: { table: 'milestones', time: 'achieved_date', kind: 'vitamins' },
+			storage: { table: 'events', time: 'occurred_at', kind: 'vitamins' },
 			filter: { column: 'category', key: 'type', values: ['dose', 'refill', 'missed', 'other'], customKey: 'type' },
+			consumable: true,
 			options: { type: ['dose', 'refill', 'missed', 'other'] },
 			optionKey: 'type',
 			tense: ['record'],
@@ -364,8 +372,9 @@ export const CATEGORIES = {
 		[{ key: 'type', kind: 'enum', options: ['checkup', 'vaccination', 'follow-up', 'emergency', 'other'] }],
 		{
 			label: 'Appointment',
-			storage: { table: 'milestones', time: 'achieved_date', kind: 'appointments' },
+			storage: { table: 'events', time: 'occurred_at', kind: 'appointments' },
 			filter: { column: 'category', key: 'type', values: ['checkup', 'vaccination', 'follow-up', 'emergency', 'other'], customKey: 'type' },
+			consumable: true,
 			options: { type: ['checkup', 'vaccination', 'follow-up', 'emergency', 'other'] },
 			optionKey: 'type',
 			tense: ['record', 'book'],
@@ -375,8 +384,9 @@ export const CATEGORIES = {
 		[{ key: 'type', kind: 'enum', options: ['bath', 'brush', 'nails', 'trim', 'other'] }],
 		{
 			label: 'Grooming',
-			storage: { table: 'milestones', time: 'achieved_date', kind: 'grooming' },
+			storage: { table: 'events', time: 'occurred_at', kind: 'grooming' },
 			filter: { column: 'category', key: 'type', values: ['bath', 'brush', 'nails', 'trim', 'other'], customKey: 'type' },
+			consumable: true,
 			options: { type: ['bath', 'brush', 'nails', 'trim', 'other'] },
 			optionKey: 'type',
 			tense: ['record'],
@@ -403,16 +413,13 @@ export const MILESTONE_CATEGORY_IDS = CATEGORY_IDS.filter(
 	(id) => CATEGORIES[id].storage.kind !== undefined,
 ) as unknown as readonly [CategoryId, ...CategoryId[]];
 
-// Fill in the generic milestones entry's cross-kind dimensions now that the
-// kinds are known: every kind's own option list, and the (kind, optionKey)
-// pairs whose family-custom values count.
-MILESTONE_CATEGORY_IDS.forEach((id, _i, all) => {
-	const kindAttr = CATEGORIES.milestones.attributes![0]!;
-	kindAttr.values = [...all];
-	const categoryAttr = CATEGORIES.milestones.attributes![1]!;
-	categoryAttr.values = all.flatMap((k) => [...(CATEGORIES[k].options[CATEGORIES[k].optionKey] ?? [])]);
-	categoryAttr.customKeys = all.map((k) => [k, CATEGORIES[k].optionKey] as [string, string]);
-});
+/**
+ * The categories stored on the events table — the kinds the catch-all used to
+ * hold. Derived from `storage.kind` while the alias route and the milestones
+ * table still exist; Phase 1c deletes both and this becomes every events
+ * category's plain storage fact.
+ */
+export const EVENT_KIND_CATEGORIES = MILESTONE_CATEGORY_IDS;
 
 const optionKeyRecord: Record<CategoryId, string> = {} as Record<CategoryId, string>;
 const optionsRecord: Record<CategoryId, Record<string, string[]>> = {} as Record<CategoryId, Record<string, string[]>>;
@@ -498,10 +505,21 @@ export interface Source {
 	baseWhere?: string;
 	/** Column a condition's values filter on. */
 	optionColumn?: string;
+	/**
+	 * A whole SQL expression for the same job, when the value is not a plain
+	 * column — the events table keeps option values in the data document:
+	 * json_extract(data, '$.type'). Used as-is in WHERE; still parameterised
+	 * for the values.
+	 */
+	optionExpr?: string;
 	/** Default values for that column, before a family customises them. */
 	options?: string[];
-	/** For milestone-backed categories, the `milestones.kind` value. */
-	milestoneKind?: string;
+	/**
+	 * The fixed category value an events-backed source narrows to — what the
+	 * milestones `kind` column used to encode, now a plain `category = ?`
+	 * predicate on the events table.
+	 */
+	eventsCategory?: string;
 	/** The family-settings option key, so a family's own values can be merged in. */
 	optionKey?: string;
 	/** Inventory consumption: events from this table can bill stock. */
@@ -511,14 +529,19 @@ export interface Source {
 }
 
 function sourceOf(id: string, entry: CategoryEntry): Source {
+	const events = entry.storage.table === 'events';
 	return {
 		label: entry.label,
 		table: entry.storage.table,
 		time: entry.storage.time,
 		baseWhere: entry.storage.where,
-		optionColumn: entry.filter?.column,
+		// On the events table the option value lives in the data document
+		// under the category's own key, so the filter is a whole expression
+		// rather than a bare column.
+		optionColumn: events ? undefined : entry.filter?.column,
+		optionExpr: events ? `json_extract(data, '$.${entry.optionKey}')` : undefined,
 		options: entry.filter?.values && [...entry.filter.values],
-		milestoneKind: entry.storage.kind,
+		eventsCategory: events ? id : undefined,
 		optionKey: entry.filter?.customKey,
 		consumable: entry.consumable,
 		attributes: entry.attributes,
@@ -565,118 +588,86 @@ export function reminderCatalog(
 
 // ── Inventory consumption projections ──────────────────────────────────
 
-/** A logged activity an inventory item can be consumed by, with the dimensions a rule can filter on. */
+/** A logged category an inventory item can be consumed by, with the dimensions a rule can filter on. */
 export interface ConsumableSource {
-	/** The catalog id of the view declaring it, e.g. 'feeds'. */
+	/** The category id, e.g. 'feeds' — what a rule's source_category stores. */
 	id: string;
-	/** The table events land in — what a rule's source_table stores. */
+	/** The table the category's records land in — what the gate's ref_table stores. */
 	table: string;
 	label: string;
 	attributes: ActivityAttribute[];
-	/**
-	 * Conditions every event of this activity already satisfies.
-	 *
-	 * A milestone-backed category is one table seen through a fixed `kind`
-	 * ("vitamins" is milestones where kind = 'vitamins'), so the picker entry
-	 * carries that `kind` and the form folds it into the saved rule. Absent on
-	 * the plain per-table activities, which match on nothing but the table.
-	 *
-	 * Phase 1c deletes this: when the kinds are categories of `events`, the
-	 * picker entry *is* the category and there is nothing to fold.
-	 */
-	presetConditions?: ConsumptionCondition[];
 }
 
 /**
- * The activities that bill stock, one entry per table.
+ * Every category that can bill stock, one entry per category.
  *
- * The honest list the inventory picker is built from: a table appears here
- * only when its entry declares `consumable`, and a conformance test posts a
- * record through each one's route to keep that declaration true. SOURCES may
- * hold several views of one table ('feeds', 'pumping' and 'breast_or_pump'
- * all read feedings); the first consumable view per table is the activity.
+ * The honest list the inventory picker and `emitActivity` are both built from:
+ * a category appears here only when its registry entry declares `consumable`,
+ * and a conformance test posts a record through each one's route to keep that
+ * declaration true. Phase 1b made this per-category — a rule stores the
+ * category id ('vitamins'), not the table plus a smuggled kind — which is what
+ * deleted the picker's `presetConditions` folding.
  */
-export function consumableSources(
-	custom: Record<string, Record<string, string[]>> = {},
-): ConsumableSource[] {
-	const seen = new Set<string>();
-	const out: ConsumableSource[] = [];
-	for (const [id, src] of Object.entries(SOURCES)) {
-		if (!src.consumable || seen.has(src.table)) continue;
-		seen.add(src.table);
-		const derived: ActivityAttribute[] = src.optionColumn
-			? [{
-				key: src.optionKey ?? src.optionColumn,
-				column: src.optionColumn,
-				kind: 'enum',
-				values: [...(src.options ?? [])],
-				customKeys: src.optionKey ? [[id, src.optionKey]] : [],
-			}]
-			: [];
-		const attributes = (src.attributes ?? derived).map((attr) => ({
-			...attr,
-			values: attr.values
-				? [...new Set([...attr.values, ...(attr.customKeys ?? []).flatMap(([cat, key]) => custom[cat]?.[key] ?? [])])]
-				: undefined,
-		}));
-		out.push({ id, table: src.table, label: src.label, attributes });
-	}
-	return out;
-}
-
-/**
- * Everything the inventory picker offers, which is every loggable thing that can
- * bill stock — not one row per table.
- *
- * `consumableSources` answers "which tables bill stock", which is what a rule
- * stores and what `emitActivity` looks up. The picker is asked a different
- * question — "what did this get used by" — and a family answers "vitamins", not
- * "milestones where kind is vitamins". So each milestone-backed category gets
- * its own entry carrying the `kind` it fixes, listed beside the generic
- * `milestones` entry for "any milestone at all".
- *
- * A kind that has no options of its own still appears: the list is about what
- * can be logged, and a vitamin with no subtypes is still a vitamin.
- */
-export function consumableActivities(
+export function consumableCategories(
 	custom: Record<string, Record<string, string[]>> = {},
 ): ConsumableSource[] {
 	const out: ConsumableSource[] = [];
-	for (const source of consumableSources(custom)) {
-		out.push(source);
-		if (source.table !== 'milestones') continue;
-		for (const id of MILESTONE_CATEGORY_IDS) {
-			// The generic `milestones` entry already is this kind, with both
-			// dimensions selectable; adding it again would duplicate the id.
-			if (id === 'milestones') continue;
-			const key = CATEGORIES[id].optionKey;
-			const values = [...new Set([...(CATEGORIES[id].options[key] ?? []), ...(custom[id]?.[key] ?? [])])];
-			out.push({
-				id,
-				table: 'milestones',
-				label: CATEGORIES[id].label,
-				presetConditions: [{ attr: 'kind', values: [id] }],
-				attributes: values.length
-					? [{ key: 'category', column: 'category', kind: 'enum', values }]
-					: [],
-			});
-		}
+	for (const id of CATEGORY_IDS) {
+		const entry = CATEGORIES[id];
+		if (!entry.consumable) continue;
+		// The dimension a rule may narrow by. Explicit attributes win (growth,
+		// vaccinations and journal declare none worth billing by); an
+		// events-backed category is narrowed by its data-document fields, whose
+		// column is a JSON path; a typed category by its filter column.
+		const attributes: ActivityAttribute[] =
+			entry.attributes !== undefined
+				? entry.attributes
+				: entry.storage.table === 'events'
+					? entry.fields
+						.filter((f) => f.kind === 'enum' && f.options?.length)
+						.map((f) => ({
+							key: f.key,
+							column: `$.${f.key}`,
+							kind: 'enum' as const,
+							values: [...(f.options ?? [])],
+							customKeys: [[id, entry.optionKey] as [string, string]],
+						}))
+					: entry.filter
+						? [{
+							key: entry.filter.key,
+							column: entry.filter.column,
+							kind: 'enum' as const,
+							values: [...entry.filter.values],
+							customKeys: entry.filter.customKey ? [[id, entry.filter.customKey] as [string, string]] : [],
+						}]
+						: [];
+		out.push({
+			id,
+			table: entry.storage.table,
+			label: entry.label,
+			attributes: attributes.map((attr) => ({
+				...attr,
+				values: attr.values
+					? [...new Set([...attr.values, ...(attr.customKeys ?? []).flatMap(([cat, key]) => custom[cat]?.[key] ?? [])])]
+					: undefined,
+			})),
+		});
 	}
 	return out;
 }
 
 /**
  * Check a rule's conditions against the registry, or return the reason it is
- * refused. An unknown table, an unknown attribute or a value outside the
+ * refused. An unknown category, an unknown attribute or a value outside the
  * vocabulary would silently never match, so all three are named at the edge.
  */
 export function validateConsumptionConditions(
-	sourceTable: string,
+	sourceCategory: string,
 	conditions: ConsumptionCondition[],
 	custom: Record<string, Record<string, string[]>> = {},
 ): string | null {
-	const activity = consumableSources(custom).find((a) => a.table === sourceTable);
-	if (!activity) return `"${sourceTable}" is not something Nido can bill stock from.`;
+	const activity = consumableCategories(custom).find((a) => a.id === sourceCategory);
+	if (!activity) return `"${sourceCategory}" is not something Nido can bill stock from.`;
 	for (const condition of conditions) {
 		const attr = activity.attributes.find((at) => at.key === condition.attr);
 		if (!attr) return `"${condition.attr}" is not something ${activity.label.toLowerCase()}s can be filtered by.`;
