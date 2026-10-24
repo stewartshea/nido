@@ -9,7 +9,7 @@ import { renderInventoryAlertsEmail } from '../mail-templates';
 import { consumptionRate, coverForecast, cadenceRate, dueCycles, nextConsumptionAt, MS_PER_DAY, type AdjustmentRow } from '../inventory';
 import { emitActivity, parseConsumptionConditions, parseRuleMatch } from '../inventory-consume';
 import {
-	consumableSources, consumableActivities,
+	consumableCategories,
 	validateConsumptionConditions, type ConsumptionCondition,
 } from '../registry';
 import { familyOptionValues } from '../reminder-conditions';
@@ -29,7 +29,7 @@ const inventoryRoutes = new Hono<AuthEnv>();
 // and the ratio X per N. The same document the reminder form builds for
 // conditions — attribute-level, validated against the activity registry.
 const consumptionRuleSchema = z.object({
-	sourceTable: z.string().min(1).max(40),
+	sourceCategory: z.string().min(1).max(40),
 	match: z.enum(['all', 'any']).nullish(),
 	conditions: z.array(z.object({
 		attr: z.string().min(1).max(40),
@@ -41,7 +41,7 @@ const consumptionRuleSchema = z.object({
 
 /** The normalized shape rules are stored and reasoned in. */
 interface RuleSpec {
-	sourceTable: string;
+	sourceCategory: string;
 	match: 'all' | 'any';
 	conditions: ConsumptionCondition[] | null;
 	unitsPerUse: number;
@@ -52,7 +52,7 @@ interface RuleSpec {
 function specOfRule(rule: any): RuleSpec {
 	const conditions = parseConsumptionConditions(rule.conditions);
 	return {
-		sourceTable: String(rule.source_table),
+		sourceCategory: String(rule.source_category),
 		match: parseRuleMatch(rule.match),
 		conditions: conditions.length ? conditions : null,
 		unitsPerUse: Number(rule.units_per_use ?? 1) || 1,
@@ -68,9 +68,20 @@ function singleOptionValue(conditions: ConsumptionCondition[] | null): string | 
 	return null;
 }
 
+/**
+ * A category from whatever an old caller or old row named: a category id
+ * passes through; a table name ('feedings', the Phase-1 shape) maps to the
+ * category that writes it.
+ */
+function categoryFromLegacy(name: string): string {
+	if (consumableCategories().some((a) => a.id === name)) return name;
+	const byTable = consumableCategories().find((a) => a.table === name);
+	return byTable?.id ?? name;
+}
+
 /** The attribute a legacy eventOption filters, e.g. a feed's type. */
-function legacyAttrFor(sourceTable: string): string | null {
-	return consumableSources().find((a) => a.table === sourceTable)?.attributes[0]?.key ?? null;
+function legacyAttrFor(category: string): string | null {
+	return consumableCategories().find((a) => a.id === category)?.attributes[0]?.key ?? null;
 }
 
 /**
@@ -79,12 +90,12 @@ function legacyAttrFor(sourceTable: string): string | null {
  * migration 35; the projection usually converts these into rule rows.
  */
 function legacySpecFromRow(row: any): RuleSpec {
-	const sourceTable = String(row.event_category);
+	const sourceCategory = categoryFromLegacy(String(row.event_category));
 	return {
-		sourceTable,
+		sourceCategory,
 		match: 'all',
 		conditions: row.event_option
-			? [{ attr: legacyAttrFor(sourceTable) ?? 'type', values: [String(row.event_option)] }]
+			? [{ attr: legacyAttrFor(sourceCategory) ?? 'type', values: [String(row.event_option)] }]
 			: null,
 		unitsPerUse: Number(row.units_per_decrement ?? 1) || 1,
 		amountPerUse: Number(row.decrement_per_event ?? 1) || 1,
@@ -110,7 +121,7 @@ function specFromBody(body: {
 			.filter((c) => c.attr)
 			.map((c) => ({ attr: c.attr, values: c.values?.length ? c.values : undefined }));
 		return {
-			sourceTable: r.sourceTable,
+			sourceCategory: r.sourceCategory,
 			match: parseRuleMatch(r.match),
 			conditions: conditions.length ? conditions : null,
 			unitsPerUse: r.unitsPerUse ?? 1,
@@ -118,11 +129,12 @@ function specFromBody(body: {
 		};
 	}
 	if (body.eventCategory) {
+		const category = categoryFromLegacy(body.eventCategory);
 		return {
-			sourceTable: body.eventCategory,
+			sourceCategory: category,
 			match: 'all',
 			conditions: body.eventOption
-				? [{ attr: legacyAttrFor(body.eventCategory) ?? 'type', values: [body.eventOption] }]
+				? [{ attr: legacyAttrFor(category) ?? 'type', values: [body.eventOption] }]
 				: null,
 			unitsPerUse: body.unitsPerDecrement ?? 1,
 			amountPerUse: body.decrementPerEvent ?? 1,
@@ -135,7 +147,10 @@ function specFromBody(body: {
 // coherent; they are no longer read back when a rule row exists.
 function legacyColumnsFromSpec(spec: RuleSpec) {
 	return {
-		event_category: spec.sourceTable,
+		// The mirrored columns hold the category now; an older reader that
+		// expected a table name reads a rule row instead, which is the shape
+		// it should have been reading anyway.
+		event_category: spec.sourceCategory,
 		event_option: singleOptionValue(spec.conditions),
 		units_per_decrement: spec.unitsPerUse > 1 ? spec.unitsPerUse : null,
 		decrement_per_event: spec.amountPerUse !== 1 ? spec.amountPerUse : null,
@@ -254,7 +269,7 @@ function shapeItem(row: any, forecast: ItemForecast, firing: boolean, rule: any 
 		unit: row.unit ?? 'count',
 		packSize: row.pack_size === null || row.pack_size === undefined ? null : Number(row.pack_size),
 		leadDays: row.lead_days === null || row.lead_days === undefined ? null : Number(row.lead_days),
-		eventCategory: spec ? spec.sourceTable : row.event_category ?? null,
+		eventCategory: spec ? spec.sourceCategory : row.event_category ?? null,
 		eventOption: spec ? singleOptionValue(spec.conditions) : row.event_option ?? null,
 		unitsPerDecrement: spec
 			? (spec.unitsPerUse > 1 ? spec.unitsPerUse : null)
@@ -267,7 +282,7 @@ function shapeItem(row: any, forecast: ItemForecast, firing: boolean, rule: any 
 			: row.decrement_per_event === null || row.decrement_per_event === undefined ? null : Number(row.decrement_per_event),
 		consumptionRule: spec
 			? {
-				sourceTable: spec.sourceTable,
+				sourceCategory: spec.sourceCategory,
 				match: spec.match,
 				conditions: spec.conditions ?? [],
 				unitsPerUse: spec.unitsPerUse,
@@ -402,21 +417,20 @@ inventoryRoutes.post('/notify', async (c) => {
 inventoryRoutes.get('/signals', (c) =>
 	c.json({ signals: SIGNALS.map(({ name, label, unit, describe }) => ({ name, label, unit, describe })) }));
 
-// GET /activities — the logged activities an item can be consumed by, with the
-// attributes a rule can filter on. One entry per table whose route actually
-// bills inventory, so the form's picker never offers an activity that would
-// silently do nothing; labels, attribute keys and option values come from the
-// same registry the reminders catalog uses, a family's own option values
-// merged in the same way. A conformance test posts a record through each
-// entry's route to keep the declaration true.
+// GET /activities — the logged categories an item can be consumed by, with the
+// attributes a rule can filter on. One entry per consumable category whose
+// route actually bills inventory, so the form's picker never offers an
+// activity that would silently do nothing; labels, attribute keys and option
+// values come from the same registry the reminders catalog uses, a family's
+// own option values merged in the same way. A conformance test posts a record
+// through each entry's route to keep the declaration true.
 inventoryRoutes.get('/activities', async (c) => {
 	const custom = await familyOptionValues(c.get('db'));
 	return c.json({
-		activities: consumableActivities(custom).map((a) => ({
+		activities: consumableCategories(custom).map((a) => ({
 			id: a.id,
 			table: a.table,
 			label: a.label,
-			presetConditions: a.presetConditions ?? [],
 			attributes: a.attributes.map((at) => ({
 				key: at.key,
 				kind: at.kind,
@@ -482,7 +496,7 @@ inventoryRoutes.post('/', zValidator('json', createItemSchema), async (c) => {
 	const spec = specFromBody(body);
 	if (spec) {
 		const custom = await familyOptionValues(db);
-		const invalid = validateConsumptionConditions(spec.sourceTable, spec.conditions ?? [], custom);
+		const invalid = validateConsumptionConditions(spec.sourceCategory, spec.conditions ?? [], custom);
 		if (invalid) return c.json({ error: invalid }, 400);
 	}
 	const mirror = spec ? legacyColumnsFromSpec(spec) : {
@@ -514,11 +528,14 @@ inventoryRoutes.post('/', zValidator('json', createItemSchema), async (c) => {
 
 	if (spec) {
 		await db.execute({
+			// source_table is the deprecated mirror of source_category, written
+			// for one release because the column is still NOT NULL; Phase 1c
+			// drops it with the milestones table.
 			sql: `INSERT INTO inventory_consumption_rules
-			      (item_id, source_table, subject_id, match, conditions, units_per_use, amount_per_use, created_at, updated_at)
-			      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			      (item_id, source_category, source_table, subject_id, match, conditions, units_per_use, amount_per_use, created_at, updated_at)
+			      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			args: [
-				itemId, spec.sourceTable, subjectId, spec.match,
+				itemId, spec.sourceCategory, spec.sourceCategory, subjectId, spec.match,
 				spec.conditions ? JSON.stringify(spec.conditions) : null,
 				spec.unitsPerUse, spec.amountPerUse, now, now,
 			],
@@ -555,7 +572,7 @@ inventoryRoutes.put('/:id{[0-9]+}', zValidator('json', updateItemSchema), async 
 
 	const currentRule = await ruleForItem(db, id);
 	const current = currentRule ? specOfRule(currentRule) : null;
-	const linkedTo = current?.sourceTable ?? row.event_category ?? null;
+	const linkedTo = current?.sourceCategory ?? row.event_category ?? null;
 
 	// An option filter or an every-N ratio stored against no activity would
 	// quietly do nothing, so it is refused rather than accepted on faith —
@@ -578,11 +595,12 @@ inventoryRoutes.put('/:id{[0-9]+}', zValidator('json', updateItemSchema), async 
 		} else if (body.eventCategory !== linkedTo) {
 			// Switching activities clears the parts the caller left out: a
 			// bottle filter means nothing against a diaper change.
+			const category = categoryFromLegacy(body.eventCategory);
 			next = {
-				sourceTable: body.eventCategory,
+				sourceCategory: category,
 				match: 'all',
 				conditions: body.eventOption
-					? [{ attr: legacyAttrFor(body.eventCategory) ?? 'type', values: [body.eventOption] }]
+					? [{ attr: legacyAttrFor(category) ?? 'type', values: [body.eventOption] }]
 					: null,
 				unitsPerUse: body.unitsPerDecrement ?? 1,
 				amountPerUse: body.decrementPerEvent ?? current?.amountPerUse ?? 1,
@@ -603,7 +621,7 @@ inventoryRoutes.put('/:id{[0-9]+}', zValidator('json', updateItemSchema), async 
 		next = {
 			...current,
 			conditions: body.eventOption !== undefined
-				? (body.eventOption ? [{ attr: legacyAttrFor(current.sourceTable) ?? 'type', values: [body.eventOption] }] : null)
+				? (body.eventOption ? [{ attr: legacyAttrFor(current.sourceCategory) ?? 'type', values: [body.eventOption] }] : null)
 				: current.conditions,
 			unitsPerUse: body.unitsPerDecrement ?? current.unitsPerUse,
 			amountPerUse: body.decrementPerEvent ?? current.amountPerUse,
@@ -611,7 +629,7 @@ inventoryRoutes.put('/:id{[0-9]+}', zValidator('json', updateItemSchema), async 
 	}
 	if (next) {
 		const custom = await familyOptionValues(db);
-		const invalid = validateConsumptionConditions(next.sourceTable, next.conditions ?? [], custom);
+		const invalid = validateConsumptionConditions(next.sourceCategory, next.conditions ?? [], custom);
 		if (invalid) return c.json({ error: invalid }, 400);
 	}
 
@@ -636,7 +654,7 @@ inventoryRoutes.put('/:id{[0-9]+}', zValidator('json', updateItemSchema), async 
 			}
 		} else {
 			const costChanged = !!current && (
-				current.sourceTable !== next.sourceTable
+				current.sourceCategory !== next.sourceCategory
 				|| JSON.stringify(current.conditions) !== JSON.stringify(next.conditions)
 				|| current.unitsPerUse !== next.unitsPerUse
 			);
@@ -644,18 +662,20 @@ inventoryRoutes.put('/:id{[0-9]+}', zValidator('json', updateItemSchema), async 
 			mirrorCarry = carry;
 			if (currentRule) {
 				await db.execute({
+					// source_table mirrors source_category for one release (the
+					// column is still NOT NULL); Phase 1c drops it.
 					sql: `UPDATE inventory_consumption_rules
-					      SET source_table = ?, match = ?, conditions = ?, units_per_use = ?, amount_per_use = ?, consume_carry = ?, updated_at = ?
+					      SET source_category = ?, source_table = ?, match = ?, conditions = ?, units_per_use = ?, amount_per_use = ?, consume_carry = ?, updated_at = ?
 					      WHERE id = ?`,
-					args: [next.sourceTable, next.match, next.conditions ? JSON.stringify(next.conditions) : null,
+					args: [next.sourceCategory, next.sourceCategory, next.match, next.conditions ? JSON.stringify(next.conditions) : null,
 						next.unitsPerUse, next.amountPerUse, carry, nowRule, currentRule.id],
 				});
 			} else {
 				await db.execute({
 					sql: `INSERT INTO inventory_consumption_rules
-					      (item_id, source_table, subject_id, match, conditions, units_per_use, amount_per_use, consume_carry, created_at, updated_at)
-					      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-					args: [id, next.sourceTable, row.subject_id ?? null, next.match,
+					      (item_id, source_category, source_table, subject_id, match, conditions, units_per_use, amount_per_use, consume_carry, created_at, updated_at)
+					      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+					args: [id, next.sourceCategory, next.sourceCategory, row.subject_id ?? null, next.match,
 						next.conditions ? JSON.stringify(next.conditions) : null,
 						next.unitsPerUse, next.amountPerUse, 0, nowRule, nowRule],
 				});
@@ -1144,11 +1164,13 @@ inventoryRoutes.post('/consume', zValidator('json', z.object({
 	const scope = await resolveTrackableMember(db, c.get('userId'), body.memberId);
 	if (!scope) return c.json({ error: 'Member not found or access denied' }, 404);
 
-	const activity = consumableSources().find((a) => a.table === body.refTable);
+	const category = categoryFromLegacy(body.refTable);
+	const activity = consumableCategories().find((a) => a.id === category);
 	const firstAttr = activity?.attributes[0];
 	const attrs = body.option && firstAttr ? { [firstAttr.key]: body.option } : {};
 	const applied = await emitActivity(db, {
-		source: body.refTable,
+		category,
+		refTable: activity?.table ?? 'events',
 		refId: body.refId,
 		subjectId: scope.subjectId,
 		attrs,

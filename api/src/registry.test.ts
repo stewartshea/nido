@@ -89,13 +89,13 @@ describe('the Phase 1b declarations cannot drift', () => {
 			for (const field of entry.fields) {
 				expect(shape[field.key], `${id}'s schema is missing form field "${field.key}"`).toBeTruthy();
 				if (field.kind === 'enum' && field.options) {
-					const allowed = new Set(field.options);
 					// Every enum option the form offers must satisfy the schema.
 					for (const value of field.options) {
 						expect(entry.schema.parse({ [field.key]: value }), `${id}: "${value}" rejected`).toBeTruthy();
 					}
-					// And nothing outside the list should be.
-					expect(entry.schema.safeParse({ [field.key]: '__not_an_option__' }).success, `${id}: a bogus ${field.key} parsed`).toBe(false);
+					// And so must a value the family invented: the options are
+					// suggestions, and the schema validates shape, not membership.
+					expect(entry.schema.parse({ [field.key]: 'our own thing' }), `${id}: a custom ${field.key} was rejected`).toBeTruthy();
 				}
 				if (field.kind === 'number') {
 					expect(entry.schema.parse({ [field.key]: 1 }), `${id}: a numeric ${field.key} was rejected`).toBeTruthy();

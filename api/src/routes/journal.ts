@@ -77,7 +77,8 @@ journalRoutes.post('/', zValidator('json', createJournalSchema), async (c) => {
   // matches. Already stored; a consumption failure warns instead of failing.
   try {
     await emitActivity(db, {
-      source: 'journal_entries',
+      category: 'journal',
+        refTable: 'journal_entries',
       refId: Number(ins.lastInsertRowid),
       subjectId,
       attrs: {},

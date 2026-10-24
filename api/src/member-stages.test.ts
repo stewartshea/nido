@@ -116,7 +116,7 @@ describe('a pet is loggable, which it could not be before', () => {
 			achievedDate: '2026-04-02T00:00:00.000Z',
 			kind: 'medication',
 		});
-		expect(med.status).toBe(200);
+		expect(med.status).toBe(201);
 		expect(med.body.milestone.kind).toBe('medication');
 
 		const groom = await call('POST', token, '/api/v1/milestones', {
@@ -125,7 +125,7 @@ describe('a pet is loggable, which it could not be before', () => {
 			achievedDate: '2026-04-03T00:00:00.000Z',
 			kind: 'grooming',
 		});
-		expect(groom.status).toBe(200);
+		expect(groom.status).toBe(201);
 		expect(groom.body.milestone.kind).toBe('grooming');
 	});
 
@@ -257,7 +257,7 @@ describe('quick links belong to the person, not the account', () => {
 			achievedDate: '2026-04-05T00:00:00.000Z',
 			kind: 'vitamins',
 		});
-		expect(res.status).toBe(200);
+		expect(res.status).toBe(201);
 		expect(res.body.milestone.kind).toBe('vitamins');
 	});
 });

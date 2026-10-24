@@ -165,7 +165,8 @@ sleepRoutes.post('/', zValidator('json', createSleepSchema), async (c) => {
     const sleepId = Number(result.lastInsertRowid);
     try {
       await emitActivity(db, {
-        source: 'sleep',
+        category: 'sleep',
+        refTable: 'sleep',
         refId: sleepId,
         subjectId,
         attrs: { location: location || null },

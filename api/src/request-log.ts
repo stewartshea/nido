@@ -128,8 +128,7 @@ export function onError(error: Error, c: Context<AuthEnv>): Response {
     return (error as HTTPException).getResponse();
   }
 
-  if (status >= 500) {
-    reqLog.error('unhandled request error', {
+  if (status >= 500) {    reqLog.error('unhandled request error', {
       event: 'http_error',
       method: c.req.method,
       path: c.req.path,

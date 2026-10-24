@@ -182,9 +182,12 @@ const now = isoNow();
 	}
 	for (const m of milestones) {
 		await insert(
-			`INSERT INTO milestones (subject_id, title, description, achieved_date, category, created_at, created_by)
-			 VALUES (?, ?, ?, ?, ?, ?, ?)`,
-			[subjectId, m.title, null, m.achievedDate, m.category, now, userId],
+			`INSERT INTO events (subject_id, category, occurred_at, title, notes, data, created_at, created_by)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+			// The importer never knew kinds; its milestones are plain
+			// 'milestones' events, with the imported option value under the
+			// category's own data key.
+			[subjectId, 'milestones', m.achievedDate, m.title, null, JSON.stringify(m.category ? { category: m.category } : {}), now, userId],
 			'milestones', m.activityKey,
 		);
 	}

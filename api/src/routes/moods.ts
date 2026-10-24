@@ -77,7 +77,8 @@ moodRoutes.post('/', zValidator('json', createMoodSchema), async (c) => {
   // already stored; a consumption failure warns instead of failing.
   try {
     await emitActivity(db, {
-      source: 'moods',
+      category: 'moods',
+        refTable: 'moods',
       refId: Number(ins.lastInsertRowid),
       subjectId,
       attrs: { mood },

@@ -106,11 +106,13 @@ describe('the dashboard panel is customizable per member', () => {
 describe('the summary reports what is still ahead', () => {
 	it('lists future-dated entries soonest-first, any kind, past omitted', async () => {
 		const id = await newPet('Booked');
-		await call('POST', token, '/api/v1/milestones', {
-			memberId: id, title: 'Vet check', achievedDate: inDays(10), kind: 'appointments', category: 'checkup',
+		// The future things are booked (§3.6), not future-dated records; the
+		// past one is an ordinary event.
+		await call('POST', token, '/api/v1/plans', {
+			memberId: id, title: 'Vet check', scheduledAt: inDays(10), category: 'appointments', data: { type: 'checkup' },
 		});
-		await call('POST', token, '/api/v1/milestones', {
-			memberId: id, title: 'Ear check', achievedDate: inDays(3), kind: 'medical', category: 'follow-up',
+		await call('POST', token, '/api/v1/plans', {
+			memberId: id, title: 'Ear check', scheduledAt: inDays(3), category: 'medical', data: { visitType: 'follow-up' },
 		});
 		await call('POST', token, '/api/v1/milestones', {
 			memberId: id, title: 'Already happened', achievedDate: hoursAgo(5), kind: 'appointments',
@@ -119,8 +121,9 @@ describe('the summary reports what is still ahead', () => {
 		const res = await call('GET', token, `/api/v1/health/summary/${id}`);
 		expect(res.status).toBe(200);
 
-		// Soonest first, past excluded, and a future medical entry counts: the
-		// tile promises the *next* thing, whatever it was logged as.
+		// Soonest first, past records excluded, and a booked medical entry
+		// counts: the tile promises the *next* thing, whatever it was booked
+		// as.
 		const upcoming = res.body.summary.upcomingAppointments as any[];
 		expect(upcoming.map((a) => a.title)).toEqual(['Ear check', 'Vet check']);
 		expect(upcoming[0].kind).toBe('medical');

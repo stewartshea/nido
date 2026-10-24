@@ -603,20 +603,14 @@ export interface ActivityAttribute {
 	values: string[];
 }
 
-/** A logged activity an inventory item can be consumed by (GET /inventory/activities). */
+/** A logged category an inventory item can be consumed by (GET /inventory/activities). */
 export interface ConsumableActivity {
-	/** Unique per pickable entry — several share a table ('vitamins' is a milestone). */
+	/** The category — what a rule's sourceCategory stores ('vitamins', 'feeds'). */
 	id: string;
-	/** What the rule's source_table stores — the table the activity's route bills from. */
+	/** The table the category's records land in ('events', 'feedings'). */
 	table: string;
 	label: string;
-	/**
-	 * Conditions every event of this entry already satisfies, folded into the
-	 * saved rule. A milestone-backed category fixes its `kind` here, so choosing
-	 * "vitamins" writes kind = 'vitamins' without asking.
-	 */
-	presetConditions: ConsumptionCondition[];
-	/** Dimensions a rule may narrow to; empty for an activity with no options (growth, journal). */
+	/** Dimensions a rule may narrow to; empty for a category with no options (growth, journal). */
 	attributes: ActivityAttribute[];
 }
 
@@ -626,9 +620,9 @@ export interface ConsumptionCondition {
 	values: string[];
 }
 
-/** The rule stored beside an item: subtract X for every N units of logged activity Y. */
+/** The rule stored beside an item: subtract X for every N units of logged category Y. */
 export interface ConsumptionRule {
-	sourceTable: string;
+	sourceCategory: string;
 	/** 'all' conditions must hold; 'any' at least one. Empty conditions match every event. */
 	match: 'all' | 'any';
 	conditions: ConsumptionCondition[];
@@ -759,4 +753,39 @@ export const remindersAPI = {
     api.put(`/reminders/${id}`, data),
   done: (id: number) => api.post(`/reminders/${id}/done`),
   remove: (id: number) => api.delete(`/reminders/${id}`),
+};
+
+// Plan API functions — a booking and its answers (design §3.6).
+// "done" writes the ordinary event through the shared path and links it;
+// reschedule/missed/cancel close the question without one.
+export interface Plan {
+  id: number;
+  subject_id: number;
+  category: string;
+  scheduled_at: string;
+  title: string | null;
+  notes: string | null;
+  data: Record<string, unknown>;
+  status: 'planned' | 'fulfilled' | 'missed' | 'cancelled';
+  fulfilled_by: number | null;
+  overdue: boolean;
+  created_at: string;
+}
+
+export const planAPI = {
+  list: (opts?: { memberId?: number; status?: string }) => {
+    const qs = new URLSearchParams();
+    if (opts?.status) qs.set('status', opts.status);
+    if (opts?.memberId) qs.set('memberId', String(opts.memberId));
+    const q = qs.toString();
+    return api.get<{ plans: Plan[]; total: number }>(`/plans${q ? `?${q}` : ''}`);
+  },
+  book: (plan: { memberId: number; category: string; scheduledAt: string; title?: string; notes?: string; data?: Record<string, unknown> }) =>
+    api.post<{ plan: Plan }>('/plans', plan),
+  fulfil: (id: number, answer?: { occurredAt?: string; title?: string; notes?: string; data?: Record<string, unknown> }) =>
+    api.post<{ plan: Plan; event: unknown }>(`/plans/${id}/fulfil`, answer ?? {}),
+  reschedule: (id: number, scheduledAt: string) =>
+    api.post<{ plan: Plan }>(`/plans/${id}/reschedule`, { scheduledAt }),
+  missed: (id: number) => api.post<{ plan: Plan }>(`/plans/${id}/missed`, {}),
+  cancel: (id: number) => api.post<{ plan: Plan }>(`/plans/${id}/cancel`, {}),
 };

@@ -215,7 +215,7 @@ describe('milestone categories and trends', () => {
 			category: 'vitamin',
 			tags: ['health', 'daily'],
 		});
-		expect(status).toBe(200);
+		expect(status).toBe(201);
 	});
 
 	it('lists milestones with custom categories', async () => {
@@ -244,7 +244,7 @@ describe('milestone categories and trends', () => {
 				achievedDate: now,
 				category: cat,
 			});
-			expect(status).toBe(200);
+			expect(status).toBe(201);
 		}
 	});
 

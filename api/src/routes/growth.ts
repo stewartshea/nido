@@ -355,7 +355,8 @@ growthRoutes.post('/', zValidator('json', createGrowthSchema), async (c) => {
     const growthId = Number(result.lastInsertRowid);
     try {
       await emitActivity(db, {
-        source: 'growth',
+        category: 'growth',
+        refTable: 'growth',
         refId: growthId,
         subjectId,
         attrs: {},
