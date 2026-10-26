@@ -4,7 +4,7 @@
 	import { Pause, Play, ArrowLeft, ArrowRight } from 'lucide-svelte';
 	import {
 		emptyBreastTimer, toggleSide, timerHasTime, timerIsRunning, sideTotals,
-		loadBreastTimer, saveBreastTimer, clearBreastTimer, type BreastTimerState, type Side,
+		loadBreastTimer, saveBreastTimer, clearBreastTimer, notifyTimersChanged, type BreastTimerState, type Side,
 	} from '$lib/logging/timers';
 	import { buildTimerFeed, type TimerFeedPayload } from '$lib/breast';
 	import { formatElapsed } from '$lib/logging/format';
@@ -59,6 +59,7 @@
 		now = Date.now();
 		state = toggleSide(state, side, now);
 		saveBreastTimer(localStorage, storageKey, state);
+		notifyTimersChanged();
 	}
 
 	function save() {
@@ -70,6 +71,7 @@
 	export function reset() {
 		state = emptyBreastTimer();
 		clearBreastTimer(localStorage, storageKey);
+		notifyTimersChanged();
 	}
 
 	export function discard() {

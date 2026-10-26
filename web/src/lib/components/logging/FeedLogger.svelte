@@ -1,9 +1,10 @@
 <script lang="ts">
 	import { createEventDispatcher, onMount } from 'svelte';
+	import { browser } from '$app/environment';
 	import { Heart, Baby, Infinity as InfinityIcon, PenLine, Timer, RotateCcw, ChevronLeft } from 'lucide-svelte';
 	import { feedingAPI } from '$lib/api';
 	import { enqueueRecord } from '$lib/logging/outbox';
-	import { feedTimerKey } from '$lib/logging/timers';
+	import { feedTimerKey, loadBreastTimer, timerHasTime } from '$lib/logging/timers';
 	import { formatMinutes, localInputToIso, toLocalInput } from '$lib/logging/format';
 	import { loadRecentFeedings, apiError } from '$lib/logging/recent';
 	import { lastSide, sideTotalMs, buildManualBreastFeed, type TimerFeedPayload } from '$lib/breast';
@@ -65,6 +66,24 @@
 		mode = next === 'bottle' ? 'log' : 'timer';
 		startValue = toLocalInput();
 		if (next !== 'bottle') suggestSide();
+	}
+
+	/**
+	 * A feed timer keeps running in localStorage while the sheet is closed.
+	 * Open straight on it instead of the kind chooser: otherwise parking the
+	 * sheet to record a nappy looks like the timer was thrown away. Pump and
+	 * sleep already behave this way; feeds was the one that hid it.
+	 */
+	function resumeStoredTimer() {
+		if (!browser) return;
+		const stored = loadBreastTimer(localStorage, feedTimerKey(memberId), Date.now());
+		if (stored.discarded) {
+			dispatch('notice', { message: 'An unsaved feed timer from earlier was discarded.' });
+		}
+		if (!timerHasTime(stored.state)) return;
+		kind = 'breast';
+		mode = 'timer';
+		suggestSide();
 	}
 
 	function back() {
@@ -185,7 +204,10 @@
 		}
 	}
 
-	onMount(() => { startValue = toLocalInput(); });
+	onMount(() => {
+		startValue = toLocalInput();
+		resumeStoredTimer();
+	});
 </script>
 
 <div class="flex items-center justify-between mb-4">

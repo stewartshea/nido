@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import {
 	emptyBreastTimer, toggleSide, timerHasTime, sideTotals, isStaleTimer,
-	loadBreastTimer, saveBreastTimer, clearBreastTimer, BREAST_TIMER_STALE_MS, type KeyValueStore,
+	loadBreastTimer, saveBreastTimer, clearBreastTimer, BREAST_TIMER_STALE_MS,
+	storedTimers, feedTimerKey, pumpTimerKey, sleepTimerKey, type KeyValueStore,
 } from './timers';
 
 function memoryStore(): KeyValueStore & { data: Record<string, string> } {
@@ -108,5 +109,45 @@ describe('persistence', () => {
 		expect(loadBreastTimer(store, 'k', T0)).toEqual({ state: emptyBreastTimer(), discarded: false });
 		clearBreastTimer(store, 'k');
 		expect(store.getItem('k')).toBeNull();
+	});
+});
+
+describe('storedTimers', () => {
+	it('lists a running feed, a paused pump, and a sleep session', () => {
+		const store = memoryStore();
+		saveBreastTimer(store, feedTimerKey(7), toggleSide(emptyBreastTimer(), 'left', T0));
+		saveBreastTimer(store, pumpTimerKey(7), toggleSide(toggleSide(emptyBreastTimer(), 'right', T0), 'right', T0 + 2 * MIN));
+		store.setItem(sleepTimerKey(7), JSON.stringify({ startedAt: T0 + 5 * MIN }));
+
+		expect(storedTimers(store, 7, T0 + 10 * MIN)).toEqual([
+			{ kind: 'feeds', elapsedMs: 10 * MIN, running: true },
+			{ kind: 'pumping', elapsedMs: 2 * MIN, running: false },
+			{ kind: 'sleep', elapsedMs: 5 * MIN, running: true },
+		]);
+	});
+
+	it('does not mix in another member or an empty timer', () => {
+		const store = memoryStore();
+		saveBreastTimer(store, feedTimerKey(7), toggleSide(emptyBreastTimer(), 'left', T0));
+		saveBreastTimer(store, feedTimerKey(8), toggleSide(emptyBreastTimer(), 'right', T0));
+
+		expect(storedTimers(store, 7, T0 + MIN).map((t) => t.kind)).toEqual(['feeds']);
+		expect(storedTimers(store, 99, T0 + MIN)).toEqual([]);
+	});
+
+	it('drops a stale feed timer instead of showing it as parked', () => {
+		const store = memoryStore();
+		let s = toggleSide(emptyBreastTimer(), 'left', T0);
+		s = toggleSide(s, 'left', T0 + MIN);
+		saveBreastTimer(store, feedTimerKey(7), s);
+
+		expect(storedTimers(store, 7, T0 + MIN + BREAST_TIMER_STALE_MS + 1)).toEqual([]);
+		expect(store.getItem(feedTimerKey(7))).toBeNull();
+	});
+
+	it('ignores a malformed sleep timer', () => {
+		const store = memoryStore();
+		store.setItem(sleepTimerKey(7), '{"startedAt":"nope"}');
+		expect(storedTimers(store, 7, T0)).toEqual([]);
 	});
 });

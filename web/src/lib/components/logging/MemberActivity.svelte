@@ -2,6 +2,7 @@
 	import { createEventDispatcher } from 'svelte';
 	import ActivityHistory from '$lib/components/ActivityHistory.svelte';
 	import QuickActions from './QuickActions.svelte';
+	import RunningTimers from './RunningTimers.svelte';
 	import TodaySummary from './TodaySummary.svelte';
 
 	/**
@@ -43,6 +44,8 @@
 		on:pin={(e) => dispatch('pin', e.detail)}
 		on:unpin={(e) => dispatch('unpin', e.detail)}
 	/>
+
+<RunningTimers {memberId} on:log={(e) => dispatch('log', e.detail)} />
 
 <TodaySummary {summary} name={memberName} categories={activeCategories} {stage} tiles={dashboardTiles} on:log={(e) => dispatch('log', e.detail)} on:saveTiles={(e) => dispatch('saveTiles', e.detail)} />
 
