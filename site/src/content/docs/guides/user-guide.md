@@ -44,7 +44,9 @@ date and time defaulting to now, and optional notes.
 Pick **breast**, **bottle**, or **formula**.
 
 - A **breast** session has a timer. Start it, do the other thing, come back
-  and stop it. Side is tracked per breast.
+  and stop it. Side is tracked per breast. While a timer is still running, an
+  **In progress** strip on the page keeps the elapsed time and takes you
+  straight back to it.
 - A **bottle** or **formula** takes an amount and unit.
 
 A feed logged while you are offline is held on the device and sent when the

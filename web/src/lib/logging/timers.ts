@@ -142,3 +142,66 @@ export function pumpTimerKey(memberId: number | null): string {
 export function sleepTimerKey(memberId: number | null): string {
 	return `nido.timer.sleep.${memberId ?? 0}`;
 }
+
+/** Fired on `window` whenever a stored timer starts, stops, or is cleared. */
+export const TIMERS_CHANGED_EVENT = 'nido:timers-changed';
+
+export function notifyTimersChanged(): void {
+	if (typeof window === 'undefined') return;
+	window.dispatchEvent(new Event(TIMERS_CHANGED_EVENT));
+}
+
+export type TimerKind = 'feeds' | 'pumping' | 'sleep';
+
+export interface StoredTimer {
+	kind: TimerKind;
+	elapsedMs: number;
+	/** A paused timer still holds banked time and can be resumed. */
+	running: boolean;
+}
+
+/**
+ * The timers still on the device for one member, in the order a caregiver is
+ * likely to look for them.
+ *
+ * Timers live in localStorage precisely so they survive the sheet being
+ * closed. Reading them back here gives the page something to show while the
+ * sheet is away — without it a parked feed timer is invisible until you open
+ * Feeds and happen to pick the right kind.
+ *
+ * Stale breast/pump timers are discarded by `loadBreastTimer`, the same rule
+ * the loggers apply, so an abandoned timer does not reappear as a running one.
+ */
+export function storedTimers(store: KeyValueStore, memberId: number | null, now: number): StoredTimer[] {
+	const timers: StoredTimer[] = [];
+
+	const feed = loadBreastTimer(store, feedTimerKey(memberId), now);
+	if (timerHasTime(feed.state)) {
+		timers.push({
+			kind: 'feeds',
+			elapsedMs: sideTotals(feed.state, now).totalMs,
+			running: timerIsRunning(feed.state),
+		});
+	}
+
+	const pump = loadBreastTimer(store, pumpTimerKey(memberId), now);
+	if (timerHasTime(pump.state)) {
+		timers.push({
+			kind: 'pumping',
+			elapsedMs: sideTotals(pump.state, now).totalMs,
+			running: timerIsRunning(pump.state),
+		});
+	}
+
+	let sleepStartedAt: number | null = null;
+	try {
+		const raw = store.getItem(sleepTimerKey(memberId));
+		const startedAt = raw ? Number(JSON.parse(raw).startedAt) : NaN;
+		if (isFiniteNumber(startedAt) && startedAt > 0) sleepStartedAt = startedAt;
+	} catch { /* corrupt or unavailable */ }
+	if (sleepStartedAt !== null) {
+		timers.push({ kind: 'sleep', elapsedMs: Math.max(0, now - sleepStartedAt), running: true });
+	}
+
+	return timers;
+}

@@ -3,7 +3,7 @@
 	import { PenLine, Timer, Moon } from 'lucide-svelte';
 	import { sleepAPI } from '$lib/api';
 	import { enqueueRecord } from '$lib/logging/outbox';
-	import { sleepTimerKey } from '$lib/logging/timers';
+	import { sleepTimerKey, notifyTimersChanged } from '$lib/logging/timers';
 	import { formatElapsed, formatTime, localInputToIso, toLocalInput } from '$lib/logging/format';
 	import { apiError } from '$lib/logging/recent';
 
@@ -47,12 +47,14 @@
 		startedAt = Date.now();
 		now = startedAt;
 		localStorage.setItem(sleepTimerKey(memberId), JSON.stringify({ startedAt }));
+		notifyTimersChanged();
 		startTick();
 	}
 
 	function cancel() {
 		startedAt = null;
 		localStorage.removeItem(sleepTimerKey(memberId));
+		notifyTimersChanged();
 		stopTick();
 	}
 
