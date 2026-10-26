@@ -238,7 +238,14 @@ jobs:
           repository: stewartshea/ovh-flux
           ref: main
           path: ovh-flux
-          deploy_key: ${{ secrets.OVH_FLUX_DEPLOY_KEY }}
+          # The input is `ssh-key`: checkout wires the deploy key's private
+          # half into ssh for this repository, and `persist-credentials`
+          # (default) keeps it configured for the push later in this job.
+          # The first cut of this step called it `deploy_key` — a name
+          # actions/checkout has never accepted, which warned and then failed
+          # the checkout anonymously. The secret's name is unchanged: the
+          # credential IS a deploy key; the input is where an ssh key goes.
+          ssh-key: ${{ secrets.OVH_FLUX_DEPLOY_KEY }}
 
       - name: Pin the manifests to the release tag
         env:
