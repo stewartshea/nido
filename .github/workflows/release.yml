@@ -1,16 +1,31 @@
 name: Release
 
-# Cuts a release: creates a date-based tag and a GitHub Release for it.
+# Cuts a release: creates a date-based tag, a GitHub Release for it, builds the
+# images, and then — the part that makes the release real — pins the cluster
+# to them.
 #
 # Nothing else in this repo creates a tag, so this is where a version starts:
 #
 #   release.yml  ->  tag v2026.10.08  ->  build-containers.yml  ->  ghcr.io/...:v2026.10.08
+#        |
+#        `->  commit the tag to ovh-flux  ->  Flux reconciles  ->  prod rolls
 #
 # The build is *asked for* rather than left to fire on the tag push. Events
 # raised by the default GITHUB_TOKEN do not start further runs — a rule that
 # exists so a workflow cannot recurse — and workflow_dispatch is one of the two
 # exemptions. Pushing the tag and then dispatching the build is the difference
 # between a release that has images and one that only has a tag.
+#
+# The deploy step exists because images being in the registry is not a
+# deployment. The cluster's manifests live in the ovh-flux repo and reference
+# immutable release tags; before this, a release published images and then
+# waited for a pod to happen to restart before anyone ran them — prod once
+# served a week-old build that way. A release now ends with a deliberate
+# commit to ovh-flux, which Flux (polling every minute, reconciling the nido
+# kustomization) turns into the rollout. `latest` keeps its meaning for
+# self-hosters; the cluster never references a floating tag, so "which
+# release is prod running?" is answered by `kubectl get deployment`, not by
+# guessing what a node pulled.
 #
 # Deliberately manual for now. A release is a statement that this commit is
 # safe to run against someone's family data, and that is not a judgement a
@@ -35,10 +50,15 @@ permissions:
   # events a GITHUB_TOKEN push *can* start, which is why the build is dispatched
   # rather than left to the tag push.
   actions: write
+  # The deploy job reads the release images from GHCR to know they exist
+  # before pinning the cluster to them.
+  packages: read
 
 jobs:
   release:
     runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
     steps:
       # Full history so the generated notes can walk back to the previous tag,
       # and so the tag is cut from a real commit rather than a shallow one.
@@ -145,5 +165,109 @@ jobs:
             else
               echo "- Tag pushed, and the container build dispatched for it."
               echo "- Images will publish as \`ghcr.io/${{ github.repository }}/{api,web}:${{ steps.tag.outputs.tag }}\`."
+              echo "- The deploy job then pins the cluster to this tag via the ovh-flux repo."
             fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # A release is not over when the images are pushed — it is over when the
+  # cluster runs them. This job waits for the tag's images to exist, pins the
+  # ovh-flux manifests to the tag, and pushes the commit; Flux does the
+  # rollout on its own schedule (git is polled every minute, the nido
+  # kustomization reconciles every 10).
+  #
+  # The ovh-flux push uses a deploy key (OVH_FLUX_DEPLOY_KEY), not a token: a
+  # write-enabled key scoped to exactly one repository, revocable from
+  # ovh-flux's settings page, and unable to touch anything else.
+  #
+  # If this job fails, fix the cause and use "Re-run failed jobs" on this run:
+  # the tag, the release and the images already exist, and re-running only this
+  # job re-pins without minting a duplicate v<date>.2 tag.
+  deploy:
+    name: Pin the cluster to this release
+    needs: release
+    if: ${{ !inputs.dry_run }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check for the flux deploy key
+        env:
+          OVH_FLUX_DEPLOY_KEY: ${{ secrets.OVH_FLUX_DEPLOY_KEY }}
+        run: |
+          if [ -z "${OVH_FLUX_DEPLOY_KEY}" ]; then
+            echo "::error::OVH_FLUX_DEPLOY_KEY is not set. Add a write-enabled deploy key's private half for stewartshea/ovh-flux as a repository secret. The release is tagged and its images are published, but production was NOT updated — re-run this failed job once the secret exists."
+            exit 1
+          fi
+
+      # The update script lives here, so this checkout is the nido repo at the
+      # release commit — the same ref whose images are being pinned.
+      - name: Checkout nido
+        uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Wait for the release images
+        env:
+          TAG: ${{ needs.release.outputs.tag }}
+        run: |
+          set -euo pipefail
+          # The build was dispatched moments ago and takes a few minutes; the
+          # pin must not land in ovh-flux before the images it names exist, or
+          # Flux would reconcile into a pull error.
+          for image in ghcr.io/${{ github.repository }}/api:${TAG} ghcr.io/${{ github.repository }}/web:${TAG}; do
+            for attempt in $(seq 1 90); do
+              if docker manifest inspect "$image" >/dev/null 2>&1; then
+                echo "$image is in the registry"
+                break
+              fi
+              if [ "$attempt" -eq 90 ]; then
+                echo "::error::$image never appeared. The dispatched build-containers run failed or stalled — check it, then re-run this failed job."
+                exit 1
+              fi
+              echo "waiting for $image (${attempt}/90)"
+              sleep 10
+            done
+          done
+
+      - name: Checkout ovh-flux
+        uses: actions/checkout@v4
+        with:
+          repository: stewartshea/ovh-flux
+          ref: main
+          path: ovh-flux
+          deploy_key: ${{ secrets.OVH_FLUX_DEPLOY_KEY }}
+
+      - name: Pin the manifests to the release tag
+        env:
+          TAG: ${{ needs.release.outputs.tag }}
+        run: node scripts/update-flux-images.mjs --dir ovh-flux/clusters/prod-saz/nido --tag "${TAG}"
+
+      - name: Commit and push
+        env:
+          TAG: ${{ needs.release.outputs.tag }}
+        run: |
+          set -euo pipefail
+          cd ovh-flux
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git diff --quiet; then
+            echo "ovh-flux is already pinned to ${TAG}; nothing to push."
+            exit 0
+          fi
+          git add -A
+          git commit -m "nido: deploy ${TAG}" -m "Pinned by the nido release workflow: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          git push
+          echo "Pushed. Flux polls this repo every minute and reconciles the nido kustomization, so the rollout follows within its interval."
+
+      - name: Summary
+        env:
+          TAG: ${{ needs.release.outputs.tag }}
+        run: |
+          {
+            echo "### Deployed ${TAG}"
+            echo
+            echo "ovh-flux now pins the cluster's nido images to this release. Flux reconciles within its interval; \`kubectl --context kubernetes-admin@prod-saz -n nido get deployment\` will show the new tag once it lands."
           } >> "$GITHUB_STEP_SUMMARY"
