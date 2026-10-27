@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 import bcrypt from 'bcryptjs';
-import { ensureRegistry, removeFamily } from '../db-namespaces';
+import { ensureRegistry, removeFamily } from '../namespaces';
 import { isPlatformAdmin } from '../authz';
 import { getAppSettings, sendMail, smtpConfigured } from '../mail';
 import { renderAccountDeletedEmail } from '../mail-templates';

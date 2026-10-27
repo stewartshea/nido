@@ -7,7 +7,8 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import jwt from 'jsonwebtoken';
 import app from './server';
-import { getFamilyClient, FAMILY_MIGRATIONS } from './db-namespaces';
+import { getFamilyClient } from './namespaces';
+import { FAMILY_MIGRATIONS } from './migrations';
 import type { RawDatabase } from './db-core';
 
 async function postJson(path: string, body: unknown) {

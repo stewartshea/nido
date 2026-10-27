@@ -6,7 +6,7 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import jwt from 'jsonwebtoken';
 import app from './server';
-import { getRegistryClient } from './db-namespaces';
+import { getRegistryClient } from './namespaces';
 
 const JWT_SECRET = process.env.JWT_SECRET ?? 'nido-test-secret';
 

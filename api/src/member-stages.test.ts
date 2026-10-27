@@ -150,7 +150,7 @@ describe('a profile with no category list falls back to its stage, not to everyt
 		// NULL and read it the way the browser does.
 		const made = await add(token, { type: 'adult', name: 'Null Stored', trackable: true });
 		const id = made.body.member.id;
-		const { getFamilyClient } = await import('./db-namespaces');
+		const { getFamilyClient } = await import('./namespaces');
 		await getFamilyClient(familyId).execute({
 			sql: 'UPDATE family_members SET categories = NULL WHERE id = ?',
 			args: [id],

@@ -8,7 +8,7 @@
 // the migration, and asserts the shape the design doc (§6) promises.
 import { describe, it, expect } from 'vitest';
 import { openDb, runMigrations, type SqliteFacade } from './db-core';
-import { FAMILY_MIGRATIONS } from './db-namespaces';
+import { FAMILY_MIGRATIONS } from './migrations';
 
 /** A family database migrated only up to the pre-events version, with a subject to hang rows off. */
 function dbAt37(): SqliteFacade {

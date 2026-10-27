@@ -14,7 +14,7 @@
 // inventory digest quiet (or the other way round). The scheduler calls both,
 // one family at a time, for the reasons recorded in AGENTS.md.
 
-import { getFamilyClient } from './db-namespaces';
+import { getFamilyClient } from './namespaces';
 import { familyRecipients, type Recipient } from './inventory-eval';
 import { getAppSettings, smtpConfigured, sendMail, baseUrl } from './mail';
 import { renderUpcomingAppointmentsEmail, type AppointmentEmailLine } from './mail-templates';

@@ -16,7 +16,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { getDataDir } from './db-core';
-import { getRegistryClient } from './db-namespaces';
+import { getRegistryClient } from './namespaces';
 import { blobRootDir } from './blob-store';
 import { getAppSettings, smtpConfigured } from './mail';
 import { schedulerStatus } from './scheduler';

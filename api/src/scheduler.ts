@@ -1,4 +1,4 @@
-import { getRegistryClient } from './db-namespaces';
+import { getRegistryClient } from './namespaces';
 import { runFamilyDigest } from './notifications';
 import { runAppointmentDigest } from './appointments';
 import { log } from './logger';

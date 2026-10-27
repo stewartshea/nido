@@ -1,5 +1,5 @@
 import nodemailer from 'nodemailer';
-import { getRegistryClient } from './db-namespaces';
+import { getRegistryClient } from './namespaces';
 
 export interface AppSettings {
 	id: number;

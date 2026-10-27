@@ -1,6 +1,6 @@
 // src/scripts/validate-seed.ts
 // Validates that seeded test environment is functional
-import { ensureRegistry, getFamilyClient } from '../db-namespaces';
+import { ensureRegistry, getFamilyClient } from '../namespaces';
 import { TEST_FAMILY_ID, TEST_EMAIL } from './seed-test-data';
 import jwt from 'jsonwebtoken';
 

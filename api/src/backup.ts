@@ -313,7 +313,7 @@ export async function backupDataDir(options: BackupOptions): Promise<BackupResul
       const rel = `${FAMILY_DIR}/${file}`;
       const dest = path.join(stageDir, rel);
       // Salt is the familyId and info is the shared 'nido:db' label — both
-      // must match db-namespaces.ts or the snapshot will not open.
+      // must match namespaces.ts or the snapshot will not open.
       entries.push(
         await snapshotDatabase(
           path.join(familyRoot, file),

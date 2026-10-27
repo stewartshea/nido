@@ -7,7 +7,7 @@
 // Like system-overview.ts this reads the *registry* only — never a family
 // database, whose contents stay inside each tenant's encrypted file.
 
-import { getRegistryClient } from './db-namespaces';
+import { getRegistryClient } from './namespaces';
 import { effectiveSignup } from './mail';
 
 export interface RegistryFamilyRow {

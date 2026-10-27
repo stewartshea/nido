@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import jwt from 'jsonwebtoken';
 import app from './server';
-import { getFamilyClient } from './db-namespaces';
+import { getFamilyClient } from './namespaces';
 import { DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE } from './paging';
 
 async function postJson(token: string, path: string, body: unknown) {

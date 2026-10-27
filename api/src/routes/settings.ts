@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
-import { ensureRegistry } from '../db-namespaces';
+import { ensureRegistry } from '../namespaces';
 import { getAppSettings, sendMail, effectiveSignup } from '../mail';
 import { renderSmtpTestEmail } from '../mail-templates';
 import { buildSystemOverview } from '../system-overview';

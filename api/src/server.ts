@@ -5,7 +5,7 @@ import { secureHeaders } from 'hono/secure-headers';
 
 import { requireAuth, jwtSecret, PUBLIC_AUTH_PATHS, type AuthEnv } from './auth';
 import { getMasterKeyHex } from './db-core';
-import { closeAllClients, ensureRegistry } from './db-namespaces';
+import { closeAllClients, ensureRegistry } from './namespaces';
 import { log } from './logger';
 import { onError, onNotFound, requestLogger } from './request-log';
 import { installProcessHandlers, installSignalHandlers, logBoot } from './lifecycle';

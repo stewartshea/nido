@@ -13,7 +13,7 @@ async function call(method: string, token: string, path: string, body?: unknown)
 }
 
 async function backdate(itemId: number, startedIso: string, applied: number) {
-	const { getFamilyClient } = await import('./db-namespaces');
+	const { getFamilyClient } = await import('./namespaces');
 	const famId = (jwt.decode(token) as any).familyId as string;
 	await getFamilyClient(famId).execute({
 		sql: 'UPDATE inventory_items SET consume_started_at = ?, consume_cycles_applied = ? WHERE id = ?',

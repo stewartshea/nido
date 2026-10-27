@@ -2,7 +2,7 @@
 import { describe, it, expect } from 'vitest';
 import jwt from 'jsonwebtoken';
 import app from './server';
-import { getFamilyClient } from './db-namespaces';
+import { getFamilyClient } from './namespaces';
 
 async function postJson(path: string, body: unknown) {
 	const res = await app.fetch(new Request(`http://localhost${path}`, {

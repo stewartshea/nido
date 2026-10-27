@@ -8,7 +8,7 @@
 // that never has to run in the image.
 import { randomUUID } from 'node:crypto';
 import bcrypt from 'bcryptjs';
-import { ensureRegistry, provisionFamily, getFamilyClient } from '../db-namespaces';
+import { ensureRegistry, provisionFamily, getFamilyClient } from '../namespaces';
 import { NAMESPACE_HOUSEHOLD_ID } from '../db-core';
 import { categoryTemplate } from '../registry';
 
