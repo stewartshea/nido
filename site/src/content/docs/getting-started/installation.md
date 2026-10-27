@@ -76,23 +76,26 @@ Differences from the development stack:
 
 ## Prebuilt images
 
-CI publishes images to GHCR on every push to `main` and on `v*` tags. To pull
-instead of building:
+CI publishes an image pair per release, tagged `v<date>` (for example
+`v2026.10.26`). `:latest` moves to the newest release, and `:main` follows
+unreleased merges. To pull instead of building:
 
 ```bash
 echo "$CR_PAT" | docker login ghcr.io -u stewartshea --password-stdin
 ```
 
-Then swap the `build:` / `image:` blocks in the Compose file:
+Then swap the `build:` / `image:` blocks in the Compose file, pinning a release:
 
 ```yaml
 api:
-  image: ghcr.io/stewartshea/nido/api:latest
+  image: ghcr.io/stewartshea/nido/api:v2026.10.26
 web:
-  image: ghcr.io/stewartshea/nido/web:latest
+  image: ghcr.io/stewartshea/nido/web:v2026.10.26
 ```
 
-Per-commit tags (`sha-<commit>`) are available if you would rather pin.
+Pin a release tag rather than `:latest` — [Releases](../project/releases/)
+covers what each tag means, and per-commit tags (`sha-<commit>`) are available
+when you need to pin to an exact commit or roll back.
 
 ## What runs where
 

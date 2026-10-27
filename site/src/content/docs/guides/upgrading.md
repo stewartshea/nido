@@ -77,18 +77,32 @@ docker compose up -d --build
 This works only as long as the newer version did not change the data format or
 run a destructive migration. For that reason the project publishes every image
 tag as `sha-<commit>`, so a rollback can be pinned to exactly the commit that
-was running before — not merely "the previous release".
+was running before — not merely "the previous release". Roll back to a release
+tag where one is enough, and to `sha-<commit>` when you need the exact build.
 
-## Watching for new versions
+## Choosing a version
 
-Images are published to GHCR on every push to `main`, tagged `latest` plus
-`sha-<commit>`. Watch releases rather than tracking `latest` if you would
-rather review changes before they land:
+Releases are tagged `v<date>`; `:latest` moves to the newest one, so it is not
+a version you can depend on. Pin a release tag instead:
+
+```yaml
+api:
+  image: ghcr.io/stewartshea/nido/api:v2026.10.26
+web:
+  image: ghcr.io/stewartshea/nido/web:v2026.10.26
+```
+
+To see what has been released:
 
 ```bash
 gh release list --repo stewartshea/nido
 gh release view <tag> --repo stewartshea/nido
 ```
+
+Or read the [releases page](https://github.com/stewartshea/nido/releases). The
+notes are generated from merged pull requests, so when a release's changes
+touch the database, read the migration itself rather than relying on the
+summary — see [Releases](../project/releases/#release-notes).
 
 The [roadmap](../project/roadmap/) lists what is in flight and what is still
 planned.
