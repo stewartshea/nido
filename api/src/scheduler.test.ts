@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { ensureRegistry, getRegistryClient } from './db-namespaces';
+import { ensureRegistry, getRegistryClient } from './namespaces';
 import { runFamilyDigest } from './notifications';
 import { runAppointmentDigest } from './appointments';
 import { readConfig, runDigestSweep, listActiveFamilies, __resetSweepGuard } from './scheduler';

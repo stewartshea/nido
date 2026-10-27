@@ -6,7 +6,8 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import jwt from 'jsonwebtoken';
 import app from './server';
-import { getRegistryClient, getFamilyClient, MARK_ORPHANED_FAMILIES_SQL } from './db-namespaces';
+import { getRegistryClient, getFamilyClient } from './namespaces';
+import { MARK_ORPHANED_FAMILIES_SQL } from './migrations';
 import { NAMESPACE_HOUSEHOLD_ID } from './db-core';
 
 const JWT_SECRET = process.env.JWT_SECRET ?? 'nido-test-secret';

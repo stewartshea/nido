@@ -3,7 +3,7 @@ import type { Context, Next } from 'hono';
 import type { SqliteFacade } from './db-core';
 import { NAMESPACE_HOUSEHOLD_ID } from './db-core';
 import type { Logger } from './logger';
-import { getFamilyClient } from './db-namespaces';
+import { getFamilyClient } from './namespaces';
 // Route handlers read the authenticated user via c.get('userId'), the routed
 // family via c.get('familyId'), that family's namespace client via c.get('db'),
 // and a logger already bound to the request's correlation id via c.get('log').

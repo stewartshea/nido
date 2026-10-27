@@ -1,7 +1,7 @@
 // src/inventory-categories.test.ts
 import { describe, it, expect, beforeAll } from 'vitest';
 import jwt from 'jsonwebtoken';
-import { getFamilyClient } from './db-namespaces';
+import { getFamilyClient } from './namespaces';
 import app from './server';
 
 async function call(method: string, token: string, path: string, body?: unknown) {

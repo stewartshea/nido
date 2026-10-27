@@ -1,4 +1,4 @@
-import { ensureRegistry } from './db-namespaces';
+import { ensureRegistry } from './namespaces';
 import { log } from './logger';
 
 export async function isPlatformAdmin(userId: string | number | null | undefined): Promise<boolean> {

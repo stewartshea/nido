@@ -16,7 +16,7 @@ import { describe, it, expect, beforeAll } from 'vitest';
 import jwt from 'jsonwebtoken';
 import app from './server';
 import { openDb, runMigrations } from './db-core';
-import { FAMILY_MIGRATIONS } from './db-namespaces';
+import { FAMILY_MIGRATIONS } from './migrations';
 
 async function call(method: string, token: string, path: string, body?: unknown) {
 	const res = await app.fetch(

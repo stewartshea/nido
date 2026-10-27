@@ -6,12 +6,7 @@ import jwt from 'jsonwebtoken';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { NAMESPACE_HOUSEHOLD_ID } from '../db-core';
 import { STAGE_CATEGORIES } from '../registry';
-import {
-  ensureRegistry,
-  getFamilyClient,
-  provisionFamily,
-  removeFamily,
-} from '../db-namespaces';
+import { ensureRegistry, getFamilyClient, provisionFamily, removeFamily } from '../namespaces';
 import { getAppSettings, sendMail, baseUrl, effectiveSignup } from '../mail';
 import { renderVerifyEmail, renderPasswordResetEmail } from '../mail-templates';
 import { jwtSecret, type AuthEnv } from '../auth';

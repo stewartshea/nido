@@ -9,7 +9,7 @@ import jwt from 'jsonwebtoken';
 import { type AuthEnv, jwtSecret } from '../auth';
 import { NAMESPACE_HOUSEHOLD_ID, DEFAULT_FEED_GROUPING_MINUTES } from '../db-core';
 import { CATEGORY_OPTIONS, CATEGORY_OPTION_KEY, DIGEST_FREQUENCIES, DEFAULT_CATEGORIES, EVENT_KIND_CATEGORIES, STAGES, STAGE_CATEGORIES, defaultStage, categoryTemplate, isStage, type DigestFrequency } from '../registry';
-import { ensureRegistry, getFamilyClient, markFamilyAbandonedIfUnoccupied } from '../db-namespaces';
+import { ensureRegistry, getFamilyClient, markFamilyAbandonedIfUnoccupied } from '../namespaces';
 import { isValidTimezone } from '../timezone';
 import { EncryptedBlobStore } from '../blob-store';
 import { getAppSettings, sendMail, smtpConfigured, baseUrl } from '../mail';

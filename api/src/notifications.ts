@@ -1,4 +1,4 @@
-import { getFamilyClient } from './db-namespaces';
+import { getFamilyClient } from './namespaces';
 import {
 	clearStaleNotifications, collectSignals, dueRecipients, evaluateAlerts, loadRulesForFamily,
 	recordNotified, resolveRecipients, type Recipient,

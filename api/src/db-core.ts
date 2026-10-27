@@ -8,7 +8,7 @@
 //     keeps working against the legacy single-file handle while it is swept
 //     onto namespaces in later phases.
 //
-// This module is a dependency leaf: db-namespaces.ts (registry + family
+// This module is a dependency leaf: migrations.ts + namespaces.ts (registry + family
 // clients) imports from here.
 import Database from 'better-sqlite3-multiple-ciphers';
 // The tracking vocabulary lives in vocabulary.ts, which is the only place it is

@@ -3,7 +3,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import jwt from 'jsonwebtoken';
 import { randomUUID } from 'node:crypto';
 import app from './server';
-import { ensureRegistry, getFamilyClient } from './db-namespaces';
+import { ensureRegistry, getFamilyClient } from './namespaces';
 
 const JWT_SECRET = process.env.JWT_SECRET ?? 'nido-test-secret';
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;

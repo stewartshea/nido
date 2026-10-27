@@ -8,7 +8,7 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import jwt from 'jsonwebtoken';
 import app from './server';
-import { getFamilyClient } from './db-namespaces';
+import { getFamilyClient } from './namespaces';
 import { consumableCategories } from './registry';
 
 async function call(method: string, token: string, path: string, body?: unknown) {
