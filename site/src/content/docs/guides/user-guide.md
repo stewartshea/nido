@@ -115,6 +115,17 @@ the record still counts once.
 Every record stores who logged it, and the Today tiles show that name — so
 "who did the 3am feed" is visible in the log itself.
 
+An **adult** member can be tracked like anyone else. Two of their categories
+work a little differently:
+
+- **Medications** are a standing list — name, dose, frequency, start date —
+  rather than one record per dose. Nido works out what is **due** from the
+  frequency, shows it on the member's page and under **Notifications →
+  Needs attention now**, and **Taken** logs the dose for you.
+- **Vitals** — blood pressure, pulse, temperature, oxygen saturation — are
+  recorded as measurements with history, so you can see a trend rather than
+  reading it back out of a note.
+
 ## Who can change what
 
 Settings are split by who they affect:

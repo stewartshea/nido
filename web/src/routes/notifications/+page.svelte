@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
-	import { inventoryAPI, notificationsAPI, remindersAPI, type InventoryAlert, type NotifySchedule, type Reminder } from '$lib/api';
+	import { inventoryAPI, notificationsAPI, remindersAPI, medicationAPI, type InventoryAlert, type Medication, type NotifySchedule, type Reminder } from '$lib/api';
 	import { reminderNoun, reminderPhrase } from '$lib/shared';
 	import { zonedOptions } from '$lib/logging/format';
 	import ActivityRules from '$lib/components/logging/ActivityRules.svelte';
@@ -19,17 +19,20 @@
 	let notice = '';
 	let inventoryAlerts: InventoryAlert[] = [];
 	let activity: Reminder[] = [];
+	let dueMedications: Medication[] = [];
+	let takingId: number | null = null;
 	let sending = false;
 	let emailResult: { sent: number; alerts: number; message: string } | null = null;
 	let schedule: NotifySchedule | null = null;
 
 	async function load() {
 		try {
-			const [alerts, rem, status] = await Promise.all([
-				inventoryAPI.list(), remindersAPI.list(), notificationsAPI.status(),
+			const [alerts, rem, status, meds] = await Promise.all([
+				inventoryAPI.list(), remindersAPI.list(), notificationsAPI.status(), medicationAPI.due(),
 			]);
 			inventoryAlerts = alerts.data.alerts ?? [];
 			activity = rem.data.reminders ?? [];
+			dueMedications = meds.data.medications ?? [];
 			schedule = status.data;
 			void refreshNotificationCount();
 		} catch (e: any) {
@@ -55,7 +58,33 @@
 	}
 
 	$: firingActivity = activity.filter((r) => r.enabled && r.overdue);
-	$: allQuiet = firingActivity.length === 0 && inventoryAlerts.length === 0;
+	$: allQuiet = firingActivity.length === 0 && inventoryAlerts.length === 0 && dueMedications.length === 0;
+
+	/**
+	 * Record a dose straight from the notification, which is where someone
+	 * notices it is due. The list is reloaded so the item leaves the firing
+	 * list, and the badge follows.
+	 */
+	async function takeDose(med: Medication) {
+		takingId = med.id;
+		try {
+			await medicationAPI.dose(med.id);
+			notice = `${med.name} taken.`;
+			await load();
+		} catch (e: any) {
+			error = e?.response?.data?.error || 'Could not record the dose.';
+		} finally {
+			takingId = null;
+		}
+	}
+
+	/** "Due" or "overdue since <time>" for a medication in the firing list. */
+	function dueLabel(med: Medication): string {
+		const dose = med.dose ? ` (${med.dose})` : '';
+		if (!med.lastDoseAt) return `${med.name}${dose} — not taken yet`;
+		const when = new Date(med.nextDueAt ?? med.lastDoseAt).toLocaleString(undefined, zonedOptions());
+		return `${med.name}${dose} — due since ${when}`;
+	}
 
 	async function sendEmail() {
 		sending = true;
@@ -105,6 +134,17 @@
 					{#each inventoryAlerts as a (a.ruleId + '-' + a.itemId)}
 						<li class="text-sm text-danger-text">{a.itemName} — {a.message}</li>
 					{/each}
+					{#each dueMedications as med (med.id)}
+						<li class="text-sm text-danger-text flex flex-wrap items-center gap-2">
+							<span>{dueLabel(med)}<span class="text-ink-soft"> · {med.memberName}</span></span>
+							<button
+								type="button"
+								on:click={() => takeDose(med)}
+								disabled={takingId === med.id}
+								class="px-2 py-0.5 text-xs font-semibold border border-line-soft rounded-md text-ink hover:bg-surface2 disabled:opacity-50"
+							>Mark taken</button>
+						</li>
+					{/each}
 				</ul>
 			{/if}
 		</section>
@@ -115,8 +155,10 @@
 				Emails each currently firing <strong class="font-semibold text-ink">inventory</strong> alert to whoever that
 				rule is addressed to — the whole family, or only the caregivers you picked. Only confirmed
 				addresses are emailed, so someone who never verified will not hear about it. Tracking
-				reminders below appear here and on the dashboard but are not emailed yet. You only hear
-				about an item when it first matches, so an unchanged item will not keep emailing you.
+				reminders below, and medication doses that come due, appear here and on the dashboard but
+				are not emailed yet. Upcoming appointments have their own weekly email, turned on under
+				<a href="/settings" class="underline">Settings</a>. You only hear about an item when it
+				first matches, so an unchanged item will not keep emailing you.
 			</p>
 			<div class="flex flex-wrap items-center gap-3">
 				<button

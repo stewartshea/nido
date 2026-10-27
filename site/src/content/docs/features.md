@@ -96,6 +96,28 @@ A pick from your family's mood values, plus a time and optional notes.
 
 Free-text entries with a timestamp. No structure imposed.
 
+## Medications and vitals
+
+Adults are tracked on the same members-and-records model as a baby, with the
+two shapes that are honestly their own.
+
+**Medications** are a standing list, not a moment. Each carries a **name**,
+**dose**, **frequency** and **start date**, and an optional end date for a
+course that finishes. Because the frequency is known, Nido can say what is
+**due** without anyone logging each dose by hand: a due medication shows on the
+member's page and in **Needs attention now**, and **Taken** records the dose as
+an ordinary record, so it lands in the activity feed and bills inventory like
+everything else. Stopping a medication keeps the doses already recorded.
+
+**Vitals** are measurements with their own numbers — **blood pressure**
+(systolic and diastolic), **pulse**, **temperature** and **oxygen saturation**
+— shown as current values with history, not as a milestone title. A reading is
+edited or deleted like any other record, and "no blood pressure in a week" is a
+reminder you can set.
+
+Both arrive with the adult stage, and either can be turned on for any member
+under **Settings → Household**.
+
 ## Today
 
 The Today view answers four questions without navigation:

@@ -3,6 +3,7 @@ import { type AuthEnv } from '../auth';
 import { schedulerStatus } from '../scheduler';
 import { evaluateReminder } from '../reminder-conditions';
 import { collectSignals, evaluateAlerts, loadRulesForFamily } from '../inventory-eval';
+import { dueMedicationsForFamily } from '../medications';
 
 const notificationStatusRoutes = new Hono<AuthEnv>();
 
@@ -30,7 +31,7 @@ notificationStatusRoutes.get('/summary', async (c) => {
 		args: [userId],
 	});
 	const fam = famRes.rows[0];
-	if (!fam) return c.json({ total: 0, activity: 0, inventory: 0 });
+	if (!fam) return c.json({ total: 0, activity: 0, inventory: 0, medications: 0 });
 	const familyId = Number((fam as any).household_id);
 
 	const reminderRows = (await db.execute({
@@ -55,7 +56,18 @@ notificationStatusRoutes.get('/summary', async (c) => {
 		}
 	}
 
-	return c.json({ total: activity + inventory, activity, inventory });
+	// A medication dose is due because its frequency says so, not because a
+	// person remembered to log the last one. Counted here so the badge and the
+	// notifications list read the same due calculation.
+	let medications = 0;
+	try {
+		medications = (await dueMedicationsForFamily(db, familyId, nowMs)).length;
+	} catch {
+		// A badge must not 500 the whole page if a family predates the table.
+		medications = 0;
+	}
+
+	return c.json({ total: activity + inventory + medications, activity, inventory, medications });
 });
 
 export { notificationStatusRoutes };

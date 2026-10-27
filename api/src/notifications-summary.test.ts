@@ -41,7 +41,7 @@ describe('the notification summary counts what is firing', () => {
 	it('is zero when nothing is watched', async () => {
 		const res = await call('GET', token, '/api/v1/notifications/summary');
 		expect(res.status).toBe(200);
-		expect(res.body).toEqual({ total: 0, activity: 0, inventory: 0 });
+		expect(res.body).toEqual({ total: 0, activity: 0, inventory: 0, medications: 0 });
 	});
 
 	it('counts a firing activity rule, and stops when it clears', async () => {

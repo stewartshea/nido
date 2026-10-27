@@ -1124,6 +1124,89 @@ ALTER TABLE inventory_adjustments ADD COLUMN source TEXT DEFAULT 'manual';
     name: 'events-and-plans',
     run: (raw) => migrateToEventsAndPlans(raw),
   },
+  {
+    version: 39,
+    name: 'adult-medications-and-vitals',
+    // The two shapes adult tracking needed and a milestone could not honestly
+    // hold:
+    //
+    //   medications — a standing prescription, not a moment. Dose, frequency
+    //   and start date are what make a reminder possible without somebody
+    //   tapping "taken" by hand. Doses still write `events`, linked by
+    //   data.medicationId, so history and stock billing are unchanged.
+    //
+    //   vitals — a measurement with its own numbers. Blood pressure is two
+    //   values and a unit; squeezing it into a milestone title would make it
+    //   unqueryable, and the whole point is seeing the trend.
+    //
+    // The backfill appends 'vitals' to adult profiles that already have a
+    // curated list, because the feature would otherwise be invisible to every
+    // adult who existed before this release. An empty array is left alone: it
+    // is the family's explicit "nothing", which the resolver reads as the stage
+    // template — appending would turn it into "only vitals".
+    run: (raw) => {
+      raw.exec(`
+        CREATE TABLE IF NOT EXISTS medications (
+          id          INTEGER PRIMARY KEY AUTOINCREMENT,
+          subject_id  INTEGER NOT NULL,
+          name        TEXT NOT NULL,
+          dose        TEXT,
+          frequency   TEXT NOT NULL DEFAULT 'once_daily',
+          start_date  TEXT NOT NULL,
+          end_date    TEXT,
+          notes       TEXT,
+          active      INTEGER NOT NULL DEFAULT 1,
+          created_by  TEXT,
+          created_at  TEXT DEFAULT CURRENT_TIMESTAMP,
+          updated_at  TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS idx_medications_subject ON medications(subject_id, active);
+
+        CREATE TABLE IF NOT EXISTS vitals (
+          id          INTEGER PRIMARY KEY AUTOINCREMENT,
+          subject_id  INTEGER NOT NULL,
+          recorded_at TEXT NOT NULL,
+          kind        TEXT NOT NULL,
+          systolic    INTEGER,
+          diastolic   INTEGER,
+          value       REAL,
+          unit        TEXT,
+          notes       TEXT,
+          created_by  TEXT,
+          created_at  TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS idx_vitals_subject_time ON vitals(subject_id, recorded_at DESC);
+      `);
+
+      raw.exec(`
+        UPDATE family_members
+        SET categories = json_insert(categories, '$[#]', 'vitals')
+        WHERE stage = 'adult'
+          AND categories IS NOT NULL
+          AND json_valid(categories)
+          AND json_type(categories) = 'array'
+          AND json_array_length(categories) > 0
+          AND NOT EXISTS (
+            SELECT 1 FROM json_each(family_members.categories) WHERE value = 'vitals'
+          );
+
+        UPDATE subjects
+        SET categories = json_insert(categories, '$[#]', 'vitals')
+        WHERE categories IS NOT NULL
+          AND json_valid(categories)
+          AND json_type(categories) = 'array'
+          AND json_array_length(categories) > 0
+          AND NOT EXISTS (
+            SELECT 1 FROM json_each(subjects.categories) WHERE value = 'vitals'
+          )
+          AND id IN (
+            SELECT COALESCE(fm.legacy_subject_id, fm.id)
+            FROM family_members fm
+            WHERE fm.stage = 'adult'
+          );
+      `);
+    },
+  },
 ];
 
 /**

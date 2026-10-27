@@ -2,7 +2,7 @@
 	import { createEventDispatcher } from 'svelte';
 	import {
 		feedingAPI, diaperAPI, sleepAPI, growthAPI, milestoneAPI,
-		vaccinationAPI, moodAPI, journalAPI,
+		vaccinationAPI, moodAPI, journalAPI, vitalsAPI,
 	} from '$lib/api';
 	import { DEFAULT_CATEGORY_OPTIONS, milestoneCategory, milestoneCategoryKey, isMilestoneKind } from '$lib/shared';
 	import { convertLength, convertWeight, round1, type GrowthUnitSystem } from '$lib/growth/units';
@@ -10,7 +10,7 @@
 	import { localInputToIso, toLocalInput as sharedToLocalInput } from '$lib/logging/format';
 
 	// Shared edit dialog for every tracking record. `kind` is one of:
-	// feeding | pumping | diaper | sleep | growth | milestone | vaccine | mood | journal
+	// feeding | pumping | diaper | sleep | growth | milestone | vaccine | mood | journal | vital
 	export let open = false;
 	export let kind = '';
 	export let record: any = null;
@@ -48,6 +48,11 @@
 	let eName = '';
 	// Moods
 	let eMood = '';
+	// Vitals
+	let eKind = '';
+	let eSystolic: number | string = '';
+	let eDiastolic: number | string = '';
+	let eValue: number | string = '';
 	// Shared
 	let eNotes = '';
 
@@ -98,6 +103,10 @@
 		eCategory = String(field(r, 'category') ?? '');
 		eName = String(field(r, 'name') ?? '');
 		eMood = String(field(r, 'mood') ?? '');
+		eKind = String(field(r, 'kind') ?? 'blood pressure');
+		eSystolic = field(r, 'systolic') ?? '';
+		eDiastolic = field(r, 'diastolic') ?? '';
+		eValue = field(r, 'value') ?? '';
 		eNotes = String(field(r, 'notes') ?? '');
 	}
 
@@ -199,6 +208,16 @@
 					dateGiven: time,
 					notes: eNotes || undefined,
 				});
+			} else if (kind === 'vital') {
+				const bp = eKind === 'blood pressure';
+				await vitalsAPI.update(id, {
+					kind: eKind,
+					systolic: bp && eSystolic !== '' ? Number(eSystolic) : null,
+					diastolic: bp && eDiastolic !== '' ? Number(eDiastolic) : null,
+					value: !bp && eValue !== '' ? Number(eValue) : null,
+					recordedAt: time,
+					notes: eNotes || null,
+				});
 			} else if (kind === 'mood') {
 				await moodAPI.update(id, {
 					mood: eMood || undefined,
@@ -230,7 +249,7 @@
 	<div class="fixed inset-0 z-[60] flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-label="Edit record">
 		<button type="button" class="absolute inset-0 bg-ink/40" aria-label="Close dialog" on:click={close}></button>
 		<div class="relative bg-surface rounded-lg shadow-card p-4 md:p-6 w-full max-w-md max-h-[90vh] overflow-y-auto">
-			<h3 class="text-xl font-display font-semibold mb-1">Edit {kind === 'pumping' ? 'pump session' : kind}</h3>
+			<h3 class="text-xl font-display font-semibold mb-1">Edit {kind === 'pumping' ? 'pump session' : kind === 'vital' ? 'vital sign' : kind}</h3>
 			{#if record && (record.created_by_name || record.createdByName)}
 				<p class="text-xs text-ink-soft mb-4">Recorded by {record.created_by_name || record.createdByName}</p>
 			{:else}
@@ -389,6 +408,33 @@
 						<label for="edit-record-name" class="block text-sm font-medium text-ink-soft mb-1">Vaccine name</label>
 						<input id="edit-record-name" type="text" bind:value={eName} class="w-full px-3 py-2 border border-line rounded-md" />
 					</div>
+				{:else if kind === 'vital'}
+					<div>
+						<label for="edit-record-vital-kind" class="block text-sm font-medium text-ink-soft mb-1">Measurement</label>
+						<select id="edit-record-vital-kind" bind:value={eKind} class="w-full px-3 py-2 border border-line rounded-md">
+							<option value="blood pressure">Blood pressure</option>
+							<option value="pulse">Pulse</option>
+							<option value="temperature">Temperature</option>
+							<option value="oxygen saturation">Oxygen saturation</option>
+						</select>
+					</div>
+					{#if eKind === 'blood pressure'}
+						<div class="grid grid-cols-2 gap-3">
+							<div>
+								<label for="edit-record-systolic" class="block text-sm font-medium text-ink-soft mb-1">Systolic (mmHg)</label>
+								<input id="edit-record-systolic" type="number" bind:value={eSystolic} class="w-full px-3 py-2 border border-line rounded-md" />
+							</div>
+							<div>
+								<label for="edit-record-diastolic" class="block text-sm font-medium text-ink-soft mb-1">Diastolic (mmHg)</label>
+								<input id="edit-record-diastolic" type="number" bind:value={eDiastolic} class="w-full px-3 py-2 border border-line rounded-md" />
+							</div>
+						</div>
+					{:else}
+						<div>
+							<label for="edit-record-vital-value" class="block text-sm font-medium text-ink-soft mb-1">Value ({eKind === 'pulse' ? 'bpm' : eKind === 'temperature' ? '°C' : '%'})</label>
+							<input id="edit-record-vital-value" type="number" step="0.1" bind:value={eValue} class="w-full px-3 py-2 border border-line rounded-md" />
+						</div>
+					{/if}
 				{:else if kind === 'mood'}
 					<div>
 						<label for="edit-record-mood" class="block text-sm font-medium text-ink-soft mb-1">Mood</label>

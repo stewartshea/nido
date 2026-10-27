@@ -358,6 +358,70 @@ export const healthAPI = {
   getInsights: (memberId: number) => api.get(`/health/insights/${memberId}`),
 };
 
+/** A vital sign reading — blood pressure carries two numbers, the rest one. */
+export interface Vital {
+  id: number;
+  memberId: number;
+  kind: string;
+  systolic: number | null;
+  diastolic: number | null;
+  value: number | null;
+  unit: string | null;
+  recordedAt: string;
+  notes: string | null;
+  createdAt: string;
+  createdBy: string | null;
+  createdByName: string | null;
+}
+
+export const vitalsAPI = {
+  getAll: (memberId: number) => api.get<{ vitals: Vital[]; total: number }>(`/vitals?memberId=${memberId}`),
+  getPage: (memberId: number, opts?: PageOptions) =>
+    api.get<{ vitals: Vital[]; total: number }>(`/vitals?memberId=${memberId}${pageQuery(opts)}`),
+  create: (data: { memberId: number; kind: string; systolic?: number; diastolic?: number; value?: number; recordedAt?: string; notes?: string }) =>
+    api.post<{ vital: Vital }>('/vitals', data),
+  update: (id: number, data: Partial<{ kind: string; systolic: number | null; diastolic: number | null; value: number | null; recordedAt: string; notes: string | null }>) =>
+    api.put<{ vital: Vital }>(`/vitals/${id}`, data),
+  delete: (id: number) => api.delete(`/vitals/${id}`),
+};
+
+/** A standing medication with its schedule state. */
+export interface Medication {
+  id: number;
+  subjectId: number;
+  memberName: string;
+  name: string;
+  dose: string | null;
+  frequency: string;
+  frequencyLabel: string;
+  startDate: string;
+  endDate: string | null;
+  notes: string | null;
+  active: boolean;
+  lastDoseAt: string | null;
+  nextDueAt: string | null;
+  due: boolean;
+}
+
+export interface MedicationFrequency {
+  id: string;
+  label: string;
+  hours: number | null;
+}
+
+export const medicationAPI = {
+  list: (memberId: number) =>
+    api.get<{ medications: Medication[]; frequencies: MedicationFrequency[] }>(`/medications?memberId=${memberId}`),
+  due: () => api.get<{ medications: Medication[] }>('/medications/due'),
+  create: (data: { memberId: number; name: string; dose?: string; frequency?: string; startDate?: string; endDate?: string; notes?: string }) =>
+    api.post<{ medication: Medication }>('/medications', data),
+  update: (id: number, data: Partial<{ name: string; dose: string | null; frequency: string; startDate: string; endDate: string | null; notes: string | null; active: boolean }>) =>
+    api.put<{ medication: Medication }>(`/medications/${id}`, data),
+  delete: (id: number) => api.delete(`/medications/${id}`),
+  dose: (id: number, occurredAt?: string) =>
+    api.post<{ medication: Medication; event: unknown }>(`/medications/${id}/doses`, occurredAt ? { occurredAt } : {}),
+};
+
 // Import API functions (Narababy CSV upload + per-family summary)
 export const importsAPI = {
   narababy: (file: File, subjectId?: number | null, importType?: string) => {
@@ -737,6 +801,8 @@ export interface NotifySummary {
 	total: number;
 	activity: number;
 	inventory: number;
+	/** Doses due by their schedule, counted family-wide. */
+	medications?: number;
 }
 
 export const notificationsAPI = {

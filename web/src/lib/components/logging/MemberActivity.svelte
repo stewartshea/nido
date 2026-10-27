@@ -4,6 +4,7 @@
 	import QuickActions from './QuickActions.svelte';
 	import RunningTimers from './RunningTimers.svelte';
 	import TodaySummary from './TodaySummary.svelte';
+	import MedicationsPanel from './MedicationsPanel.svelte';
 
 	/**
 	 * Everything shown for one member on both the dashboard and the family
@@ -29,6 +30,7 @@
 	export let vaccinations: any[] = [];
 	export let moods: any[] = [];
 	export let journalEntries: any[] = [];
+	export let vitals: any[] = [];
 	export let totals: Record<string, number> = {};
 	export let loadingMore = false;
 
@@ -47,7 +49,16 @@
 
 <RunningTimers {memberId} on:log={(e) => dispatch('log', e.detail)} />
 
-<TodaySummary {summary} name={memberName} categories={activeCategories} {stage} tiles={dashboardTiles} on:log={(e) => dispatch('log', e.detail)} on:saveTiles={(e) => dispatch('saveTiles', e.detail)} />
+<TodaySummary {summary} name={memberName} categories={activeCategories} {stage} tiles={dashboardTiles} latestVital={vitals[0] ?? null} on:log={(e) => dispatch('log', e.detail)} on:saveTiles={(e) => dispatch('saveTiles', e.detail)} />
+
+<!-- The medication list is a standing thing, not part of the feed, so it sits
+     above it with the other at-a-glance surfaces. Only a member who tracks
+     medication gets it. -->
+{#if memberId !== null && activeCategories.includes('medication')}
+	<div class="mb-6">
+		<MedicationsPanel {memberId} on:changed={() => dispatch('refresh')} />
+	</div>
+{/if}
 
 <!-- Trends and stock belong above the feed, not after it: the feed is the
      long scroll, so anything you want seen at a glance has to come first. -->
@@ -60,7 +71,7 @@
 	</div>
 	<ActivityHistory
 		{feedings} {diapers} {sleeps} {growths}
-		{milestones} {vaccinations} {moods} {journalEntries}
+		{milestones} {vaccinations} {moods} {journalEntries} {vitals}
 		{activeCategories}
 		{totals}
 		{loadingMore}
