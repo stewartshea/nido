@@ -1,15 +1,11 @@
-import { Hono } from 'hono';
-import { zValidator } from '@hono/zod-validator';
+// diapers.ts — one sheet, not five handlers. The factory
+// (category-routes.ts) holds the behavior; this declares the category.
 import { z } from 'zod';
-import { resolveTrackableMember, attachCreatedBy } from '../member-scope';
-import { parsePaging, countMatching } from '../paging';
-import { emitActivity } from '../inventory-consume';
-import { type AuthEnv } from '../auth';
+import { type CategorySheet, categoryRoutes } from './category-routes';
 
-const diaperRoutes = new Hono<AuthEnv>();
+const selectColumns = ['id', 'subject_id', 'change_time', 'type', 'color', 'consistency', 'notes', 'created_at', 'created_by'];
 
-// Zod schemas for validation
-const createDiaperSchema = z.object({
+const createSchema = z.object({
   memberId: z.number(),
   changeTime: z.string().datetime(),
   type: z.enum(['wet', 'dirty', 'both', 'dry']),
@@ -18,7 +14,7 @@ const createDiaperSchema = z.object({
   notes: z.string().optional(),
 });
 
-const updateDiaperSchema = z.object({
+const updateSchema = z.object({
   changeTime: z.string().datetime().optional(),
   type: z.enum(['wet', 'dirty', 'both', 'dry']).optional(),
   color: z.string().optional(),
@@ -26,273 +22,46 @@ const updateDiaperSchema = z.object({
   notes: z.string().optional(),
 });
 
-// Get all diapers for a baby
-diaperRoutes.get('/', async (c) => {
-  try {
-    const userId = c.get('userId');
-    const db = c.get('db');
-    const memberId = parseInt(c.req.query('memberId') || '0');
-    
-    if (!memberId) {
-      return c.json({ error: 'Member ID is required' }, 400);
-    }
-    
-    const scope = await resolveTrackableMember(db, userId, memberId);
-    if (!scope) {
-      return c.json({ error: 'Member not found or access denied' }, 404);
-    }
-    const subjectId = scope.subjectId;
-    
-    // Get diapers for the baby
-    const { limit, offset } = parsePaging((k) => c.req.query(k));
+const diaperSheet: CategorySheet = {
+  table: 'diapers',
+  orderExpr: 'change_time',
+  selectColumns,
+  handlers: ['list', 'get', 'create', 'update', 'delete'],
+  createSchema,
+  updateSchema,
+  columns: {
+    changeTime: 'change_time',
+    type: 'type',
+    color: 'color',
+    consistency: 'consistency',
+    notes: 'notes',
+  },
+  insert: {
+    columns: [...selectColumns.slice(1)],
+    values: (d, subjectId, now, userId) => [
+      subjectId, d.changeTime, d.type, d.color || null, d.consistency || null, d.notes || null, now, userId,
+    ],
+  },
+  responseMode: 'raw',
+  listKey: 'diapers',
+  itemKey: 'diaper',
+  nouns: { singular: 'diaper', article: 'a' },
+  messages: {
+    memberRequired: 'Member ID is required',
+    memberDenied: 'Member not found or access denied',
+    notFound: 'Diaper not found or access denied',
+    accessDenied: 'Access denied',
+    listFailed: 'Failed to fetch diapers',
+    getFailed: 'Failed to fetch diaper',
+    createFailed: 'Failed to record diaper',
+    updateFailed: 'Failed to update diaper',
+    deleteFailed: 'Failed to delete diaper',
+    created: 'Diaper recorded successfully',
+    updated: 'Diaper updated successfully',
+    deleted: 'Diaper deleted successfully',
+    createdStatus: 200,
+  },
+  emit: { category: 'diapers', attrs: (d) => ({ type: d.type as string }) },
+};
 
-    const diapersResult = await db.execute({
-      sql: `
-      SELECT id, subject_id, change_time, type, color, consistency, notes, created_at, created_by
-      FROM diapers
-      WHERE subject_id = ?
-      ORDER BY change_time DESC, id DESC
-      LIMIT ? OFFSET ?
-    `,
-      args: [subjectId, limit, offset]
-    });
-    const total = await countMatching(db, 'diapers', [subjectId]);
-
-    const diapers = diapersResult.rows as any[];
-
-    await attachCreatedBy(db, diapers);
-    return c.json({ diapers, total });
-  } catch (error) {
-    c.get('log').error('get diapers failed', { err: error });
-    return c.json({ error: 'Failed to fetch diapers' }, 500);
-  }
-});
-
-// Get a specific diaper
-diaperRoutes.get('/:id{[0-9]+}', async (c) => {
-  try {
-    const diaperId = parseInt(c.req.param('id'));
-    const userId = c.get('userId');
-    const db = c.get('db');
-    
-    // Verify user has access to this diaper
-    const diaperResult = await db.execute({
-      sql: `
-      SELECT d.id, d.subject_id, d.change_time, d.type, d.color, d.consistency, d.notes, d.created_at, d.created_by
-      FROM diapers d
-      JOIN subjects b ON d.subject_id = b.id
-      JOIN households h ON b.household_id = h.id
-      JOIN user_households uh ON h.id = uh.household_id
-      WHERE d.id = ? AND uh.user_id = ?
-    `,
-      args: [diaperId, userId]
-    });
-    
-    if (diaperResult.rows.length === 0) {
-      return c.json({ error: 'Diaper not found or access denied' }, 404);
-    }
-    
-    return c.json({ diaper: diaperResult.rows[0] });
-  } catch (error) {
-    c.get('log').error('get diaper failed', { err: error });
-    return c.json({ error: 'Failed to fetch diaper' }, 500);
-  }
-});
-
-// Create a new diaper
-diaperRoutes.post('/', zValidator('json', createDiaperSchema), async (c) => {
-  try {
-    const { memberId, changeTime, type, color, consistency, notes } = c.req.valid('json');
-    const userId = c.get('userId');
-    const db = c.get('db');
-    
-    const scope = await resolveTrackableMember(db, userId, memberId);
-    if (!scope) {
-      return c.json({ error: 'Member not found or access denied' }, 404);
-    }
-    const subjectId = scope.subjectId;
-    
-    // Insert new diaper
-    const result = await db.execute({
-      sql: `
-        INSERT INTO diapers (
-          subject_id, change_time, type, color, consistency, notes, created_at, created_by
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-      `,
-      args: [
-        subjectId, 
-        changeTime, 
-        type, 
-        color || null, 
-        consistency || null, 
-        notes || null, 
-        new Date().toISOString(),
-        userId
-      ]
-    });
-    
-    // A logged change is also a unit consumed. Every consuming route bills
-    // through the one funnel, so a rule — any rule — matches this event by its
-    // attributes; it is idempotent per rule and diaper id, so a retry cannot
-    // count the same change twice.
-    const diaperId = Number(result.lastInsertRowid);
-    try {
-      await emitActivity(db, {
-        category: 'diapers',
-        refTable: 'diapers',
-        refId: diaperId,
-        subjectId,
-        attrs: { type },
-        createdBy: userId,
-      });
-    } catch (err: any) {
-      // The diaper itself is already stored. Failing the request here would
-      // report a lost record that was in fact saved.
-      c.get('log').warn('inventory decrement failed', { err });
-    }
-
-    // Return the created diaper
-    const diaperResult = await db.execute({
-      sql: `
-      SELECT id, subject_id, change_time, type, color, consistency, notes, created_at, created_by
-      FROM diapers
-      WHERE id = ?
-    `,
-      args: [diaperId]
-    });
-    
-    return c.json({ 
-      message: 'Diaper recorded successfully', 
-      diaper: diaperResult.rows[0] 
-    });
-  } catch (error) {
-    c.get('log').error('create diaper failed', { err: error });
-    return c.json({ error: 'Failed to record diaper' }, 500);
-  }
-});
-
-// Update a diaper
-diaperRoutes.put('/:id{[0-9]+}', zValidator('json', updateDiaperSchema), async (c) => {
-  try {
-    const diaperId = parseInt(c.req.param('id'));
-    const { changeTime, type, color, consistency, notes } = c.req.valid('json');
-    const userId = c.get('userId');
-    const db = c.get('db');
-    
-    // Verify user has access to this diaper
-    const diaperCheck = await db.execute({
-      sql: `
-      SELECT d.id, d.subject_id
-      FROM diapers d
-      JOIN subjects b ON d.subject_id = b.id
-      JOIN households h ON b.household_id = h.id
-      JOIN user_households uh ON h.id = uh.household_id
-      WHERE d.id = ? AND uh.user_id = ?
-    `,
-      args: [diaperId, userId]
-    });
-    
-    if (diaperCheck.rows.length === 0) {
-      return c.json({ error: 'Diaper not found or access denied' }, 404);
-    }
-    
-    // Build dynamic update query
-    const updates = [];
-    const params = [];
-    
-    if (changeTime !== undefined) {
-      updates.push('change_time = ?');
-      params.push(changeTime);
-    }
-    
-    if (type !== undefined) {
-      updates.push('type = ?');
-      params.push(type);
-    }
-    
-    if (color !== undefined) {
-      updates.push('color = ?');
-      params.push(color);
-    }
-    
-    if (consistency !== undefined) {
-      updates.push('consistency = ?');
-      params.push(consistency);
-    }
-    
-    if (notes !== undefined) {
-      updates.push('notes = ?');
-      params.push(notes);
-    }
-    
-    if (updates.length === 0) {
-      return c.json({ message: 'No updates provided' });
-    }
-    
-    params.push(diaperId); // For WHERE clause
-    
-    const query = `UPDATE diapers SET ${updates.join(', ')} WHERE id = ?`;
-    
-    await db.execute({
-      sql: query,
-      args: params
-    });
-    
-    // Return updated diaper
-    const updatedDiaperResult = await db.execute({
-      sql: `
-      SELECT id, subject_id, change_time, type, color, consistency, notes, created_at, created_by
-      FROM diapers
-      WHERE id = ?
-    `,
-      args: [diaperId]
-    });
-    
-    return c.json({ 
-      message: 'Diaper updated successfully', 
-      diaper: updatedDiaperResult.rows[0] 
-    });
-  } catch (error) {
-    c.get('log').error('update diaper failed', { err: error });
-    return c.json({ error: 'Failed to update diaper' }, 500);
-  }
-});
-
-// Delete a diaper
-diaperRoutes.delete('/:id{[0-9]+}', async (c) => {
-  try {
-    const diaperId = parseInt(c.req.param('id'));
-    const userId = c.get('userId');
-    const db = c.get('db');
-    
-    // Verify user has access to this diaper
-    const diaperCheck = await db.execute({
-      sql: `
-      SELECT d.id
-      FROM diapers d
-      JOIN subjects b ON d.subject_id = b.id
-      JOIN households h ON b.household_id = h.id
-      JOIN user_households uh ON h.id = uh.household_id
-      WHERE d.id = ? AND uh.user_id = ?
-    `,
-      args: [diaperId, userId]
-    });
-    
-    if (diaperCheck.rows.length === 0) {
-      return c.json({ error: 'Diaper not found or access denied' }, 404);
-    }
-    
-    // Delete the diaper
-    await db.execute({
-      sql: 'DELETE FROM diapers WHERE id = ?',
-      args: [diaperId]
-    });
-    
-    return c.json({ message: 'Diaper deleted successfully' });
-  } catch (error) {
-    c.get('log').error('delete diaper failed', { err: error });
-    return c.json({ error: 'Failed to delete diaper' }, 500);
-  }
-});
-
-export { diaperRoutes };
+export const diaperRoutes = categoryRoutes(diaperSheet);

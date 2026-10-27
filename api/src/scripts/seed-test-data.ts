@@ -10,7 +10,7 @@ import { randomUUID } from 'node:crypto';
 import bcrypt from 'bcryptjs';
 import { ensureRegistry, provisionFamily, getFamilyClient } from '../namespaces';
 import { NAMESPACE_HOUSEHOLD_ID } from '../db-core';
-import { categoryTemplate } from '../registry';
+import { categoryTemplate } from '../category-registry';
 
 // The fixtures' fixed identity, shared with validate-seed.ts so the two
 // scripts cannot disagree about which family they are talking about.

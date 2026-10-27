@@ -1,12 +1,18 @@
-import { Hono } from 'hono';
-import { zValidator } from '@hono/zod-validator';
+// routes/vaccinations.ts
+//
+// One sheet, not six handlers: the factory (category-routes.ts) holds the
+// behavior. Raw mode matches this category exactly — snake_case rows, the
+// 404 of the per-row access check, the re-selecting create/update — with two
+// departures declared per sheet: the three-key sort of the list
+// (listOrder) and the static /schedule sub-endpoint (extraRoutes).
 import { z } from 'zod';
-import { resolveTrackableMember, attachCreatedBy } from '../member-scope';
-import { parsePaging, countMatching } from '../paging';
+import { type Hono } from 'hono';
 import { type AuthEnv } from '../auth';
-import { emitActivity } from '../inventory-consume';
+import { type CategorySheet, categoryRoutes } from './category-routes';
 
-const vaccinationRoutes = new Hono<AuthEnv>();
+const selectColumns = [
+  'id', 'subject_id', 'name', 'date_given', 'next_due_date', 'administered_by', 'notes', 'created_at', 'created_by',
+];
 
 // Zod schemas for validation
 const createVaccinationSchema = z.object({
@@ -26,330 +32,121 @@ const updateVaccinationSchema = z.object({
   notes: z.string().optional(),
 });
 
-// Get all vaccinations for a baby
-vaccinationRoutes.get('/', async (c) => {
-  try {
-    const userId = c.get('userId');
-    const db = c.get('db');
-    const memberId = parseInt(c.req.query('memberId') || '0');
-    
-    if (!memberId) {
-      return c.json({ error: 'Member ID is required' }, 400);
-    }
-    
-    const scope = await resolveTrackableMember(db, userId, memberId);
-    if (!scope) {
-      return c.json({ error: 'Member not found or access denied' }, 404);
-    }
-    const subjectId = scope.subjectId;
-    
-    // Get vaccinations for the baby
-    const { limit, offset } = parsePaging((k) => c.req.query(k));
+// Recommended vaccination schedule (standardized, simplified) — static, so
+// it lives on the sheet and never touches the DB.
+const VACCINATION_SCHEDULE = [
+  {
+    name: 'Hepatitis B',
+    ages: ['birth', '1-2 months', '6-18 months'],
+    description: 'Protects against hepatitis B virus infection',
+    notes: 'Given in 3 doses',
+  },
+  {
+    name: 'DTaP',
+    ages: ['2 months', '4 months', '6 months', '15-18 months', '4-6 years'],
+    description: 'Protects against diphtheria, tetanus, and pertussis',
+    notes: 'Given in 5 doses',
+  },
+  {
+    name: 'Hib',
+    ages: ['2 months', '4 months', '6 months', '12-15 months'],
+    description: 'Protects against Haemophilus influenzae type b',
+    notes: 'Number of doses depends on product used',
+  },
+  {
+    name: 'Polio (IPV)',
+    ages: ['2 months', '4 months', '6-18 months', '4-6 years'],
+    description: 'Protects against polio',
+    notes: 'Given in 4 doses',
+  },
+  {
+    name: 'PCV13',
+    ages: ['2 months', '4 months', '6 months', '12-15 months'],
+    description: 'Protects against pneumococcal disease',
+    notes: 'Given in 4 doses',
+  },
+  {
+    name: 'Rotavirus',
+    ages: ['2 months', '4 months', '6 months'],
+    description: 'Protects against rotavirus infection',
+    notes: '2 or 3 doses depending on product',
+  },
+  {
+    name: 'MMR',
+    ages: ['12-15 months', '4-6 years'],
+    description: 'Protects against measles, mumps, and rubella',
+    notes: 'Given in 2 doses',
+  },
+  {
+    name: 'Varicella',
+    ages: ['12-15 months', '4-6 years'],
+    description: 'Protects against chickenpox',
+    notes: 'Given in 2 doses',
+  },
+];
 
-    const vaccinationsResult = await db.execute({
-      sql: `
-      SELECT id, subject_id, name, date_given, next_due_date, administered_by, notes, created_at, created_by
-      FROM vaccinations
-      WHERE subject_id = ?
-      ORDER BY date_given DESC, next_due_date ASC, id DESC
-      LIMIT ? OFFSET ?
-    `,
-      args: [subjectId, limit, offset]
-    });
-    const total = await countMatching(db, 'vaccinations', [subjectId]);
-
-    await attachCreatedBy(db, vaccinationsResult.rows as any[]);
-    return c.json({ vaccinations: vaccinationsResult.rows, total });
-  } catch (error) {
-    c.get('log').error('get vaccinations failed', { err: error });
-    return c.json({ error: 'Failed to fetch vaccinations' }, 500);
-  }
-});
-
-// Get a specific vaccination
-vaccinationRoutes.get('/:id{[0-9]+}', async (c) => {
-  try {
-    const vaccinationId = parseInt(c.req.param('id'));
-    const userId = c.get('userId');
-    const db = c.get('db');
-    
-    // Verify user has access to this vaccination
-    const vaccinationResult = await db.execute({
-      sql: `
-      SELECT v.id, v.subject_id, v.name, v.date_given, v.next_due_date, v.administered_by, v.notes, v.created_at, v.created_by
-      FROM vaccinations v
-      JOIN subjects b ON v.subject_id = b.id
-      JOIN households h ON b.household_id = h.id
-      JOIN user_households uh ON h.id = uh.household_id
-      WHERE v.id = ? AND uh.user_id = ?
-    `,
-      args: [vaccinationId, userId]
-    });
-    
-    if (vaccinationResult.rows.length === 0) {
-      return c.json({ error: 'Vaccination not found or access denied' }, 404);
-    }
-    
-    return c.json({ vaccination: vaccinationResult.rows[0] });
-  } catch (error) {
-    c.get('log').error('get vaccination failed', { err: error });
-    return c.json({ error: 'Failed to fetch vaccination' }, 500);
-  }
-});
-
-// Create a new vaccination
-vaccinationRoutes.post('/', zValidator('json', createVaccinationSchema), async (c) => {
-  try {
-    const { memberId, name, dateGiven, nextDueDate, administeredBy, notes } = c.req.valid('json');
-    const userId = c.get('userId');
-    const db = c.get('db');
-    
-    const scope = await resolveTrackableMember(db, userId, memberId);
-    if (!scope) {
-      return c.json({ error: 'Member not found or access denied' }, 404);
-    }
-    const subjectId = scope.subjectId;
-    
-    // Insert new vaccination
-    const result = await db.execute({
-      sql: `
-        INSERT INTO vaccinations (
-          subject_id, name, date_given, next_due_date, administered_by, notes, created_at, created_by
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-      `,
-      args: [
-        subjectId, 
-        name, 
-        dateGiven || null, 
-        nextDueDate || null, 
-        administeredBy || null, 
-        notes || null, 
-        new Date().toISOString(),
-        userId
-      ]
-    });
-    
-    // A vaccination bills stock for anything linked to it — vaccinations carry
-    // no option dimension, so only an unconditional rule matches. The record
-    // is already stored; a consumption failure warns instead of failing.
-    const vaccinationId = Number(result.lastInsertRowid);
-    try {
-      await emitActivity(db, {
-        category: 'vaccines',
-        refTable: 'vaccinations',
-        refId: vaccinationId,
-        subjectId,
-        attrs: {},
-        createdBy: userId,
-      });
-    } catch (err) {
-      c.get('log').warn('inventory decrement failed', { err });
-    }
-    
-    // Return the created vaccination
-    const vaccinationResult = await db.execute({
-      sql: `
-      SELECT id, subject_id, name, date_given, next_due_date, administered_by, notes, created_at, created_by
-      FROM vaccinations
-      WHERE id = ?
-    `,
-      args: [Number(result.lastInsertRowid)]
-    });
-    
-    return c.json({ 
-      message: 'Vaccination recorded successfully', 
-      vaccination: vaccinationResult.rows[0] 
-    });
-  } catch (error) {
-    c.get('log').error('create vaccination failed', { err: error });
-    return c.json({ error: 'Failed to record vaccination' }, 500);
-  }
-});
-
-// Update a vaccination
-vaccinationRoutes.put('/:id{[0-9]+}', zValidator('json', updateVaccinationSchema), async (c) => {
-  try {
-    const vaccinationId = parseInt(c.req.param('id'));
-    const { name, dateGiven, nextDueDate, administeredBy, notes } = c.req.valid('json');
-    const userId = c.get('userId');
-    const db = c.get('db');
-    
-    // Verify user has access to this vaccination
-    const vaccinationCheck = await db.execute({
-      sql: `
-      SELECT v.id, v.subject_id
-      FROM vaccinations v
-      JOIN subjects b ON v.subject_id = b.id
-      JOIN households h ON b.household_id = h.id
-      JOIN user_households uh ON h.id = uh.household_id
-      WHERE v.id = ? AND uh.user_id = ?
-    `,
-      args: [vaccinationId, userId]
-    });
-    
-    if (vaccinationCheck.rows.length === 0) {
-      return c.json({ error: 'Vaccination not found or access denied' }, 404);
-    }
-    
-    // Build dynamic update query
-    const updates = [];
-    const params = [];
-    
-    if (name !== undefined) {
-      updates.push('name = ?');
-      params.push(name);
-    }
-    
-    if (dateGiven !== undefined) {
-      updates.push('date_given = ?');
-      params.push(dateGiven);
-    }
-    
-    if (nextDueDate !== undefined) {
-      updates.push('next_due_date = ?');
-      params.push(nextDueDate);
-    }
-    
-    if (administeredBy !== undefined) {
-      updates.push('administered_by = ?');
-      params.push(administeredBy);
-    }
-    
-    if (notes !== undefined) {
-      updates.push('notes = ?');
-      params.push(notes);
-    }
-    
-    if (updates.length === 0) {
-      return c.json({ message: 'No updates provided' });
-    }
-    
-    params.push(vaccinationId); // For WHERE clause
-    
-    const query = `UPDATE vaccinations SET ${updates.join(', ')} WHERE id = ?`;
-    
-    await db.execute({
-      sql: query,
-      args: params
-    });
-    
-    // Return updated vaccination
-    const updatedVaccinationResult = await db.execute({
-      sql: `
-      SELECT id, subject_id, name, date_given, next_due_date, administered_by, notes, created_at, created_by
-      FROM vaccinations
-      WHERE id = ?
-    `,
-      args: [vaccinationId]
-    });
-    
-    return c.json({ 
-      message: 'Vaccination updated successfully', 
-      vaccination: updatedVaccinationResult.rows[0] 
-    });
-  } catch (error) {
-    c.get('log').error('update vaccination failed', { err: error });
-    return c.json({ error: 'Failed to update vaccination' }, 500);
-  }
-});
-
-// Delete a vaccination
-vaccinationRoutes.delete('/:id{[0-9]+}', async (c) => {
-  try {
-    const vaccinationId = parseInt(c.req.param('id'));
-    const userId = c.get('userId');
-    const db = c.get('db');
-    
-    // Verify user has access to this vaccination
-    const vaccinationCheck = await db.execute({
-      sql: `
-      SELECT v.id
-      FROM vaccinations v
-      JOIN subjects b ON v.subject_id = b.id
-      JOIN households h ON b.household_id = h.id
-      JOIN user_households uh ON h.id = uh.household_id
-      WHERE v.id = ? AND uh.user_id = ?
-    `,
-      args: [vaccinationId, userId]
-    });
-    
-    if (vaccinationCheck.rows.length === 0) {
-      return c.json({ error: 'Vaccination not found or access denied' }, 404);
-    }
-    
-    // Delete the vaccination
-    await db.execute({
-      sql: 'DELETE FROM vaccinations WHERE id = ?',
-      args: [vaccinationId]
-    });
-    
-    return c.json({ message: 'Vaccination deleted successfully' });
-  } catch (error) {
-    c.get('log').error('delete vaccination failed', { err: error });
-    return c.json({ error: 'Failed to delete vaccination' }, 500);
-  }
-});
-
-// Get recommended vaccination schedule
-vaccinationRoutes.get('/schedule', async (c) => {
-  try {
-    // Return standardized vaccination schedule (simplified for this example)
-    const vaccinationSchedule = [
-      {
-        name: 'Hepatitis B',
-        ages: ['birth', '1-2 months', '6-18 months'],
-        description: 'Protects against hepatitis B virus infection',
-        notes: 'Given in 3 doses'
-      },
-      {
-        name: 'DTaP',
-        ages: ['2 months', '4 months', '6 months', '15-18 months', '4-6 years'],
-        description: 'Protects against diphtheria, tetanus, and pertussis',
-        notes: 'Given in 5 doses'
-      },
-      {
-        name: 'Hib',
-        ages: ['2 months', '4 months', '6 months', '12-15 months'],
-        description: 'Protects against Haemophilus influenzae type b',
-        notes: 'Number of doses depends on product used'
-      },
-      {
-        name: 'Polio (IPV)',
-        ages: ['2 months', '4 months', '6-18 months', '4-6 years'],
-        description: 'Protects against polio',
-        notes: 'Given in 4 doses'
-      },
-      {
-        name: 'PCV13',
-        ages: ['2 months', '4 months', '6 months', '12-15 months'],
-        description: 'Protects against pneumococcal disease',
-        notes: 'Given in 4 doses'
-      },
-      {
-        name: 'Rotavirus',
-        ages: ['2 months', '4 months', '6 months'],
-        description: 'Protects against rotavirus infection',
-        notes: '2 or 3 doses depending on product'
-      },
-      {
-        name: 'MMR',
-        ages: ['12-15 months', '4-6 years'],
-        description: 'Protects against measles, mumps, and rubella',
-        notes: 'Given in 2 doses'
-      },
-      {
-        name: 'Varicella',
-        ages: ['12-15 months', '4-6 years'],
-        description: 'Protects against chickenpox',
-        notes: 'Given in 2 doses'
+const vaccinationSheet: CategorySheet = {
+  table: 'vaccinations',
+  orderExpr: 'date_given',
+  // three keys, mixed directions: date_given DESC, next_due_date ASC, id DESC
+  listOrder: 'date_given DESC, next_due_date ASC, id DESC',
+  selectColumns,
+  handlers: ['list', 'get', 'create', 'update', 'delete'],
+  createSchema: createVaccinationSchema,
+  updateSchema: updateVaccinationSchema,
+  columns: {
+    name: 'name',
+    dateGiven: 'date_given',
+    nextDueDate: 'next_due_date',
+    administeredBy: 'administered_by',
+    notes: 'notes',
+  },
+  insert: {
+    columns: [...selectColumns.slice(1)],
+    values: (data, subjectId, now, userId) => [
+      subjectId,
+      data.name,
+      data.dateGiven || null,
+      data.nextDueDate || null,
+      data.administeredBy || null,
+      data.notes || null,
+      now,
+      userId,
+    ],
+  },
+  responseMode: 'raw',
+  listKey: 'vaccinations',
+  itemKey: 'vaccination',
+  nouns: { singular: 'vaccination', article: 'a' },
+  messages: {
+    memberRequired: 'Member ID is required',
+    memberDenied: 'Member not found or access denied',
+    notFound: 'Vaccination not found or access denied',
+    accessDenied: 'Access denied',
+    listFailed: 'Failed to fetch vaccinations',
+    getFailed: 'Failed to fetch vaccination',
+    createFailed: 'Failed to record vaccination',
+    updateFailed: 'Failed to update vaccination',
+    deleteFailed: 'Failed to delete vaccination',
+    created: 'Vaccination recorded successfully',
+    updated: 'Vaccination updated successfully',
+    deleted: 'Vaccination deleted successfully',
+    createdStatus: 200,
+  },
+  // A vaccination bills stock for anything linked to it — vaccinations carry
+  // no option dimension, so only an unconditional rule matches.
+  emit: { category: 'vaccines', attrs: () => ({}) },
+  // the recommended schedule is static — no DB, its own handler
+  extraRoutes: (routes: Hono<AuthEnv>) => {
+    routes.get('/schedule', async (c) => {
+      try {
+        return c.json({ schedule: VACCINATION_SCHEDULE });
+      } catch (error) {
+        c.get('log').error('get vaccination schedule failed', { err: error });
+        return c.json({ error: 'Failed to fetch vaccination schedule' }, 500);
       }
-    ];
-    
-    return c.json({ schedule: vaccinationSchedule });
-  } catch (error) {
-    c.get('log').error('get vaccination schedule failed', { err: error });
-    return c.json({ error: 'Failed to fetch vaccination schedule' }, 500);
-  }
-});
+    });
+  },
+};
 
-export { vaccinationRoutes };
+export const vaccinationRoutes = categoryRoutes(vaccinationSheet);

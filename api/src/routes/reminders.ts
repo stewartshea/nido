@@ -10,7 +10,7 @@ import {
 	validateConditions,
 	type ReminderCondition,
 } from '../reminder-conditions';
-import { reminderCatalog } from '../registry';
+import { reminderCatalog } from '../category-registry';
 
 const reminderRoutes = new Hono<AuthEnv>();
 

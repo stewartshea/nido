@@ -16,7 +16,7 @@ import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 import { resolveTrackableMember } from '../member-scope';
 import { type AuthEnv } from '../auth';
-import { CATEGORIES, type CategoryId } from '../registry';
+import { CATEGORIES, type CategoryId } from '../category-registry';
 import { createEvent, shapeEventRow } from './events';
 
 export const planRoutes = new Hono<AuthEnv>();

@@ -19,7 +19,7 @@ import { familyRecipients, type Recipient } from './inventory-eval';
 import { getAppSettings, smtpConfigured, sendMail, baseUrl } from './mail';
 import { renderUpcomingAppointmentsEmail, type AppointmentEmailLine } from './mail-templates';
 import { effectiveTimezone, withinSendHour, zonedParts } from './timezone';
-import { CATEGORY_OPTION_KEY } from './registry';
+import { CATEGORY_OPTION_KEY } from './category-registry';
 import { log } from './logger';
 
 /**

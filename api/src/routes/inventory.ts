@@ -11,7 +11,7 @@ import { emitActivity, parseConsumptionConditions, parseRuleMatch } from '../inv
 import {
 	consumableCategories,
 	validateConsumptionConditions, type ConsumptionCondition,
-} from '../registry';
+} from '../category-registry';
 import { familyOptionValues } from '../reminder-conditions';
 import { SIGNALS, signalByName } from '../inventory-signals';
 import {
