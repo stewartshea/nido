@@ -11,7 +11,7 @@
 		PointElement,
 	} from 'chart.js';
 	import type { ChartData, ChartOptions } from 'chart.js';
-	import { growthAPI } from '$lib/api';
+	import { growthAPI } from '$lib/api/records';
 
 	ChartJS.register(Title, Tooltip, Legend, LineElement, LinearScale, PointElement);
 

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { createEventDispatcher, onMount } from 'svelte';
-	import { moodAPI } from '$lib/api';
+	import { moodAPI } from '$lib/api/records';
 	import { loadLoggingOptions, type LoggingOptions } from '$lib/logging/options';
 	import { localInputToIso, toLocalInput } from '$lib/logging/format';
 	import { apiError } from '$lib/logging/recent';

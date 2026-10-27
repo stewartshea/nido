@@ -9,7 +9,7 @@
 	import BottomNav from '$lib/components/BottomNav.svelte';
 	import { PRIMARY_NAV } from '$lib/nav';
 	import { authStore, authActions } from '$lib/stores/authStore';
-	import { familiesAPI } from '$lib/api';
+	import { familiesAPI } from '$lib/api/family';
 	import { applyTimezone, loadFamilyTimezone } from '$lib/stores/timezoneStore';
 	import { notificationCount, refreshNotificationCount, startNotificationCount, stopNotificationCount } from '$lib/stores/notificationCount';
 

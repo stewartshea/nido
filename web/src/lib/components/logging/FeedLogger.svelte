@@ -2,7 +2,7 @@
 	import { createEventDispatcher, onMount } from 'svelte';
 	import { browser } from '$app/environment';
 	import { Heart, Baby, Infinity as InfinityIcon, PenLine, Timer, RotateCcw, ChevronLeft } from 'lucide-svelte';
-	import { feedingAPI } from '$lib/api';
+	import { feedingAPI } from '$lib/api/records';
 	import { enqueueRecord } from '$lib/logging/outbox';
 	import { feedTimerKey, loadBreastTimer, timerHasTime } from '$lib/logging/timers';
 	import { formatMinutes, localInputToIso, toLocalInput } from '$lib/logging/format';

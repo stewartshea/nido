@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { createEventDispatcher, onDestroy, onMount } from 'svelte';
 	import { PenLine, Timer, Moon } from 'lucide-svelte';
-	import { sleepAPI } from '$lib/api';
+	import { sleepAPI } from '$lib/api/records';
 	import { enqueueRecord } from '$lib/logging/outbox';
 	import { sleepTimerKey, notifyTimersChanged } from '$lib/logging/timers';
 	import { formatElapsed, formatTime, localInputToIso, toLocalInput } from '$lib/logging/format';

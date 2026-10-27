@@ -2,7 +2,7 @@
 	import { onMount } from 'svelte';
 	import { browser } from '$app/environment';
 	import { goto } from '$app/navigation';
-	import { tokenExpired } from '$lib/api';
+	import { tokenExpired } from '$lib/api/client';
 
 	onMount(() => {
 		if (browser) {

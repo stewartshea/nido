@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { InventoryAlert, InventoryItem } from '$lib/api';
+	import type { InventoryAlert, InventoryItem } from '$lib/api/types';
 
 	/**
 	 * The shape of what you hold, before any detail. Each figure answers a

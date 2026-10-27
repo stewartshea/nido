@@ -2,7 +2,8 @@
 	import { onMount } from 'svelte';
 	import { browser } from '$app/environment';
 	import { goto } from '$app/navigation';
-	import { authAPI, tokenExpired } from '$lib/api';
+	import { tokenExpired } from '$lib/api/client';
+	import { authAPI } from '$lib/api/family';
 	import { authStore, authActions } from '$lib/stores/authStore';
 	import { AlertCircle, Check } from 'lucide-svelte';
 

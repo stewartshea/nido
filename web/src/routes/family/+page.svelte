@@ -1,7 +1,12 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
 	import { browser } from '$app/environment';
-	import { authAPI, userAPI, familiesAPI, feedingAPI, diaperAPI, sleepAPI, growthAPI, healthAPI, importsAPI, milestoneAPI, vaccinationAPI, settingsAPI, moodAPI, journalAPI, vitalsAPI, tokenExpired, remindersAPI, type PageOptions, type Reminder } from '$lib/api';
+	import { tokenExpired } from '$lib/api/client';
+	import { authAPI, userAPI, familiesAPI } from '$lib/api/family';
+	import { feedingAPI, diaperAPI, sleepAPI, growthAPI, healthAPI, milestoneAPI, vaccinationAPI, moodAPI, journalAPI, vitalsAPI } from '$lib/api/records';
+	import { remindersAPI } from '$lib/api/notifications';
+	import { importsAPI, settingsAPI } from '$lib/api/system';
+	import type { PageOptions, Reminder } from '$lib/api/types';
 	import { authStore, authActions } from '$lib/stores/authStore';
 	import { uiStore, uiActions } from '$lib/stores/uiStore';
 	import { applyTimezone } from '$lib/stores/timezoneStore';

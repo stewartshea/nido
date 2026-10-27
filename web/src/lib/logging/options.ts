@@ -1,4 +1,4 @@
-import { familiesAPI } from '$lib/api';
+import { familiesAPI } from '$lib/api/family';
 import { DEFAULT_CATEGORY_OPTIONS } from '$lib/shared';
 
 export type CategoryOptions = Record<string, Record<string, string[]>>;

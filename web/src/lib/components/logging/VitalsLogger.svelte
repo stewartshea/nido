@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { createEventDispatcher, onMount } from 'svelte';
-	import { vitalsAPI } from '$lib/api';
+	import { vitalsAPI } from '$lib/api/records';
 	import { localInputToIso, toLocalInput } from '$lib/logging/format';
 	import { apiError } from '$lib/logging/recent';
 

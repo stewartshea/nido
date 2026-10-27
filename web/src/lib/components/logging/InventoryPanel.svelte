@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { createEventDispatcher, onMount } from 'svelte';
-	import { inventoryAPI, type InventoryItem, type InventoryAlert, type DiaperBand, type ConsumableActivity } from '$lib/api';
+	import { inventoryAPI } from '$lib/api/inventory';
+	import type { InventoryItem, InventoryAlert, DiaperBand, ConsumableActivity } from '$lib/api/types';
 	import { defaultMemberId } from '$lib/shared';
 	import { zonedOptions } from '$lib/logging/format';
 

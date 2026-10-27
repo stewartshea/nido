@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { createEventDispatcher, onMount } from 'svelte';
-	import { familiesAPI, type FamilyAccount } from '$lib/api';
+	import { familiesAPI } from '$lib/api/family';
+	import type { FamilyAccount } from '$lib/api/types';
 
 	/**
 	 * Chooses who a notification rule is addressed to.

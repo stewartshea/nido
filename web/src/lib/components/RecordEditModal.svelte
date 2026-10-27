@@ -3,7 +3,7 @@
 	import {
 		feedingAPI, diaperAPI, sleepAPI, growthAPI, milestoneAPI,
 		vaccinationAPI, moodAPI, journalAPI, vitalsAPI,
-	} from '$lib/api';
+	} from '$lib/api/records';
 	import { DEFAULT_CATEGORY_OPTIONS, milestoneCategory, milestoneCategoryKey, isMilestoneKind } from '$lib/shared';
 	import { convertLength, convertWeight, round1, type GrowthUnitSystem } from '$lib/growth/units';
 	import { buildManualBreastFeed } from '$lib/breast';

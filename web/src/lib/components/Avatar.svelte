@@ -8,7 +8,7 @@
 	// avatar (or the fetch fails), matching every existing call site's
 	// icon/initial fallback.
 	import { onDestroy } from 'svelte';
-	import { familiesAPI } from '$lib/api';
+	import { familiesAPI } from '$lib/api/family';
 
 	export let familyId: string | null | undefined;
 	export let memberId: number | string | null | undefined;

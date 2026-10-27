@@ -1,7 +1,8 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
-	import { inventoryAPI, type InventoryAlert, type InventoryItem } from '$lib/api';
+	import { inventoryAPI } from '$lib/api/inventory';
+	import type { InventoryAlert, InventoryItem } from '$lib/api/types';
 	import { formatMinutes } from '$lib/logging/format';
 
 	/**
