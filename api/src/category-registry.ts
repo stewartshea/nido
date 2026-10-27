@@ -1,4 +1,4 @@
-// api/src/registry.ts
+// api/src/category-registry.ts
 //
 // ONE entry per category. Everything the app knows about "feeds" or
 // "vitamins" — where its records are stored today, which options a log form

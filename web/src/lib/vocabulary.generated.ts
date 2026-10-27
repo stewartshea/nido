@@ -1,6 +1,6 @@
 // AUTO-GENERATED — do not edit.
 //
-// Source: api/src/registry.ts
+// Source: api/src/category-registry.ts
 // Regenerate: npx tsx scripts/generate-vocabulary.ts
 //
 // Hand-editing this file will be undone, and a test fails if it is out of date.

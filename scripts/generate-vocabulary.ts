@@ -1,13 +1,13 @@
 // scripts/generate-vocabulary.ts
 //
-// Writes web/src/lib/vocabulary.generated.ts from api/src/registry.ts.
+// Writes web/src/lib/vocabulary.generated.ts from api/src/category-registry.ts.
 //
 //   npx tsx scripts/generate-vocabulary.ts            # write it
 //   npx tsx scripts/generate-vocabulary.ts --check    # fail if it is stale
 //
 // The web builds from its own directory in its own container, so it cannot
 // import the API's module. Generating a file inside web/src keeps the build
-// untouched while leaving one place — api/src/registry.ts — where a category
+// untouched while leaving one place — api/src/category-registry.ts — where a category
 // is actually defined. The generated file is checked in so the web build never
 // depends on this script having run, and --check (run by a test) means it cannot
 // silently drift.
@@ -21,7 +21,7 @@ import {
 	CATEGORY_OPTIONS,
 	STAGES,
 	DIGEST_FREQUENCIES,
-} from '../api/src/registry';
+} from '../api/src/category-registry';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const OUT = join(ROOT, 'web/src/lib/vocabulary.generated.ts');
@@ -36,7 +36,7 @@ const record = (name: string, value: unknown) =>
 
 const rendered = `// AUTO-GENERATED — do not edit.
 //
-// Source: api/src/registry.ts
+// Source: api/src/category-registry.ts
 // Regenerate: npx tsx scripts/generate-vocabulary.ts
 //
 // Hand-editing this file will be undone, and a test fails if it is out of date.
@@ -74,7 +74,7 @@ const stale = (() => {
 if (process.argv.includes('--check')) {
 	if (stale) {
 		console.error(
-			'web/src/lib/vocabulary.generated.ts is out of date with api/src/registry.ts.\n' +
+			'web/src/lib/vocabulary.generated.ts is out of date with api/src/category-registry.ts.\n' +
 				'Run: npx tsx scripts/generate-vocabulary.ts',
 		);
 		process.exit(1);

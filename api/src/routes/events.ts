@@ -17,7 +17,7 @@ import { z } from 'zod';
 import { resolveTrackableMember, attachCreatedBy } from '../member-scope';
 import { parsePaging } from '../paging';
 import { type AuthEnv } from '../auth';
-import { CATEGORIES, CATEGORY_IDS, RECORD_SKEW_MS, type CategoryId } from '../registry';
+import { CATEGORIES, CATEGORY_IDS, RECORD_SKEW_MS, type CategoryId } from '../category-registry';
 import { emitActivity } from '../inventory-consume';
 
 export const eventRoutes = new Hono<AuthEnv>();

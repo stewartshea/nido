@@ -12,7 +12,7 @@ import {
   EVENT_KIND_CATEGORIES,
   consumableCategories,
   type CategoryId,
-} from './registry';
+} from './category-registry';
 
 /**
  * A family every account has moved out of — the invite flow re-points the

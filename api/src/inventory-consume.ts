@@ -20,7 +20,7 @@
 // through every consumable category's route, so "this activity bills stock"
 // cannot silently stop being true.
 
-import { consumableCategories, type ConsumptionCondition } from './registry';
+import { consumableCategories, type ConsumptionCondition } from './category-registry';
 
 export type { ConsumptionCondition };
 

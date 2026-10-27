@@ -3,7 +3,7 @@ import type { SubjectRow, SleepAggRow, DiaperAggRow, FeedingAggRow } from '../db
 import { resolveTrackableMember, attachCreatedBy } from '../member-scope';
 import { type AuthEnv } from '../auth';
 import { NAMESPACE_HOUSEHOLD_ID, DEFAULT_FEED_GROUPING_MINUTES } from '../db-core';
-import { EVENT_KIND_CATEGORIES as MILESTONE_KINDS, CATEGORY_OPTION_KEY, RECORD_SKEW_MS } from '../registry';
+import { EVENT_KIND_CATEGORIES as MILESTONE_KINDS, CATEGORY_OPTION_KEY, RECORD_SKEW_MS } from '../category-registry';
 
 const healthRoutes = new Hono<AuthEnv>();
 

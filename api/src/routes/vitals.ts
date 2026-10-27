@@ -13,7 +13,7 @@ import { z } from 'zod';
 import { type AuthEnv } from '../auth';
 import { resolveTrackableMember, attachCreatedBy } from '../member-scope';
 import { parsePaging, countMatching } from '../paging';
-import { CATEGORIES } from '../registry';
+import { CATEGORIES } from '../category-registry';
 
 const vitalRoutes = new Hono<AuthEnv>();
 

@@ -15,7 +15,7 @@ import { z } from 'zod';
 import { resolveTrackableMember, attachCreatedBy } from '../member-scope';
 import { parsePaging } from '../paging';
 import { type AuthEnv } from '../auth';
-import { CATEGORIES, EVENT_KIND_CATEGORIES, RECORD_SKEW_MS, type CategoryId } from '../registry';
+import { CATEGORIES, EVENT_KIND_CATEGORIES, RECORD_SKEW_MS, type CategoryId } from '../category-registry';
 import {
 	upcomingAppointmentsForSubject, upcomingAppointmentsForFamily, APPOINTMENT_LIST_LOOKAHEAD_DAYS,
 } from '../appointments';

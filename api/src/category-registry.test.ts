@@ -1,7 +1,7 @@
 // src/registry.test.ts
 //
 // Guards the one thing the registry consolidation is for: a category declared
-// in api/src/registry.ts cannot silently fail to reach the web, the log forms,
+// in api/src/category-registry.ts cannot silently fail to reach the web, the log forms,
 // or the rules — and the declarations Phase 1b will wire up (tense, fields,
 // schema) cannot drift from each other in the meantime.
 import { describe, it, expect } from 'vitest';
@@ -16,7 +16,7 @@ import {
 	MILESTONE_CATEGORY_IDS,
 	STAGE_CATEGORIES,
 	type CategoryId,
-} from './registry';
+} from './category-registry';
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 

@@ -17,7 +17,7 @@
 // adding a category, or a family's custom option, makes it selectable and
 // evaluable with no change here.
 
-import { SOURCES, reminderCatalog, type Source } from './registry';
+import { SOURCES, reminderCatalog, type Source } from './category-registry';
 import { NAMESPACE_HOUSEHOLD_ID } from './db-core';
 
 export interface ReminderCondition {
