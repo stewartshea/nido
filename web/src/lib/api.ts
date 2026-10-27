@@ -208,9 +208,9 @@ export const diaperAPI = {
   getPage: (memberId: number, opts?: PageOptions) =>
     api.get(`/diapers?memberId=${memberId}${pageQuery(opts)}`),
   getById: (id: number) => api.get(`/diapers/${id}`),
-  create: (diaperData: { memberId: number; changeTime: string; type: 'wet' | 'dirty' | 'both'; color?: string; consistency?: string; notes?: string }) => 
+  create: (diaperData: { memberId: number; changeTime: string; type: 'wet' | 'dirty' | 'both' | 'dry'; color?: string; consistency?: string; notes?: string }) => 
     api.post('/diapers', diaperData),
-  update: (id: number, diaperData: Partial<{ changeTime: string; type: 'wet' | 'dirty' | 'both'; color?: string; consistency?: string; notes?: string }>) => 
+  update: (id: number, diaperData: Partial<{ changeTime: string; type: 'wet' | 'dirty' | 'both' | 'dry'; color?: string; consistency?: string; notes?: string }>) => 
     api.put(`/diapers/${id}`, diaperData),
   delete: (id: number) => api.delete(`/diapers/${id}`),
 };
@@ -662,7 +662,7 @@ export interface ActivityAttribute {
 	key: string;
 	/** The column the route stores it in; where emitActivity reads the event's value. */
 	column: string;
-	kind: 'enum' | 'text' | 'datetime';
+	kind: 'enum' | 'number' | 'text';
 	/** Known values for enum attributes, the registry's vocabulary merged with the family's own. */
 	values: string[];
 }
