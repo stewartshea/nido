@@ -2,7 +2,7 @@
 	import { createEventDispatcher } from 'svelte';
 	import {
 		feedingAPI, diaperAPI, sleepAPI, growthAPI, milestoneAPI,
-		vaccinationAPI, moodAPI, journalAPI, attachmentsAPI, type AttachmentMeta,
+		vaccinationAPI, moodAPI, journalAPI, vitalsAPI, attachmentsAPI, type AttachmentMeta,
 	} from '$lib/api';
 	import { CATEGORIES, milestoneCategory } from '$lib/shared';
 	import { formatLength, formatWeight } from '$lib/growth/units';
@@ -12,7 +12,7 @@
 	import { breastDetail } from '$lib/breast';
 	import {
 		Milk, Baby, Moon, TrendingUp, Star, Trophy, Stethoscope, Syringe,
-		Smile, Book, Calendar, PenLine, Trash2, ListFilter, Check,
+		Smile, Book, Calendar, PenLine, Trash2, ListFilter, Check, HeartPulse,
 	} from 'lucide-svelte';
 
 	// The member whose rows these are, so their attachments can be fetched in
@@ -28,6 +28,8 @@
 	export let vaccinations: any[] = [];
 	export let moods: any[] = [];
 	export let journalEntries: any[] = [];
+	// Vitals are a typed list of their own (camelCase rows), like moods.
+	export let vitals: any[] = [];
 	// Categories enabled for the member — controls the filter pills.
 	export let activeCategories: string[] = [];
 	// Server-side row counts per list, so the component can tell "there is more
@@ -51,12 +53,13 @@
 		milestones: 'milestones', firsts: 'milestones',
 		routines: 'milestones', medical: 'milestones',
 		vaccines: 'vaccinations', moods: 'moods', journal: 'journalEntries',
+		vitals: 'vitals',
 	};
 
 	const KIND_ICON: Record<string, any> = {
 		feeds: Milk, pumping: Milk, diapers: Baby, sleep: Moon, growth: TrendingUp,
 		milestones: Trophy, firsts: Star, routines: Calendar, medical: Stethoscope,
-		vaccines: Syringe, moods: Smile, journal: Book,
+		vaccines: Syringe, moods: Smile, journal: Book, vitals: HeartPulse,
 	};
 
 	// Empty selection means "no filter". A multi-select beats the old row of
@@ -99,6 +102,7 @@
 		...vaccinations.map((r) => tag('vaccine', 'vaccines', r)),
 		...moods.map((r) => tag('mood', 'moods', r)),
 		...journalEntries.map((r) => tag('journal', 'journal', r)),
+		...vitals.map((r) => tag('vital', 'vitals', r)),
 	].sort((a, b) => new Date(b._when || 0).getTime() - new Date(a._when || 0).getTime());
 
 	/** Map a merged row's _kind to the attachment refType. */
@@ -170,7 +174,8 @@
 	$: rows = filtered.slice(0, visibleCount);
 	$: serverTotal = Object.values(totals).reduce((a, b) => a + (b ?? 0), 0);
 	$: loadedTotal = feedings.length + diapers.length + sleeps.length + growths.length
-		+ milestones.length + vaccinations.length + moods.length + journalEntries.length;
+		+ milestones.length + vaccinations.length + moods.length + journalEntries.length
+		+ vitals.length;
 	$: moreLoadedButHidden = filtered.length > visibleCount;
 	// With no filter the whole feed is one pool. Once categories are selected,
 	// only their backing lists can grow — the page appends by list offset, so
@@ -195,6 +200,7 @@
 			case 'vaccinations': return vaccinations.length;
 			case 'moods': return moods.length;
 			case 'journalEntries': return journalEntries.length;
+			case 'vitals': return vitals.length;
 			default: return 0;
 		}
 	}
@@ -260,6 +266,11 @@
 				return bits.filter(Boolean).join(' · ') || '—';
 			}
 			case 'vaccine': return r.name || '—';
+			case 'vital': {
+				if (r.systolic != null && r.diastolic != null) return `${r.systolic}/${r.diastolic} mmHg`;
+				if (r.value != null) return `${r.value}${r.unit ? ` ${r.unit}` : ''}`;
+				return String(r.kind || '—');
+			}
 			case 'mood': return r.mood || '—';
 			case 'journal': return r.title || (r.body ? String(r.body).slice(0, 60) : '—');
 			default: return '—';
@@ -288,6 +299,7 @@
 			else if (r._kind === 'vaccine') await vaccinationAPI.delete(Number(r.id));
 			else if (r._kind === 'mood') await moodAPI.delete(Number(r.id));
 			else if (r._kind === 'journal') await journalAPI.delete(Number(r.id));
+			else if (r._kind === 'vital') await vitalsAPI.delete(Number(r.id));
 			dispatch('refresh');
 		} catch (err: any) {
 			alert(err.response?.data?.error || 'Failed to delete record.');

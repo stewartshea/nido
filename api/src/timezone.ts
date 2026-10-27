@@ -66,6 +66,23 @@ export function zonedParts(nowMs: number, timeZone: string): { hour: number; min
 }
 
 /**
+ * The local calendar date (YYYY-MM-DD) of an instant, in a named zone.
+ *
+ * Used where the question is "is this due today" rather than "what time is
+ * it": a medication that starts today should read as due from the family's
+ * midnight, not the server's. `en-CA` is the locale that formats that way;
+ * built from parts so the answer cannot pick up a stray separator.
+ */
+export function zonedDate(nowMs: number, timeZone: string): string {
+	const parts = new Intl.DateTimeFormat('en-CA', {
+		timeZone: effectiveTimezone(timeZone),
+		year: 'numeric', month: '2-digit', day: '2-digit',
+	}).formatToParts(new Date(nowMs));
+	const get = (type: string) => parts.find((p) => p.type === type)?.value ?? '';
+	return `${get('year')}-${get('month')}-${get('day')}`;
+}
+
+/**
  * Whether a family is inside the sending window for its chosen local hour.
  *
  * The scheduler ticks on a fixed interval, so "send at 09:00" is really "send

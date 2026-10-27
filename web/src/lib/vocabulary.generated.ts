@@ -23,6 +23,7 @@ export const CATEGORY_IDS = [
 	'vitamins',
 	'appointments',
 	'grooming',
+	'vitals',
 ] as const;
 
 export type CategoryId = (typeof CATEGORY_IDS)[number];
@@ -73,7 +74,8 @@ export const CATEGORY_OPTION_KEY = {
 	"medication": "type",
 	"vitamins": "type",
 	"appointments": "type",
-	"grooming": "type"
+	"grooming": "type",
+	"vitals": "kind"
 };
 
 export const CATEGORY_OPTIONS = {
@@ -224,6 +226,14 @@ export const CATEGORY_OPTIONS = {
 			"nails",
 			"trim",
 			"other"
+		]
+	},
+	"vitals": {
+		"kind": [
+			"blood pressure",
+			"pulse",
+			"temperature",
+			"oxygen saturation"
 		]
 	}
 };

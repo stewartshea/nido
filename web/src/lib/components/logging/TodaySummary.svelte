@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { createEventDispatcher } from 'svelte';
-	import { Milk, Baby, Moon, Syringe, TrendingUp, Pill, Apple, Scissors, Calendar, CalendarClock, Stethoscope, Award, Repeat2, Settings2 } from 'lucide-svelte';
+	import { Milk, Baby, Moon, Syringe, TrendingUp, Pill, Apple, Scissors, Calendar, CalendarClock, Stethoscope, Award, Repeat2, Settings2, HeartPulse } from 'lucide-svelte';
 	import { formatAge, formatElapsed, formatRelative, formatTime, formatUpcoming } from '$lib/logging/format';
 	import { formatGrowthHeadline } from '$lib/growth/units';
 
@@ -12,6 +12,10 @@
 	export let stage: string | null = null;
 	/** Which tiles to show in which order. Null uses the default order. */
 	export let tiles: string[] | null = null;
+	/** The member's most recent vital sign, passed down with the loaded lists
+	 *  rather than fetched twice. Vitals are their own table, not a milestone
+	 *  kind, so the health summary does not carry them. */
+	export let latestVital: any = null;
 
 	const dispatch = createEventDispatcher<{ log: { kind: string }; saveTiles: { tiles: string[] | null } }>();
 
@@ -56,7 +60,7 @@
 	let showPicker = false;
 	/** What is next is not a tracked category, so it is always available; the
 	 * category tiles below it follow the member like the Quick Actions do. */
-	$: available = ['upcoming', 'growth', 'feeds', 'pumping', 'diapers', 'sleep', 'vaccines', 'medication', 'vitamins', 'grooming', 'appointments', 'medical', 'milestones', 'firsts', 'routines'].filter((id) => id === 'upcoming' || has(id));
+	$: available = ['upcoming', 'growth', 'feeds', 'pumping', 'diapers', 'sleep', 'vaccines', 'medication', 'vitamins', 'vitals', 'grooming', 'appointments', 'medical', 'milestones', 'firsts', 'routines'].filter((id) => id === 'upcoming' || has(id));
 	/** What to render, in order: the saved order, else everything tracked. */
 	$: orderedTiles = tiles && tiles.length ? tiles.filter((t) => available.includes(t)) : available;
 	$: selection = tiles && tiles.length ? tiles.filter((t) => available.includes(t)) : available.slice();
@@ -65,7 +69,7 @@
 		upcoming: 'Upcoming',
 		growth: 'Growth', feeds: 'Feeds', pumping: 'Pumping', diapers: 'Diapers',
 		sleep: 'Sleep', vaccines: 'Vaccinations', medication: 'Medication',
-		vitamins: 'Vitamins', grooming: 'Grooming', appointments: 'Appointments',
+		vitamins: 'Vitamins', vitals: 'Vitals', grooming: 'Grooming', appointments: 'Appointments',
 		medical: 'Medical', milestones: 'Milestones', firsts: 'Firsts', routines: 'Routines',
 	};
 
@@ -223,6 +227,17 @@
 				<p class="text-2xl font-display font-semibold text-ink">{m ? ago(m.achieved_date) : '—'}</p>
 				<p class="text-xs text-ink-soft mt-1">{m ? clock(m.achieved_date) : ''}</p>
 				<p class="text-sm text-ink-soft mt-0.5">{m?.title || 'no medication recorded'}</p>
+			</button>
+		{:else if t === 'vitals'}
+			{@const v = latestVital}
+			<button type="button" on:click={() => dispatch('log', { kind: 'vitals' })} class="text-left bg-surface rounded-lg shadow-card p-4 border-l-4 border-line hover:shadow-card focus:outline-none focus-visible:ring-2 focus-visible:ring-accent active:scale-[0.98] transition">
+				<div class="flex items-center gap-2 mb-1">
+					<HeartPulse class="w-5 h-5 text-ink-soft" aria-hidden="true" />
+					<p class="text-xs text-ink-soft uppercase font-semibold tracking-wider">Last Vitals</p>
+				</div>
+				<p class="text-2xl font-display font-semibold text-ink">{v ? (v.systolic != null && v.diastolic != null ? `${v.systolic}/${v.diastolic}` : v.value) : '—'}</p>
+				<p class="text-xs text-ink-soft mt-1">{v ? ago(v.recordedAt) : ''}</p>
+				<p class="text-sm text-ink-soft mt-0.5">{v ? `${v.kind}${v.unit ? ` · ${v.unit}` : ''}` : 'no vitals recorded'}</p>
 			</button>
 		{:else if t === 'vitamins'}
 			{@const m = latestByKind.vitamins}

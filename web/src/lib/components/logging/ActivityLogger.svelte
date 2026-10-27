@@ -8,6 +8,7 @@
 	import VaccineLogger from './VaccineLogger.svelte';
 	import MoodLogger from './MoodLogger.svelte';
 	import JournalLogger from './JournalLogger.svelte';
+	import VitalsLogger from './VitalsLogger.svelte';
 	import { isMilestoneKind } from '$lib/shared';
 
 	/** The one place every log action goes through, whichever page opened it. */
@@ -28,6 +29,8 @@
 		<SleepLogger {memberId} on:saved on:error />
 	{:else if kind === 'growth'}
 		<GrowthLogger {memberId} on:saved on:error />
+	{:else if kind === 'vitals'}
+		<VitalsLogger {memberId} on:saved on:error />
 	{:else if isMilestoneKind(kind)}
 		<!-- Every milestone-backed kind renders here. Listing them by hand is what
 		     left medication, vitamins, appointments and grooming with no form at

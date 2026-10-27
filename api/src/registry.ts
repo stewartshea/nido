@@ -342,6 +342,11 @@ export const CATEGORIES = {
 		[
 			{ key: 'type', kind: 'enum', options: ['dose', 'refill', 'missed', 'other'] },
 			{ key: 'amount', kind: 'number' },
+			// A dose logged from the medication list carries the row it belongs
+			// to, so "last taken" can be read per prescription rather than per
+			// category. Free-text doses from before the list simply omit it.
+			{ key: 'medicationId', kind: 'number' },
+			{ key: 'dose', kind: 'text' },
 		],
 		{
 			label: 'Medication',
@@ -389,6 +394,27 @@ export const CATEGORIES = {
 			consumable: true,
 			options: { type: ['bath', 'brush', 'nails', 'trim', 'other'] },
 			optionKey: 'type',
+			tense: ['record'],
+		},
+	),
+	// A measurement, not an event with a title: blood pressure in particular
+	// has no honest free-text shape, which is why it gets a typed table rather
+	// than another milestone kind. Appended last so adding it did not reorder
+	// the vocabulary every existing household already sees.
+	vitals: category(
+		[
+			{ key: 'kind', kind: 'enum', options: ['blood pressure', 'pulse', 'temperature', 'oxygen saturation'] },
+			{ key: 'systolic', kind: 'number' },
+			{ key: 'diastolic', kind: 'number' },
+			{ key: 'value', kind: 'number' },
+		],
+		{
+			label: 'Vital sign',
+			storage: { table: 'vitals', time: 'recorded_at' },
+			filter: { column: 'kind', key: 'kind', values: ['blood pressure', 'pulse', 'temperature', 'oxygen saturation'], customKey: 'kind' },
+			// Nothing in a vitals reading is stock: it does not bill inventory.
+			options: { kind: ['blood pressure', 'pulse', 'temperature', 'oxygen saturation'] },
+			optionKey: 'kind',
 			tense: ['record'],
 		},
 	),
@@ -447,7 +473,7 @@ export function isStage(value: unknown): value is Stage {
 export const STAGE_CATEGORIES: Record<Stage, CategoryId[]> = {
 	infant: ['feeds', 'diapers', 'sleep', 'growth', 'pumping', 'routines', 'medical', 'vaccines', 'moods', 'journal'],
 	child: ['growth', 'routines', 'firsts', 'milestones', 'medical', 'vaccines', 'moods', 'journal'],
-	adult: ['medication', 'vitamins', 'appointments', 'medical', 'vaccines', 'growth', 'routines', 'moods', 'journal'],
+	adult: ['medication', 'vitamins', 'appointments', 'medical', 'vaccines', 'growth', 'vitals', 'routines', 'moods', 'journal'],
 	pet: ['feeds', 'medication', 'appointments', 'grooming', 'vaccines', 'medical', 'growth', 'routines', 'moods', 'journal'],
 };
 

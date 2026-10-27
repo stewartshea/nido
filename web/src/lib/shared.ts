@@ -1,4 +1,4 @@
-import { Milk, Baby, Moon, TrendingUp, Calendar, Star, Trophy, Stethoscope, Syringe, Smile, Book, Pill, Scissors, CalendarClock, Sparkles } from 'lucide-svelte';
+import { Milk, Baby, Moon, TrendingUp, Calendar, Star, Trophy, Stethoscope, Syringe, Smile, Book, Pill, Scissors, CalendarClock, Sparkles, HeartPulse } from 'lucide-svelte';
 import { authStore } from '$lib/stores/authStore';
 import { get } from 'svelte/store';
 
@@ -36,6 +36,7 @@ const PRESENTATION: Record<CategoryId, { label: string; icon: typeof Milk }> = {
 	vitamins: { label: 'Vitamins', icon: Sparkles },
 	appointments: { label: 'Appointments', icon: CalendarClock },
 	grooming: { label: 'Grooming', icon: Scissors },
+	vitals: { label: 'Vitals', icon: HeartPulse },
 };
 
 export const CATEGORIES = CATEGORY_IDS.map((id) => ({ id, ...PRESENTATION[id] }));
@@ -90,6 +91,8 @@ export function reminderNoun(category: string | null | undefined): string {
 			return 'appointment';
 		case 'grooming':
 			return 'grooming';
+		case 'vitals':
+			return 'vital sign';
 		default:
 			return category ? String(category) : 'entry';
 	}

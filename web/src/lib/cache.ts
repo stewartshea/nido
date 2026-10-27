@@ -11,6 +11,7 @@ export type ListsCache = {
 	vaccinations: any[];
 	moods: any[];
 	journalEntries: any[];
+	vitals: any[];
 	savedAt: string;
 };
 
@@ -45,6 +46,7 @@ export function loadListsCache(memberId: number): ListsCache | null {
 			vaccinations: parsed.vaccinations ?? [],
 			moods: parsed.moods ?? [],
 			journalEntries: parsed.journalEntries ?? [],
+			vitals: parsed.vitals ?? [],
 			savedAt: parsed.savedAt ?? '',
 		};
 	} catch {

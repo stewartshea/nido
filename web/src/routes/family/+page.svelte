@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
 	import { browser } from '$app/environment';
-	import { authAPI, userAPI, familiesAPI, feedingAPI, diaperAPI, sleepAPI, growthAPI, healthAPI, importsAPI, milestoneAPI, vaccinationAPI, settingsAPI, moodAPI, journalAPI, tokenExpired, remindersAPI, type PageOptions, type Reminder } from '$lib/api';
+	import { authAPI, userAPI, familiesAPI, feedingAPI, diaperAPI, sleepAPI, growthAPI, healthAPI, importsAPI, milestoneAPI, vaccinationAPI, settingsAPI, moodAPI, journalAPI, vitalsAPI, tokenExpired, remindersAPI, type PageOptions, type Reminder } from '$lib/api';
 	import { authStore, authActions } from '$lib/stores/authStore';
 	import { uiStore, uiActions } from '$lib/stores/uiStore';
 	import { applyTimezone } from '$lib/stores/timezoneStore';
@@ -148,6 +148,7 @@
 	let vaccinations: any[] = [];
 	let moods: any[] = [];
 	let journalEntries: any[] = [];
+	let vitals: any[] = [];
 
 	let listTotals: Record<string, number> = {};
 	let loadingMore = false;
@@ -163,10 +164,11 @@
 		{ key: 'vaccinations', field: 'vaccinations', page: (id: number, o: PageOptions) => vaccinationAPI.getPage(id, o) },
 		{ key: 'moods', field: 'moods', page: (id: number, o: PageOptions) => moodAPI.getPage(id, o) },
 		{ key: 'journalEntries', field: 'entries', page: (id: number, o: PageOptions) => journalAPI.getPage(id, o) },
+		{ key: 'vitals', field: 'vitals', page: (id: number, o: PageOptions) => vitalsAPI.getPage(id, o) },
 	] as const;
 
 	function currentLists(): Record<string, any[]> {
-		return { feedings, diapers, sleeps, growths, milestones, vaccinations, moods, journalEntries };
+		return { feedings, diapers, sleeps, growths, milestones, vaccinations, moods, journalEntries, vitals };
 	}
 
 	function setList(key: string, value: any[]) {
@@ -178,6 +180,7 @@
 		else if (key === 'vaccinations') vaccinations = value;
 		else if (key === 'moods') moods = value;
 		else if (key === 'journalEntries') journalEntries = value;
+		else if (key === 'vitals') vitals = value;
 	}
 
 
@@ -248,6 +251,7 @@
 			vaccinations = [];
 			moods = [];
 			journalEntries = [];
+			vitals = [];
 			return;
 		}
 
@@ -261,9 +265,10 @@
 			vaccinations = cached.vaccinations;
 			moods = cached.moods;
 			journalEntries = cached.journalEntries;
+			vitals = cached.vitals;
 		}
 		try {
-			const [f, d, s, g, m, v, mo, j] = await Promise.all([
+			const [f, d, s, g, m, v, mo, j, vi] = await Promise.all([
 				feedingAPI.getPage(selectedMemberId, { limit: HISTORY_PAGE_SIZE }),
 				diaperAPI.getPage(selectedMemberId, { limit: HISTORY_PAGE_SIZE }),
 				sleepAPI.getPage(selectedMemberId, { limit: HISTORY_PAGE_SIZE }),
@@ -272,6 +277,7 @@
 				vaccinationAPI.getPage(selectedMemberId, { limit: HISTORY_PAGE_SIZE }),
 				moodAPI.getPage(selectedMemberId, { limit: HISTORY_PAGE_SIZE }),
 				journalAPI.getPage(selectedMemberId, { limit: HISTORY_PAGE_SIZE }),
+				vitalsAPI.getPage(selectedMemberId, { limit: HISTORY_PAGE_SIZE }),
 			]);
 			feedings = f.data.feedings;
 			diapers = d.data.diapers;
@@ -281,6 +287,7 @@
 			vaccinations = v.data.vaccinations;
 			moods = mo.data.moods ?? [];
 			journalEntries = j.data.entries ?? [];
+			vitals = vi.data.vitals ?? [];
 			listTotals = {
 				feedings: f.data.total ?? feedings.length,
 				diapers: d.data.total ?? diapers.length,
@@ -290,10 +297,11 @@
 				vaccinations: v.data.total ?? vaccinations.length,
 				moods: mo.data.total ?? moods.length,
 				journalEntries: j.data.total ?? journalEntries.length,
+				vitals: vi.data.total ?? vitals.length,
 			};
 			saveListsCache(selectedMemberId, {
 				feedings, diapers, sleeps, growths,
-				milestones, vaccinations, moods, journalEntries,
+				milestones, vaccinations, moods, journalEntries, vitals,
 			});
 		} catch (e: any) {
 			if (!cached) {
@@ -720,7 +728,7 @@
 			saveListsCache(memberId, {
 				feedings: next.feedings, diapers: next.diapers, sleeps: next.sleeps, growths: next.growths,
 				milestones: next.milestones, vaccinations: next.vaccinations, moods: next.moods,
-				journalEntries: next.journalEntries,
+				journalEntries: next.journalEntries, vitals: next.vitals,
 			});
 		} catch (e: any) {
 			notice = e.response?.data?.error || 'Could not load older records.';
@@ -1065,7 +1073,7 @@
 						dashboardTiles={selectedMember?.dashboardTiles ?? null}
 						stage={selectedMember?.stage ?? null}
 						{feedings} {diapers} {sleeps} {growths}
-						{milestones} {vaccinations} {moods} {journalEntries}
+						{milestones} {vaccinations} {moods} {journalEntries} {vitals}
 						totals={listTotals}
 						{loadingMore}
 						on:log={(e) => openLog(e.detail.kind)}
@@ -1098,7 +1106,7 @@
 					dashboardTiles={selectedMember?.dashboardTiles ?? null}
 					stage={selectedMember?.stage ?? null}
 					{feedings} {diapers} {sleeps} {growths}
-					{milestones} {vaccinations} {moods} {journalEntries}
+					{milestones} {vaccinations} {moods} {journalEntries} {vitals}
 					totals={listTotals}
 					{loadingMore}
 					on:log={(e) => openLog(e.detail.kind)}

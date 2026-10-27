@@ -31,6 +31,8 @@ import { settingsRoutes } from './routes/settings';
 import { moodRoutes } from './routes/moods';
 import { journalRoutes } from './routes/journal';
 import { reminderRoutes } from './routes/reminders';
+import { medicationRoutes } from './routes/medications';
+import { vitalRoutes } from './routes/vitals';
 import { notificationStatusRoutes } from './routes/notification-status';
 import { startScheduler, stopScheduler } from './scheduler';
 import { bootstrapAdmin } from './authz';
@@ -86,6 +88,8 @@ app.route('/api/v1/settings', settingsRoutes);
 app.route('/api/v1/moods', moodRoutes);
 app.route('/api/v1/journal', journalRoutes);
 app.route('/api/v1/reminders', reminderRoutes);
+app.route('/api/v1/medications', medicationRoutes);
+app.route('/api/v1/vitals', vitalRoutes);
 
 // Root endpoint
 app.get('/', (c) => {
