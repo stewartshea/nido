@@ -1,13 +1,9 @@
-import { Hono } from 'hono';
-import { zValidator } from '@hono/zod-validator';
+// sleep.ts — one sheet, not five handlers. The factory
+// (category-routes.ts) holds the behavior; this declares the category.
 import { z } from 'zod';
-import type { SleepRow } from '../db-types';
-import { resolveTrackableMember, attachCreatedBy } from '../member-scope';
-import { parsePaging, countMatching } from '../paging';
-import { type AuthEnv } from '../auth';
-import { emitActivity } from '../inventory-consume';
+import { type CategorySheet, categoryRoutes } from './category-routes';
 
-const sleepRoutes = new Hono<AuthEnv>();
+const selectColumns = ['id', 'subject_id', 'start_time', 'end_time', 'duration', 'location', 'notes', 'created_at', 'created_by'];
 
 // Zod schemas for validation
 const createSleepSchema = z.object({
@@ -25,338 +21,66 @@ const updateSleepSchema = z.object({
   notes: z.string().optional(),
 });
 
-// Get all sleep records for a baby
-sleepRoutes.get('/', async (c) => {
-  try {
-    const userId = c.get('userId');
-    const db = c.get('db');
-    const memberId = parseInt(c.req.query('memberId') || '0');
-    
-    if (!memberId) {
-      return c.json({ error: 'Member ID is required' }, 400);
-    }
-    
-    const scope = await resolveTrackableMember(db, userId, memberId);
-    if (!scope) {
-      return c.json({ error: 'Member not found or access denied' }, 404);
-    }
-    const subjectId = scope.subjectId;
-    
-    // Get sleep records for the baby
-    const { limit, offset } = parsePaging((k) => c.req.query(k));
-
-    const sleepResult = await db.execute({
-      sql: `
-      SELECT id, subject_id, start_time, end_time, duration, location, notes, created_at, created_by
-      FROM sleep
-      WHERE subject_id = ?
-      ORDER BY start_time DESC, id DESC
-      LIMIT ? OFFSET ?
-    `,
-      args: [subjectId, limit, offset]
-    });
-    const total = await countMatching(db, 'sleep', [subjectId]);
-    
-    // Calculate duration if not already calculated
-    const sleepRecords = (sleepResult.rows as unknown as SleepRow[])
-      .map(record => {
-        if (!record.duration && record.start_time && record.end_time) {
-          const start = new Date(record.start_time).getTime();
-          const end = new Date(record.end_time).getTime();
-          const duration = Math.max(0, end - start);
-          return { ...record, duration };
-        }
-        return record;
-      });
-
-    await attachCreatedBy(db, sleepRecords);
-    return c.json({ sleep: sleepRecords, total });
-  } catch (error) {
-    c.get('log').error('get sleep records failed', { err: error });
-    return c.json({ error: 'Failed to fetch sleep records' }, 500);
+// duration = max(0, end - start) in ms, computed on read when the stored
+// value is missing (the rows written before duration was tracked) or stale.
+const deriveSleepRow = (row: Record<string, unknown>) => {
+  if (!row.duration && row.start_time && row.end_time) {
+    const start = new Date(row.start_time as string).getTime();
+    const end = new Date(row.end_time as string).getTime();
+    row.duration = Math.max(0, end - start);
   }
-});
+};
 
-// Get a specific sleep record
-sleepRoutes.get('/:id{[0-9]+}', async (c) => {
-  try {
-    const sleepId = parseInt(c.req.param('id'));
-    const userId = c.get('userId');
-    const db = c.get('db');
-    
-    // Verify user has access to this sleep record
-    const sleepResult = await db.execute({
-      sql: `
-      SELECT s.id, s.subject_id, s.start_time, s.end_time, s.duration, s.location, s.notes, s.created_at, s.created_by
-      FROM sleep s
-      JOIN subjects b ON s.subject_id = b.id
-      JOIN households h ON b.household_id = h.id
-      JOIN user_households uh ON h.id = uh.household_id
-      WHERE s.id = ? AND uh.user_id = ?
-    `,
-      args: [sleepId, userId]
-    });
-    
-    if (sleepResult.rows.length === 0) {
-      return c.json({ error: 'Sleep record not found or access denied' }, 404);
-    }
-    
-    const sleepRecord = sleepResult.rows[0] as unknown as SleepRow;
-    
-    // Calculate duration if not already calculated
-    if (!sleepRecord.duration && sleepRecord.start_time && sleepRecord.end_time) {
-      const start = new Date(sleepRecord.start_time).getTime();
-      const end = new Date(sleepRecord.end_time).getTime();
-      const duration = Math.max(0, end - start);
-      Object.assign(sleepRecord, { duration });
-    }
-    
-    return c.json({ sleep: sleepRecord });
-  } catch (error) {
-    c.get('log').error('get sleep record failed', { err: error });
-    return c.json({ error: 'Failed to fetch sleep record' }, 500);
-  }
-});
-
-// Create a new sleep record
-sleepRoutes.post('/', zValidator('json', createSleepSchema), async (c) => {
-  try {
-    const { memberId, startTime, endTime, location, notes } = c.req.valid('json');
-    const userId = c.get('userId');
-    const db = c.get('db');
-    
-    const scope = await resolveTrackableMember(db, userId, memberId);
-    if (!scope) {
-      return c.json({ error: 'Member not found or access denied' }, 404);
-    }
-    const subjectId = scope.subjectId;
-    
-    // Calculate duration if both start and end times are provided
-    let duration = null;
-    if (startTime && endTime) {
-      const start = new Date(startTime).getTime();
-      const end = new Date(endTime).getTime();
-      duration = Math.max(0, end - start);
-    }
-    
-    // Insert new sleep record
-    const result = await db.execute({
-      sql: `
-        INSERT INTO sleep (
-          subject_id, start_time, end_time, duration, location, notes, created_at, created_by
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-      `,
-      args: [
-        subjectId, 
-        startTime, 
-        endTime || null, 
-        duration, 
-        location || null, 
-        notes || null, 
-        new Date().toISOString(),
-        userId
-      ]
-    });
-    
-    // A logged sleep bills stock for anything linked to it, through the same
-    // funnel every activity uses; the location rides along so a rule can
-    // narrow to crib naps. The record is already stored, so a consumption
-    // failure warns instead of failing the request.
-    const sleepId = Number(result.lastInsertRowid);
-    try {
-      await emitActivity(db, {
-        category: 'sleep',
-        refTable: 'sleep',
-        refId: sleepId,
-        subjectId,
-        attrs: { location: location || null },
-        createdBy: userId,
-      });
-    } catch (err) {
-      c.get('log').warn('inventory decrement failed', { err });
-    }
-    
-    // Return the created sleep record
-    const sleepResult = await db.execute({
-      sql: `
-      SELECT id, subject_id, start_time, end_time, duration, location, notes, created_at, created_by
-      FROM sleep
-      WHERE id = ?
-    `,
-      args: [Number(result.lastInsertRowid)]
-    });
-    
-    const sleepRecord = sleepResult.rows[0] as unknown as SleepRow;
-    
-    // Calculate duration if not already calculated
-    if (!sleepRecord.duration && sleepRecord.start_time && sleepRecord.end_time) {
-      const start = new Date(sleepRecord.start_time).getTime();
-      const end = new Date(sleepRecord.end_time).getTime();
-      const duration = Math.max(0, end - start);
-      Object.assign(sleepRecord, { duration });
-    }
-    
-    return c.json({ 
-      message: 'Sleep record created successfully', 
-      sleep: sleepRecord 
-    });
-  } catch (error) {
-    c.get('log').error('create sleep record failed', { err: error });
-    return c.json({ error: 'Failed to create sleep record' }, 500);
-  }
-});
-
-// Update a sleep record
-sleepRoutes.put('/:id{[0-9]+}', zValidator('json', updateSleepSchema), async (c) => {
-  try {
-    const sleepId = parseInt(c.req.param('id'));
-    const { startTime, endTime, location, notes } = c.req.valid('json');
-    const userId = c.get('userId');
-    const db = c.get('db');
-    
-    // Verify user has access to this sleep record
-    const sleepCheck = await db.execute({
-      sql: `
-      SELECT s.id, s.subject_id
-      FROM sleep s
-      JOIN subjects b ON s.subject_id = b.id
-      JOIN households h ON b.household_id = h.id
-      JOIN user_households uh ON h.id = uh.household_id
-      WHERE s.id = ? AND uh.user_id = ?
-    `,
-      args: [sleepId, userId]
-    });
-    
-    if (sleepCheck.rows.length === 0) {
-      return c.json({ error: 'Sleep record not found or access denied' }, 404);
-    }
-    
-    // Build dynamic update query
-    const updates = [];
-    const params = [];
-    
-    if (startTime !== undefined) {
-      updates.push('start_time = ?');
-      params.push(startTime);
-    }
-    
-    if (endTime !== undefined) {
-      updates.push('end_time = ?');
-      params.push(endTime);
-      
-      // Recalculate duration if both start and end times are provided
-      if (startTime !== undefined) {
-        const start = new Date(startTime).getTime();
-        const end = new Date(endTime).getTime();
-        const duration = Math.max(0, end - start);
-        updates.push('duration = ?');
-        params.push(duration);
-      } else {
-        // If only end time is updated, get start time from the database
-        const existingSleep = await db.execute({
-      sql: 'SELECT start_time FROM sleep WHERE id = ?',
-      args: [sleepId]
-    });
-        
-        const existingSleepRow = existingSleep.rows[0];
-        if (existingSleepRow && existingSleepRow.start_time) {
-          const start = new Date(existingSleepRow.start_time as string).getTime();
-          const end = new Date(endTime).getTime();
-          const duration = Math.max(0, end - start);
-          updates.push('duration = ?');
-          params.push(duration);
-        }
+const sleepSheet: CategorySheet = {
+  table: 'sleep',
+  orderExpr: 'start_time',
+  selectColumns,
+  handlers: ['list', 'get', 'create', 'update', 'delete'],
+  createSchema: createSleepSchema,
+  updateSchema: updateSleepSchema,
+  columns: {
+    startTime: 'start_time',
+    endTime: 'end_time',
+    location: 'location',
+    notes: 'notes',
+  },
+  insert: {
+    columns: [...selectColumns.slice(1)],
+    values: (d, subjectId, now, userId) => {
+      // duration in ms, stored whenever both ends of the range are known
+      let duration: number | null = null;
+      if (d.startTime && d.endTime) {
+        const start = new Date(d.startTime as string).getTime();
+        const end = new Date(d.endTime as string).getTime();
+        duration = Math.max(0, end - start);
       }
-    }
-    
-    if (location !== undefined) {
-      updates.push('location = ?');
-      params.push(location);
-    }
-    
-    if (notes !== undefined) {
-      updates.push('notes = ?');
-      params.push(notes);
-    }
-    
-    if (updates.length === 0) {
-      return c.json({ message: 'No updates provided' });
-    }
-    
-    params.push(sleepId); // For WHERE clause
-    
-    const query = `UPDATE sleep SET ${updates.join(', ')} WHERE id = ?`;
-    
-    await db.execute({
-      sql: query,
-      args: params
-    });
-    
-    // Return updated sleep record
-    const updatedSleepResult = await db.execute({
-      sql: `
-      SELECT id, subject_id, start_time, end_time, duration, location, notes, created_at, created_by
-      FROM sleep
-      WHERE id = ?
-    `,
-      args: [sleepId]
-    });
-    
-    const sleepRecord = updatedSleepResult.rows[0] as unknown as SleepRow;
-    
-    // Calculate duration if not already calculated
-    if (!sleepRecord.duration && sleepRecord.start_time && sleepRecord.end_time) {
-      const start = new Date(sleepRecord.start_time).getTime();
-      const end = new Date(sleepRecord.end_time).getTime();
-      const duration = Math.max(0, end - start);
-      Object.assign(sleepRecord, { duration });
-    }
-    
-    return c.json({ 
-      message: 'Sleep record updated successfully', 
-      sleep: sleepRecord 
-    });
-  } catch (error) {
-    c.get('log').error('update sleep record failed', { err: error });
-    return c.json({ error: 'Failed to update sleep record' }, 500);
-  }
-});
+      return [subjectId, d.startTime, d.endTime || null, duration, d.location || null, d.notes || null, now, userId];
+    },
+  },
+  responseMode: 'raw',
+  deriveRow: deriveSleepRow,
+  recomputeDuration: { startKey: 'startTime', endKey: 'endTime', startCol: 'start_time', durationCol: 'duration' },
+  listKey: 'sleep',
+  itemKey: 'sleep',
+  nouns: { singular: 'sleep record', article: 'a' },
+  messages: {
+    memberRequired: 'Member ID is required',
+    memberDenied: 'Member not found or access denied',
+    notFound: 'Sleep record not found or access denied',
+    accessDenied: 'Access denied',
+    listFailed: 'Failed to fetch sleep records',
+    getFailed: 'Failed to fetch sleep record',
+    createFailed: 'Failed to create sleep record',
+    updateFailed: 'Failed to update sleep record',
+    deleteFailed: 'Failed to delete sleep record',
+    created: 'Sleep record created successfully',
+    updated: 'Sleep record updated successfully',
+    deleted: 'Sleep record deleted successfully',
+    createdStatus: 200,
+  },
+  // A logged sleep bills stock for anything linked to it, with the location
+  // among the event's attributes so a rule can narrow to crib naps.
+  emit: { category: 'sleep', attrs: (d) => ({ location: (d.location as string | undefined) || null }) },
+};
 
-// Delete a sleep record
-sleepRoutes.delete('/:id{[0-9]+}', async (c) => {
-  try {
-    const sleepId = parseInt(c.req.param('id'));
-    const userId = c.get('userId');
-    const db = c.get('db');
-    
-    // Verify user has access to this sleep record
-    const sleepCheck = await db.execute({
-      sql: `
-      SELECT s.id
-      FROM sleep s
-      JOIN subjects b ON s.subject_id = b.id
-      JOIN households h ON b.household_id = h.id
-      JOIN user_households uh ON h.id = uh.household_id
-      WHERE s.id = ? AND uh.user_id = ?
-    `,
-      args: [sleepId, userId]
-    });
-    
-    if (sleepCheck.rows.length === 0) {
-      return c.json({ error: 'Sleep record not found or access denied' }, 404);
-    }
-    
-    // Delete the sleep record
-    await db.execute({
-      sql: 'DELETE FROM sleep WHERE id = ?',
-      args: [sleepId]
-    });
-    
-    return c.json({ message: 'Sleep record deleted successfully' });
-  } catch (error) {
-    c.get('log').error('delete sleep record failed', { err: error });
-    return c.json({ error: 'Failed to delete sleep record' }, 500);
-  }
-});
-
-export { sleepRoutes };
+export const sleepRoutes = categoryRoutes(sleepSheet);

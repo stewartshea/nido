@@ -49,6 +49,24 @@ export interface CategorySheet {
 	responseMode: 'raw' | 'camel';
 	/** camel mode: map a raw row to the response shape. */
 	rowToResponse?: (row: Record<string, unknown>) => unknown;
+	/**
+	 * sleep & feedings need this: their rows may carry a stale or missing
+	 * stored `duration`, so every read path (list, get, and the raw-mode
+	 * create/update re-selects) recomputes
+	 * `duration = Math.max(0, end - start)` in milliseconds when start and
+	 * end are both present. Applied in place to each fetched row before it
+	 * is serialized. On the create re-select it is a no-op for both sheets
+	 * (insert stores the same value whenever end_time is present, and a
+	 * stored 0 recomputes to the same 0), so it is applied uniformly.
+	 */
+	deriveRow?: (row: Record<string, unknown>) => void;
+	/**
+	 * sleep & feedings need this: their PUT recomputes `duration` whenever
+	 * endTime is sent. From the body's startTime when present, otherwise
+	 * from the row's stored start column (read first; a row without one
+	 * is left without a duration clause, exactly as handwritten).
+	 */
+	recomputeDuration?: { startKey: string; endKey: string; startCol: string; durationCol: string };
 	/** camel mode: the synthesized create response body (no re-select). */
 	createResponse?: (id: number, subjectId: number, data: Record<string, unknown>, now: string) => unknown;
 	/** List response key ('diapers', 'entries') and item key ('diaper', 'entry'). */
@@ -138,6 +156,7 @@ export function categoryRoutes(sheet: CategorySheet): Hono<AuthEnv> {
 				const total = await countMatching(db, sheet.table, [subjectId]);
 				const rows = res.rows as Record<string, unknown>[];
 				await attachCreatedBy(db, rows);
+				for (const r of rows) sheet.deriveRow?.(r);
 				const items = camel ? rows.map((r) => sheet.rowToResponse!(r)) : rows;
 				return c.json({ [sheet.listKey]: items, total });
 			} catch (error) {
@@ -165,6 +184,7 @@ export function categoryRoutes(sheet: CategorySheet): Hono<AuthEnv> {
 					args: [id, userId],
 				});
 				if (res.rows.length === 0) return c.json({ error: sheet.messages.notFound }, 404);
+				sheet.deriveRow?.(res.rows[0] as Record<string, unknown>);
 				return c.json({ [sheet.itemKey]: res.rows[0] });
 			} catch (error) {
 				c.get('log').error(`get ${sheet.nouns.article} ${sheet.nouns.singular} failed`, { err: error });
@@ -222,6 +242,7 @@ export function categoryRoutes(sheet: CategorySheet): Hono<AuthEnv> {
 					sql: `SELECT ${selectSql} FROM ${sheet.table} WHERE id = ?`,
 					args: [id],
 				});
+				sheet.deriveRow?.(re.rows[0] as Record<string, unknown>);
 				return c.json({ message: sheet.messages.created, [sheet.itemKey]: re.rows[0] }, sheet.messages.createdStatus);
 			} catch (error) {
 				c.get('log').error(`create ${sheet.nouns.article} ${sheet.nouns.singular} failed`, { err: error });
@@ -255,6 +276,24 @@ export function categoryRoutes(sheet: CategorySheet): Hono<AuthEnv> {
 						params.push(data[key]);
 					}
 				}
+				// sleep & feedings: PUT recomputes duration whenever endTime is
+				// sent (from the body's startTime, else the row's stored start).
+				if (sheet.recomputeDuration && data[sheet.recomputeDuration.endKey] !== undefined) {
+					const dur = sheet.recomputeDuration;
+					let start = data[dur.startKey] as string | undefined;
+					if (start === undefined) {
+						const existing = await db.execute({
+							sql: `SELECT ${dur.startCol} FROM ${sheet.table} WHERE id = ?`,
+							args: [id],
+						});
+						const row = existing.rows[0] as Record<string, unknown> | undefined;
+						if (row && row[dur.startCol]) start = row[dur.startCol] as string;
+					}
+					if (start !== undefined) {
+						updates.push(`${dur.durationCol} = ?`);
+						params.push(Math.max(0, new Date(data[dur.endKey] as string).getTime() - new Date(start).getTime()));
+					}
+				}
 				if (updates.length === 0) {
 					// raw mode answered a 200 message; camel mode a 400 error.
 					return camel
@@ -272,6 +311,7 @@ export function categoryRoutes(sheet: CategorySheet): Hono<AuthEnv> {
 					sql: `SELECT ${selectSql} FROM ${sheet.table} WHERE id = ?`,
 					args: [id],
 				});
+				sheet.deriveRow?.(re.rows[0] as Record<string, unknown>);
 				return c.json({ message: sheet.messages.updated, [sheet.itemKey]: re.rows[0] });
 			} catch (error) {
 				c.get('log').error(`update ${sheet.nouns.article} ${sheet.nouns.singular} failed`, { err: error });
