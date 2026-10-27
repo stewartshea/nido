@@ -113,6 +113,24 @@ and tap. This has been flagged more than once.
 4. Call out anything touching key derivation, the tenant boundary, or the data
    format explicitly, so a reviewer knows to look.
 
+## Releasing
+
+Releases are cut by hand from `main`, by someone with write access:
+
+```bash
+gh workflow run release.yml --repo stewartshea/nido
+```
+
+The workflow tags the commit `v<today>`, creates the GitHub Release with notes
+generated from merged PRs, builds and publishes the images, and pins the hosted
+instance to the tag so the cluster rolls. It refuses to reuse a tag, so a
+second release in a day becomes `v<today>.2`. [Releases](releases/) explains the
+tag scheme and what a release guarantees.
+
+One consequence for pull requests: if your change touches the schema, say so in
+the PR title or description. Generated notes list PR titles, and a migration is
+the one change a self-hoster must not read as a feature.
+
 ## Security
 
 Do not open a public issue for a vulnerability. Use a

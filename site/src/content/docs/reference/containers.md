@@ -72,15 +72,28 @@ still there" is not a bug. The volume is what holds state.
 
 ## Published images
 
-CI publishes to GHCR on every push to `main`, on `v*` tags, and on pull
-requests:
+CI publishes to GHCR for releases, merges to `main`, and pull requests:
+
+| Tag | Published when | Pinned or floating |
+| --- | --- | --- |
+| `v<date>` | A release is cut from `main` | Pinned — use this |
+| `latest` | A release is cut | Floating — moves to the newest release |
+| `main` | A merge lands on `main` | Floating — unreleased code |
+| `sha-<commit>` | Every build | Pinned — one commit, exactly |
+| `dev` | A pull request is pushed to | Floating — newest PR build |
 
 ```text
-ghcr.io/stewartshea/nido/{api,web}:dev
-ghcr.io/stewartshea/nido/api:latest
-ghcr.io/stewartshea/nido/web:latest
+ghcr.io/stewartshea/nido/{api,web}:v2026.10.26
+ghcr.io/stewartshea/nido/{api,web}:latest
+ghcr.io/stewartshea/nido/{api,web}:main
 ghcr.io/stewartshea/nido/{api,web}:sha-<commit>
+ghcr.io/stewartshea/nido/{api,web}:dev
 ```
+
+Deployments should pin a `v<date>` tag: a floating tag is resolved when a pod
+is created, so it does not roll anything on its own. [Releases](../project/releases/)
+explains what cutting one does, including how the hosted instance is pinned to
+it.
 
 `dev` builds a pull request so it can be tried before it merges. There is one
 `dev` tag per service, shared by every open pull request, so the most recent
