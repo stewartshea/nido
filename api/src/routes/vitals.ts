@@ -7,15 +7,16 @@
 // The category is declared in the registry like every other one, so a family
 // can turn it on for a profile and a reminder can watch it ("no blood pressure
 // in a week") with no second vocabulary.
-import { Hono } from 'hono';
-import { zValidator } from '@hono/zod-validator';
+//
+// One sheet, not four handlers: the factory (category-routes.ts) holds the
+// behavior. Raw mode keeps this category's 404-on-row handlers and the
+// re-selecting create/update, with two departures declared per sheet — the
+// 403 a stranger gets on list/create (memberDeniedStatus) and the camelCase
+// rows (rowToResponse) — plus the cross-field rules a reading must pass
+// (validateCreate) and the full-overwrite PUT (updateOverwrite).
 import { z } from 'zod';
-import { type AuthEnv } from '../auth';
-import { resolveTrackableMember, attachCreatedBy } from '../member-scope';
-import { parsePaging, countMatching } from '../paging';
 import { CATEGORIES } from '../category-registry';
-
-const vitalRoutes = new Hono<AuthEnv>();
+import { type CategorySheet, categoryRoutes } from './category-routes';
 
 const VITAL_KINDS = CATEGORIES.vitals.options.kind as [string, ...string[]];
 const vitalKindSchema = z.enum(VITAL_KINDS);
@@ -30,6 +31,10 @@ const VITAL_UNITS: Record<string, string> = {
 	temperature: '°C',
 	'oxygen saturation': '%',
 };
+
+const selectColumns = [
+	'id', 'subject_id', 'kind', 'systolic', 'diastolic', 'value', 'unit', 'recorded_at', 'notes', 'created_at', 'created_by',
+];
 
 const createVitalSchema = z.object({
 	memberId: z.number().int().positive(),
@@ -92,129 +97,111 @@ function shapeVital(row: any) {
 	};
 }
 
-/** A stored vital's profile, and whether this user can touch it. */
-async function vitalAccess(db: any, id: number, userId: string): Promise<any | null> {
-	const row = (await db.execute({
-		sql: `
-			SELECT v.*
-			FROM vitals v
-			JOIN subjects s ON s.id = v.subject_id
-			JOIN user_households uh ON uh.household_id = s.household_id
-			WHERE v.id = ? AND uh.user_id = ?
-			LIMIT 1
-		`,
-		args: [id, userId],
-	})).rows[0];
-	return row ?? null;
+/**
+ * The PUT is a merge of body over stored row: the kind (sent or stored)
+ * decides which numbers the reading carries, and the unit is re-derived
+ * from it — so a blood pressure that becomes a pulse takes its value from
+ * the body and drops the cuff numbers.
+ */
+function mergeVital(
+	data: Record<string, unknown>,
+	existing: Record<string, unknown>,
+): { kind: string; systolic: number | null; diastolic: number | null; value: number | null } {
+	const kind = (data.kind as string | undefined) ?? String(existing.kind);
+	const isBp = kind === 'blood pressure';
+	const systolic = isBp ? (data.systolic !== undefined ? (data.systolic as number) : (existing.systolic as number | null)) : null;
+	const diastolic = isBp ? (data.diastolic !== undefined ? (data.diastolic as number) : (existing.diastolic as number | null)) : null;
+	const value = isBp ? null : data.value !== undefined ? (data.value as number) : (existing.value as number | null);
+	return { kind, systolic, diastolic, value };
 }
 
-vitalRoutes.get('/', async (c) => {
-	const db = c.get('db');
-	const userId = c.get('userId');
-	const memberId = Number.parseInt(c.req.query('memberId') || '0', 10);
-	if (!memberId) return c.json({ error: 'memberId is required' }, 400);
-	const scope = await resolveTrackableMember(db, userId, memberId);
-	if (!scope) return c.json({ error: 'Access denied' }, 403);
+const vitalSheet: CategorySheet = {
+	table: 'vitals',
+	// newest reading first
+	orderExpr: 'recorded_at',
+	selectColumns,
+	// no GET /:id — the surface was list/create/update/delete
+	handlers: ['list', 'create', 'update', 'delete'],
+	createSchema: createVitalSchema,
+	updateSchema: updateVitalSchema,
+	validateCreate: (data) =>
+		measurementError(
+			data.kind as string,
+			(data.systolic as number | undefined) ?? null,
+			(data.diastolic as number | undefined) ?? null,
+			(data.value as number | undefined) ?? null,
+		),
+	columns: {
+		kind: 'kind',
+		systolic: 'systolic',
+		diastolic: 'diastolic',
+		value: 'value',
+		unit: 'unit',
+		recordedAt: 'recorded_at',
+		notes: 'notes',
+	},
+	insert: {
+		columns: ['subject_id', 'recorded_at', 'kind', 'systolic', 'diastolic', 'value', 'unit', 'notes', 'created_by', 'created_at'],
+		values: (data, subjectId, now, userId) => {
+			const kind = data.kind as string;
+			const isBp = kind === 'blood pressure';
+			return [
+				subjectId,
+				(data.recordedAt as string | undefined) || now,
+				kind,
+				isBp ? data.systolic : null,
+				isBp ? data.diastolic : null,
+				isBp ? null : data.value,
+				VITAL_UNITS[kind] ?? null,
+				(data.notes as string | undefined) ?? null,
+				userId,
+				now,
+			];
+		},
+	},
+	responseMode: 'raw',
+	rowToResponse: shapeVital,
+	updateOverwrite: {
+		validate: (data, existing) => {
+			const merged = mergeVital(data, existing);
+			return measurementError(merged.kind, merged.systolic ?? null, merged.diastolic ?? null, merged.value ?? null);
+		},
+		set: (data, existing) => {
+			const merged = mergeVital(data, existing);
+			return {
+				kind: merged.kind,
+				systolic: merged.systolic ?? null,
+				diastolic: merged.diastolic ?? null,
+				value: merged.value ?? null,
+				unit: VITAL_UNITS[merged.kind] ?? null,
+				recordedAt: (data.recordedAt as string | undefined) ?? (existing.recorded_at as string),
+				notes: data.notes !== undefined ? data.notes : existing.notes,
+			};
+		},
+	},
+	// a stranger asking for someone else's member is denied (403), not
+	// told the member is missing (raw mode's default 404)
+	memberDeniedStatus: 403,
+	listKey: 'vitals',
+	itemKey: 'vital',
+	nouns: { singular: 'vital sign', article: 'a' },
+	messages: {
+		memberRequired: 'memberId is required',
+		memberDenied: 'Access denied',
+		notFound: 'Vital sign not found',
+		accessDenied: 'Access denied',
+		listFailed: 'Failed to fetch vitals',
+		getFailed: 'Failed to fetch vital sign',
+		createFailed: 'Failed to record vital sign',
+		updateFailed: 'Failed to update vital sign',
+		deleteFailed: 'Failed to delete vital sign',
+		created: 'Vital sign recorded',
+		updated: 'Vital sign updated',
+		deleted: 'Vital sign deleted',
+		createdStatus: 201,
+	},
+	// a measurement bills nothing
+	emit: null,
+};
 
-	const { limit, offset } = parsePaging((k) => c.req.query(k));
-	const res = await db.execute({
-		sql: `
-			SELECT id, subject_id, kind, systolic, diastolic, value, unit, recorded_at, notes, created_at, created_by
-			FROM vitals
-			WHERE subject_id = ?
-			ORDER BY recorded_at DESC, id DESC
-			LIMIT ? OFFSET ?
-		`,
-		args: [scope.subjectId, limit, offset],
-	});
-	await attachCreatedBy(db, res.rows as any[]);
-	const total = await countMatching(db, 'vitals', [scope.subjectId]);
-	return c.json({ vitals: res.rows.map(shapeVital), total });
-});
-
-vitalRoutes.post('/', zValidator('json', createVitalSchema), async (c) => {
-	const db = c.get('db');
-	const userId = c.get('userId');
-	const { memberId, kind, systolic, diastolic, value, recordedAt, notes } = c.req.valid('json');
-	const scope = await resolveTrackableMember(db, userId, memberId);
-	if (!scope) return c.json({ error: 'Access denied' }, 403);
-
-	const problem = measurementError(kind, systolic ?? null, diastolic ?? null, value ?? null);
-	if (problem) return c.json({ error: problem }, 400);
-
-	const isBp = kind === 'blood pressure';
-	const now = new Date().toISOString();
-	const ins = await db.execute({
-		sql: `
-			INSERT INTO vitals (subject_id, recorded_at, kind, systolic, diastolic, value, unit, notes, created_by, created_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-		`,
-		args: [
-			scope.subjectId,
-			recordedAt || now,
-			kind,
-			isBp ? systolic : null,
-			isBp ? diastolic : null,
-			isBp ? null : value,
-			VITAL_UNITS[kind] ?? null,
-			notes ?? null,
-			userId,
-			now,
-		],
-	});
-	const row = (await db.execute({
-		sql: 'SELECT * FROM vitals WHERE id = ?',
-		args: [Number(ins.lastInsertRowid)],
-	})).rows[0];
-	return c.json({ message: 'Vital sign recorded', vital: shapeVital(row) }, 201);
-});
-
-vitalRoutes.put('/:id{[0-9]+}', zValidator('json', updateVitalSchema), async (c) => {
-	const db = c.get('db');
-	const userId = c.get('userId');
-	const id = Number.parseInt(c.req.param('id'), 10);
-	const existing = await vitalAccess(db, id, userId);
-	if (!existing) return c.json({ error: 'Vital sign not found' }, 404);
-
-	const body = c.req.valid('json');
-	const kind = body.kind ?? String(existing.kind);
-	const isBp = kind === 'blood pressure';
-	const systolic = isBp ? (body.systolic !== undefined ? body.systolic : existing.systolic) : null;
-	const diastolic = isBp ? (body.diastolic !== undefined ? body.diastolic : existing.diastolic) : null;
-	const value = isBp ? null : (body.value !== undefined ? body.value : existing.value);
-	const problem = measurementError(kind, systolic, diastolic, value);
-	if (problem) return c.json({ error: problem }, 400);
-
-	await db.execute({
-		sql: `
-			UPDATE vitals
-			SET kind = ?, systolic = ?, diastolic = ?, value = ?, unit = ?,
-			    recorded_at = ?, notes = ?
-			WHERE id = ?
-		`,
-		args: [
-			kind,
-			systolic,
-			diastolic,
-			value,
-			VITAL_UNITS[kind] ?? null,
-			body.recordedAt ?? existing.recorded_at,
-			body.notes !== undefined ? body.notes : existing.notes,
-			id,
-		],
-	});
-	const row = (await db.execute({ sql: 'SELECT * FROM vitals WHERE id = ?', args: [id] })).rows[0];
-	return c.json({ message: 'Vital sign updated', vital: shapeVital(row) });
-});
-
-vitalRoutes.delete('/:id{[0-9]+}', async (c) => {
-	const db = c.get('db');
-	const userId = c.get('userId');
-	const id = Number.parseInt(c.req.param('id'), 10);
-	const existing = await vitalAccess(db, id, userId);
-	if (!existing) return c.json({ error: 'Vital sign not found' }, 404);
-	await db.execute({ sql: 'DELETE FROM vitals WHERE id = ?', args: [id] });
-	return c.json({ message: 'Vital sign deleted' });
-});
-
-export { vitalRoutes };
+export const vitalRoutes = categoryRoutes(vitalSheet);

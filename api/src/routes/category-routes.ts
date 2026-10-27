@@ -34,12 +34,26 @@ export interface CategorySheet {
 	table: string;
 	/** ORDER BY expression over the time column, e.g. 'change_time' or 'COALESCE(entry_date, created_at)'. */
 	orderExpr: string;
+	/**
+	 * vaccinations needs this: its list sorts on three keys with mixed
+	 * directions (date_given DESC, next_due_date ASC, id DESC), which a
+	 * single time column plus a blanket DESC cannot say. Replaces the
+	 * whole ORDER BY of the list query.
+	 */
+	listOrder?: string;
 	/** SELECT list for list/get/re-select. */
 	selectColumns: string[];
 	/** Which of the five handlers to mount — preserves each category's exact surface. */
 	handlers: ReadonlyArray<'list' | 'get' | 'create' | 'update' | 'delete'>;
 	createSchema: z.ZodObject<z.ZodRawShape>;
 	updateSchema: z.ZodObject<z.ZodRawShape>;
+	/**
+	 * vitals needs this: a reading is only a reading with the numbers its
+	 * kind needs — a blood pressure takes both (the systolic above the
+	 * diastolic), anything else takes one believable value. Runs after the
+	 * member scope check, before the insert; a message is a 400.
+	 */
+	validateCreate?: (data: Record<string, unknown>) => string | null;
 	/** camelCase body key -> snake_case SET column, for the dynamic update ladder. */
 	columns: Record<string, string>;
 	insert: {
@@ -47,7 +61,11 @@ export interface CategorySheet {
 		values: (data: Record<string, unknown>, subjectId: number, now: string, userId: string) => unknown[];
 	};
 	responseMode: 'raw' | 'camel';
-	/** camel mode: map a raw row to the response shape. */
+	/**
+	 * Map a raw row to the response shape. The camel sheets shape every
+	 * response; vitals (raw) does too — it keeps raw mode's statuses and
+	 * re-selects, but its rows read camelCase.
+	 */
 	rowToResponse?: (row: Record<string, unknown>) => unknown;
 	/**
 	 * sleep & feedings need this: their rows may carry a stale or missing
@@ -67,6 +85,18 @@ export interface CategorySheet {
 	 * is left without a duration clause, exactly as handwritten).
 	 */
 	recomputeDuration?: { startKey: string; endKey: string; startCol: string; durationCol: string };
+	/**
+	 * vitals needs this: its PUT is a full overwrite, not a patch ladder —
+	 * the merged measurement (kind, its numbers, the derived unit)
+	 * replaces the row, so systolic and diastolic go null when the kind
+	 * stops being a blood pressure. The factory loads the row, runs
+	 * validate on the merge (a message is a 400), and sets every column
+	 * that set() returns, mapped through `columns`.
+	 */
+	updateOverwrite?: {
+		validate: (data: Record<string, unknown>, existing: Record<string, unknown>) => string | null;
+		set: (data: Record<string, unknown>, existing: Record<string, unknown>) => Record<string, unknown>;
+	};
 	/** camel mode: the synthesized create response body (no re-select). */
 	createResponse?: (id: number, subjectId: number, data: Record<string, unknown>, now: string) => unknown;
 	/** List response key ('diapers', 'entries') and item key ('diaper', 'entry'). */
@@ -89,8 +119,21 @@ export interface CategorySheet {
 		deleted: string;
 		createdStatus: 200 | 201;
 	};
+	/**
+	 * vitals needs this: its list and create answer a member the caller
+	 * cannot track with 403 — the member exists, it is just not theirs —
+	 * where raw mode's default is the 404 of a missing row.
+	 */
+	memberDeniedStatus?: 403 | 404;
 	/** Consumption: category id + how the body's attrs are derived, or null to not bill. */
 	emit: { category: string; attrs: (data: Record<string, unknown>) => Record<string, string | null> } | null;
+	/**
+	 * vaccinations needs this: a static, DB-less sub-endpoint (GET
+	 * /schedule) that shares the mount path but none of the five
+	 * handlers. The factory mounts whatever the sheet adds, without
+	 * knowing what is in it.
+	 */
+	extraRoutes?: (routes: Hono<AuthEnv>) => void;
 }
 
 const ID_PATTERN = '/:id{[0-9]+}';
@@ -132,6 +175,12 @@ export function categoryRoutes(sheet: CategorySheet): Hono<AuthEnv> {
 	const routes = new Hono<AuthEnv>();
 	const camel = sheet.responseMode === 'camel';
 	const selectSql = sheet.selectColumns.join(', ');
+	// A sheet may remap rows (camelCase keys) on every response; raw
+	// passthrough when it does not.
+	const shape = (row: Record<string, unknown>) => (sheet.rowToResponse ? sheet.rowToResponse(row) : row);
+	// Where the memberDenied message lands: camel mode denies (403), raw
+	// mode 404s, and vitals keeps camel's 403 on its raw sheet.
+	const memberDeniedStatus = sheet.memberDeniedStatus ?? (camel ? 403 : 404);
 
 	// List
 	if (sheet.handlers.includes('list')) {
@@ -144,20 +193,20 @@ export function categoryRoutes(sheet: CategorySheet): Hono<AuthEnv> {
 
 				const scope = await resolveTrackableMember(db, userId, memberId);
 				if (!scope) {
-					return c.json({ error: sheet.messages.memberDenied }, camel ? 403 : 404);
+					return c.json({ error: sheet.messages.memberDenied }, memberDeniedStatus);
 				}
 				const subjectId = scope.subjectId;
 
 				const { limit, offset } = parsePaging((k) => c.req.query(k));
 				const res = await db.execute({
-					sql: `SELECT ${selectSql} FROM ${sheet.table} WHERE subject_id = ? ORDER BY ${sheet.orderExpr} DESC, id DESC LIMIT ? OFFSET ?`,
+					sql: `SELECT ${selectSql} FROM ${sheet.table} WHERE subject_id = ? ORDER BY ${sheet.listOrder ?? `${sheet.orderExpr} DESC, id DESC`} LIMIT ? OFFSET ?`,
 					args: [subjectId, limit, offset],
 				});
 				const total = await countMatching(db, sheet.table, [subjectId]);
 				const rows = res.rows as Record<string, unknown>[];
 				await attachCreatedBy(db, rows);
 				for (const r of rows) sheet.deriveRow?.(r);
-				const items = camel ? rows.map((r) => sheet.rowToResponse!(r)) : rows;
+				const items = rows.map(shape);
 				return c.json({ [sheet.listKey]: items, total });
 			} catch (error) {
 				c.get('log').error(`list ${sheet.listKey} failed`, { err: error });
@@ -185,7 +234,7 @@ export function categoryRoutes(sheet: CategorySheet): Hono<AuthEnv> {
 				});
 				if (res.rows.length === 0) return c.json({ error: sheet.messages.notFound }, 404);
 				sheet.deriveRow?.(res.rows[0] as Record<string, unknown>);
-				return c.json({ [sheet.itemKey]: res.rows[0] });
+				return c.json({ [sheet.itemKey]: shape(res.rows[0] as Record<string, unknown>) });
 			} catch (error) {
 				c.get('log').error(`get ${sheet.nouns.article} ${sheet.nouns.singular} failed`, { err: error });
 				return c.json({ error: sheet.messages.getFailed }, 500);
@@ -201,8 +250,14 @@ export function categoryRoutes(sheet: CategorySheet): Hono<AuthEnv> {
 				const userId = c.get('userId');
 				const db = c.get('db');
 				const scope = await resolveTrackableMember(db, userId, Number(data.memberId));
-				if (!scope) return c.json({ error: sheet.messages.memberDenied }, camel ? 403 : 404);
+				if (!scope) return c.json({ error: sheet.messages.memberDenied }, memberDeniedStatus);
 				const subjectId = scope.subjectId;
+
+				// vitals: the numbers must fit the kind before anything is stored.
+				if (sheet.validateCreate) {
+					const problem = sheet.validateCreate(data);
+					if (problem) return c.json({ error: problem }, 400);
+				}
 
 				const now = new Date().toISOString();
 				const cols = sheet.insert.columns;
@@ -243,7 +298,10 @@ export function categoryRoutes(sheet: CategorySheet): Hono<AuthEnv> {
 					args: [id],
 				});
 				sheet.deriveRow?.(re.rows[0] as Record<string, unknown>);
-				return c.json({ message: sheet.messages.created, [sheet.itemKey]: re.rows[0] }, sheet.messages.createdStatus);
+				return c.json(
+					{ message: sheet.messages.created, [sheet.itemKey]: shape(re.rows[0] as Record<string, unknown>) },
+					sheet.messages.createdStatus,
+				);
 			} catch (error) {
 				c.get('log').error(`create ${sheet.nouns.article} ${sheet.nouns.singular} failed`, { err: error });
 				return c.json({ error: sheet.messages.createFailed }, 500);
@@ -270,28 +328,48 @@ export function categoryRoutes(sheet: CategorySheet): Hono<AuthEnv> {
 
 				const updates: string[] = [];
 				const params: unknown[] = [];
-				for (const [key, col] of Object.entries(sheet.columns)) {
-					if (data[key] !== undefined) {
-						updates.push(`${col} = ?`);
-						params.push(data[key]);
+				// vitals: the PUT is a full overwrite of the merged measurement,
+				// validated against the kind before anything is stored.
+				if (sheet.updateOverwrite) {
+					const found = await db.execute({
+						sql: `SELECT ${selectSql} FROM ${sheet.table} WHERE id = ?`,
+						args: [id],
+					});
+					const existing = found.rows[0] as Record<string, unknown> | undefined;
+					if (!existing) return c.json({ error: sheet.messages.notFound }, 404);
+					const problem = sheet.updateOverwrite.validate(data, existing);
+					if (problem) return c.json({ error: problem }, 400);
+					const merged = sheet.updateOverwrite.set(data, existing);
+					for (const [key, col] of Object.entries(sheet.columns)) {
+						if (merged[key] !== undefined) {
+							updates.push(`${col} = ?`);
+							params.push(merged[key]);
+						}
 					}
-				}
-				// sleep & feedings: PUT recomputes duration whenever endTime is
-				// sent (from the body's startTime, else the row's stored start).
-				if (sheet.recomputeDuration && data[sheet.recomputeDuration.endKey] !== undefined) {
-					const dur = sheet.recomputeDuration;
-					let start = data[dur.startKey] as string | undefined;
-					if (start === undefined) {
-						const existing = await db.execute({
-							sql: `SELECT ${dur.startCol} FROM ${sheet.table} WHERE id = ?`,
-							args: [id],
-						});
-						const row = existing.rows[0] as Record<string, unknown> | undefined;
-						if (row && row[dur.startCol]) start = row[dur.startCol] as string;
+				} else {
+					for (const [key, col] of Object.entries(sheet.columns)) {
+						if (data[key] !== undefined) {
+							updates.push(`${col} = ?`);
+							params.push(data[key]);
+						}
 					}
-					if (start !== undefined) {
-						updates.push(`${dur.durationCol} = ?`);
-						params.push(Math.max(0, new Date(data[dur.endKey] as string).getTime() - new Date(start).getTime()));
+					// sleep & feedings: PUT recomputes duration whenever endTime is
+					// sent (from the body's startTime, else the row's stored start).
+					if (sheet.recomputeDuration && data[sheet.recomputeDuration.endKey] !== undefined) {
+						const dur = sheet.recomputeDuration;
+						let start = data[dur.startKey] as string | undefined;
+						if (start === undefined) {
+							const existing = await db.execute({
+								sql: `SELECT ${dur.startCol} FROM ${sheet.table} WHERE id = ?`,
+								args: [id],
+							});
+							const row = existing.rows[0] as Record<string, unknown> | undefined;
+							if (row && row[dur.startCol]) start = row[dur.startCol] as string;
+						}
+						if (start !== undefined) {
+							updates.push(`${dur.durationCol} = ?`);
+							params.push(Math.max(0, new Date(data[dur.endKey] as string).getTime() - new Date(start).getTime()));
+						}
 					}
 				}
 				if (updates.length === 0) {
@@ -312,7 +390,7 @@ export function categoryRoutes(sheet: CategorySheet): Hono<AuthEnv> {
 					args: [id],
 				});
 				sheet.deriveRow?.(re.rows[0] as Record<string, unknown>);
-				return c.json({ message: sheet.messages.updated, [sheet.itemKey]: re.rows[0] });
+				return c.json({ message: sheet.messages.updated, [sheet.itemKey]: shape(re.rows[0] as Record<string, unknown>) });
 			} catch (error) {
 				c.get('log').error(`update ${sheet.nouns.article} ${sheet.nouns.singular} failed`, { err: error });
 				return c.json({ error: sheet.messages.updateFailed }, 500);
@@ -342,6 +420,10 @@ export function categoryRoutes(sheet: CategorySheet): Hono<AuthEnv> {
 			}
 		});
 	}
+
+	// A sheet may mount more than the five handlers (vaccinations' static
+	// /schedule); the factory does not look inside.
+	sheet.extraRoutes?.(routes);
 
 	return routes;
 }
