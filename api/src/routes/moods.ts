@@ -1,128 +1,76 @@
-import { Hono } from 'hono';
-import { zValidator } from '@hono/zod-validator';
+// moods.ts — one sheet, not five handlers. The factory
+// (category-routes.ts) holds the behavior; this declares the category.
 import { z } from 'zod';
-import { type AuthEnv } from '../auth';
-import { emitActivity } from '../inventory-consume';
-import type { MoodRow } from '../db-types';
-import { resolveTrackableMember, attachCreatedBy } from '../member-scope';
-import { parsePaging, countMatching } from '../paging';
+import { type CategorySheet, categoryRoutes } from './category-routes';
 
-const moodRoutes = new Hono<AuthEnv>();
-
-const createMoodSchema = z.object({
+const createSchema = z.object({
   memberId: z.number(),
   mood: z.string().min(1).max(60),
   recordedAt: z.string().datetime().optional(),
   notes: z.string().optional(),
 });
 
-const updateMoodSchema = z.object({
+const updateSchema = z.object({
   mood: z.string().min(1).max(60).optional(),
   recordedAt: z.string().datetime().optional(),
   notes: z.string().optional(),
 });
 
-const getUserId = (c: any) => c.get('userId') as string;
-
-async function resolveProfile(db: any, memberId: number, userId: string): Promise<number | null> {
-  const scope = await resolveTrackableMember(db, userId, memberId);
-  return scope ? scope.subjectId : null;
-}
-
-async function babyAccessById(db: any, subjectId: number, userId: string): Promise<boolean> {
-  const res = await db.execute({
-    sql: `SELECT 1 FROM subjects b JOIN user_households uh ON uh.household_id = b.household_id WHERE b.id = ? AND uh.user_id = ? LIMIT 1`,
-    args: [subjectId, userId],
-  });
-  return res.rows.length > 0;
-}
-
-moodRoutes.get('/', async (c) => {
-  const db = c.get('db');
-  const userId = getUserId(c);
-  const memberId = parseInt(c.req.query('memberId') || '0');
-  if (!memberId) return c.json({ error: 'memberId is required' }, 400);
-  const subjectId = await resolveProfile(db, memberId, userId);
-  if (!subjectId) return c.json({ error: 'Access denied' }, 403);
-
-  const { limit, offset } = parsePaging((k) => c.req.query(k));
-
-  const res = await db.execute({
-    sql: `SELECT id, subject_id, mood, recorded_at, notes, created_at, created_by FROM moods WHERE subject_id = ? ORDER BY recorded_at DESC, id DESC LIMIT ? OFFSET ?`,
-    args: [subjectId, limit, offset],
-  });
-  const total = await countMatching(db, 'moods', [subjectId]);
-  await attachCreatedBy(db, res.rows as any[]);
-  return c.json({ moods: res.rows.map((r) => ({
-    id: Number(r?.id), memberId: Number(r?.subject_id), mood: r?.mood, recordedAt: r?.recorded_at, notes: r?.notes, createdAt: r?.created_at,
-    createdBy: r?.created_by ?? null, createdByName: (r as any)?.created_by_name ?? null,
-  })), total });
-});
-
-moodRoutes.post('/', zValidator('json', createMoodSchema), async (c) => {
-  const db = c.get('db');
-  const userId = getUserId(c);
-  const { memberId, mood, recordedAt, notes } = c.req.valid('json');
-  const subjectId = await resolveProfile(db, memberId, userId);
-  if (!subjectId) return c.json({ error: 'Access denied' }, 403);
-
-  const now = new Date().toISOString();
-  const ins = await db.execute({
-    sql: `INSERT INTO moods (subject_id, mood, recorded_at, notes, created_at, created_by) VALUES (?, ?, ?, ?, ?, ?)`,
-    args: [subjectId, mood, recordedAt || now, notes || null, now, userId],
-  });
-
+const moodSheet: CategorySheet = {
+  table: 'moods',
+  orderExpr: 'recorded_at',
+  selectColumns: ['id', 'subject_id', 'mood', 'recorded_at', 'notes', 'created_at', 'created_by'],
+  handlers: ['list', 'create', 'update', 'delete'],
+  createSchema,
+  updateSchema,
+  columns: {
+    mood: 'mood',
+    recordedAt: 'recorded_at',
+    notes: 'notes',
+  },
+  insert: {
+    columns: ['subject_id', 'mood', 'recorded_at', 'notes', 'created_at', 'created_by'],
+    values: (d, subjectId, now, userId) => [subjectId, d.mood, d.recordedAt || now, d.notes || null, now, userId],
+  },
+  responseMode: 'camel',
+  rowToResponse: (r) => ({
+    id: Number(r?.id),
+    memberId: Number(r?.subject_id),
+    mood: r?.mood,
+    recordedAt: r?.recorded_at,
+    notes: r?.notes,
+    createdAt: r?.created_at,
+    createdBy: r?.created_by ?? null,
+    createdByName: (r as Record<string, unknown>)?.created_by_name ?? null,
+  }),
+  createResponse: (id, subjectId, d, now) => ({
+    id,
+    memberId: subjectId,
+    mood: d.mood,
+    recordedAt: d.recordedAt || now,
+    notes: d.notes ?? null,
+  }),
+  listKey: 'moods',
+  itemKey: 'mood',
+  nouns: { singular: 'mood', article: 'a' },
+  messages: {
+    memberRequired: 'memberId is required',
+    memberDenied: 'Access denied',
+    notFound: 'Mood not found',
+    accessDenied: 'Access denied',
+    listFailed: 'Failed to fetch moods',
+    getFailed: 'Failed to fetch mood',
+    createFailed: 'Failed to record mood',
+    updateFailed: 'Failed to update mood',
+    deleteFailed: 'Failed to delete mood',
+    created: 'Mood recorded',
+    updated: 'Mood updated',
+    deleted: 'Mood deleted',
+    createdStatus: 201,
+  },
   // A mood bills stock through the same funnel as every other activity, with
-  // the mood as an attribute so a rule can narrow to one. The record is
-  // already stored; a consumption failure warns instead of failing.
-  try {
-    await emitActivity(db, {
-      category: 'moods',
-        refTable: 'moods',
-      refId: Number(ins.lastInsertRowid),
-      subjectId,
-      attrs: { mood },
-      createdBy: userId,
-    });
-  } catch (err) {
-    c.get('log').warn('inventory decrement failed', { err });
-  }
+  // the mood as an attribute so a rule can narrow to one.
+  emit: { category: 'moods', attrs: (d) => ({ mood: d.mood as string }) },
+};
 
-  return c.json({ message: 'Mood recorded', mood: { id: Number(ins.lastInsertRowid), memberId: subjectId, mood, recordedAt: recordedAt || now, notes } }, 201);
-});
-
-moodRoutes.put('/:id{[0-9]+}', zValidator('json', updateMoodSchema), async (c) => {
-  const db = c.get('db');
-  const userId = getUserId(c);
-  const id = parseInt(c.req.param('id'));
-  const { mood, recordedAt, notes } = c.req.valid('json');
-  const rowRes = await db.execute({ sql: `SELECT subject_id FROM moods WHERE id = ? LIMIT 1`, args: [id] });
-  if (rowRes.rows.length === 0) return c.json({ error: 'Mood not found' }, 404);
-  const memberId = Number((rowRes.rows[0] as any).subject_id);
-  if (!(await babyAccessById(db, memberId, userId))) return c.json({ error: 'Access denied' }, 403);
-
-  const updates: string[] = [];
-  const params: Array<number | string | null> = [];
-  if (mood !== undefined) { updates.push('mood = ?'); params.push(mood); }
-  if (recordedAt !== undefined) { updates.push('recorded_at = ?'); params.push(recordedAt); }
-  if (notes !== undefined) { updates.push('notes = ?'); params.push(notes); }
-  if (updates.length === 0) return c.json({ error: 'Nothing to update' }, 400);
-  params.push(id);
-  await db.execute({ sql: `UPDATE moods SET ${updates.join(', ')} WHERE id = ?`, args: params });
-  return c.json({ message: 'Mood updated' });
-});
-
-moodRoutes.delete('/:id{[0-9]+}', async (c) => {
-  const db = c.get('db');
-  const userId = getUserId(c);
-  const id = parseInt(c.req.param('id'));
-  const rowRes = await db.execute({ sql: `SELECT subject_id FROM moods WHERE id = ? LIMIT 1`, args: [id] });
-  if (rowRes.rows.length === 0) return c.json({ error: 'Mood not found' }, 404);
-  const memberId = Number((rowRes.rows[0] as any).subject_id);
-  if (!(await babyAccessById(db, memberId, userId))) return c.json({ error: 'Access denied' }, 403);
-
-  await db.execute({ sql: `DELETE FROM moods WHERE id = ?`, args: [id] });
-  return c.json({ message: 'Mood deleted' });
-});
-
-export { moodRoutes };
+export const moodRoutes = categoryRoutes(moodSheet);
