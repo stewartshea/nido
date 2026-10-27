@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { healthAPI } from '$lib/api';
+	import { healthAPI } from '$lib/api/records';
 
 	/**
 	 * A week of rates rather than a week of totals.

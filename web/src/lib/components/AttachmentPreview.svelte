@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onDestroy } from 'svelte';
-	import { attachmentsAPI, type AttachmentMeta } from '$lib/api';
+	import { attachmentsAPI } from '$lib/api/attachments';
+	import type { AttachmentMeta } from '$lib/api/types';
 	import { FileText, Paperclip } from 'lucide-svelte';
 
 	/**

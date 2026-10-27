@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { createEventDispatcher } from 'svelte';
-	import { medicationAPI, type Medication, type MedicationFrequency } from '$lib/api';
+	import { medicationAPI } from '$lib/api/records';
+	import type { Medication, MedicationFrequency } from '$lib/api/types';
 	import { apiError } from '$lib/logging/recent';
 	import { formatMinutes } from '$lib/logging/format';
 	import { Pill, Plus, Check, Pencil, Ban, RotateCcw, Trash2 } from 'lucide-svelte';

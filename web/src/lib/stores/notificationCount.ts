@@ -1,5 +1,5 @@
 import { writable } from 'svelte/store';
-import { notificationsAPI } from '$lib/api';
+import { notificationsAPI } from '$lib/api/notifications';
 import { DATA_CHANGED } from '$lib/events';
 
 /**

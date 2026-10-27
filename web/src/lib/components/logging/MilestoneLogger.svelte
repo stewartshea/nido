@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { createEventDispatcher, onMount } from 'svelte';
-	import { attachmentsAPI, milestoneAPI } from '$lib/api';
+	import { attachmentsAPI } from '$lib/api/attachments';
+	import { milestoneAPI } from '$lib/api/records';
 	import { CATEGORIES, milestoneCategoryKey, type MilestoneKind } from '$lib/shared';
 	import { loadLoggingOptions, type LoggingOptions } from '$lib/logging/options';
 	import { localInputToIso, toLocalInput } from '$lib/logging/format';

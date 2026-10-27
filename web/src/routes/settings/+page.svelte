@@ -2,7 +2,10 @@
 	import { onMount } from 'svelte';
 	import { browser } from '$app/environment';
 	import { goto } from '$app/navigation';
-	import { authAPI, userAPI, familiesAPI, feedingAPI, diaperAPI, sleepAPI, growthAPI, healthAPI, importsAPI, familyAdminAPI, accountAPI, milestoneAPI, vaccinationAPI, settingsAPI, moodAPI, journalAPI, tokenExpired } from '$lib/api';
+	import { tokenExpired } from '$lib/api/client';
+	import { authAPI, userAPI, familiesAPI } from '$lib/api/family';
+	import { feedingAPI, diaperAPI, sleepAPI, growthAPI, healthAPI, milestoneAPI, vaccinationAPI, moodAPI, journalAPI } from '$lib/api/records';
+	import { importsAPI, familyAdminAPI, accountAPI, settingsAPI } from '$lib/api/system';
 	import { authStore, authActions } from '$lib/stores/authStore';
 	import { uiStore, uiActions } from '$lib/stores/uiStore';
 	import { applyTimezone } from '$lib/stores/timezoneStore';
@@ -10,7 +13,7 @@
 	import ToggleSwitch from '$lib/components/ToggleSwitch.svelte';
 	import { CATEGORIES, defaultMemberId } from '$lib/shared';
 	import { DIGEST_FREQUENCIES } from '$lib/vocabulary.generated';
-	import type { ComponentStatus, SystemOverview, RegistryView } from '$lib/api';
+	import type { ComponentStatus, SystemOverview, RegistryView } from '$lib/api/types';
 	import { Users, Home, Trash2, Timer, AlertCircle, Settings, Check, ChevronRight, User, Shield, Upload, Download } from 'lucide-svelte';
 
 

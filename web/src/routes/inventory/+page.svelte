@@ -1,7 +1,10 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
-	import { familiesAPI, inventoryAPI, tokenExpired, type InventoryAlert, type InventoryItem } from '$lib/api';
+	import { tokenExpired } from '$lib/api/client';
+	import { familiesAPI } from '$lib/api/family';
+	import { inventoryAPI } from '$lib/api/inventory';
+	import type { InventoryAlert, InventoryItem } from '$lib/api/types';
 	import InventoryStats from '$lib/components/logging/InventoryStats.svelte';
 		import InventoryPanel from '$lib/components/logging/InventoryPanel.svelte';
 

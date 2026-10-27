@@ -1,7 +1,10 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
-	import { inventoryAPI, notificationsAPI, remindersAPI, medicationAPI, type InventoryAlert, type Medication, type NotifySchedule, type Reminder } from '$lib/api';
+	import { inventoryAPI } from '$lib/api/inventory';
+	import { notificationsAPI, remindersAPI } from '$lib/api/notifications';
+	import { medicationAPI } from '$lib/api/records';
+	import type { InventoryAlert, Medication, NotifySchedule, Reminder } from '$lib/api/types';
 	import { reminderNoun, reminderPhrase } from '$lib/shared';
 	import { zonedOptions } from '$lib/logging/format';
 	import ActivityRules from '$lib/components/logging/ActivityRules.svelte';

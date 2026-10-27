@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { createEventDispatcher, onMount } from 'svelte';
-	import { growthAPI } from '$lib/api';
+	import { growthAPI } from '$lib/api/records';
 	import { localInputToIso, toLocalInput } from '$lib/logging/format';
 	import { apiError } from '$lib/logging/recent';
 

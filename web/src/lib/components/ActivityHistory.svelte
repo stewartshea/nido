@@ -2,8 +2,10 @@
 	import { createEventDispatcher } from 'svelte';
 	import {
 		feedingAPI, diaperAPI, sleepAPI, growthAPI, milestoneAPI,
-		vaccinationAPI, moodAPI, journalAPI, vitalsAPI, attachmentsAPI, type AttachmentMeta,
-	} from '$lib/api';
+		vaccinationAPI, moodAPI, journalAPI, vitalsAPI,
+	} from '$lib/api/records';
+	import { attachmentsAPI } from '$lib/api/attachments';
+	import type { AttachmentMeta } from '$lib/api/types';
 	import { CATEGORIES, milestoneCategory } from '$lib/shared';
 	import { formatLength, formatWeight } from '$lib/growth/units';
 	import { zonedOptions } from '$lib/logging/format';

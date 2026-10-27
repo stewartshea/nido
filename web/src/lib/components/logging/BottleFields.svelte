@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { createEventDispatcher, onMount } from 'svelte';
 	import { Plus } from 'lucide-svelte';
-	import { formulasAPI } from '$lib/api';
+	import { formulasAPI } from '$lib/api/system';
 
 	export let familyId: string | null;
 	export let source: 'breastmilk' | 'formula' = 'breastmilk';

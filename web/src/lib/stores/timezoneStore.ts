@@ -1,6 +1,7 @@
 import { writable } from 'svelte/store';
 import { setActiveTimeZone } from '$lib/logging/format';
-import { familiesAPI, currentFamilyId } from '$lib/api';
+import { currentFamilyId } from '$lib/api/client';
+import { familiesAPI } from '$lib/api/family';
 
 /**
  * The family's wall clock, as a Svelte store on top of the formatter's

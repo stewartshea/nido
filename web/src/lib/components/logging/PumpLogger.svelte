@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { createEventDispatcher } from 'svelte';
 	import { PenLine, Timer } from 'lucide-svelte';
-	import { feedingAPI } from '$lib/api';
+	import { feedingAPI } from '$lib/api/records';
 	import { enqueueRecord } from '$lib/logging/outbox';
 	import { pumpTimerKey } from '$lib/logging/timers';
 	import { localInputToIso, toLocalInput, formatMinutes } from '$lib/logging/format';

@@ -1,4 +1,4 @@
-import { feedingAPI } from '$lib/api';
+import { feedingAPI } from '$lib/api/records';
 
 /** Newest feedings (all types) for a member, straight from the server. */
 export async function loadRecentFeedings(memberId: number, limit = 80): Promise<any[]> {

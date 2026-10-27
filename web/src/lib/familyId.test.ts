@@ -27,7 +27,7 @@ beforeEach(() => {
 
 describe('currentFamilyId', () => {
 	it('reads the family from the token', async () => {
-		const { currentFamilyId } = await import('./api');
+		const { currentFamilyId } = await import('./api/client');
 		store.set('token', fakeJwt({ userId: 7, familyId: 'fam-from-token', exp: 9999999999 }));
 		expect(currentFamilyId()).toBe('fam-from-token');
 	});
@@ -35,18 +35,18 @@ describe('currentFamilyId', () => {
 	it('does not fall back to the nido.familyId key', async () => {
 		// The key is present but the token is not: this must be null, not the
 		// stale key. Trusting it is the bug this guards.
-		const { currentFamilyId } = await import('./api');
+		const { currentFamilyId } = await import('./api/client');
 		store.set('nido.familyId', 'stale-key-family');
 		expect(currentFamilyId()).toBeNull();
 	});
 
 	it('returns null without a token rather than throwing', async () => {
-		const { currentFamilyId } = await import('./api');
+		const { currentFamilyId } = await import('./api/client');
 		expect(currentFamilyId()).toBeNull();
 	});
 
 	it('returns null for a malformed token', async () => {
-		const { currentFamilyId } = await import('./api');
+		const { currentFamilyId } = await import('./api/client');
 		store.set('token', 'not-a-jwt');
 		expect(currentFamilyId()).toBeNull();
 	});

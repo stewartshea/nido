@@ -2,7 +2,7 @@
 	import { onMount } from 'svelte';
 	import { browser } from '$app/environment';
 	import { authStore } from '$lib/stores/authStore';
-	import { familiesAPI } from '$lib/api';
+	import { familiesAPI } from '$lib/api/family';
 	import { AlertCircle, Check, Users } from 'lucide-svelte';
 
 	let familyId = '';

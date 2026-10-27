@@ -1,7 +1,10 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
-	import { milestoneAPI, planAPI, familiesAPI, type Plan } from '$lib/api';
+	import { familiesAPI } from '$lib/api/family';
+	import { milestoneAPI } from '$lib/api/records';
+	import { planAPI } from '$lib/api/plans';
+	import type { Plan } from '$lib/api/types';
 	import { dayKeyOffset, dayKeyToDate, todayKey, zonedDayKey, zonedOptions } from '$lib/logging/format';
 	import { loadFamilyTimezone, timezoneStore } from '$lib/stores/timezoneStore';
 	import { CalendarClock, AlertCircle, CalendarPlus, Check, CalendarRange, X, Frown } from 'lucide-svelte';

@@ -1,7 +1,9 @@
 <script lang="ts">
 	import { createEventDispatcher, onMount } from 'svelte';
 	import { reminderNoun, reminderPhrase } from '$lib/shared';
-	import { familiesAPI, remindersAPI, type Reminder, type ReminderCatalogCategory, type ReminderMatch } from '$lib/api';
+	import { familiesAPI } from '$lib/api/family';
+	import { remindersAPI } from '$lib/api/notifications';
+	import type { Reminder, ReminderCatalogCategory, ReminderMatch } from '$lib/api/types';
 
 	const dispatch = createEventDispatcher<{ changed: void }>();
 

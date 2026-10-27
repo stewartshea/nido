@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { createEventDispatcher, onMount } from 'svelte';
-	import { familiesAPI, inventoryAPI, type FamilyAccount, type InventoryRule } from '$lib/api';
+	import { familiesAPI } from '$lib/api/family';
+	import { inventoryAPI } from '$lib/api/inventory';
+	import type { FamilyAccount, InventoryRule } from '$lib/api/types';
 	import AudiencePicker from './AudiencePicker.svelte';
 
 	/**
