@@ -512,7 +512,10 @@ growthRoutes.put('/:id{[0-9]+}', zValidator('json', updateGrowthSchema), async (
     params.push(new Date().toISOString());
     params.push(growthId); // For WHERE clause
     
-    const query = `UPDATE growth SET ${updates.join(', ')}, created_at = ? WHERE id = ?`;
+    // Issue #55: this used to write the edit time into created_at — the
+    // table's only timestamp column — so the first edit rewrote the
+    // measurement's provenance. updated_at exists since migration 40.
+    const query = `UPDATE growth SET ${updates.join(', ')}, updated_at = ? WHERE id = ?`;
     
     await db.execute({
       sql: query,
