@@ -3,7 +3,8 @@ import type { SubjectRow, SleepAggRow, DiaperAggRow, FeedingAggRow } from '../db
 import { resolveTrackableMember, attachCreatedBy } from '../member-scope';
 import { type AuthEnv } from '../auth';
 import { NAMESPACE_HOUSEHOLD_ID, DEFAULT_FEED_GROUPING_MINUTES } from '../db-core';
-import { EVENT_KIND_CATEGORIES as MILESTONE_KINDS, CATEGORY_OPTION_KEY, RECORD_SKEW_MS } from '../category-registry';
+import { legacyTileRow } from './events';
+import { EVENT_KIND_CATEGORIES as MILESTONE_KINDS, RECORD_SKEW_MS } from '../category-registry';
 
 const healthRoutes = new Hono<AuthEnv>();
 
@@ -163,17 +164,7 @@ healthRoutes.get('/summary/:memberId{[0-9]+}', async (c) => {
     `,
       args: [subjectId, ...MILESTONE_KINDS, nowIso]
     });
-    const latestMilestoneKindsRows = (latestMilestoneKindsRaw.rows as any[]).map((r) => {
-      const data = typeof r.data === 'string' && r.data ? JSON.parse(r.data) : {};
-      const optionKey = (CATEGORY_OPTION_KEY as Record<string, string>)[r.category] ?? 'type';
-      return {
-        kind: r.category,
-        title: r.title,
-        description: r.notes,
-        achieved_date: r.occurred_at,
-        category: data[optionKey] ?? null,
-      };
-    });
+    const latestMilestoneKindsRows = (latestMilestoneKindsRaw.rows as any[]).map((r) => legacyTileRow(r));
 
     // Get the plans still open for this member, soonest first — overdue
     // first in practice, which is the point: the prompt rises to the top
@@ -207,20 +198,14 @@ healthRoutes.get('/summary/:memberId{[0-9]+}', async (c) => {
     }
 
     // Both upcoming tiles and the "recent" list keep the old milestones-era
-    // field names, so the web keeps reading one shape while the storage
-    // under it moved.
-    const shapeUpcoming = (r: any) => {
-      const data = typeof r.data === 'string' && r.data ? JSON.parse(r.data) : {};
-      return {
-        id: r.id,
-        title: r.title,
-        description: r.notes,
-        achieved_date: r.scheduled_at,
-        kind: r.category,
-        category: data[(CATEGORY_OPTION_KEY as Record<string, string>)[r.category] ?? 'type'] ?? null,
-      };
-    };
-    const upcomingAppointmentsShaped = (upcomingAppointments.rows as any[]).map(shapeUpcoming);
+    // field names (legacyTileRow, next to shapeEventRow in events.ts), so
+    // the web keeps reading one shape while the storage under it moved.
+    // Deliberately not upcomingAppointmentsForSubject: that query bounds the
+    // list to a lookahead window; this tile wants every open plan, soonest
+    // first, so an overdue prompt rises to the top instead of aging out.
+    const upcomingAppointmentsShaped = (upcomingAppointments.rows as any[]).map((r) =>
+      legacyTileRow(r, { timeKey: 'scheduled_at', id: true }),
+    );
 
     const healthSummary = {
       baby: {
@@ -235,16 +220,7 @@ healthRoutes.get('/summary/:memberId{[0-9]+}', async (c) => {
       latestDiaper: latestDiaper.rows[0] || null,
       latestSleep: latestSleep.rows[0] || null,
       latestGrowth: latestGrowth.rows[0] || null,
-      recentMilestones: (latestMilestones.rows as any[]).map((r) => {
-        const data = typeof r.data === 'string' && r.data ? JSON.parse(r.data) : {};
-        return {
-          title: r.title,
-          description: r.notes,
-          achieved_date: r.occurred_at,
-          kind: r.category,
-          category: data[(CATEGORY_OPTION_KEY as Record<string, string>)[r.category] ?? 'type'] ?? null,
-        };
-      }),
+      recentMilestones: (latestMilestones.rows as any[]).map((r) => legacyTileRow(r)),
       upcomingVaccinations: upcomingVaccinations.rows,
       upcomingAppointments: upcomingAppointmentsShaped,
       latestMilestoneKinds: latestMilestoneKindsRows,

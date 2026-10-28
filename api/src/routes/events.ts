@@ -17,7 +17,7 @@ import { z } from 'zod';
 import { resolveTrackableMember, attachCreatedBy } from '../member-scope';
 import { parsePaging } from '../paging';
 import { type AuthEnv } from '../auth';
-import { CATEGORIES, CATEGORY_IDS, RECORD_SKEW_MS, type CategoryId } from '../category-registry';
+import { CATEGORIES, CATEGORY_IDS, CATEGORY_OPTION_KEY, RECORD_SKEW_MS, type CategoryId } from '../category-registry';
 import { emitActivity } from '../inventory-consume';
 
 export const eventRoutes = new Hono<AuthEnv>();
@@ -68,6 +68,53 @@ export async function shapeEventRow(db: any, row: any) {
 		achieved_date: row.occurred_at,
 		description: row.notes,
 		option: entry ? (data[entry.optionKey] ?? null) : null,
+	};
+}
+
+/**
+ * The option value a row's category selects from its data document — the
+ * milestones-era `category` field, in one place. This is the primitive under
+ * every legacy tile shape: the summary tiles, the appointments page rows and
+ * the milestones alias all read the option out of the `data` JSON under the
+ * category's registered key. The `?? 'type'` fallback is dead for registered
+ * categories (the record is complete); it stays until Phase 2 deletes the
+ * vocabulary it defends.
+ */
+export function optionValueOf(category: unknown, dataJson: unknown): string | null {
+	const data = typeof dataJson === 'string' && dataJson ? (JSON.parse(dataJson) as Record<string, unknown>) : {};
+	const optionKey = (CATEGORY_OPTION_KEY as Record<string, string>)[category as string] ?? 'type';
+	return (data[optionKey] as string | null) ?? null;
+}
+
+/**
+ * The milestones-era tile shape, in one place: kind ← category, title,
+ * description ← notes, achieved_date ← the row's own time, category ← the
+ * option value. The summary tiles and the appointments page kept speaking the
+ * old vocabulary after the storage under them moved to events and plans;
+ * three copies in health.ts and one in appointments.ts became this.
+ *
+ * `timeKey` names the row's timestamp column (events: `occurred_at`; plans:
+ * `scheduled_at`); `id: true` passes the row id through where the caller
+ * needs it (plan rows).
+ */
+export function legacyTileRow(
+	row: Record<string, any>,
+	opts: { timeKey?: string; id?: boolean } = {},
+): {
+	id?: any;
+	kind: any;
+	title: any;
+	description: any;
+	achieved_date: any;
+	category: string | null;
+} {
+	return {
+		...(opts.id ? { id: row.id } : {}),
+		kind: row.category,
+		title: row.title,
+		description: row.notes,
+		achieved_date: row[opts.timeKey ?? 'occurred_at'],
+		category: optionValueOf(row.category, row.data),
 	};
 }
 
