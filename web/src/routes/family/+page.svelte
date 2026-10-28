@@ -4,8 +4,7 @@
 	import { tokenExpired } from '$lib/api/client';
 	import { authAPI, userAPI, familiesAPI } from '$lib/api/family';
 	import { feedingAPI, diaperAPI, sleepAPI, growthAPI, healthAPI, milestoneAPI, vaccinationAPI, moodAPI, journalAPI, vitalsAPI } from '$lib/api/records';
-	import { remindersAPI } from '$lib/api/notifications';
-	import type { PageOptions, Reminder } from '$lib/api/types';
+	import type { PageOptions } from '$lib/api/types';
 	import { authStore, authActions } from '$lib/stores/authStore';
 	import { uiStore, uiActions } from '$lib/stores/uiStore';
 	import { applyTimezone } from '$lib/stores/timezoneStore';
@@ -14,8 +13,7 @@
 	import FeedbackToasts from '$lib/components/FeedbackToasts.svelte';
 	import { loadListsCache, saveListsCache } from '$lib/cache';
 	import { startOutboxSync } from '$lib/logging/outbox';
-	import { DATA_CHANGED } from '$lib/events';
-	import { refreshNotificationCount } from '$lib/stores/notificationCount';
+	import { loadReminders, loadUpcomingAppointments, overdueReminders, upcomingAppointments } from '$lib/stores/reminders';
 	import MemberActivity from '$lib/components/logging/MemberActivity.svelte';
 	import GrowthChart from '$lib/components/logging/GrowthChart.svelte';
 	import LogDrawer from '$lib/components/logging/LogDrawer.svelte';
@@ -63,35 +61,10 @@
 		return !!m && m.trackable !== false;
 	}
 
-	// ----- Reminders (family-scoped; shared by every caregiver) -----
-	let reminderRules: Reminder[] = [];
-
-	// What the family has booked ahead, from the same family-wide query the
-	// /appointments page and the weekly email use. Family-level information, so
-	// it lives with Family Overview rather than on the per-member dashboard.
-	let upcomingAppointments: any[] = [];
-
-	async function loadUpcomingAppointments() {
-		try {
-			const res = await milestoneAPI.getUpcoming({ days: 30 });
-			upcomingAppointments = res.data.appointments ?? [];
-		} catch {
-			upcomingAppointments = [];
-		}
-	}
-
-	async function loadReminders() {
-		try {
-			reminderRules = (await remindersAPI.list()).data.reminders ?? [];
-		} catch { reminderRules = []; }
-	}
-
-	function onDataChanged() {
-		void loadReminders();
-		void refreshNotificationCount();
-	}
-
-	$: overdueReminders = reminderRules.filter((r) => r.enabled && r.overdue);
+	// Reminders and what the family has booked ahead live in
+	// $lib/stores/reminders: the store owns the DATA_CHANGED refresh, so the
+	// page only triggers the initial loads (refreshUserProfile and
+	// loadFamilies) and renders from the stores.
 
 	// Tracking categories — a member enables a subset; tabs render from it.
 	let activeCategories: string[] = [];
@@ -181,7 +154,6 @@
 	}
 
 	async function refreshLists() {
-		if (!selectedMemberId) return;
 		if (!selectedMemberId) return;
 		if (!currentIsTrackable()) {
 			// Baby tracking only. The person who created the household is an adult
@@ -611,7 +583,6 @@
 
 	onMount(async () => {
 		if (browser) {
-			window.addEventListener(DATA_CHANGED, onDataChanged);
 			const params = new URLSearchParams(window.location.search);
 			const verifyParam = params.get('verify');
 			const resetParam = params.get('reset');
@@ -655,7 +626,6 @@
 
 	onDestroy(() => {
 		if (stopOutboxSync) stopOutboxSync();
-		window.removeEventListener(DATA_CHANGED, onDataChanged);
 	});
 </script>
 		<FeedbackToasts />
@@ -807,18 +777,18 @@
 			</div>
 			{/if}
 
-			{#if overdueReminders.length > 0}
+			{#if $overdueReminders.length > 0}
 				<div class="bg-danger border border-danger text-danger-text rounded-lg px-4 py-3 mb-4 flex items-center justify-between gap-3">
 					<div>
 						<p class="text-sm font-semibold">Reminders</p>
 						<p class="text-xs">
-							{#each overdueReminders as o}
+							{#each $overdueReminders as o}
 								{#if o.kind === 'inactivity'}
 									{@const what = o.conditions?.length ? reminderPhrase(o.conditions, o.match) : reminderNoun(o.category)}
 									<span class="capitalize">no {what} in {o.hours}h{o.since ? ` (since ${new Date(o.since).toLocaleString(undefined, zonedOptions())})` : ' (never recorded)'}</span>
 								{:else}
 									<span>{o.label || o.category} — every {o.intervalDays}d{o.since ? ` (last {new Date(o.since).toLocaleString(undefined, zonedOptions())})` : ' (never done)'}</span>
-								{/if}{o !== overdueReminders[overdueReminders.length - 1] ? ' · ' : ''}
+								{/if}{o !== $overdueReminders[$overdueReminders.length - 1] ? ' · ' : ''}
 							{/each}
 						</p>
 					</div>
@@ -867,13 +837,13 @@
 							</h3>
 							<a href="/appointments" class="text-sm font-semibold text-link hover:underline">See all &rarr;</a>
 						</div>
-						{#if upcomingAppointments.length === 0}
+						{#if $upcomingAppointments.length === 0}
 							<p class="text-sm text-ink-soft">
 								Nothing booked in the next 30 days. Log any activity with a future date and it appears here.
 							</p>
 						{:else}
 							<ul class="space-y-2">
-								{#each upcomingAppointments as a (a.id)}
+								{#each $upcomingAppointments as a (a.id)}
 									<li class="flex items-baseline gap-3 text-sm">
 										<span class="tabular-nums text-ink-soft shrink-0 w-28">
 											{new Date(a.date).toLocaleDateString(undefined, zonedOptions({ weekday: 'short', month: 'short', day: 'numeric' }))}

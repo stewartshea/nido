@@ -5,13 +5,12 @@
 	import { tokenExpired } from '$lib/api/client';
 	import { authAPI, userAPI, familiesAPI } from '$lib/api/family';
 	import { feedingAPI, diaperAPI, sleepAPI, growthAPI, healthAPI, milestoneAPI, vaccinationAPI, moodAPI, journalAPI, vitalsAPI } from '$lib/api/records';
-	import { importsAPI, settingsAPI } from '$lib/api/system';
+	import { importsAPI } from '$lib/api/system';
 	import type { PageOptions } from '$lib/api/types';
 	import { authStore, authActions } from '$lib/stores/authStore';
 	import { uiStore, uiActions } from '$lib/stores/uiStore';
 	import { applyTimezone } from '$lib/stores/timezoneStore';
 	import { notify, fail } from '$lib/stores/feedback';
-	import ToggleSwitch from '$lib/components/ToggleSwitch.svelte';
 	import Avatar from '$lib/components/Avatar.svelte';
 	import FeedbackToasts from '$lib/components/FeedbackToasts.svelte';
 	import { loadListsCache, saveListsCache } from '$lib/cache';
@@ -24,7 +23,7 @@
 	import Trends from '$lib/components/logging/Trends.svelte';
 	import { Users, Home } from 'lucide-svelte';
 
-	import { CATEGORIES, defaultMemberId } from '$lib/shared';
+	import { defaultMemberId } from '$lib/shared';
 
 	let sheetOpen = false;
 
@@ -34,11 +33,6 @@
 	}
 
 	let isAuthenticated = false;
-
-	let email = '';
-	let password = '';
-	let showForgot = false;
-	let pendingResetToken = '';
 
 	// "Other" picker: every category the quick pills do not already cover, so
 	// no log target is ever more than one tap from the dashboard.
@@ -51,8 +45,6 @@
 		allOpen = false;
 		sheetOpen = true;
 	}
-
-	let loading = false;
 
 	let profiles: any[] = [];
 	let families: any[] = [];
@@ -191,7 +183,6 @@
 
 	async function refreshSummary() {
 		if (!selectedMemberId) return;
-		if (!selectedMemberId) return;
 		if (!currentIsTrackable()) {
 			summary = null;
 			return;
@@ -206,7 +197,6 @@
 	}
 
 	async function refreshLists() {
-		if (!selectedMemberId) return;
 		if (!selectedMemberId) return;
 		if (!currentIsTrackable()) {
 			// Baby tracking only. The person who created the household is an adult
@@ -385,17 +375,6 @@
 		}
 	}
 
-	// Instance settings (Admin tab)
-	let appSettings: any = null;
-	let isPanelAdmin = false;
-	let smtpHost = '';
-	let smtpPort = 587;
-	let smtpUser = '';
-	let smtpFrom = '';
-	let signupEnabled = true;
-	let signupEnvLocked = false;
-	let emailVerificationSetting = false;
-
 	async function refreshUserProfile() {
 		try {
 			const res = await userAPI.getMe();
@@ -408,26 +387,9 @@
 					lastName: u.last_name ?? u.lastName ?? '',
 					createdAt: u.created_at ?? u.createdAt ?? '',
 				});
-				isPanelAdmin = Number(u.is_platform_admin ?? 0) === 1;
 			}
 		} catch {
-			isPanelAdmin = false;
-		}
-	}
-
-	async function loadAppSettings() {
-		try {
-			const res = await settingsAPI.get();
-			appSettings = res.data.settings;
-			smtpHost = appSettings.smtpHost || '';
-			smtpPort = appSettings.smtpPort || 587;
-			smtpUser = appSettings.smtpUser || '';
-			smtpFrom = appSettings.smtpFrom || '';
-			signupEnabled = appSettings.signupEnabled;
-			signupEnvLocked = appSettings.signupEnvLocked === true;
-			emailVerificationSetting = appSettings.emailVerification;
-		} catch {
-			appSettings = null;
+			// getMe failing is not worth a toast; the header keeps the stored profile.
 		}
 	}
 
@@ -540,8 +502,6 @@
 				if (window.history.replaceState) window.history.replaceState(null, '', window.location.pathname);
 			}
 			if (resetParam) {
-				pendingResetToken = resetParam;
-				showForgot = true;
 				notify('Enter a new password to complete your password reset.');
 				if (window.history.replaceState) window.history.replaceState(null, '', window.location.pathname);
 			}
@@ -553,7 +513,6 @@
 			}
 			if (isAuthenticated) {
 				await Promise.all([loadFamilies(), refreshUserProfile()]);
-				if (isPanelAdmin) await loadAppSettings();
 				// Reconnect resilience: push anything queued while offline, then
 				// keep replaying every 60s until the page goes away.
 				stopOutboxSync = startOutboxSync(async () => {

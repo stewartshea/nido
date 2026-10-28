@@ -1,11 +1,10 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { browser } from '$app/environment';
-	import { goto } from '$app/navigation';
 	import { tokenExpired } from '$lib/api/client';
 	import { authAPI, userAPI, familiesAPI } from '$lib/api/family';
-	import { importsAPI, familyAdminAPI, accountAPI, settingsAPI } from '$lib/api/system';
-	import { authStore, authActions } from '$lib/stores/authStore';
+	import { importsAPI, familyAdminAPI } from '$lib/api/system';
+	import { authActions } from '$lib/stores/authStore';
 	import { uiStore, uiActions } from '$lib/stores/uiStore';
 	import { applyTimezone } from '$lib/stores/timezoneStore';
 	import { notify, fail } from '$lib/stores/feedback';
@@ -14,8 +13,11 @@
 	import FeedbackToasts from '$lib/components/FeedbackToasts.svelte';
 	import { CATEGORIES, defaultMemberId } from '$lib/shared';
 	import { DIGEST_FREQUENCIES } from '$lib/vocabulary.generated';
-	import type { ComponentStatus, SystemOverview, RegistryView } from '$lib/api/types';
-	import { Users, Home, Trash2, Settings, ChevronRight, User, Shield, Upload, Download } from 'lucide-svelte';
+	import { Users, Home, Settings, ChevronRight, User, Shield, Upload, Download } from 'lucide-svelte';
+	import AccountPanel from '$lib/components/settings/AccountPanel.svelte';
+	import ImportPanel from '$lib/components/settings/ImportPanel.svelte';
+	import BackupPanel from '$lib/components/settings/BackupPanel.svelte';
+	import AdminPanel from '$lib/components/settings/AdminPanel.svelte';
 
 
 
@@ -33,10 +35,6 @@
 	let selectedMemberId: number | null = null;
 	let defaultProfileId: number | null = null;
 
-	// Tracking categories now live in $lib/shared.ts (single source of truth).
-	// Categories enabled for the selected member.
-	let activeCategories: string[] = [];
-
 	// Family-scoped tracking settings (categories + per-category option lists).
 	let settingsTab: 'profile' | 'family' | 'import' | 'members' | 'backup' | 'admin' | null = null;
 	let familySettings: { categories: string[] | null; categoryOptions: Record<string, Record<string, string[]>>; defaultCategoryOptions: Record<string, Record<string, string[]>>; stageCategories?: Record<string, string[]> | null; defaultStageCategories?: Record<string, string[]>; digestFrequency?: string; digestSentAt?: string | null; shareAnonymizedDaily?: boolean; appointmentNotifications?: boolean; appointmentNotificationsSentAt?: string | null; feedGroupingMinutes?: number; timezone?: string | null; digestSendHour?: number | null; appointmentSendHour?: number | null } | null = null;
@@ -44,9 +42,6 @@
 	// feel instant before the round trip lands.
 	let stageEditor: string | null = null;
 	let stageDraft: Record<string, string[]> = {};
-	// What the family tracks, as opposed to `activeCategories`, which is the
-	// selected member's own set. They shared one variable, so this tab showed
-	// one member's categories while writing a family-wide setting.
 	let savingFamilySettings = false;
 	let anonymizedPreview: any = null;
 	let loadingAnonymizedPreview = false;
@@ -76,32 +71,9 @@
 	let inviteEmail = '';
 	let invitations: any[] = [];
 
-	// Import data (Narababy CSV)
-	let importFile: File | null = null;
-	let importResult: any = null;
-	let importing = false;
-	let importTargetBabyId: number | null = null;
-	let importType: 'narababy' | 'csv' = 'narababy';
+	// Import runs, loaded with the rest of the family data and handed to the
+	// Import panel; everything an import itself mutates lives in the panel.
 	let importRuns: any[] = [];
-	let undoingRunId: number | null = null;
-
-	// Manual feed entry (backdated) + repeat-last
-	// Diaper detail form
-	// Sleep + growth backdated
-	// Milestone + vaccine manual forms
-	// Account
-	let curPw = '';
-	let newPw = '';
-	let confirmPw = '';
-	let changingPw = false;
-	let deletingAccount = false;
-	let deleteConfirmName = '';
-
-	function formatTime(iso: string | null): string {
-		if (!iso) return '—';
-		const d = new Date(iso);
-		return d.toLocaleString(undefined, zonedOptions({ month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }));
-	}
 
 
 	// Edit modal state
@@ -151,13 +123,8 @@
 				const savedDefault = defaultProfileId ?? null;
 				const match = savedDefault ? profiles.find((b) => Number(b.id) === savedDefault) : null;
 				selectedMemberId = match ? Number(match.id) : defaultMemberId(profiles);
-				const selected = profiles.find((b) => Number(b.id) === selectedMemberId);
-				// The API resolves this to the member's own set, constrained by their
-				// stage. An empty list is a real answer, not a prompt to show everything.
-				activeCategories = selected?.categories ?? [];
 			} else {
 				selectedMemberId = null;
-				activeCategories = [];
 			}
 			await Promise.all([loadFamilySettings(), loadInvitations(), loadImportRuns()]);
 		} catch (e: any) {
@@ -266,99 +233,12 @@
 		}
 	}
 
-	function onImportFileSelected() {
-		const input = document.getElementById('import-file') as HTMLInputElement | null;
-		importFile = input?.files?.[0] ?? null;
-		importResult = null;
-	}
-
-	async function importNarababy() {
-		fail('');
-		if (!importFile) {
-			fail('Choose a Narababy export file first.');
-			return;
-		}
-		importing = true;
-		importResult = null;
-		try {
-			const res = await importsAPI.narababy(importFile, importTargetBabyId, importType);
-			importResult = res.data;
-			notify(res.data.message || 'Import complete.');
-			await loadImportRuns();
-			await loadFamilies();
-			await loadInvitations();
-		} catch (err: any) {
-			fail(err.response?.data?.error || 'Import failed.');
-			console.error(err);
-		} finally {
-			importing = false;
-		}
-	}
-
 	async function loadImportRuns() {
 		try {
 			const res = await importsAPI.runs();
 			importRuns = res.data.runs || [];
 		} catch {
 			importRuns = [];
-		}
-	}
-
-	async function undoImportRun(runId: number) {
-		if (!confirm('Undo this import? Records created by it will be deleted.')) return;
-		undoingRunId = runId;
-		try {
-			const res = await importsAPI.undoRun(runId);
-			notify(res.data.message || 'Import undone.');
-			await loadImportRuns();
-			await loadFamilies();
-		} catch (err: any) {
-			fail(err.response?.data?.error || 'Failed to undo import.');
-		} finally {
-			undoingRunId = null;
-		}
-	}
-
-
-
-
-
-
-
-
-
-	// Account + family admin
-	async function changePassword(event: SubmitEvent) {
-		event.preventDefault();
-		fail('');
-		if (newPw !== confirmPw) { fail('New passwords do not match.'); return; }
-		changingPw = true;
-		try {
-			await accountAPI.changePassword(curPw, newPw);
-			curPw = ''; newPw = ''; confirmPw = '';
-			notify('Password updated.');
-		} catch (err: any) { fail(err.response?.data?.error || 'Failed to change password.'); }
-		finally { changingPw = false; }
-	}
-
-	async function deleteAccount() {
-		fail('');
-		const isOwner = activeFamily?.role === 'owner';
-		const familyName = String(activeFamily?.name ?? '');
-		if (isOwner && deleteConfirmName.trim().toLowerCase() !== familyName.trim().toLowerCase()) {
-			fail('Type the family name to confirm deleting the family.');
-			return;
-		}
-		if (!confirm('Delete your account permanently? This cannot be undone. If you own the family, the family and all of its data are removed too.')) return;
-		deletingAccount = true;
-		try {
-			await accountAPI.remove(isOwner ? deleteConfirmName.trim() : undefined);
-			authActions.logout();
-			goto('/login');
-		} catch (err: any) {
-			fail(err.response?.data?.error || 'Failed to delete account.');
-		} finally {
-			deletingAccount = false;
 		}
 	}
 
@@ -377,123 +257,9 @@
 		} catch (err: any) { fail(err.response?.data?.error || 'Backup failed.'); }
 	}
 
-	let backupFile: File | null = null;
-	let restoring = false;
-
-	// Instance settings (Admin tab)
-	let appSettings: any = null;
+	// Admin tab state lives in AdminPanel; the page keeps only the admin flag
+	// that gates the Admin row and the tab itself.
 	let isPanelAdmin = false;
-	let savingSettings = false;
-	let testingSmtp = false;
-	let smtpHost = '';
-	let smtpPort = 587;
-	let smtpUser = '';
-	let smtpPass = '';
-	let smtpFrom = '';
-	let signupEnabled = true;
-	let signupEnvLocked = false;
-	let emailVerificationSetting = false;
-
-	// Instance health / roll-up stats for the Admin tab.
-	let systemOverview: SystemOverview | null = null;
-	let loadingOverview = false;
-	let overviewError = '';
-
-	// Formatting lives here too rather than being sent pre-rendered for the
-	// tiles; the component metrics arrive as strings from the API.
-	function formatBytes(bytes: number | null | undefined): string {
-		if (bytes === null || bytes === undefined || !Number.isFinite(bytes) || bytes < 0) return '—';
-		if (bytes < 1024) return `${Math.round(bytes)} B`;
-		const units = ['KB', 'MB', 'GB', 'TB', 'PB'];
-		let value = bytes / 1024;
-		let i = 0;
-		while (value >= 1024 && i < units.length - 1) { value /= 1024; i += 1; }
-		return `${value >= 10 ? Math.round(value) : value.toFixed(1)} ${units[i]}`;
-	}
-
-	function formatDuration(seconds: number): string {
-		if (!Number.isFinite(seconds) || seconds < 0) return '—';
-		const s = Math.floor(seconds);
-		const d = Math.floor(s / 86_400);
-		const h = Math.floor((s % 86_400) / 3600);
-		const m = Math.floor((s % 3600) / 60);
-		if (d > 0) return `${d}d ${h}h`;
-		if (h > 0) return `${h}h ${m}m`;
-		if (m > 0) return `${m}m ${s % 60}s`;
-		return `${s}s`;
-	}
-
-	function statusDot(status: ComponentStatus): string {
-		return status === 'ok' ? 'bg-ok-text' : status === 'warn' ? 'bg-accent' : 'bg-danger-text';
-	}
-	function statusText(status: ComponentStatus): string {
-		return status === 'ok' ? 'text-ok-text' : status === 'warn' ? 'text-ink-soft' : 'text-danger-text';
-	}
-	function statusLabel(status: ComponentStatus): string {
-		return status === 'ok' ? 'OK' : status === 'warn' ? 'Attention' : 'Down';
-	}
-
-	$: overviewTiles = systemOverview
-		? [
-			{ label: 'Families', value: String(systemOverview.rollup.activeFamilies), hint: systemOverview.rollup.orphanedFamilies > 0 ? `${systemOverview.rollup.orphanedFamilies} retained · no accounts` : 'all with accounts' },
-			{ label: 'Accounts', value: String(systemOverview.rollup.accounts), hint: `${systemOverview.rollup.platformAdmins} platform admin${systemOverview.rollup.platformAdmins === 1 ? '' : 's'}` },
-			{ label: 'Family databases', value: String(systemOverview.rollup.familyDbFiles), hint: formatBytes(systemOverview.rollup.familyDbBytes) },
-			{ label: 'Registry size', value: formatBytes(systemOverview.rollup.registryBytes), hint: 'control plane' },
-			{ label: 'Attachments', value: systemOverview.rollup.attachmentFiles.toLocaleString(), hint: formatBytes(systemOverview.rollup.attachmentBytes) },
-			{ label: 'Disk free', value: formatBytes(systemOverview.rollup.diskFreeBytes), hint: systemOverview.rollup.diskTotalBytes ? `of ${formatBytes(systemOverview.rollup.diskTotalBytes)}` : 'data volume' },
-			{ label: 'Uptime', value: formatDuration(systemOverview.instance.uptimeSeconds), hint: `PID ${systemOverview.instance.pid}` },
-			{ label: 'Memory (RSS)', value: formatBytes(systemOverview.instance.memoryRssBytes), hint: `heap ${formatBytes(systemOverview.instance.memoryHeapUsedBytes)}` },
-		]
-		: [];
-
-	async function loadSystemOverview() {
-		if (!isPanelAdmin) return;
-		loadingOverview = true;
-		overviewError = '';
-		try {
-			const res = await settingsAPI.overview();
-			systemOverview = res.data.overview;
-		} catch (err: any) {
-			systemOverview = null;
-			overviewError = err.response?.data?.error || 'Could not load system status.';
-		} finally {
-			loadingOverview = false;
-		}
-	}
-
-	// Read-only registry view for the Admin tab.
-	let registryView: RegistryView | null = null;
-	let loadingRegistry = false;
-	let registryError = '';
-
-	// A family with no routed accounts is a namespace that was retained when its
-	// last account joined another family. It is not a live family, so it is
-	// counted and shown separately rather than inflating the family list.
-	$: registryActiveFamilies = registryView ? registryView.families.filter((f) => f.accountCount > 0).length : 0;
-	$: registryRetainedFamilies = registryView ? registryView.families.length - registryActiveFamilies : 0;
-
-	function fmtDate(iso: string): string {
-		if (!iso) return '—';
-		const d = new Date(iso);
-		if (Number.isNaN(d.getTime())) return iso;
-		const pad = (n: number) => String(n).padStart(2, '0');
-		return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
-	}
-
-	async function loadRegistry() {
-		if (!isPanelAdmin) return;
-		loadingRegistry = true;
-		registryError = '';
-		try {
-			const res = await settingsAPI.registry();
-			registryView = res.data.registry;
-		} catch (err: any) {
-			registryView = null;
-			registryError = err.response?.data?.error || 'Could not load the registry.';
-		} finally {
-			loadingRegistry = false;
-		}
-	}
 
 	async function refreshUserProfile() {
 		try {
@@ -513,94 +279,6 @@
 			isPanelAdmin = false;
 		}
 	}
-
-	async function loadAppSettings() {
-		try {
-			const res = await settingsAPI.get();
-			appSettings = res.data.settings;
-			smtpHost = appSettings.smtpHost || '';
-			smtpPort = appSettings.smtpPort || 587;
-			smtpUser = appSettings.smtpUser || '';
-			smtpFrom = appSettings.smtpFrom || '';
-			signupEnabled = appSettings.signupEnabled;
-			signupEnvLocked = appSettings.signupEnvLocked === true;
-			emailVerificationSetting = appSettings.emailVerification;
-		} catch {
-			appSettings = null;
-		}
-	}
-
-	async function saveAppSettings() {
-		savingSettings = true;
-		fail('');
-		try {
-			const res = await settingsAPI.update({
-				signupEnabled,
-				emailVerification: emailVerificationSetting,
-				smtpHost: smtpHost || null,
-				smtpPort: smtpPort || null,
-				smtpUser: smtpUser || null,
-				smtpPass: smtpPass || null,
-				smtpFrom: smtpFrom || null,
-			});
-			appSettings = res.data.settings;
-			notify('Settings saved.');
-		} catch (err: any) {
-			fail(err.response?.data?.error || 'Failed to save settings.');
-		} finally {
-			savingSettings = false;
-		}
-	}
-
-	async function testSmtp() {
-		testingSmtp = true;
-		fail('');
-		try {
-			const res = await settingsAPI.test();
-			notify(res.data.message || 'Test email sent.');
-		} catch (err: any) {
-			fail(err.response?.data?.error || 'Test failed.');
-		} finally {
-			testingSmtp = false;
-		}
-	}
-
-	function onBackupFileSelected() {
-		const input = document.getElementById('backup-file') as HTMLInputElement | null;
-		backupFile = input?.files?.[0] ?? null;
-	}
-
-	async function restoreBackup() {
-		if (!activeFamilyId || !backupFile) {
-			fail('Choose a Nido backup file first.');
-			return;
-		}
-		if (!confirm('Restore this backup into your family? Existing members are matched by name and skipped; records will be re-added.')) return;
-		restoring = true;
-		try {
-			const text = await backupFile.text();
-			const json = JSON.parse(text);
-			const res = await familyAdminAPI.restore(activeFamilyId, json);
-			notify(`${res.data.message}. Members added: ${res.data.membersAdded}.`);
-			backupFile = null;
-			await loadFamilies();
-		} catch (err: any) {
-			fail(err.response?.data?.error || (err instanceof SyntaxError ? 'Not a valid JSON backup file.' : 'Restore failed.'));
-		} finally {
-			restoring = false;
-		}
-	}
-
-	async function deleteFamily() {
-		if (!activeFamilyId) return;
-		if (!confirm(`Delete "${activeFamily?.name}" and ALL of its data? This cannot be undone.`)) return;
-		try {
-			await familyAdminAPI.remove(activeFamilyId);
-			notify('Family deleted.');
-			await loadFamilies();
-		} catch (err: any) { fail(err.response?.data?.error || 'Failed to delete family.'); }
-	}
-
 
 	async function loadFamilySettings() {
 		if (!activeFamilyId) return;
@@ -1031,7 +709,6 @@
 			}
 			if (isAuthenticated) {
 				await Promise.all([loadFamilies(), refreshUserProfile()]);
-				if (isPanelAdmin) await Promise.all([loadAppSettings(), loadSystemOverview(), loadRegistry()]);
 			}
 		}
 	});
@@ -1109,7 +786,7 @@
 						<section>
 							<h3 class="text-xs font-semibold text-ink-soft uppercase tracking-wider mb-2 px-4">Admin</h3>
 							<div class="bg-surface rounded-xl border border-line-soft overflow-hidden">
-								<button type="button" on:click={() => { settingsTab = 'admin'; loadSystemOverview(); loadRegistry(); }} class="w-full flex items-center justify-between px-4 py-3 min-h-[44px] hover:bg-surface2 transition-colors text-left">
+								<button type="button" on:click={() => (settingsTab = 'admin')} class="w-full flex items-center justify-between px-4 py-3 min-h-[44px] hover:bg-surface2 transition-colors text-left">
 									<div class="flex items-center gap-3">
 										<Shield class="w-5 h-5 text-ink-soft" />
 										<span class="text-ink font-medium">Admin</span>
@@ -1128,57 +805,7 @@
 					</div>
 					<div class="flex-1 min-w-0">
 						{#if settingsTab === 'profile'}
-							<div class="bg-surface rounded-lg shadow-card p-4 md:p-6 border border-line-soft">
-								<h3 class="text-lg font-display font-semibold mb-4">Profile</h3>
-								<div class="mb-6">
-									<p class="text-sm text-ink-soft mb-1">Name</p>
-									<p class="font-semibold text-ink">{$authStore.user?.firstName} {$authStore.user?.lastName}</p>
-								</div>
-								<div class="mb-6">
-									<p class="text-sm text-ink-soft mb-1">Email</p>
-									<p class="font-semibold text-ink">{$authStore.user?.email}</p>
-								</div>
-								<div class="border-t border-line-soft pt-4">
-									<h4 class="font-display font-semibold mb-3">Change password</h4>
-									<form on:submit={changePassword} class="space-y-3 max-w-sm">
-										<input type="password" bind:value={curPw} placeholder="Current password" class="w-full px-3 py-2 border border-line rounded-md" />
-										<input type="password" bind:value={newPw} placeholder="New password" class="w-full px-3 py-2 border border-line rounded-md" />
-										<input type="password" bind:value={confirmPw} placeholder="Confirm new password" class="w-full px-3 py-2 border border-line rounded-md" />
-										<button type="submit" disabled={changingPw} class="bg-primary text-on-primary px-4 py-2 rounded-md hover:bg-primary disabled:opacity-50">
-											{changingPw ? 'Saving...' : 'Change Password'}
-										</button>
-								</form>
-								{#if inviteFallbackUrl}
-									<div class="mt-3 p-3 border border-line-soft rounded-md bg-surface-soft">
-										<p class="text-xs text-ink-soft uppercase mb-1">Share this link manually</p>
-										<p class="text-xs text-ink-soft mb-2">The invitation was saved, but the email did not go out. Send this link to the recipient yourself.</p>
-										<input readonly value={inviteFallbackUrl} class="w-full px-3 py-2 border border-line rounded-md text-xs" on:focus={selectAll} aria-label="Invitation link" />
-									</div>
-								{/if}
-								</div>
-								<div class="border-t border-line-soft pt-4">
-									<h4 class="font-display font-semibold mb-3 text-danger-text">Delete account</h4>
-									<p class="text-xs text-ink-soft mb-3">Permanently removes your account. If you own the family, the family and all of its members and records are removed too. This cannot be undone.</p>
-									{#if activeFamily?.role === 'owner'}
-										<label for="delete-confirm-name" class="block text-xs text-ink-soft mb-1">Type the family name to confirm</label>
-										<input id="delete-confirm-name" type="text" bind:value={deleteConfirmName} class="w-full px-3 py-2 border border-line rounded-md mb-3" placeholder={activeFamily?.name} />
-									{/if}
-									<button type="button" on:click={deleteAccount} disabled={deletingAccount || (activeFamily?.role === 'owner' && deleteConfirmName.trim().toLowerCase() !== String(activeFamily?.name ?? '').trim().toLowerCase())} class="bg-danger text-danger-text border border-danger px-4 py-2 rounded-md font-semibold disabled:opacity-50">
-										{deletingAccount ? 'Deleting...' : 'Delete my account'}
-									</button>
-								</div>
-								<div class="border-t border-line-soft pt-4">
-									<h4 class="font-display font-semibold mb-3">Family</h4>
-									<p class="text-sm text-ink-soft mb-2">Family: <span class="text-ink font-medium">{activeFamily?.name} <span class="text-accent font-mono text-sm">({activeFamily?.familyCode})</span></span></p>
-									<p class="text-sm text-ink-soft mb-2">Your role: <span class="text-ink font-medium">{activeFamily?.role || 'member'}</span></p>
-									<div class="flex flex-wrap gap-3">
-										<button type="button" on:click={exportFamily} class="bg-surface2 text-ink-soft px-4 py-2 rounded-md hover:bg-line-soft">⬇ Export data</button>
-										{#if activeFamily?.role === 'owner'}
-											<button type="button" on:click={deleteFamily} class="bg-danger text-danger-text px-4 py-2 rounded-md hover:bg-danger"><Trash2 class="w-4 h-4 inline mr-1" /> Delete family</button>
-										{/if}
-									</div>
-								</div>
-							</div>
+							<AccountPanel {activeFamily} {activeFamilyId} {exportFamily} dataChanged={loadFamilies} />
 							{:else if settingsTab === 'family'}
 							<div class="bg-surface rounded-lg shadow-card p-4 md:p-6 border border-line-soft">
 								<h3 class="text-lg font-display font-semibold mb-1">Family &amp; tracking</h3>
@@ -1429,6 +1056,13 @@
 									<input type="email" bind:value={inviteEmail} required class="flex-1 px-3 py-2 border border-line rounded-md" placeholder="person@email.com" />
 									<button type="submit" class="bg-primary text-on-primary px-4 py-2 rounded-md hover:bg-primary">Send Invite</button>
 								</form>
+								{#if inviteFallbackUrl}
+									<div class="mt-3 p-3 border border-line-soft rounded-md bg-surface-soft">
+										<p class="text-xs text-ink-soft uppercase mb-1">Share this link manually</p>
+										<p class="text-xs text-ink-soft mb-2">The invitation was saved, but the email did not go out. Send this link to the recipient yourself.</p>
+										<input readonly value={inviteFallbackUrl} class="w-full px-3 py-2 border border-line rounded-md text-xs" on:focus={selectAll} aria-label="Invitation link" />
+									</div>
+								{/if}
 								{#if invitations.length > 0}
 									<div class="mt-3">
 										<p class="text-xs text-ink-soft uppercase">Pending invitations</p>
@@ -1595,369 +1229,12 @@
 								</div>
 							{/if}
 							{:else if settingsTab === 'import'}
-							<div class="bg-surface rounded-lg shadow-card p-4 md:p-6 border border-line-soft">
-								<h3 class="text-lg font-display font-semibold mb-2">Import data</h3>
-								<p class="text-ink-soft text-sm mb-3">Bring history from another baby app into {activeFamily?.name}. Records land on the selected family member. Re-importing the same file skips duplicates.</p>
-								<div class="flex flex-col gap-3 sm:flex-row sm:items-center">
-									<div class="flex-1">
-										<label for="import-target" class="block text-sm font-medium text-ink-soft mb-1">Assign to family member</label>
-										<select id="import-target" bind:value={importTargetBabyId} class="w-full px-3 py-2 border border-line rounded-md bg-surface text-ink">
-											<option value={null}>— choose a member —</option>
-											{#each profiles as baby}
-												<option value={baby.id}>{baby.name}</option>
-											{/each}
-										</select>
-									</div>
-									<div class="flex-1">
-										<label for="import-type" class="block text-sm font-medium text-ink-soft mb-1">Import type</label>
-										<select id="import-type" bind:value={importType} class="w-full px-3 py-2 border border-line rounded-md bg-surface text-ink">
-											<option value="narababy">Narababy (CSV)</option>
-											<option value="csv">Generic CSV</option>
-										</select>
-									</div>
-									<div class="flex-1">
-										<label for="import-file" class="block text-sm font-medium text-ink-soft mb-1">File</label>
-										<input id="import-file" type="file" accept=".csv,text/csv" on:change={onImportFileSelected} class="block w-full text-sm text-ink border border-line rounded-md file:mr-3 file:py-2 file:px-4 file:rounded-md file:border-0 file:bg-primary file:text-on-primary" />
-										{#if importFile}
-											<p class="text-xs text-ink-soft mt-1">Selected: {importFile.name}</p>
-										{/if}
-									</div>
-									<div class="sm:self-end">
-										<button type="button" disabled={importing || !importFile} on:click={importNarababy} class="bg-primary text-on-primary px-4 py-2 rounded-md hover:bg-primary disabled:opacity-50">
-											{importing ? 'Importing...' : 'Import'}
-										</button>
-									</div>
-								</div>
-								{#if importResult}
-									<div class="mt-3 grid grid-cols-2 sm:grid-cols-3 gap-2 text-sm">
-										<div class="bg-surface2 rounded-md px-3 py-2"><span class="text-ink-soft uppercase text-xs">Feedings</span><br /><span class="font-semibold text-ink">{importResult.created?.feedings ?? 0}</span></div>
-										<div class="bg-surface2 rounded-md px-3 py-2"><span class="text-ink-soft uppercase text-xs">Diapers</span><br /><span class="font-semibold text-ink">{importResult.created?.diapers ?? 0}</span></div>
-										<div class="bg-surface2 rounded-md px-3 py-2"><span class="text-ink-soft uppercase text-xs">Sleep</span><br /><span class="font-semibold text-ink">{importResult.created?.sleep ?? 0}</span></div>
-										<div class="bg-surface2 rounded-md px-3 py-2"><span class="text-ink-soft uppercase text-xs">Growth</span><br /><span class="font-semibold text-ink">{importResult.created?.growth ?? 0}</span></div>
-										<div class="bg-surface2 rounded-md px-3 py-2"><span class="text-ink-soft uppercase text-xs">Milestones</span><br /><span class="font-semibold text-ink">{importResult.created?.milestones ?? 0}</span></div>
-										<div class="bg-surface2 rounded-md px-3 py-2"><span class="text-ink-soft uppercase text-xs">Skipped (dups)</span><br /><span class="font-semibold text-ink">{importResult.skippedDuplicate ?? 0}</span></div>
-									</div>
-									{#if importResult.errors && importResult.errors.length > 0}
-										<p class="text-xs text-danger-text mt-2">{importResult.errors.length} row(s) had issues.</p>
-									{/if}
-								{/if}
-								{#if importRuns.length > 0}
-									<div class="border-t border-line-soft pt-3 mt-4">
-										<h4 class="font-display font-semibold text-sm mb-2">Import history</h4>
-										<ul class="divide-y divide-line-soft">
-											{#each importRuns as run}
-												<li class="py-2 flex items-center justify-between gap-2">
-													<div class="min-w-0">
-														<p class="text-sm text-ink truncate">{run.filename || 'Import'}</p>
-														<p class="text-xs text-ink-soft">{formatTime(run.createdAt)} · {run.importType}{run.memberId ? ` · member #${run.memberId}` : ''}</p>
-													</div>
-													<button type="button" disabled={undoingRunId === run.id} on:click={() => undoImportRun(run.id)} class="text-xs text-danger-text hover:underline shrink-0">
-														{undoingRunId === run.id ? 'Undoing...' : 'Undo'}
-													</button>
-												</li>
-											{/each}
-										</ul>
-									</div>
-								{/if}
-							</div>
+							<ImportPanel {profiles} {activeFamily} runs={importRuns} dataChanged={loadFamilies} />
 							{:else if settingsTab === 'backup'}
-							<div class="bg-surface rounded-lg shadow-card p-4 md:p-6 border border-line-soft">
-								<h3 class="text-lg font-display font-semibold mb-2">Backup</h3>
-								<p class="text-ink-soft text-sm mb-4">Download a full backup of <span class="text-ink font-medium">{activeFamily?.name}</span> — every member, all records (feeds, diapers, sleep, growth, milestones, vaccinations), formulas, tracked-category settings, and pending invitations — as a portable JSON file. Restore it later into this family.</p>
-
-								<div class="flex flex-col gap-4">
-									<button type="button" on:click={exportFamily} class="bg-primary text-on-primary px-4 py-2.5 rounded-md hover:bg-primary">⬇ Download all-data backup</button>
-
-									<div class="border-t border-line-soft pt-4">
-										<h4 class="font-display font-semibold text-sm mb-2">Restore from backup</h4>
-										<p class="text-xs text-ink-soft mb-2">Choose a Nido backup JSON file. Members already present (matched by name) are skipped; their records will be re-added from the backup.</p>
-										<div class="flex flex-col gap-2 sm:flex-row sm:items-center">
-											<input id="backup-file" type="file" accept=".json,application/json" on:change={onBackupFileSelected} class="block w-full text-sm text-ink border border-line rounded-md file:mr-3 file:py-2 file:px-4 file:rounded-md file:border-0 file:bg-primary file:text-on-primary" />
-											<button type="button" disabled={restoring || !backupFile} on:click={restoreBackup} class="bg-primary text-on-primary px-4 py-2 rounded-md hover:bg-primary disabled:opacity-50 shrink-0">
-												{restoring ? 'Restoring...' : 'Restore'}
-											</button>
-										</div>
-									</div>
-
-									<div class="border-t border-line-soft pt-4 bg-surface2 rounded-md p-4">
-										<h4 class="font-display font-semibold text-sm mb-2">Restore notes</h4>
-										<ul class="text-xs text-ink-soft list-disc ml-4 space-y-1">
-											<li>Backups are per-family. Download each family&rsquo;s backup separately from that family&rsquo;s account.</li>
-											<li>To restore into a different family, switch to (or create) that family in Account → Family, then Restore here.</li>
-											<li>Restore is additive: existing members are matched by name and skipped, and their records are appended. To fully replace data, delete the family first (owner only), rebuild it, then restore.</li>
-											<li>Restoring to a brand-new family requires the restore file&rsquo;s members to be added first — it will create them automatically.</li>
-										</ul>
-									</div>
-								</div>
-							</div>
+							<BackupPanel {activeFamily} {activeFamilyId} {exportFamily} dataChanged={loadFamilies} />
 							{:else if settingsTab === 'admin'}
 							{#if isPanelAdmin}
-							<div class="bg-surface rounded-lg shadow-card p-4 md:p-6 border border-line-soft mb-4">
-								<div class="flex items-start justify-between gap-3 mb-4">
-									<div>
-										<h3 class="text-lg font-display font-semibold">System status</h3>
-										<p class="text-ink-soft text-sm">Roll-up of this instance: accounts, storage, and the health of each component.</p>
-									</div>
-									<button type="button" on:click={loadSystemOverview} disabled={loadingOverview} class="bg-surface2 text-ink-soft px-3 py-2 rounded-md hover:text-ink disabled:opacity-50 text-sm min-h-[36px] shrink-0">
-										{loadingOverview ? 'Refreshing…' : 'Refresh'}
-									</button>
-								</div>
-
-								{#if overviewError}
-									<div class="bg-danger border border-danger text-danger-text px-3 py-2 rounded-md text-sm">{overviewError}</div>
-								{:else if !systemOverview}
-									<p class="text-ink-soft text-sm">Loading system status…</p>
-								{:else}
-									<div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2 mb-5" data-testid="admin-stats">
-										{#each overviewTiles as tile (tile.label)}
-											<div class="rounded-lg border border-line-soft bg-surface px-3 py-2.5">
-												<p class="text-xs text-ink-soft leading-tight">{tile.label}</p>
-												<p class="text-2xl font-display font-semibold text-ink leading-tight mt-0.5">{tile.value}</p>
-												<p class="text-[11px] text-ink-soft leading-tight mt-0.5">{tile.hint}</p>
-											</div>
-										{/each}
-									</div>
-
-									<h4 class="text-xs font-semibold text-ink-soft uppercase tracking-wider mb-2">Components</h4>
-									<div class="flex flex-col divide-y divide-line-soft border border-line-soft rounded-lg overflow-hidden">
-										{#each systemOverview.components as cmp (cmp.key)}
-											<div class="p-3 flex flex-col gap-2">
-												<div class="flex items-start gap-2">
-													<span class="mt-1.5 w-2.5 h-2.5 rounded-full shrink-0 {statusDot(cmp.status)}" aria-hidden="true"></span>
-													<div class="flex-1 min-w-0">
-														<div class="flex flex-wrap items-baseline gap-x-2">
-															<span class="font-medium text-ink">{cmp.name}</span>
-															<span class="text-xs font-semibold {statusText(cmp.status)}">{statusLabel(cmp.status)}</span>
-														</div>
-														<p class="text-sm text-ink-soft break-words">{cmp.summary}</p>
-													</div>
-												</div>
-												{#if cmp.usagePct !== null}
-													<div class="h-1.5 rounded-full bg-surface2 overflow-hidden ml-[18px]" aria-hidden="true">
-														<div class="h-full {statusDot(cmp.status)}" style={`width: ${Math.min(100, Math.max(0, cmp.usagePct))}%`}></div>
-													</div>
-												{/if}
-												<div class="flex flex-wrap gap-x-4 gap-y-1 ml-[18px]">
-													{#each cmp.metrics as m (m.label)}
-														<span class="text-xs text-ink-soft">{m.label}: <span class="text-ink">{m.value}</span></span>
-													{/each}
-												</div>
-											</div>
-										{/each}
-									</div>
-
-									<p class="text-[11px] text-ink-soft mt-3 break-words">
-										Node {systemOverview.instance.node} · {systemOverview.instance.platform} · host {systemOverview.instance.hostname} · PID {systemOverview.instance.pid} · data {systemOverview.instance.dataDir}
-									</p>
-								{/if}
-							</div>
-
-							<div class="bg-surface rounded-lg shadow-card p-4 md:p-6 border border-line-soft mb-4">
-								<div class="flex items-start justify-between gap-3 mb-4">
-									<div>
-										<h3 class="text-lg font-display font-semibold">Registry</h3>
-										<p class="text-ink-soft text-sm">Read-only rows of the instance control plane: families, accounts, settings, scheduler leases. Secrets and reset tokens are never shown.</p>
-									</div>
-									<button type="button" on:click={loadRegistry} disabled={loadingRegistry} class="bg-surface2 text-ink-soft px-3 py-2 rounded-md hover:text-ink disabled:opacity-50 text-sm min-h-[36px] shrink-0">
-										{loadingRegistry ? 'Refreshing…' : 'Refresh'}
-									</button>
-								</div>
-
-								{#if registryError}
-									<div class="bg-danger border border-danger text-danger-text px-3 py-2 rounded-md text-sm">{registryError}</div>
-								{:else if !registryView}
-									<p class="text-ink-soft text-sm">Loading registry…</p>
-								{:else}
-									<div class="space-y-5">
-										<section>
-											<h4 class="text-xs font-semibold text-ink-soft uppercase tracking-wider mb-2">Instance settings</h4>
-											<div class="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-2 rounded-lg border border-line-soft p-3 text-sm">
-												<div><span class="text-ink-soft text-xs block">Sign-up</span><span class="text-ink">{registryView.settings.signupEnabled ? 'Open' : 'Closed'}{registryView.settings.signupEnvLocked ? ' (env-locked)' : ''}</span></div>
-												<div><span class="text-ink-soft text-xs block">Email verification</span><span class="text-ink">{registryView.settings.emailVerification ? 'Required' : 'Off'}</span></div>
-												<div><span class="text-ink-soft text-xs block">SMTP</span><span class="text-ink">{registryView.settings.smtpConfigured ? `${registryView.settings.smtpHost}:${registryView.settings.smtpPort}` : 'Not configured'}</span></div>
-												<div><span class="text-ink-soft text-xs block">From</span><span class="text-ink break-words">{registryView.settings.smtpFrom || 'default'}</span></div>
-												<div><span class="text-ink-soft text-xs block">SMTP credentials</span><span class="text-ink">user {registryView.settings.smtpUserSet ? 'set' : 'unset'} · password {registryView.settings.smtpPassSet ? 'set' : 'unset'}</span></div>
-												<div><span class="text-ink-soft text-xs block">Updated</span><span class="text-ink">{fmtDate(registryView.settings.updatedAt)}</span></div>
-											</div>
-										</section>
-
-										<section>
-											<div class="flex flex-wrap items-baseline gap-x-2">
-												<h4 class="text-xs font-semibold text-ink-soft uppercase tracking-wider">Families ({registryActiveFamilies})</h4>
-												{#if registryRetainedFamilies > 0}
-													<span class="text-[11px] text-ink-soft">+ {registryRetainedFamilies} retained without accounts</span>
-												{/if}
-											</div>
-											{#if registryRetainedFamilies > 0}
-												<p class="text-xs text-ink-soft mt-1 mb-2">
-													A retained family has no accounts left — the account that owned it joined another family, and its data was kept rather than deleted. Retained families are excluded from the family count and skipped by the notification scheduler.
-												</p>
-											{/if}
-											{#if registryView.families.length === 0}
-												<p class="text-ink-soft text-sm">No families provisioned yet.</p>
-											{:else}
-												<div class="overflow-x-auto rounded-lg border border-line-soft">
-													<table class="w-full text-sm min-w-[560px]">
-														<thead>
-															<tr class="text-left text-xs text-ink-soft bg-surface2">
-																<th class="px-3 py-2 font-semibold">Family</th>
-																<th class="px-3 py-2 font-semibold">Name</th>
-																<th class="px-3 py-2 font-semibold">Code</th>
-																<th class="px-3 py-2 font-semibold">Accounts</th>
-																<th class="px-3 py-2 font-semibold">Created</th>
-															</tr>
-														</thead>
-														<tbody>
-															{#each registryView.families as fam (fam.familyId)}
-															<tr class="border-t border-line-soft">
-																<td class="px-3 py-2 font-mono text-xs text-ink whitespace-nowrap">{fam.familyId}</td>
-																<td class="px-3 py-2 text-ink whitespace-nowrap">{fam.name}</td>
-																<td class="px-3 py-2 font-mono text-xs text-ink-soft whitespace-nowrap">{fam.familyCode || '—'}</td>
-																<td class="px-3 py-2 whitespace-nowrap">
-																	{#if fam.accountCount > 0}
-																		<span class="inline-flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-ok-text" aria-hidden="true"></span><span class="text-ink">{fam.accountCount}</span></span>
-																	{:else}
-																		<span class="inline-flex items-center rounded-full bg-surface2 px-2 py-0.5 text-[11px] text-ink-soft">none · retained</span>
-																	{/if}
-																</td>
-																<td class="px-3 py-2 text-ink-soft whitespace-nowrap">{fmtDate(fam.createdAt)}</td>
-															</tr>
-															{/each}
-														</tbody>
-													</table>
-												</div>
-											{/if}
-										</section>
-
-										<section>
-											<h4 class="text-xs font-semibold text-ink-soft uppercase tracking-wider mb-2">Accounts ({registryView.users.length})</h4>
-											{#if registryView.users.length === 0}
-												<p class="text-ink-soft text-sm">No accounts yet.</p>
-											{:else}
-												<div class="overflow-x-auto rounded-lg border border-line-soft">
-													<table class="w-full text-sm min-w-[560px]">
-														<thead>
-															<tr class="text-left text-xs text-ink-soft bg-surface2">
-																<th class="px-3 py-2 font-semibold">Email</th>
-																<th class="px-3 py-2 font-semibold">Role</th>
-																<th class="px-3 py-2 font-semibold">Admin</th>
-																<th class="px-3 py-2 font-semibold">Family</th>
-																<th class="px-3 py-2 font-semibold">Created</th>
-															</tr>
-														</thead>
-														<tbody>
-															{#each registryView.users as usr (usr.userId + usr.familyId)}
-															<tr class="border-t border-line-soft">
-																<td class="px-3 py-2 text-ink whitespace-nowrap">{usr.email}</td>
-																<td class="px-3 py-2 text-ink-soft whitespace-nowrap">{usr.role}</td>
-																<td class="px-3 py-2 whitespace-nowrap">{#if usr.isPlatformAdmin}<span class="inline-flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-ok-text" aria-hidden="true"></span><span class="text-ink">platform admin</span></span>{:else}<span class="text-ink-soft">—</span>{/if}</td>
-																<td class="px-3 py-2 font-mono text-xs text-ink-soft whitespace-nowrap">{usr.familyId}</td>
-																<td class="px-3 py-2 text-ink-soft whitespace-nowrap">{fmtDate(usr.createdAt)}</td>
-															</tr>
-															{/each}
-														</tbody>
-													</table>
-												</div>
-											{/if}
-										</section>
-
-										{#if registryView.leases.length > 0}
-										<section>
-											<h4 class="text-xs font-semibold text-ink-soft uppercase tracking-wider mb-2">Scheduler leases ({registryView.leases.length})</h4>
-											<div class="overflow-x-auto rounded-lg border border-line-soft">
-												<table class="w-full text-sm min-w-[480px]">
-													<thead>
-														<tr class="text-left text-xs text-ink-soft bg-surface2">
-															<th class="px-3 py-2 font-semibold">Job</th>
-															<th class="px-3 py-2 font-semibold">Holder</th>
-															<th class="px-3 py-2 font-semibold">Acquired</th>
-															<th class="px-3 py-2 font-semibold">Expires</th>
-														</tr>
-													</thead>
-													<tbody>
-														{#each registryView.leases as lease (lease.name)}
-														<tr class="border-t border-line-soft">
-															<td class="px-3 py-2 font-mono text-xs text-ink whitespace-nowrap">{lease.name}</td>
-															<td class="px-3 py-2 font-mono text-xs text-ink-soft whitespace-nowrap">{lease.holder}</td>
-															<td class="px-3 py-2 text-ink-soft whitespace-nowrap">{fmtDate(lease.acquiredAt)}</td>
-															<td class="px-3 py-2 text-ink-soft whitespace-nowrap">{fmtDate(lease.expiresAt)}</td>
-														</tr>
-														{/each}
-													</tbody>
-												</table>
-											</div>
-										</section>
-										{/if}
-									</div>
-								{/if}
-							</div>
-
-							<div class="bg-surface rounded-lg shadow-card p-4 md:p-6 border border-line-soft">
-								<h3 class="text-lg font-display font-semibold mb-2">Admin</h3>
-								<p class="text-ink-soft text-sm mb-4">Instance-wide settings. These apply to every family on this server.</p>
-
-								<div class="flex flex-col gap-4">
-									<div class="border-t border-line-soft pt-4">
-										<h4 class="font-display font-semibold text-sm mb-2">Sign up</h4>
-										<ToggleSwitch
-											checked={signupEnabled}
-											disabled={signupEnvLocked}
-											label="Allow new account sign up"
-											description="When off, the register page is blocked for new accounts."
-											onToggle={() => { signupEnabled = !signupEnabled; saveAppSettings(); }}
-										/>
-										{#if signupEnvLocked}
-											<p class="text-xs text-ink-soft mt-2">Controlled by the <span class="font-mono">SIGNUP_ENABLED</span> environment variable — this toggle is locked.</p>
-										{/if}
-										<ToggleSwitch
-											checked={emailVerificationSetting}
-											label="Require email verification"
-											description="New users must click a link emailed to them before they can sign in. Requires SMTP."
-											onToggle={() => { emailVerificationSetting = !emailVerificationSetting; saveAppSettings(); }}
-										/>
-										{#if emailVerificationSetting && appSettings && !appSettings.smtpConfigured}
-											<div class="mt-2 bg-danger border border-danger text-danger-text px-3 py-2 rounded-md text-sm">
-												Email verification is on, but SMTP is not configured — verification emails will not be sent, and new accounts will be stuck unable to sign in. Configure SMTP below before enabling it.
-											</div>
-										{/if}
-									</div>
-
-									<div class="border-t border-line-soft pt-4">
-										<h4 class="font-display font-semibold text-sm mb-2">SMTP</h4>
-										<div class="grid grid-cols-2 gap-3">
-											<div>
-												<label for="smtp-host" class="block text-sm font-medium text-ink-soft mb-1">Host</label>
-												<input id="smtp-host" type="text" bind:value={smtpHost} placeholder="smtp.example.com" class="w-full px-3 py-2 border border-line rounded-md bg-surface text-ink" />
-											</div>
-											<div>
-												<label for="smtp-port" class="block text-sm font-medium text-ink-soft mb-1">Port</label>
-												<input id="smtp-port" type="number" bind:value={smtpPort} placeholder="587" class="w-full px-3 py-2 border border-line rounded-md bg-surface text-ink" />
-											</div>
-											<div>
-												<label for="smtp-user" class="block text-sm font-medium text-ink-soft mb-1">Username</label>
-												<input id="smtp-user" type="text" bind:value={smtpUser} placeholder="user@example.com" class="w-full px-3 py-2 border border-line rounded-md bg-surface text-ink" />
-											</div>
-											<div>
-												<label for="smtp-pass" class="block text-sm font-medium text-ink-soft mb-1">Password</label>
-												<input id="smtp-pass" type="password" bind:value={smtpPass} placeholder="••••••" class="w-full px-3 py-2 border border-line rounded-md bg-surface text-ink" />
-											</div>
-											<div class="col-span-2">
-												<label for="smtp-from" class="block text-sm font-medium text-ink-soft mb-1">From address</label>
-												<input id="smtp-from" type="email" bind:value={smtpFrom} placeholder="Nido <nido@example.com>" class="w-full px-3 py-2 border border-line rounded-md bg-surface text-ink" />
-											</div>
-										</div>
-									</div>
-
-									<div class="flex flex-wrap gap-2">
-										<button type="button" disabled={savingSettings} on:click={saveAppSettings} class="bg-primary text-on-primary px-4 py-2 rounded-md hover:bg-primary disabled:opacity-50">
-											{savingSettings ? 'Saving...' : 'Save settings'}
-										</button>
-										<button type="button" disabled={testingSmtp} on:click={testSmtp} class="bg-surface2 text-ink-soft px-4 py-2 rounded-md hover:text-ink disabled:opacity-50">
-											{testingSmtp ? 'Sending...' : 'Send test email'}
-										</button>
-									</div>
-								</div>
-							</div>
+							<AdminPanel isAdmin={isPanelAdmin} />
 							{/if}
 							{/if}
 						</div>
