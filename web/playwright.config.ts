@@ -1,0 +1,75 @@
+import { defineConfig, devices } from '@playwright/test';
+import { mkdtempSync, readdirSync, rmSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+
+// The API refuses to boot without a master key and a JWT secret (see
+// api/src/server.ts), so the suite pins the same throwaway values the API's
+// own vitest setup uses (api/src/test/setup.ts). Nothing here is a real
+// secret: every account the suite registers is a random @example.com user in
+// a database that is deleted with the run.
+const NIDO_MASTER_KEY = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
+const JWT_SECRET = 'nido-test-secret';
+
+// One throwaway NIDO_DATA_DIR per run, so the suite never touches developer
+// data. Dirs from previous runs (a crashed CI job, a killed local run) are
+// wiped first so the OS tmpdir does not accumulate encrypted family files.
+const DATA_DIR_PREFIX = 'nido-e2e-';
+for (const stale of readdirSync(os.tmpdir()).filter((name) => name.startsWith(DATA_DIR_PREFIX))) {
+	rmSync(path.join(os.tmpdir(), stale), { recursive: true, force: true });
+}
+const dataDir = mkdtempSync(path.join(os.tmpdir(), DATA_DIR_PREFIX));
+
+export default defineConfig({
+	testDir: './tests/e2e',
+
+	// The suite is one serial story — register, build up the family, walk the
+	// pages, sign out — and every test after the first depends on the state
+	// the ones before it created. One worker, no parallelism, and a shared
+	// browser session (see tests/e2e/fixtures.ts); robustness over speed.
+	// A retry re-runs the whole file against a fresh random account, which
+	// works because each account only ever sees its own family.
+	fullyParallel: false,
+	workers: 1,
+	retries: process.env.CI ? 1 : 0,
+	reporter: [['list'], ['html', { open: 'never' }]],
+
+	use: {
+		baseURL: 'http://localhost:3001',
+		// Vite dev compiles a page on first visit, and the first API round trip
+		// provisions an encrypted database — both slower than a normal
+		// locator's default 5s.
+		actionTimeout: 10_000,
+		navigationTimeout: 15_000,
+		trace: 'on-first-retry',
+	},
+	expect: { timeout: 10_000 },
+
+	projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
+
+	// Two servers: the API the web app proxies to, then the SvelteKit dev
+	// server. `npm run dev` (vite dev) already binds 3001 and proxies /api to
+	// API_PROXY_TARGET — the same way a developer runs the pair locally.
+	webServer: [
+		{
+			command: 'npx tsx src/server.ts',
+			cwd: '../api',
+			url: 'http://localhost:3000/health',
+			timeout: 60_000,
+			reuseExistingServer: !process.env.CI,
+			env: {
+				NIDO_MASTER_KEY,
+				JWT_SECRET,
+				PORT: '3000',
+				NIDO_DATA_DIR: dataDir,
+			},
+		},
+		{
+			command: 'npm run dev',
+			url: 'http://localhost:3001',
+			timeout: 60_000,
+			reuseExistingServer: !process.env.CI,
+			env: { API_PROXY_TARGET: 'http://localhost:3000' },
+		},
+	],
+});

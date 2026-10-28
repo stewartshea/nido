@@ -16,6 +16,13 @@ export default defineConfig(({ mode }) => {
 
 	return {
 		plugins: [sveltekit()],
+		// Vitest runs the unit tests that live beside the code they cover.
+		// Playwright owns web/tests/e2e (see playwright.config.ts) — scoping
+		// the include keeps `vitest run` from trying to execute the browser
+		// suite as unit tests. Plain `vite` ignores this key.
+		test: {
+			include: ['src/**/*.test.ts'],
+		},
 		server: {
 			port: 3001,
 			allowedHosts,

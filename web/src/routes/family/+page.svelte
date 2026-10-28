@@ -521,7 +521,7 @@
 			{/if}
 
 			{#if $overdueReminders.length > 0}
-				<div class="bg-danger border border-danger text-danger-text rounded-lg px-4 py-3 mb-4 flex items-center justify-between gap-3">
+				<div class="bg-danger border border-danger text-danger-text rounded-lg px-4 py-3 mb-4 flex items-center justify-between gap-3" data-testid="reminders-banner">
 					<div>
 						<p class="text-sm font-semibold">Reminders</p>
 						<p class="text-xs">
@@ -545,7 +545,7 @@
 					
 					<div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
 						{#each profiles as baby}
-							<div class="bg-surface rounded-lg shadow-card p-5 border border-line-soft flex items-center justify-between">
+							<div class="bg-surface rounded-lg shadow-card p-5 border border-line-soft flex items-center justify-between" data-testid="member-card">
 								<div class="flex items-center gap-4">
 									<div class="w-12 h-12 rounded-full bg-accent text-on-accent flex items-center justify-center font-display text-xl overflow-hidden">
 										<Avatar familyId={activeFamilyId} memberId={baby.id} avatar={baby.avatar} alt={baby.name} class="w-full h-full object-cover">

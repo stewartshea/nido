@@ -68,5 +68,9 @@ data/
 .playwright-mcp/
 .openchamber/
 
+# Playwright e2e suite output (web/playwright.config.ts)
+test-results/
+playwright-report/
+
 # Rendered per-PR preview overlays (scripts/preview.mjs)
 deploy/kubernetes/preview/.render/

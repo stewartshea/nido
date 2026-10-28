@@ -10,7 +10,7 @@
 </script>
 
 {#if $feedback.notice || $feedback.error}
-	<div class="fixed top-4 right-4 z-[70] w-full max-w-sm space-y-2" role="status" aria-live="polite">
+	<div class="fixed top-4 right-4 z-[70] w-full max-w-sm space-y-2" role="status" aria-live="polite" data-testid="feedback-toast">
 		{#if $feedback.notice}
 			<div class="bg-surface border border-line-soft text-ink shadow-card px-4 py-3 rounded-md text-sm">
 				<span class="inline-flex items-center gap-2"><Check class="w-4 h-4 text-accent shrink-0" aria-hidden="true" />
