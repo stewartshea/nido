@@ -135,6 +135,30 @@
   data in/out of a family in bulk. Extend these instead of adding a parallel
   bulk-import/export mechanism.
 
+## Toolchain Pins
+
+`rollup` is pinned EXACT (`4.63.4`) in `web/package.json`. Do not bump it,
+and do not let the lockfile drift from it, until the Svelte 5 migration.
+
+**Why**: Kit ships a Svelte-5 runes module (`client/state.svelte.js`) that
+its build injects into every SSR chunk, even for Svelte-4 apps, protected by
+a runtime "is this old svelte?" check that stringifies `onMount` — a check
+that loses to real bundler output (`function onMount() {␊}` fails its
+regex). Rollup `4.63.4` tree-shakes the module away entirely, which is why
+every workspace build worked. Rollup `4.65.1` keeps it, raw `$state` and
+all, and every SSR render dies with `ReferenceError: $state is not defined`.
+The image builds don't see the lockfile (issue #62), so an unpinned rollup
+meant the deploy built from a different tree than the one CI tests — which
+is exactly how production served 500s while everything was green.
+
+The same outage hardened two other spots: the Playwright suite now runs
+against the preview environment (the real artifact, same images as
+production — see `.github/workflows/preview.yml`), and `$app/stores` is
+gone from app code (`+layout.svelte`, `BottomNav.svelte`); the deploy check
+lives in `$lib/deployVersion.ts` and the active path comes from
+`afterNavigate`. `$app/stores` drags the same runes module into the graph
+and is deprecated besides.
+
 ## Key Derivation
 
 Family databases are encrypted with a key derived from `NIDO_MASTER_KEY`.

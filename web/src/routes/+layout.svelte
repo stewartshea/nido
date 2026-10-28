@@ -1,8 +1,11 @@
 <script lang="ts">
 	import { browser } from '$app/environment';
-	import { onMount } from 'svelte';
-	import { goto } from '$app/navigation';
-	import { page, updated } from '$app/stores';
+	import { onDestroy, onMount } from 'svelte';
+	import { goto, afterNavigate } from '$app/navigation';
+	// No `$app/stores` in this app: on Svelte 4 it drags a Svelte-5 runes
+	// module into the SSR bundle that throws `$state is not defined` in
+	// production builds (see AGENTS.md, Toolchain Pins). The path comes from
+	// `afterNavigate`; the deploy check lives in $lib/deployVersion.
 	import '../app.css';
 	import { restoreThemeEarly } from '$lib/theme';
 	import ThemePicker from '$lib/components/ThemePicker.svelte';
@@ -12,11 +15,22 @@
 	import { familiesAPI } from '$lib/api/family';
 	import { applyTimezone, loadFamilyTimezone } from '$lib/stores/timezoneStore';
 	import { notificationCount, refreshNotificationCount, startNotificationCount, stopNotificationCount } from '$lib/stores/notificationCount';
+	import { watchForDeploy } from '$lib/deployVersion';
 
 	// Apply saved theme early on the client (avoids a flash of the default palette)
 	restoreThemeEarly();
 
 	let showAccountMenu = false;
+	// Torn down in onDestroy; set inside onMount below.
+	let stopDeployWatch: () => void = () => {};
+
+	// The current path, tracked without `$app/stores` (see the import note).
+	// Empty until the first client-side navigation settles; nothing renders
+	// from it during SSR.
+	let currentPath = '';
+	afterNavigate(({ to }) => {
+		currentPath = to?.url.pathname ?? '';
+	});
 
 	// The badge polls while signed in, and refreshes on every navigation so
 	// leaving a page where a rule just fired updates the count without a wait.
@@ -24,7 +38,7 @@
 		if ($authStore.isAuthenticated) startNotificationCount();
 		else stopNotificationCount();
 	}
-	$: if (browser && $authStore.isAuthenticated && $page.url.pathname) void refreshNotificationCount();
+	$: if (browser && $authStore.isAuthenticated && currentPath) void refreshNotificationCount();
 
 	function handleLogout() {
 		authActions.logout();
@@ -74,21 +88,17 @@
 			registerServiceWorker();
 			console.log('Nido app initialized');
 
-			// A new deploy changes the SvelteKit build version. When `updated` flips
-			// (polled per `version.pollInterval` in svelte.config.js, plus an
-			// immediate check when the tab regains focus/visibility) reload so the
-			// fresh shell, assets and `/_app/version.json` take over. Reloading is
-			// safe here: writes are queued to the offline outbox and replayed on mount.
-			updated.subscribe((isUpdated) => {
-				if (isUpdated) {
-					location.reload();
-				}
-			});
-			const refreshIfUpdated = () => void updated.check();
-			document.addEventListener('visibilitychange', refreshIfUpdated);
-			window.addEventListener('focus', refreshIfUpdated);
-			void updated.check();
+			// A new deploy changes the SvelteKit build version ($lib/deployVersion
+			// polls `/_app/version.json` per `version.pollInterval`, plus an
+			// immediate check when the tab regains focus/visibility) and reloads so
+			// the fresh shell and assets take over. Reloading is safe here:
+			// writes are queued to the offline outbox and replayed on mount.
+			stopDeployWatch = watchForDeploy(60_000);
 		}
+	});
+
+	onDestroy(() => {
+		stopDeployWatch();
 	});
 </script>
 
@@ -112,8 +122,8 @@
 						{#each PRIMARY_NAV as item (item.id)}
 							<a
 								href={item.href}
-								aria-current={$page.url.pathname.startsWith(item.href) ? 'page' : undefined}
-								class="{item.href !== '/' && $page.url.pathname.startsWith(item.href) ? 'bg-primary text-on-primary shadow-sm' : 'text-ink-soft hover:text-ink'} relative px-4 py-1 rounded text-sm font-semibold transition-colors"
+								aria-current={currentPath.startsWith(item.href) ? 'page' : undefined}
+								class="{item.href !== '/' && currentPath.startsWith(item.href) ? 'bg-primary text-on-primary shadow-sm' : 'text-ink-soft hover:text-ink'} relative px-4 py-1 rounded text-sm font-semibold transition-colors"
 							>{item.label}{#if item.id === 'notifications' && $notificationCount > 0}<span class="absolute -top-1.5 -right-1.5 min-w-[1.15rem] h-[1.15rem] px-1 rounded-full bg-danger text-danger-text text-[10px] font-bold flex items-center justify-center" aria-label="{$notificationCount} need attention">{$notificationCount > 9 ? '9+' : $notificationCount}</span>{/if}</a>
 						{/each}
 					</nav>

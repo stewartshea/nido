@@ -4,9 +4,11 @@
 // stores ($lib/stores/family, feedback, familySettings, reminders) and
 // panels; this suite walks the flows that decomposition must not break:
 // register, build up a family, switch members, edit through the unified
-// modal, walk the settings tabs, and sign back out. It exercises the real
-// API (Hono on :3000) through the real dev server (SvelteKit on :3001) —
-// no mocks, because the point is the wiring between pages, stores and API.
+// modal, walk the settings tabs, and sign back out. It exercises a real
+// deployment end to end — in CI the preview environment this pull request
+// deployed (same images as production, own database); locally the API and
+// dev server. No mocks, because the point is the wiring between pages,
+// stores and API.
 //
 // The tests are serial and share one browser session (tests/e2e/fixtures.ts);
 // each one builds on the state the previous ones created.

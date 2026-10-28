@@ -35,6 +35,10 @@ jobs:
       contents: read
       packages: read
       pull-requests: write
+    outputs:
+      # The e2e job tests the deployment this job just made, so its URL has
+      # to cross the job boundary.
+      preview_url: ${{ steps.deploy.outputs.preview_url }}
     concurrency:
       # One deployment per pull request, and a new push supersedes the
       # deployment in flight rather than queueing behind it.
@@ -155,6 +159,81 @@ jobs:
           PREVIEW_URL: ${{ steps.deploy.outputs.preview_url }}
         run: |
           printf '### Preview environment\n\n%s\n' "$PREVIEW_URL" >> "$GITHUB_STEP_SUMMARY"
+
+  e2e:
+    name: Test the preview
+    # The point of this job is that it tests the artifact users get: the
+    # preview is a real deployment built from the same immutable images as
+    # production, with its own database. Standing up a private copy of the
+    # stack in CI would test a different tree than the one that ships —
+    # exactly the failure mode this job exists to make impossible.
+    needs: deploy
+    if: >-
+      github.event.action != 'closed' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    concurrency:
+      # Joins the deploy's group: a new push supersedes the whole run —
+      # deployment and its tests — rather than queueing behind either.
+      group: preview-deploy-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # One root lockfile covers both workspaces; `npm ci` installs the
+      # web workspace's devDependencies too, which is where Playwright lives.
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright's browser
+        working-directory: web
+        run: npx playwright install --with-deps chromium
+
+      # The deploy job finishes when the namespace is applied, but the
+      # ingress route and the app pod may need a few more seconds. Wait
+      # for the preview to actually answer before spending test time on it.
+      - name: Wait for the preview to answer
+        env:
+          PREVIEW_URL: ${{ needs.deploy.outputs.preview_url }}
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 60); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "$PREVIEW_URL" || true)
+            if [ "$code" != 000 ] && [ "$code" != 502 ] && [ "$code" != 503 ] && [ "$code" != 504 ]; then
+              echo "preview answered with $code after $attempt attempt(s)"
+              exit 0
+            fi
+            echo "waiting for $PREVIEW_URL ($attempt/60, last code $code)"
+            sleep 10
+          done
+          echo "::error::$PREVIEW_URL never answered."
+          exit 1
+
+      # Every account the suite registers is a random @example.com user in
+      # the preview's own database, which is deleted with the namespace.
+      # The suite is serial and self-registering, so it needs no secrets.
+      - name: Run the suite against the preview
+        working-directory: web
+        env:
+          E2E_BASE_URL: ${{ needs.deploy.outputs.preview_url }}
+        run: npx playwright test
+
+      - name: Upload the report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-pr-${{ github.event.pull_request.number }}
+          path: web/playwright-report/
+          retention-days: 7
 
   sweep:
     name: Sweep orphaned previews
