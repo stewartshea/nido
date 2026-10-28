@@ -1,19 +1,19 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
 	import { browser } from '$app/environment';
+	import { get } from 'svelte/store';
 	import { goto } from '$app/navigation';
 	import { tokenExpired } from '$lib/api/client';
 	import { authAPI, userAPI, familiesAPI } from '$lib/api/family';
-	import { feedingAPI, diaperAPI, sleepAPI, growthAPI, healthAPI, milestoneAPI, vaccinationAPI, moodAPI, journalAPI, vitalsAPI } from '$lib/api/records';
 	import { importsAPI } from '$lib/api/system';
-	import type { PageOptions } from '$lib/api/types';
 	import { authStore, authActions } from '$lib/stores/authStore';
 	import { uiStore, uiActions } from '$lib/stores/uiStore';
-	import { applyTimezone } from '$lib/stores/timezoneStore';
 	import { notify, fail } from '$lib/stores/feedback';
+	import { familyStore, familyActions } from '$lib/stores/family';
+	import { trackingListsStore, trackingListsActions } from '$lib/stores/trackingLists';
+	import { loadFamilySettings } from '$lib/stores/familySettings';
 	import Avatar from '$lib/components/Avatar.svelte';
 	import FeedbackToasts from '$lib/components/FeedbackToasts.svelte';
-	import { loadListsCache, saveListsCache } from '$lib/cache';
 	import { startOutboxSync } from '$lib/logging/outbox';
 	import { computeFeedReports } from '$lib/logging/feedStats';
 	import MemberActivity from '$lib/components/logging/MemberActivity.svelte';
@@ -23,7 +23,6 @@
 	import Trends from '$lib/components/logging/Trends.svelte';
 	import { Users, Home } from 'lucide-svelte';
 
-	import { defaultMemberId } from '$lib/shared';
 
 	let sheetOpen = false;
 
@@ -46,16 +45,23 @@
 		sheetOpen = true;
 	}
 
-	let profiles: any[] = [];
-	let families: any[] = [];
-	let activeFamily: any = null;
-	let activeFamilyId: string | null = null;
-	let selectedMemberId: number | null = null;
+	// The session context (families, active family, members, selection,
+	// summary) lives in $lib/stores/family; the tracking lists in
+	// $lib/stores/trackingLists. Aliases keep the template reading the names
+	// the page always used; writes go through the stores' actions.
+	$: families = $familyStore.families;
+	$: activeFamily = $familyStore.activeFamily;
+	$: activeFamilyId = $familyStore.activeFamilyId;
+	$: profiles = $familyStore.profiles;
+	$: selectedMemberId = $familyStore.selectedMemberId;
+	$: summary = $familyStore.summary;
 	// The selected member's own pins and stage, so every surface agrees on what
 	// this person can log.
 	$: selectedMember = profiles.find((b) => Number(b.id) === selectedMemberId) ?? null;
 	$: selectedQuickLinks = selectedMember?.quickLinks ?? null;
 	$: selectedStage = selectedMember?.stage ?? null;
+	// Categories enabled for the selected member.
+	$: activeCategories = $familyStore.activeCategories;
 	// The person the page opens on. Stored per family, because a household that
 	// mostly records against one child should not have to re-pick them each visit.
 	let starredMemberId: number | null = null;
@@ -64,293 +70,50 @@
 	// a background load finishing while the sheet was open would change the kind
 	// mid-entry and the form would vanish under the person typing into it.
 	let logKind = 'feeds';
-	let defaultProfileId: number | null = null;
-	let summary: any = null;
-	// Feeds, sleep, diapers and the rest only exist for a trackable profile.
-	/**
-	 * Whether the selected person can be logged against.
-	 *
-	 * Computed here rather than from a `$:` flag: reactive statements are
-	 * scheduled, not synchronous, so selectMember() would call refreshLists()
-	 * before the flag had recomputed and fetch the baby endpoints for whoever was
-	 * selected previously.
-	 */
-	function currentIsTrackable(): boolean {
-		const m = profiles.find((b) => Number(b.id) === selectedMemberId);
-		return !!m && m.trackable !== false;
-	}
 
-	// Categories enabled for the selected member.
-	let activeCategories: string[] = [];
+	$: feedings = $trackingListsStore.feedings;
+	$: diapers = $trackingListsStore.diapers;
+	$: sleeps = $trackingListsStore.sleeps;
+	$: growths = $trackingListsStore.growths;
+	$: milestones = $trackingListsStore.milestones;
+	$: vaccinations = $trackingListsStore.vaccinations;
+	$: moods = $trackingListsStore.moods;
+	$: journalEntries = $trackingListsStore.journalEntries;
+	$: vitals = $trackingListsStore.vitals;
+	$: listTotals = $trackingListsStore.listTotals;
+	$: loadingMore = $trackingListsStore.loadingMore;
 
-	// Family-scoped tracking settings (categories + per-category option lists).
-	let familySettings: { categories: string[] | null; categoryOptions: Record<string, Record<string, string[]>>; defaultCategoryOptions: Record<string, Record<string, string[]>> } | null = null;
-
-	// Family onboarding
-
-	// Invite-by-email
-	let invitations: any[] = [];
-
-	// Import data (Narababy CSV)
-	let importRuns: any[] = [];
-
-	// Formula catalog
-	// Manual feed entry (backdated) + repeat-last
-	// Diaper detail form
-	// Sleep + growth backdated
-	// Milestone + vaccine manual forms
-	// Account
-
-	let feedings: any[] = [];
-	let diapers: any[] = [];
-	let sleeps: any[] = [];
-	let growths: any[] = [];
-	let milestones: any[] = [];
-	let vaccinations: any[] = [];
-	let moods: any[] = [];
-	let journalEntries: any[] = [];
-	let vitals: any[] = [];
-
-	// Server-side row count per list, used to offer "Load older records" only
-	// when the server actually holds more than what is loaded.
-	let listTotals: Record<string, number> = {};
-	let loadingMore = false;
-
-	const HISTORY_PAGE_SIZE = 200;
-
-	const LIST_SOURCES = [
-		{ key: 'feedings', field: 'feedings', page: (id: number, o: PageOptions) => feedingAPI.getPage(id, o) },
-		{ key: 'diapers', field: 'diapers', page: (id: number, o: PageOptions) => diaperAPI.getPage(id, o) },
-		{ key: 'sleeps', field: 'sleep', page: (id: number, o: PageOptions) => sleepAPI.getPage(id, o) },
-		{ key: 'growths', field: 'growth', page: (id: number, o: PageOptions) => growthAPI.getPage(id, o) },
-		{ key: 'milestones', field: 'milestones', page: (id: number, o: PageOptions) => milestoneAPI.getPage(id, o) },
-		{ key: 'vaccinations', field: 'vaccinations', page: (id: number, o: PageOptions) => vaccinationAPI.getPage(id, o) },
-		{ key: 'moods', field: 'moods', page: (id: number, o: PageOptions) => moodAPI.getPage(id, o) },
-		{ key: 'journalEntries', field: 'entries', page: (id: number, o: PageOptions) => journalAPI.getPage(id, o) },
-		{ key: 'vitals', field: 'vitals', page: (id: number, o: PageOptions) => vitalsAPI.getPage(id, o) },
-	] as const;
-
-	function currentLists(): Record<string, any[]> {
-		return { feedings, diapers, sleeps, growths, milestones, vaccinations, moods, journalEntries, vitals };
-	}
-
-	function setList(key: string, value: any[]) {
-		if (key === 'feedings') feedings = value;
-		else if (key === 'diapers') diapers = value;
-		else if (key === 'sleeps') sleeps = value;
-		else if (key === 'growths') growths = value;
-		else if (key === 'milestones') milestones = value;
-		else if (key === 'vaccinations') vaccinations = value;
-		else if (key === 'moods') moods = value;
-		else if (key === 'journalEntries') journalEntries = value;
-		else if (key === 'vitals') vitals = value;
-	}
-
-	async function loadMoreLists() {
-		if (!selectedMemberId || loadingMore) return;
-		const memberId = selectedMemberId;
-		const loaded = currentLists();
-		const pending = LIST_SOURCES.filter((s) => loaded[s.key].length < (listTotals[s.key] ?? 0));
-		if (pending.length === 0) return;
-
-		loadingMore = true;
-		try {
-			await Promise.all(pending.map(async (s) => {
-				const res = await s.page(memberId, {
-					limit: HISTORY_PAGE_SIZE,
-					offset: loaded[s.key].length,
-				});
-				const items = res.data?.[s.field] ?? [];
-				if (items.length === 0) return;
-				setList(s.key, [...loaded[s.key], ...items]);
-				if (typeof res.data?.total === 'number') listTotals = { ...listTotals, [s.key]: res.data.total };
-			}));
-			const next = currentLists();
-			saveListsCache(memberId, {
-				feedings: next.feedings, diapers: next.diapers, sleeps: next.sleeps, growths: next.growths,
-				milestones: next.milestones, vaccinations: next.vaccinations, moods: next.moods,
-				journalEntries: next.journalEntries, vitals: next.vitals,
-			});
-		} catch (e: any) {
-			notify(e.response?.data?.error || 'Could not load older records.');
-		} finally {
-			loadingMore = false;
-		}
-	}
+	// The page's refresh entry points, straight from the stores.
+	const refreshLists = trackingListsActions.refreshLists;
+	const loadMoreLists = trackingListsActions.loadMoreLists;
+	const refreshSummary = familyActions.refreshSummary;
 
 	// Quick feed reports over the loaded feedings (see $lib/logging/feedStats).
 	$: feedReports = computeFeedReports(feedings);
 
-	async function refreshSummary() {
-		if (!selectedMemberId) return;
-		if (!currentIsTrackable()) {
-			summary = null;
-			return;
-		}
-
-		try {
-			const res = await healthAPI.getSummary(selectedMemberId);
-			summary = res.data.summary;
-		} catch {
-			summary = null;
-		}
-	}
-
-	async function refreshLists() {
-		if (!selectedMemberId) return;
-		if (!currentIsTrackable()) {
-			// Baby tracking only. The person who created the household is an adult
-			// member of it, so a household with no child yet would otherwise fire
-			// requests that are refused.
-			feedings = [];
-			diapers = [];
-			sleeps = [];
-			growths = [];
-			milestones = [];
-			vaccinations = [];
-			moods = [];
-			journalEntries = [];
-			vitals = [];
-			return;
-		}
-
-		// Paint instantly from the local cache so history survives reloads,
-		// expired sessions, and offline use; the network response replaces it.
-		const cached = loadListsCache(selectedMemberId);
-		if (cached) {
-			feedings = cached.feedings;
-			diapers = cached.diapers;
-			sleeps = cached.sleeps;
-			growths = cached.growths;
-			milestones = cached.milestones;
-			vaccinations = cached.vaccinations;
-			moods = cached.moods;
-			journalEntries = cached.journalEntries;
-			vitals = cached.vitals;
-		}
-		try {
-			const [f, d, s, g, m, v, mo, j, vi] = await Promise.all([
-				feedingAPI.getPage(selectedMemberId, { limit: HISTORY_PAGE_SIZE }),
-				diaperAPI.getPage(selectedMemberId, { limit: HISTORY_PAGE_SIZE }),
-				sleepAPI.getPage(selectedMemberId, { limit: HISTORY_PAGE_SIZE }),
-				growthAPI.getPage(selectedMemberId, { limit: HISTORY_PAGE_SIZE }),
-				milestoneAPI.getPage(selectedMemberId, { limit: HISTORY_PAGE_SIZE }),
-				vaccinationAPI.getPage(selectedMemberId, { limit: HISTORY_PAGE_SIZE }),
-				moodAPI.getPage(selectedMemberId, { limit: HISTORY_PAGE_SIZE }),
-				journalAPI.getPage(selectedMemberId, { limit: HISTORY_PAGE_SIZE }),
-				vitalsAPI.getPage(selectedMemberId, { limit: HISTORY_PAGE_SIZE }),
-			]);
-			feedings = f.data.feedings;
-			diapers = d.data.diapers;
-			sleeps = s.data.sleep;
-			growths = g.data.growth;
-			milestones = m.data.milestones;
-			vaccinations = v.data.vaccinations;
-			moods = mo.data.moods ?? [];
-			journalEntries = j.data.entries ?? [];
-			vitals = vi.data.vitals ?? [];
-			listTotals = {
-				feedings: f.data.total ?? feedings.length,
-				diapers: d.data.total ?? diapers.length,
-				sleeps: s.data.total ?? sleeps.length,
-				growths: g.data.total ?? growths.length,
-				milestones: m.data.total ?? milestones.length,
-				vaccinations: v.data.total ?? vaccinations.length,
-				moods: mo.data.total ?? moods.length,
-				journalEntries: j.data.total ?? journalEntries.length,
-				vitals: vi.data.total ?? vitals.length,
-			};
-			saveListsCache(selectedMemberId, {
-				feedings, diapers, sleeps, growths,
-				milestones, vaccinations, moods, journalEntries, vitals,
-			});
-		} catch (e: any) {
-			if (!cached) {
-				fail(e.response?.data?.error || 'Failed to load tracking data.');
-			} else {
-				notify('Showing cached activities — will refresh when connected.');
-			}
-			console.error(e);
-		}
-	}
-
-	// Edit modal state
-
+	// The family/member loading core is familyActions.loadFamilies
+	// ($lib/stores/family). The starred hook runs at the exact point the old
+	// page copy read it — after the active family resolves, before the
+	// members land — and its answer wins over the saved default. Extras are
+	// skipped when the core load bails, as the old early returns did.
 	async function loadFamilies() {
-		try {
-			const res = await familiesAPI.list();
-			families = res.data.families;
-			if (families.length === 0) {
-				selectedMemberId = null;
-				profiles = [];
-				return;
-			}
-			// Prefer the saved default family, else the first.
-			const savedFamily = localStorage.getItem('nido.familyId');
-			activeFamily = families.find((f) => f.familyId === savedFamily) ?? families[0];
-				activeFamilyId = activeFamily?.familyId ?? null;
-
+		const loaded = await familyActions.loadFamilies(() => {
 			loadStarred();
-			if (!activeFamilyId) {
-				selectedMemberId = null;
-				profiles = [];
-				return;
-			}
-			const membersRes = await familiesAPI.members(activeFamilyId);
-			const members = membersRes.data.members;
-			// Members are the profiles the tracker operates on (child/adult; "newborn"
-			// is a child with newborn categories enabled).
-			profiles = members.map((m: any) => ({
-				id: m.id,
-				name: m.name,
-				birth_date: m.birthDate ?? '',
-				gender: m.gender ?? '',
-				type: m.type ?? 'child',
-				email: m.email ?? null,
-				avatar: m.avatar ?? null,
-				categories: Array.isArray(m.categories) ? m.categories : [],
-				trackable: m.trackable !== false,
-				legacySubjectId: m.legacySubjectId ?? null,
-				stage: m.stage ?? null,
-				quickLinks: Array.isArray(m.quickLinks) ? m.quickLinks : null,
-				dashboardTiles: Array.isArray(m.dashboardTiles) ? m.dashboardTiles : null,
-			}));
-
-			if (profiles.length > 0) {
-				// Starred first: it is the person this household records against most,
-				// so the page should open there rather than on whoever happens to sort
-				// first.
-				const starred = profiles.find((b) => Number(b.id) === starredMemberId);
-				const savedDefault = defaultProfileId ?? null;
-				const match = savedDefault ? profiles.find((b) => Number(b.id) === savedDefault) : null;
-				selectedMemberId = starred ? Number(starred.id) : match ? Number(match.id) : defaultMemberId(profiles);
-
-				const selected = profiles.find((b) => Number(b.id) === selectedMemberId);
-				// The API resolves this to the member's own set, constrained by their
-				// stage. An empty list is a real answer, not a prompt to show everything.
-				activeCategories = selected?.categories ?? [];
-					} else {
-				selectedMemberId = null;
-				activeCategories = [];
-			}
-			await Promise.all([loadFamilySettings(), refreshLists(), refreshSummary(), loadInvitations(), loadImportRuns()]);
-		} catch (e: any) {
-			const status = e.response?.status;
-			if (status === 401 || status === 403) {
-				handleLogout();
-				fail('Your session has expired. Please sign in again.');
-				return;
-			}
-			fail(e.response?.data?.error || 'Failed to load your families.');
-			console.error(e);
-		}
+			return starredMemberId;
+		});
+		if (!loaded) return;
+		await Promise.all([
+			loadFamilySettings({ applyTimezone: true }),
+			refreshLists(),
+			refreshSummary(),
+			loadInvitations(),
+			loadImportRuns(),
+		]);
 	}
 
 	function handleLogout() {
-		authActions.logout();
+		familyActions.handleLogout();
 		isAuthenticated = false;
-		profiles = [];
-		selectedMemberId = null;
 	}
 
 	async function loadInvitations() {
@@ -393,18 +156,20 @@
 		}
 	}
 
+	/**
+	 * Selection itself is synchronous in the store, so the refreshes below
+	 * read the just-selected member immediately (reactive statements are
+	 * scheduled — see currentIsTrackable in $lib/stores/family). The refresh
+	 * order is this page's, and must stay lists first, then summary.
+	 */
 	async function selectMember(memberId: number) {
-		selectedMemberId = memberId;
-		const selected = profiles.find((b) => Number(b.id) === memberId);
-		// The API resolves this to the member's own set, constrained by their
-				// stage. An empty list is a real answer, not a prompt to show everything.
-				activeCategories = selected?.categories ?? [];
+		familyActions.selectMember(memberId);
 		await refreshLists();
 		await refreshSummary();
 	}
 
 	function starredKey(): string {
-		return `nido.starred.${activeFamilyId ?? 'none'}`;
+		return `nido.starred.${get(familyStore).activeFamilyId ?? 'none'}`;
 	}
 
 	function loadStarred() {
@@ -438,8 +203,10 @@
 			: current.filter((k) => k !== kind);
 		try {
 			await familiesAPI.updateMember(activeFamilyId, Number(selectedMember.id), { quickLinks: next });
-			selectedMember.quickLinks = next;
-			profiles = profiles;
+			// Reassign, don't mutate: selectedMember is derived from profiles, and
+			// mutating the object in place does not re-run the reactive statement,
+			// so the panel kept showing the old layout until a hard reload.
+			familyActions.patchProfile(Number(selectedMember.id), { quickLinks: next });
 		} catch (err: any) {
 			console.error('Failed to update quick links', err);
 		}
@@ -452,32 +219,18 @@
 			// Reassign, don't mutate: selectedMember is derived from profiles, and
 			// mutating the object in place does not re-run the reactive statement,
 			// so the panel kept showing the old layout until a hard reload.
-			profiles = profiles.map((p) => (Number(p.id) === Number(selectedMember.id) ? { ...p, dashboardTiles: tiles } : p));
+			familyActions.patchProfile(Number(selectedMember.id), { dashboardTiles: tiles });
 			notify('Dashboard panel saved.');
 		} catch (err: any) {
 			fail(err.response?.data?.error || 'Failed to update dashboard tiles');
 		}
 	}
 
-	async function loadFamilySettings() {
-		if (!activeFamilyId) return;
-		try {
-			const res = await familiesAPI.getSettings(activeFamilyId);
-			familySettings = res.data.settings ?? null;
-			// The family's clock, from the settings already fetched here, so the
-			// times on this page are right on first paint rather than a tick later.
-			const tz = res.data.settings?.timezone;
-			if (typeof tz === 'string' && tz) applyTimezone(tz);
-			// Deliberately does NOT touch activeCategories. Those are the selected
-			// member's own categories, and the family-level list is a different
-			// thing that used to overwrite them here — which is why a newborn
-			// could lose its Last Feed tile to a family setting.
-		} catch (err: any) {
-			console.error('Failed to load family settings:', err);
-		}
-	}
+	// Invite-by-email
+	let invitations: any[] = [];
 
-	
+	// Import data (Narababy CSV)
+	let importRuns: any[] = [];
 
 	let stopOutboxSync: (() => void) | undefined;
 
@@ -507,10 +260,9 @@
 			}
 			const token = localStorage.getItem('token');
 			isAuthenticated = !!token && !tokenExpired();
-			const savedDefault = localStorage.getItem('nido.defaultProfile');
-			if (savedDefault) {
-				defaultProfileId = Number(savedDefault);
-			}
+			// The store outlives navigations; a fresh mount while signed out
+			// starts empty, like the page-local state this replaced.
+			if (!isAuthenticated) familyActions.reset();
 			if (isAuthenticated) {
 				await Promise.all([loadFamilies(), refreshUserProfile()]);
 				// Reconnect resilience: push anything queued while offline, then
