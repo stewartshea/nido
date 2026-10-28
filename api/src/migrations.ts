@@ -1193,6 +1193,21 @@ ALTER TABLE inventory_adjustments ADD COLUMN source TEXT DEFAULT 'manual';
       `);
     },
   },
+  {
+    version: 40,
+    name: 'growth-updated-at',
+    // PUT /growth/:id used to write its "updated timestamp" into created_at —
+    // the only timestamp column the table had — so one edit rewrote the
+    // measurement's provenance (issue #55). This gives the row the column the
+    // route always meant to write; created_at from before the fix stays as it
+    // is, honestly wrong rather than rewritten by us.
+    run: (raw) => {
+      const cols = raw.pragma('table_info(growth)') as Array<{ name: string }>;
+      if (!cols.some((c) => c.name === 'updated_at')) {
+        raw.exec('ALTER TABLE growth ADD COLUMN updated_at TEXT');
+      }
+    },
+  },
 ];
 
 /**
