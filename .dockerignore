@@ -12,8 +12,12 @@
 # Runtime data — local dev database, photos, any DB artifacts.
 # These must never enter a build context: they hold real user data and have
 # no place inside (or in transit to) a container image.
+# Scoped to the directories that actually hold runtime data: `**/data/`
+# also matched `api/src/data/` — the formula catalog, which is SOURCE and
+# must ship in the image (the api build failed on its absence the day the
+# context moved to the repo root).
 data/
-**/data/
+api/data/
 **/*.db
 **/*.db-journal
 **/*.db-wal

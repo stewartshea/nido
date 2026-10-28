@@ -1,8 +1,10 @@
 services:
   api:
     build:
-      context: ./api
-      dockerfile: Dockerfile
+      # The root context carries the one lockfile both images install from
+      # (see api/Dockerfile); the Dockerfile stays with its service.
+      context: .
+      dockerfile: api/Dockerfile
     ports:
       - "3000:3000"
     environment:
@@ -23,8 +25,9 @@ services:
 
   web:
     build:
-      context: ./web
-      dockerfile: Dockerfile
+      # Same as the api service: root context for the lockfile.
+      context: .
+      dockerfile: web/Dockerfile
     ports:
       - "3001:3001"
     environment:

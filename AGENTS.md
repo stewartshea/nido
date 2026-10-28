@@ -157,7 +157,9 @@ production — see `.github/workflows/preview.yml`), and `$app/stores` is
 gone from app code (`+layout.svelte`, `BottomNav.svelte`); the deploy check
 lives in `$lib/deployVersion.ts` and the active path comes from
 `afterNavigate`. `$app/stores` drags the same runes module into the graph
-and is deprecated besides.
+and is deprecated besides. The class fix also landed: images build with
+`npm ci --workspace <service>` from the one root lockfile (the Dockerfile
+comments say how), so there is no second dependency tree anywhere.
 
 ## Key Derivation
 
