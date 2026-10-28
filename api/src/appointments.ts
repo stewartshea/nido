@@ -15,11 +15,11 @@
 // one family at a time, for the reasons recorded in AGENTS.md.
 
 import { getFamilyClient } from './namespaces';
+import { optionValueOf } from './routes/events';
 import { familyRecipients, type Recipient } from './inventory-eval';
 import { getAppSettings, smtpConfigured, sendMail, baseUrl } from './mail';
 import { renderUpcomingAppointmentsEmail, type AppointmentEmailLine } from './mail-templates';
 import { effectiveTimezone, withinSendHour, zonedParts } from './timezone';
-import { CATEGORY_OPTION_KEY } from './category-registry';
 import { log } from './logger';
 
 /**
@@ -131,14 +131,15 @@ export async function upcomingAppointmentsForFamily(
  * that ignore it are unaffected.
  */
 function planToAppointment(r: any): UpcomingAppointment & { overdue?: boolean } {
-	const data = typeof r.data === 'string' && r.data ? (JSON.parse(r.data) as Record<string, unknown>) : {};
-	const optionKey = (CATEGORY_OPTION_KEY as Record<string, string>)[r.category] ?? 'type';
 	return {
 		id: Number(r.id),
 		title: String(r.title ?? ''),
 		date: String(r.scheduled_at ?? ''),
 		kind: String(r.category ?? ''),
-		category: (data[optionKey] as string | undefined) ?? null,
+		// The milestones-era option value, read out of the data document
+		// under the category's registered key — the shared primitive from
+		// events.ts, same as the summary tiles use.
+		category: optionValueOf(r.category, r.data),
 		description: r.notes ?? null,
 		memberId: r.member_id != null ? Number(r.member_id) : null,
 		memberName: r.member_name != null ? String(r.member_name) : null,
