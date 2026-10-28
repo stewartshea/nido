@@ -3,27 +3,25 @@
 	import { browser } from '$app/environment';
 	import { tokenExpired } from '$lib/api/client';
 	import { authAPI, userAPI, familiesAPI } from '$lib/api/family';
-	import { feedingAPI, diaperAPI, sleepAPI, growthAPI, healthAPI, milestoneAPI, vaccinationAPI, moodAPI, journalAPI, vitalsAPI } from '$lib/api/records';
-	import { remindersAPI } from '$lib/api/notifications';
-	import { importsAPI, settingsAPI } from '$lib/api/system';
-	import type { PageOptions, Reminder } from '$lib/api/types';
 	import { authStore, authActions } from '$lib/stores/authStore';
 	import { uiStore, uiActions } from '$lib/stores/uiStore';
-	import { applyTimezone } from '$lib/stores/timezoneStore';
-	import ToggleSwitch from '$lib/components/ToggleSwitch.svelte';
+	import { notify, fail } from '$lib/stores/feedback';
+	import { familyStore, familyActions } from '$lib/stores/family';
+	import { trackingListsStore, trackingListsActions } from '$lib/stores/trackingLists';
+	import { loadFamilySettings } from '$lib/stores/familySettings';
 	import Avatar from '$lib/components/Avatar.svelte';
-	import { loadListsCache, saveListsCache } from '$lib/cache';
-	import { flushOutbox } from '$lib/logging/outbox';
-	import { DATA_CHANGED } from '$lib/events';
-	import { refreshNotificationCount } from '$lib/stores/notificationCount';
+	import FeedbackToasts from '$lib/components/FeedbackToasts.svelte';
+	import EditMemberModal from '$lib/components/EditMemberModal.svelte';
+	import { startOutboxSync } from '$lib/logging/outbox';
+	import { loadReminders, loadUpcomingAppointments, overdueReminders, upcomingAppointments } from '$lib/stores/reminders';
 	import MemberActivity from '$lib/components/logging/MemberActivity.svelte';
 	import GrowthChart from '$lib/components/logging/GrowthChart.svelte';
 	import LogDrawer from '$lib/components/logging/LogDrawer.svelte';
 	import StockGlance from '$lib/components/logging/StockGlance.svelte';
-		import { CATEGORIES, defaultMemberId } from '$lib/shared';
 	import { reminderNoun, reminderPhrase } from '$lib/shared';
 	import { zonedOptions } from '$lib/logging/format';
-	import { Baby, Star, Users, Trash2, Mail, AlertCircle, Activity, Check, CalendarClock } from 'lucide-svelte';
+	import { computeFeedReports, formatElapsed } from '$lib/logging/feedStats';
+	import { Baby, Star, Users, Mail, CalendarClock } from 'lucide-svelte';
 
 
   let familyView: 'dashboard' | 'detail' = 'dashboard';
@@ -35,383 +33,89 @@
 	}
 
 	let isAuthenticated = false;
-	let error = '';
-	let notice = '';
-	let feedbackTimer: ReturnType<typeof setTimeout> | undefined;
-	function dismissFeedback() {
-		notice = '';
-		error = '';
-		if (feedbackTimer) { clearTimeout(feedbackTimer); feedbackTimer = undefined; }
-	}
-	$: if (notice || error) {
-		if (feedbackTimer) clearTimeout(feedbackTimer);
-		feedbackTimer = setTimeout(() => { feedbackTimer = undefined; notice = ''; error = ''; }, 6000);
-	}
 
-	let email = '';
-	let password = '';
-	let showForgot = false;
-	let pendingResetToken = '';
+	// The session context — families, the active family, its members, the
+	// selection and the summary — lives in $lib/stores/family; the nine
+	// tracking lists in $lib/stores/trackingLists. These aliases keep the
+	// template reading the names the page always used; every write goes
+	// through the stores' actions.
+	$: families = $familyStore.families;
+	$: activeFamily = $familyStore.activeFamily;
+	$: activeFamilyId = $familyStore.activeFamilyId;
+	$: profiles = $familyStore.profiles;
+	$: selectedMemberId = $familyStore.selectedMemberId;
+	$: defaultProfileId = $familyStore.defaultProfileId;
+	$: summary = $familyStore.summary;
+	// Tracking categories — a member enables a subset; tabs render from it.
+	$: activeCategories = $familyStore.activeCategories;
+	$: feedings = $trackingListsStore.feedings;
+	$: diapers = $trackingListsStore.diapers;
+	$: sleeps = $trackingListsStore.sleeps;
+	$: growths = $trackingListsStore.growths;
+	$: milestones = $trackingListsStore.milestones;
+	$: vaccinations = $trackingListsStore.vaccinations;
+	$: moods = $trackingListsStore.moods;
+	$: journalEntries = $trackingListsStore.journalEntries;
+	$: vitals = $trackingListsStore.vitals;
+	$: listTotals = $trackingListsStore.listTotals;
+	$: loadingMore = $trackingListsStore.loadingMore;
 
-
-
-	let loading = false;
-
-	let profiles: any[] = [];
-	let families: any[] = [];
-	let activeFamily: any = null;
-	let activeFamilyId: string | null = null;
-	let selectedMemberId: number | null = null;
 		// Which logger the sheet is showing. Deliberately its own state: it was once
 	// shared with the activity tab and reset by a category-availability guard, so
 	// a background load finishing while the sheet was open would change the kind
 	// mid-entry and the form would vanish under the person typing into it.
 	let logKind = 'feeds';
-	let defaultProfileId: number | null = null;
-	let summary: any = null;
-	// Feeds, sleep, diapers and the rest only exist for a trackable profile.
-	/**
-	 * Whether the selected person can be logged against.
-	 *
-	 * Computed here rather than from a `$:` flag: reactive statements are
-	 * scheduled, not synchronous, so selectMember() would call refreshLists()
-	 * before the flag had recomputed and fetch the baby endpoints for whoever was
-	 * selected previously.
-	 */
-	function currentIsTrackable(): boolean {
-		const m = profiles.find((b) => Number(b.id) === selectedMemberId);
-		return !!m && m.trackable !== false;
-	}
 
-	// ----- Reminders (family-scoped; shared by every caregiver) -----
-	let reminderRules: Reminder[] = [];
-
-	// What the family has booked ahead, from the same family-wide query the
-	// /appointments page and the weekly email use. Family-level information, so
-	// it lives with Family Overview rather than on the per-member dashboard.
-	let upcomingAppointments: any[] = [];
-
-	async function loadUpcomingAppointments() {
-		try {
-			const res = await milestoneAPI.getUpcoming({ days: 30 });
-			upcomingAppointments = res.data.appointments ?? [];
-		} catch {
-			upcomingAppointments = [];
-		}
-	}
-
-	async function loadReminders() {
-		try {
-			reminderRules = (await remindersAPI.list()).data.reminders ?? [];
-		} catch { reminderRules = []; }
-	}
-
-	function onDataChanged() {
-		void loadReminders();
-		void refreshNotificationCount();
-	}
-
-	$: overdueReminders = reminderRules.filter((r) => r.enabled && r.overdue);
-
-	// Tracking categories — a member enables a subset; tabs render from it.
-	let activeCategories: string[] = [];
 	$: selectedMember = profiles.find((b) => Number(b.id) === selectedMemberId) ?? null;
 
-	// Family-scoped tracking settings (categories + per-category option lists).
-	let familySettings: { categories: string[] | null; categoryOptions: Record<string, Record<string, string[]>>; defaultCategoryOptions: Record<string, Record<string, string[]>> } | null = null;
+	// The page's refresh entry points, straight from the stores.
+	const refreshLists = trackingListsActions.refreshLists;
+	const loadMoreLists = trackingListsActions.loadMoreLists;
+	const refreshSummary = familyActions.refreshSummary;
 
-	let editingMember: any = null;
-	let editMemberName = '';
-	let editMemberBirthDate = '';
-	let editMemberGender = '';
-	let editMemberEmail = '';
-	// The member's life stage, so the family can identify a legacy child that
-	// was created before stages existed (its stage is null in the database).
-	let editMemberStage: string | null = null;
+	$: feedReports = computeFeedReports(feedings);
 
-	// Family onboarding
-	let familyName = '';
-	let memberType = 'child';
-	let newMemberName = '';
-	let newBabyBirthDate = '';
-	let newBabyGender = 'female';
-	let creatingBaby = false;
+	// Reminders and what the family has booked ahead live in
+	// $lib/stores/reminders: the store owns the DATA_CHANGED refresh, so the
+	// page only triggers the initial loads (refreshUserProfile and
+	// loadFamilies) and renders from the stores.
 
-	// Invite-by-email
-	let invitations: any[] = [];
-
-	// Import data (Narababy CSV)
-	let importRuns: any[] = [];
-
-	// Account
-
-	let feedings: any[] = [];
-	let diapers: any[] = [];
-	let sleeps: any[] = [];
-	let growths: any[] = [];
-	let milestones: any[] = [];
-	let vaccinations: any[] = [];
-	let moods: any[] = [];
-	let journalEntries: any[] = [];
-	let vitals: any[] = [];
-
-	let listTotals: Record<string, number> = {};
-	let loadingMore = false;
-
-	const HISTORY_PAGE_SIZE = 200;
-
-	const LIST_SOURCES = [
-		{ key: 'feedings', field: 'feedings', page: (id: number, o: PageOptions) => feedingAPI.getPage(id, o) },
-		{ key: 'diapers', field: 'diapers', page: (id: number, o: PageOptions) => diaperAPI.getPage(id, o) },
-		{ key: 'sleeps', field: 'sleep', page: (id: number, o: PageOptions) => sleepAPI.getPage(id, o) },
-		{ key: 'growths', field: 'growth', page: (id: number, o: PageOptions) => growthAPI.getPage(id, o) },
-		{ key: 'milestones', field: 'milestones', page: (id: number, o: PageOptions) => milestoneAPI.getPage(id, o) },
-		{ key: 'vaccinations', field: 'vaccinations', page: (id: number, o: PageOptions) => vaccinationAPI.getPage(id, o) },
-		{ key: 'moods', field: 'moods', page: (id: number, o: PageOptions) => moodAPI.getPage(id, o) },
-		{ key: 'journalEntries', field: 'entries', page: (id: number, o: PageOptions) => journalAPI.getPage(id, o) },
-		{ key: 'vitals', field: 'vitals', page: (id: number, o: PageOptions) => vitalsAPI.getPage(id, o) },
-	] as const;
-
-	function currentLists(): Record<string, any[]> {
-		return { feedings, diapers, sleeps, growths, milestones, vaccinations, moods, journalEntries, vitals };
-	}
-
-	function setList(key: string, value: any[]) {
-		if (key === 'feedings') feedings = value;
-		else if (key === 'diapers') diapers = value;
-		else if (key === 'sleeps') sleeps = value;
-		else if (key === 'growths') growths = value;
-		else if (key === 'milestones') milestones = value;
-		else if (key === 'vaccinations') vaccinations = value;
-		else if (key === 'moods') moods = value;
-		else if (key === 'journalEntries') journalEntries = value;
-		else if (key === 'vitals') vitals = value;
-	}
-
-
-	function avg(a: number[]): number | null {
-		if (a.length === 0) return null;
-		return a.reduce((s, x) => s + x, 0) / a.length;
-	}
-
-	$: feedReports = (() => {
-		const now = Date.now();
-		const dayAgo = now - 24 * 3600 * 1000;
-		const monthAgo = now - 30 * 24 * 3600 * 1000;
-		const f = feedings.filter((x) => x.type === 'breast' || x.type === 'bottle' || x.type === 'formula');
-		const withDuration = f.filter((x) => x.duration && x.duration > 0);
-		const sizes1d = f.filter((x) => new Date(x.start_time).getTime() >= dayAgo && x.amount).map((x) => Number(x.amount));
-		const sizes30d = f.filter((x) => new Date(x.start_time).getTime() >= monthAgo && x.amount).map((x) => Number(x.amount));
-		const dur1d = withDuration.filter((x) => new Date(x.start_time).getTime() >= dayAgo).map((x) => Number(x.duration));
-		const dur30d = withDuration.filter((x) => new Date(x.start_time).getTime() >= monthAgo).map((x) => Number(x.duration));
-		return {
-			count1d: f.filter((x) => new Date(x.start_time).getTime() >= dayAgo).length,
-			count30d: f.length,
-			avgSize1d: avg(sizes1d),
-			avgSize30d: avg(sizes30d),
-			avgDur1d: avg(dur1d),
-			avgDur30d: avg(dur30d),
-		};
-	})();
-
-	function formatElapsed(ms: number): string {
-		const totalSec = Math.floor(ms / 1000);
-		const h = Math.floor(totalSec / 3600);
-		const m = Math.floor((totalSec % 3600) / 60);
-		const s = totalSec % 60;
-		return `${h > 0 ? h + 'h ' : ''}${String(m).padStart(2, '0')}m ${String(s).padStart(2, '0')}s`;
-	}
-
-
-
-
-	async function refreshSummary() {
-		if (!selectedMemberId) return;
-		if (!selectedMemberId) return;
-		if (!currentIsTrackable()) {
-			summary = null;
-			return;
-		}
-
-		try {
-			const res = await healthAPI.getSummary(selectedMemberId);
-			summary = res.data.summary;
-		} catch {
-			summary = null;
-		}
-	}
-
-	async function refreshLists() {
-		if (!selectedMemberId) return;
-		if (!selectedMemberId) return;
-		if (!currentIsTrackable()) {
-			// Baby tracking only. The person who created the household is an adult
-			// member of it, so a household with no child yet would otherwise fire
-			// requests that are refused.
-			feedings = [];
-			diapers = [];
-			sleeps = [];
-			growths = [];
-			milestones = [];
-			vaccinations = [];
-			moods = [];
-			journalEntries = [];
-			vitals = [];
-			return;
-		}
-
-		const cached = loadListsCache(selectedMemberId);
-		if (cached) {
-			feedings = cached.feedings;
-			diapers = cached.diapers;
-			sleeps = cached.sleeps;
-			growths = cached.growths;
-			milestones = cached.milestones;
-			vaccinations = cached.vaccinations;
-			moods = cached.moods;
-			journalEntries = cached.journalEntries;
-			vitals = cached.vitals;
-		}
-		try {
-			const [f, d, s, g, m, v, mo, j, vi] = await Promise.all([
-				feedingAPI.getPage(selectedMemberId, { limit: HISTORY_PAGE_SIZE }),
-				diaperAPI.getPage(selectedMemberId, { limit: HISTORY_PAGE_SIZE }),
-				sleepAPI.getPage(selectedMemberId, { limit: HISTORY_PAGE_SIZE }),
-				growthAPI.getPage(selectedMemberId, { limit: HISTORY_PAGE_SIZE }),
-				milestoneAPI.getPage(selectedMemberId, { limit: HISTORY_PAGE_SIZE }),
-				vaccinationAPI.getPage(selectedMemberId, { limit: HISTORY_PAGE_SIZE }),
-				moodAPI.getPage(selectedMemberId, { limit: HISTORY_PAGE_SIZE }),
-				journalAPI.getPage(selectedMemberId, { limit: HISTORY_PAGE_SIZE }),
-				vitalsAPI.getPage(selectedMemberId, { limit: HISTORY_PAGE_SIZE }),
-			]);
-			feedings = f.data.feedings;
-			diapers = d.data.diapers;
-			sleeps = s.data.sleep;
-			growths = g.data.growth;
-			milestones = m.data.milestones;
-			vaccinations = v.data.vaccinations;
-			moods = mo.data.moods ?? [];
-			journalEntries = j.data.entries ?? [];
-			vitals = vi.data.vitals ?? [];
-			listTotals = {
-				feedings: f.data.total ?? feedings.length,
-				diapers: d.data.total ?? diapers.length,
-				sleeps: s.data.total ?? sleeps.length,
-				growths: g.data.total ?? growths.length,
-				milestones: m.data.total ?? milestones.length,
-				vaccinations: v.data.total ?? vaccinations.length,
-				moods: mo.data.total ?? moods.length,
-				journalEntries: j.data.total ?? journalEntries.length,
-				vitals: vi.data.total ?? vitals.length,
-			};
-			saveListsCache(selectedMemberId, {
-				feedings, diapers, sleeps, growths,
-				milestones, vaccinations, moods, journalEntries, vitals,
-			});
-		} catch (e: any) {
-			if (!cached) {
-				error = e.response?.data?.error || 'Failed to load tracking data.';
-			} else {
-				notice = 'Showing cached activities — will refresh when connected.';
-			}
-			console.error(e);
-		}
-	}
-
-	// Edit modal state — the shared RecordEditModal owns the fields.
-
+	// The family/member loading core is familyActions.loadFamilies
+	// ($lib/stores/family); this wrapper runs this page's post-load extras in
+	// the order the page always ran them. Extras are skipped when the core
+	// load bails (the pre-store copies returned early on every error path).
 	async function loadFamilies() {
-		try {
-			const res = await familiesAPI.list();
-			families = res.data.families;
-			if (families.length === 0) {
-				selectedMemberId = null;
-				profiles = [];
-				return;
-			}
-			// Prefer the saved default family, else the first.
-			const savedFamily = localStorage.getItem('nido.familyId');
-			activeFamily = families.find((f) => f.familyId === savedFamily) ?? families[0];
-			activeFamilyId = activeFamily?.familyId ?? null;
-			if (!activeFamilyId) {
-				profiles = [];
-				return;
-			}
-
-			const membersRes = await familiesAPI.members(activeFamilyId);
-			const members = membersRes.data.members;
-			// Members are the profiles the tracker operates on (child/adult; "newborn"
-			// is a child with newborn categories enabled).
-			profiles = members.map((m: any) => ({
-				id: m.id,
-				name: m.name,
-				birth_date: m.birthDate ?? '',
-				gender: m.gender ?? '',
-				type: m.type ?? 'child',
-				email: m.email ?? null,
-				avatar: m.avatar ?? null,
-				categories: Array.isArray(m.categories) ? m.categories : [],
-				trackable: m.trackable !== false,
-				stage: m.stage ?? null,
-				quickLinks: Array.isArray(m.quickLinks) ? m.quickLinks : null,
-				dashboardTiles: Array.isArray(m.dashboardTiles) ? m.dashboardTiles : null,
-				legacySubjectId: m.legacySubjectId ?? null,
-			}));
-
-			if (profiles.length > 0) {
-				const savedDefault = defaultProfileId ?? null;
-				const match = savedDefault ? profiles.find((b) => Number(b.id) === savedDefault) : null;
-				selectedMemberId = match ? Number(match.id) : defaultMemberId(profiles);
-				const selected = profiles.find((b) => Number(b.id) === selectedMemberId);
-				// The API resolves this to the member's own set, constrained by their
-				// stage. An empty list is a real answer, not a prompt to show everything.
-				activeCategories = selected?.categories ?? [];
-					} else {
-				selectedMemberId = null;
-				activeCategories = [];
-			}
-			await Promise.all([loadFamilySettings(), refreshLists(), refreshSummary(), loadInvitations(), loadImportRuns(), loadUpcomingAppointments()]);
-		} catch (e: any) {
-			const status = e.response?.status;
-			if (status === 401 || status === 403) {
-				handleLogout();
-				error = 'Your session has expired. Please sign in again.';
-				return;
-			}
-			error = e.response?.data?.error || 'Failed to load your families.';
-			console.error(e);
-		}
+		const loaded = await familyActions.loadFamilies();
+		if (!loaded) return;
+		await Promise.all([
+			loadFamilySettings({ applyTimezone: true }),
+			refreshLists(),
+			refreshSummary(),
+			loadUpcomingAppointments(),
+		]);
 	}
 
 	function setActiveFamily(familyId: string) {
-		activeFamilyId = familyId;
-		if (browser) localStorage.setItem('nido.familyId', familyId);
+		familyActions.setActiveFamily(familyId);
 		loadFamilies();
 	}
 
 	function setDefaultProfile(memberId: number) {
-		defaultProfileId = memberId;
-		selectedMemberId = memberId;
-		if (browser) localStorage.setItem('nido.defaultProfile', String(memberId));
-		notice = 'Default profile updated.';
-		error = '';
+		familyActions.setDefaultProfile(memberId);
 	}
-
-
-
 
 	function handleLogout() {
-		authActions.logout();
+		familyActions.handleLogout();
 		isAuthenticated = false;
-		profiles = [];
-		selectedMemberId = null;
 	}
+
+
 
 	async function buildFamily(event: SubmitEvent) {
 		event.preventDefault();
-		error = '';
+		fail('');
 		if (!familyName.trim()) {
-			error = 'Give your family a name (e.g. "The Hollybrooks").';
+			fail('Give your family a name (e.g. "The Hollybrooks").');
 			return;
 		}
 		creatingBaby = true;
@@ -427,14 +131,14 @@
 			}
 			const res = await familiesAPI.create(payload);
 			const fam = res.data.family;
-			notice = `${fam.name} created — your family code is ${fam.familyCode}`;
+			notify(`${fam.name} created — your family code is ${fam.familyCode}`);
 			familyName = '';
 			newMemberName = '';
 			newBabyBirthDate = '';
 			if (browser) localStorage.setItem('nido.familyId', fam.familyId);
 			await loadFamilies();
 		} catch (err: any) {
-			error = err.response?.data?.error || 'Failed to create your family.';
+			fail(err.response?.data?.error || 'Failed to create your family.');
 			console.error(err);
 		} finally {
 			creatingBaby = false;
@@ -443,9 +147,9 @@
 
 	async function addFamilyMember(event: SubmitEvent) {
 		event.preventDefault();
-		error = '';
+		fail('');
 		if (!newMemberName) {
-			error = 'Member name is required.';
+			fail('Member name is required.');
 			return;
 		}
 		if (!activeFamilyId) return;
@@ -457,12 +161,12 @@
 				birthDate: newBabyBirthDate ? new Date(newBabyBirthDate).toISOString() : undefined,
 				gender: newBabyGender,
 			});
-			notice = `${res.data.member.name} added to the family.`;
+			notify(`${res.data.member.name} added to the family.`);
 			newMemberName = '';
 			newBabyBirthDate = '';
 			await loadFamilies();
 		} catch (err: any) {
-			error = err.response?.data?.error || 'Failed to add family member.';
+			fail(err.response?.data?.error || 'Failed to add family member.');
 			console.error(err);
 		} finally {
 			creatingBaby = false;
@@ -470,46 +174,8 @@
 	}
 
 
-	async function loadInvitations() {
-		if (!activeFamilyId) {
-			invitations = [];
-			return;
-		}
-		try {
-			const res = await familiesAPI.listInvites(activeFamilyId);
-			invitations = res.data.invitations || [];
-		} catch {
-			invitations = [];
-		}
-	}
-
-
-
-
-	async function loadImportRuns() {
-		try {
-			const res = await importsAPI.runs();
-			importRuns = res.data.runs || [];
-		} catch {
-			importRuns = [];
-		}
-	}
-
-
-
-
-
-	// Instance settings (Admin tab)
-	let appSettings: any = null;
-	let isPanelAdmin = false;
-	let smtpHost = '';
-	let smtpPort = 587;
-	let smtpUser = '';
-	let smtpFrom = '';
-	let signupEnabled = true;
-	let signupEnvLocked = false;
-	let emailVerificationSetting = false;
-
+	// The signed-in user's own profile, and the entry point that loads the
+	// family's reminders; the DATA_CHANGED listener covers later refreshes.
 	async function refreshUserProfile() {
 		try {
 			const res = await userAPI.getMe();
@@ -522,41 +188,23 @@
 					lastName: u.last_name ?? u.lastName ?? '',
 					createdAt: u.created_at ?? u.createdAt ?? '',
 				});
-				isPanelAdmin = Number(u.is_platform_admin ?? 0) === 1;
 			}
 			loadReminders();
 		} catch {
-			isPanelAdmin = false;
-		}
-	}
-
-	async function loadAppSettings() {
-		try {
-			const res = await settingsAPI.get();
-			appSettings = res.data.settings;
-			smtpHost = appSettings.smtpHost || '';
-			smtpPort = appSettings.smtpPort || 587;
-			smtpUser = appSettings.smtpUser || '';
-			smtpFrom = appSettings.smtpFrom || '';
-			signupEnabled = appSettings.signupEnabled;
-			signupEnvLocked = appSettings.signupEnvLocked === true;
-			emailVerificationSetting = appSettings.emailVerification;
-		} catch {
-			appSettings = null;
+			// getMe failing is not worth a toast; reminders still refresh via
+			// the DATA_CHANGED listener on the next successful mutation.
 		}
 	}
 
 
-
-
-
-
+	/**
+	 * Selection itself is synchronous in the store, so the refreshes below
+	 * read the just-selected member immediately (reactive statements are
+	 * scheduled — see currentIsTrackable in $lib/stores/family). The refresh
+	 * order is this page's, and must stay lists first, then summary.
+	 */
 	async function selectMember(memberId: number) {
-		selectedMemberId = memberId;
-		const selected = profiles.find((b) => Number(b.id) === memberId);
-		// The API resolves this to the member's own set, constrained by their
-				// stage. An empty list is a real answer, not a prompt to show everything.
-				activeCategories = selected?.categories ?? [];
+		familyActions.selectMember(memberId);
 		await refreshLists();
 		await refreshSummary();
 	}
@@ -570,8 +218,10 @@
 			: current.filter((k) => k !== kind);
 		try {
 			await familiesAPI.updateMember(activeFamilyId, Number(selectedMember.id), { quickLinks: next });
-			selectedMember.quickLinks = next;
-			profiles = profiles;
+			// Reassign, don't mutate: selectedMember is derived from profiles, and
+			// mutating the object in place never re-runs the reactive statement, so
+			// the pinned set kept showing the old layout until a hard reload.
+			familyActions.patchProfile(Number(selectedMember.id), { quickLinks: next });
 		} catch (err: any) {
 			console.error('Failed to update quick links', err);
 		}
@@ -584,80 +234,57 @@
 			// Reassign, don't mutate: selectedMember is derived from profiles, and
 			// mutating the object in place never re-runs the reactive statement, so
 			// the panel kept showing the old layout until a hard reload.
-			profiles = profiles.map((p) => (Number(p.id) === Number(selectedMember.id) ? { ...p, dashboardTiles: tiles } : p));
-			notice = 'Dashboard panel saved.';
+			familyActions.patchProfile(Number(selectedMember.id), { dashboardTiles: tiles });
+			notify('Dashboard panel saved.');
 		} catch (err: any) {
-			error = err.response?.data?.error || 'Failed to update dashboard tiles';
-		}
-	}
-
-	async function loadFamilySettings() {
-		if (!activeFamilyId) return;
-		try {
-			const res = await familiesAPI.getSettings(activeFamilyId);
-			familySettings = res.data.settings;
-			// The family's clock, from the settings already fetched here, so the
-			// times on this page are right on first paint rather than a tick later.
-			const tz = res.data.settings?.timezone;
-			if (typeof tz === 'string' && tz) applyTimezone(tz);
-			// Deliberately does NOT touch activeCategories. Those are the selected
-			// member's own categories; the family-level list is a different thing
-			// that used to overwrite them here.
-		} catch (err: any) {
-			console.error('Failed to load family settings:', err);
+			fail(err.response?.data?.error || 'Failed to update dashboard tiles');
 		}
 	}
 
 
+	// Edit modal state — the shared EditMemberModal owns the form fields.
 
+	let editingMember: any = null;
 
-
-
+	// Family onboarding
+	let familyName = '';
+	let memberType = 'child';
+	let newMemberName = '';
+	let newBabyBirthDate = '';
+	let newBabyGender = 'female';
+	let creatingBaby = false;
 
 	function openEditMember(baby: any) {
 		editingMember = baby;
-		editMemberName = baby.name || '';
-		editMemberBirthDate = baby.birth_date ? baby.birth_date.slice(0, 10) : '';
-		editMemberGender = baby.gender || '';
-		editMemberEmail = baby.email || '';
-		editMemberStage = baby.stage ?? null;
-		error = '';
+		fail('');
 	}
 
 	function closeEditMember() {
 		editingMember = null;
 	}
 
-	async function deleteEditMember() {
+	async function deleteEditMember(e: CustomEvent<{ name: string }>) {
 		if (!editingMember || !activeFamilyId) return;
-		if (!confirm(`Delete "${editMemberName.trim() || editingMember.name}" and ALL of their records? This cannot be undone.`)) return;
+		if (!confirm(`Delete "${e.detail.name}" and ALL of their records? This cannot be undone.`)) return;
 		try {
 			await familiesAPI.removeMember(activeFamilyId, Number(editingMember.id));
-			notice = 'Member deleted.';
+			notify('Member deleted.');
 			editingMember = null;
 			await loadFamilies();
 		} catch (err: any) {
-			error = err.response?.data?.error || 'Failed to delete member.';
+			fail(err.response?.data?.error || 'Failed to delete member.');
 		}
 	}
 
-	async function saveEditMember(event: SubmitEvent) {
-		event.preventDefault();
+	async function saveEditMember(e: CustomEvent<Record<string, any>>) {
 		if (!editingMember || !activeFamilyId) return;
 		try {
-			const birthDate = editMemberBirthDate ? new Date(editMemberBirthDate + 'T00:00:00Z').toISOString() : null;
-			await familiesAPI.updateMember(activeFamilyId, Number(editingMember.id), {
-				name: editMemberName.trim(),
-				birthDate,
-				gender: editMemberGender || null,
-				email: editMemberEmail.trim() || null,
-				stage: editMemberStage || null,
-			});
-			notice = 'Member updated.';
+			await familiesAPI.updateMember(activeFamilyId, Number(editingMember.id), e.detail);
+			notify('Member updated.');
 			editingMember = null;
 			await loadFamilies();
 		} catch (err: any) {
-			error = err.response?.data?.error || 'Failed to update member.';
+			fail(err.response?.data?.error || 'Failed to update member.');
 		}
 	}
 
@@ -665,116 +292,69 @@
 		if (!email || !activeFamilyId) return;
 		try {
 			await familiesAPI.invite(activeFamilyId, email);
-			notice = `Invite sent to ${email}.`;
-			await loadInvitations();
+			notify(`Invite sent to ${email}.`);
 		} catch (err: any) {
-			error = err.response?.data?.error || 'Failed to send invite.';
+			fail(err.response?.data?.error || 'Failed to send invite.');
 		}
 	}
 
-	async function onMemberAvatarSelected(event: Event) {
-		const input = event.currentTarget as HTMLInputElement;
-		const file = input.files?.[0];
+	async function onMemberAvatarSelected(e: CustomEvent<{ file: File }>) {
+		const file = e.detail.file;
 		if (!file || !editingMember || !activeFamilyId) return;
 		try {
 			await familiesAPI.uploadAvatar(activeFamilyId, Number(editingMember.id), file);
-			notice = 'Profile photo updated.';
+			notify('Profile photo updated.');
 			await loadFamilies();
 		} catch (err: any) {
-			error = err.response?.data?.error || 'Failed to upload photo.';
+			fail(err.response?.data?.error || 'Failed to upload photo.');
 		}
 	}
 
 
-	
-
-	let outboxTimer: number | undefined;
+	let stopOutboxSync: (() => void) | undefined;
 
 	function openLog(kind: string) {
 		logKind = kind;
 		sheetOpen = true;
 	}
 
-	async function syncOutbox() {
-		const synced = await flushOutbox({
-			feeding: (payload) => feedingAPI.create(payload),
-			sleep: (payload) => sleepAPI.create(payload),
-		});
-		if (synced > 0) {
-			notice = `${synced} offline record(s) synced.`;
-			await refreshLists();
-			await refreshSummary();
-		}
-	}
-
 	async function onLogged(e: CustomEvent<{ message: string }>) {
-		notice = e.detail.message;
+		notify(e.detail.message);
 		await refreshLists();
 		await refreshSummary();
 	}
 
-	async function loadMoreLists() {
-		if (!selectedMemberId || loadingMore) return;
-		const memberId = selectedMemberId;
-		const loaded = currentLists();
-		const pending = LIST_SOURCES.filter((src) => loaded[src.key].length < (listTotals[src.key] ?? 0));
-		if (pending.length === 0) return;
-
-		loadingMore = true;
-		try {
-			await Promise.all(pending.map(async (src) => {
-				const res = await src.page(memberId, { limit: HISTORY_PAGE_SIZE, offset: loaded[src.key].length });
-				const items = res.data?.[src.field] ?? [];
-				if (items.length === 0) return;
-				setList(src.key, [...loaded[src.key], ...items]);
-				if (typeof res.data?.total === 'number') listTotals = { ...listTotals, [src.key]: res.data.total };
-			}));
-			const next = currentLists();
-			saveListsCache(memberId, {
-				feedings: next.feedings, diapers: next.diapers, sleeps: next.sleeps, growths: next.growths,
-				milestones: next.milestones, vaccinations: next.vaccinations, moods: next.moods,
-				journalEntries: next.journalEntries, vitals: next.vitals,
-			});
-		} catch (e: any) {
-			notice = e.response?.data?.error || 'Could not load older records.';
-		} finally {
-			loadingMore = false;
-		}
-	}
-
 	onMount(async () => {
 		if (browser) {
-			window.addEventListener(DATA_CHANGED, onDataChanged);
 			const params = new URLSearchParams(window.location.search);
 			const verifyParam = params.get('verify');
 			const resetParam = params.get('reset');
 			if (verifyParam) {
 				try {
 					const res = await authAPI.verifyEmail(verifyParam);
-					notice = res.data.message || 'Email verified.';
+					notify(res.data.message || 'Email verified.');
 				} catch (err: any) {
-					error = err.response?.data?.error || 'Verification failed.';
+					fail(err.response?.data?.error || 'Verification failed.');
 				}
 				if (window.history.replaceState) window.history.replaceState(null, '', window.location.pathname);
 			}
 			if (resetParam) {
-				pendingResetToken = resetParam;
-				showForgot = true;
-				notice = 'Enter a new password to complete your password reset.';
+				notify('Enter a new password to complete your password reset.');
 				if (window.history.replaceState) window.history.replaceState(null, '', window.location.pathname);
 			}
 			const token = localStorage.getItem('token');
 			isAuthenticated = !!token && !tokenExpired();
-			const savedDefault = localStorage.getItem('nido.defaultProfile');
-			if (savedDefault) {
-				defaultProfileId = Number(savedDefault);
-			}
+			// The store outlives navigations; a fresh mount while signed out
+			// starts empty, like the page-local state this replaced.
+			if (!isAuthenticated) familyActions.reset();
 			if (isAuthenticated) {
 				await Promise.all([loadFamilies(), refreshUserProfile()]);
-				if (isPanelAdmin) await loadAppSettings();
-				// Reconnect resilience: push anything queued while offline.
-				await syncOutbox();
-				outboxTimer = window.setInterval(() => syncOutbox(), 60 * 1000);
+				// Reconnect resilience: push anything queued while offline, then
+				// keep replaying every 60s until the page goes away.
+				stopOutboxSync = startOutboxSync(async () => {
+					await refreshLists();
+					await refreshSummary();
+				});
 			}
 			// Older builds kept one never-expiring timer blob per member; it is what
 			// made finished feeds reappear, so drop any that are still around.
@@ -787,26 +367,11 @@
 
 
 	onDestroy(() => {
-		if (browser && outboxTimer) window.clearInterval(outboxTimer);
-		window.removeEventListener(DATA_CHANGED, onDataChanged);
+		if (stopOutboxSync) stopOutboxSync();
 	});
 </script>
-		{#if notice || error}
-			<div class="fixed top-4 right-4 z-[70] w-full max-w-sm space-y-2" role="status" aria-live="polite">
-				{#if notice}
-					<div class="bg-surface border border-line-soft text-ink shadow-card px-4 py-3 rounded-md text-sm">
-						<span class="inline-flex items-center gap-2"><Check class="w-4 h-4 text-accent shrink-0" aria-hidden="true" />
-						{notice}<button type="button" on:click={dismissFeedback} class="ml-auto text-ink-soft hover:text-ink shrink-0" aria-label="Dismiss">&times;</button></span>
-					</div>
-				{/if}
-				{#if error}
-					<div class="bg-danger border border-danger text-danger-text px-4 py-3 rounded-md text-sm">
-						<span class="inline-flex items-center gap-2"><AlertCircle class="w-4 h-4 shrink-0" aria-hidden="true" />
-						{error}<button type="button" on:click={dismissFeedback} class="ml-auto hover:opacity-70 shrink-0" aria-label="Dismiss">&times;</button></span>
-					</div>
-				{/if}
-			</div>
-		{/if}
+
+		<FeedbackToasts />
 		{#if families.length === 0}
 			<!-- FAMILY ONBOARDING: build your family first -->
 			<div class="flex justify-end mb-4">
@@ -955,18 +520,18 @@
 			</div>
 			{/if}
 
-			{#if overdueReminders.length > 0}
-				<div class="bg-danger border border-danger text-danger-text rounded-lg px-4 py-3 mb-4 flex items-center justify-between gap-3">
+			{#if $overdueReminders.length > 0}
+				<div class="bg-danger border border-danger text-danger-text rounded-lg px-4 py-3 mb-4 flex items-center justify-between gap-3" data-testid="reminders-banner">
 					<div>
 						<p class="text-sm font-semibold">Reminders</p>
 						<p class="text-xs">
-							{#each overdueReminders as o}
+							{#each $overdueReminders as o}
 								{#if o.kind === 'inactivity'}
 									{@const what = o.conditions?.length ? reminderPhrase(o.conditions, o.match) : reminderNoun(o.category)}
 									<span class="capitalize">no {what} in {o.hours}h{o.since ? ` (since ${new Date(o.since).toLocaleString(undefined, zonedOptions())})` : ' (never recorded)'}</span>
 								{:else}
 									<span>{o.label || o.category} — every {o.intervalDays}d{o.since ? ` (last {new Date(o.since).toLocaleString(undefined, zonedOptions())})` : ' (never done)'}</span>
-								{/if}{o !== overdueReminders[overdueReminders.length - 1] ? ' · ' : ''}
+								{/if}{o !== $overdueReminders[$overdueReminders.length - 1] ? ' · ' : ''}
 							{/each}
 						</p>
 					</div>
@@ -980,7 +545,7 @@
 					
 					<div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
 						{#each profiles as baby}
-							<div class="bg-surface rounded-lg shadow-card p-5 border border-line-soft flex items-center justify-between">
+							<div class="bg-surface rounded-lg shadow-card p-5 border border-line-soft flex items-center justify-between" data-testid="member-card">
 								<div class="flex items-center gap-4">
 									<div class="w-12 h-12 rounded-full bg-accent text-on-accent flex items-center justify-center font-display text-xl overflow-hidden">
 										<Avatar familyId={activeFamilyId} memberId={baby.id} avatar={baby.avatar} alt={baby.name} class="w-full h-full object-cover">
@@ -1015,13 +580,13 @@
 							</h3>
 							<a href="/appointments" class="text-sm font-semibold text-link hover:underline">See all &rarr;</a>
 						</div>
-						{#if upcomingAppointments.length === 0}
+						{#if $upcomingAppointments.length === 0}
 							<p class="text-sm text-ink-soft">
 								Nothing booked in the next 30 days. Log any activity with a future date and it appears here.
 							</p>
 						{:else}
 							<ul class="space-y-2">
-								{#each upcomingAppointments as a (a.id)}
+								{#each $upcomingAppointments as a (a.id)}
 									<li class="flex items-baseline gap-3 text-sm">
 										<span class="tabular-nums text-ink-soft shrink-0 w-28">
 											{new Date(a.date).toLocaleDateString(undefined, zonedOptions({ weekday: 'short', month: 'short', day: 'numeric' }))}
@@ -1135,66 +700,16 @@
 		{/if}
 
 		{#if editingMember}
-			<div class="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true">
-				<button type="button" class="absolute inset-0 bg-ink/40" aria-label="Close dialog" on:click={() => (editingMember = null)}></button>
-				<div class="relative bg-surface rounded-lg shadow-card p-4 md:p-6 w-full max-w-md">
-					<h3 class="text-xl font-display font-semibold mb-4">Edit family member</h3>
-					<div class="flex items-center gap-3 mb-4">
-						<div class="w-16 h-16 rounded-full bg-accent text-on-accent flex items-center justify-center font-display text-2xl overflow-hidden">
-							<Avatar familyId={activeFamilyId} memberId={editingMember?.id} avatar={editingMember?.avatar} alt={editingMember?.name} class="w-full h-full object-cover">
-								{editMemberName[0] || '?'}
-							</Avatar>
-						</div>
-						<div>
-							<label for="member-avatar" class="block text-sm font-medium text-ink-soft mb-1">Profile photo</label>
-							<input id="member-avatar" type="file" accept="image/*" on:change={onMemberAvatarSelected} class="block w-full text-sm text-ink border border-line rounded-md file:mr-3 file:py-2 file:px-4 file:rounded-md file:border-0 file:bg-primary file:text-on-primary" />
-						</div>
-					</div>
-					<form on:submit={saveEditMember} class="space-y-3">
-						<div>
-						<label for="edit-member-name" class="block text-sm font-medium text-ink-soft mb-1">Name</label>
-						<input id="edit-member-name" type="text" bind:value={editMemberName} class="w-full px-3 py-2 border border-line rounded-md" />
-						</div>
-						<div class="grid grid-cols-2 gap-3">
-							<div>
-							<label for="edit-member-birth" class="block text-sm font-medium text-ink-soft mb-1">Birth Date</label>
-							<input id="edit-member-birth" type="date" bind:value={editMemberBirthDate} class="w-full px-3 py-2 border border-line rounded-md" />
-							</div>
-							<div>
-							<label for="edit-member-sex" class="block text-sm font-medium text-ink-soft mb-1">Sex</label>
-							<select id="edit-member-sex" bind:value={editMemberGender} class="w-full px-3 py-2 border border-line rounded-md">
-									<option value="female">Female</option>
-									<option value="male">Male</option>
-									<option value="other">Other</option>
-								</select>
-							</div>
-						</div>
-						{#if editingMember?.type === 'child'}
-							<div>
-							<label for="edit-member-stage" class="block text-sm font-medium text-ink-soft mb-1">Stage</label>
-							<select id="edit-member-stage" bind:value={editMemberStage} class="w-full px-3 py-2 border border-line rounded-md">
-									<option value="">Not set</option>
-									<option value="infant">Infant</option>
-									<option value="child">Child</option>
-								</select>
-								<p class="text-xs text-ink-soft mt-1">Sets which categories this person starts with.</p>
-							</div>
-						{/if}
-						<div>
-						<label for="edit-member-email" class="block text-sm font-medium text-ink-soft mb-1">Email (for invites)</label>
-						<div class="flex gap-2">
-							<input id="edit-member-email" type="email" bind:value={editMemberEmail} class="flex-1 px-3 py-2 border border-line rounded-md" placeholder="person@email.com" />
-								<button type="button" on:click={() => inviteMemberEmail(editMemberEmail)} class="px-3 py-2 bg-surface2 text-ink-soft rounded-md hover:text-ink"><Mail class="w-4 h-4 inline mr-1" /> Invite</button>
-							</div>
-						</div>
-						<div class="flex justify-end gap-2">
-							<button type="button" on:click={deleteEditMember} class="px-4 py-2 bg-danger text-danger-text rounded-md"><Trash2 class="w-4 h-4 inline mr-1" /> Delete</button>
-							<button type="button" on:click={closeEditMember} class="px-4 py-2 bg-surface2 text-ink-soft rounded-md">Cancel</button>
-							<button type="submit" class="px-4 py-2 bg-primary text-on-primary rounded-md">Save</button>
-						</div>
-					</form>
-				</div>
-			</div>
+			<EditMemberModal
+				member={editingMember}
+				mode="stage"
+				familyId={activeFamilyId}
+				on:save={saveEditMember}
+				on:delete={deleteEditMember}
+				on:invite={(e) => inviteMemberEmail(e.detail.email)}
+				on:avatar={onMemberAvatarSelected}
+				on:close={closeEditMember}
+			/>
 		{/if}
 
 
@@ -1205,6 +720,6 @@
 	memberId={selectedMemberId}
 	members={profiles}
 	on:saved={onLogged}
-	on:error={(e) => (error = e.detail.message)}
-	on:notice={(e) => (notice = e.detail.message)}
+	on:error={(e) => fail(e.detail.message)}
+	on:notice={(e) => notify(e.detail.message)}
 />
