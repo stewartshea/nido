@@ -8,9 +8,12 @@
 	import { authStore, authActions } from '$lib/stores/authStore';
 	import { uiStore, uiActions } from '$lib/stores/uiStore';
 	import { applyTimezone } from '$lib/stores/timezoneStore';
+	import { notify, fail } from '$lib/stores/feedback';
 	import ToggleSwitch from '$lib/components/ToggleSwitch.svelte';
+	import FeedbackToasts from '$lib/components/FeedbackToasts.svelte';
 	import { CATEGORIES, defaultMemberId } from '$lib/shared';
-	import { Home, Timer, AlertCircle, Check } from 'lucide-svelte';
+	import { computeFeedReports } from '$lib/logging/feedStats';
+	import { Home } from 'lucide-svelte';
 
 	$: if ($uiStore.accountPanelOpen) {
 		uiActions.setSection('account');
@@ -18,18 +21,6 @@
 	}
 
 	let isAuthenticated = false;
-	let error = '';
-	let notice = '';
-	let feedbackTimer: ReturnType<typeof setTimeout> | undefined;
-	function dismissFeedback() {
-		notice = '';
-		error = '';
-		if (feedbackTimer) { clearTimeout(feedbackTimer); feedbackTimer = undefined; }
-	}
-	$: if (notice || error) {
-		if (feedbackTimer) clearTimeout(feedbackTimer);
-		feedbackTimer = setTimeout(() => { feedbackTimer = undefined; notice = ''; error = ''; }, 6000);
-	}
 
 	let email = '';
 	let password = '';
@@ -99,32 +90,8 @@
 	let moods: any[] = [];
 	let journalEntries: any[] = [];
 
-	// Breast-feeding totals + last side, derived from loaded feedings.
-
-	function avg(a: number[]): number | null {
-		if (a.length === 0) return null;
-		return a.reduce((s, x) => s + x, 0) / a.length;
-	}
-
-	$: feedReports = (() => {
-		const now = Date.now();
-		const dayAgo = now - 24 * 3600 * 1000;
-		const monthAgo = now - 30 * 24 * 3600 * 1000;
-		const f = feedings.filter((x) => x.type === 'breast' || x.type === 'bottle' || x.type === 'formula');
-		const withDuration = f.filter((x) => x.duration && x.duration > 0);
-		const sizes1d = f.filter((x) => new Date(x.start_time).getTime() >= dayAgo && x.amount).map((x) => Number(x.amount));
-		const sizes30d = f.filter((x) => new Date(x.start_time).getTime() >= monthAgo && x.amount).map((x) => Number(x.amount));
-		const dur1d = withDuration.filter((x) => new Date(x.start_time).getTime() >= dayAgo).map((x) => Number(x.duration));
-		const dur30d = withDuration.filter((x) => new Date(x.start_time).getTime() >= monthAgo).map((x) => Number(x.duration));
-		return {
-			count1d: f.filter((x) => new Date(x.start_time).getTime() >= dayAgo).length,
-			count30d: f.length,
-			avgSize1d: avg(sizes1d),
-			avgSize30d: avg(sizes30d),
-			avgDur1d: avg(dur1d),
-			avgDur30d: avg(dur30d),
-		};
-	})();
+	// Quick feed reports over the loaded feedings (see $lib/logging/feedStats).
+	$: feedReports = computeFeedReports(feedings);
 
 	async function refreshSummary() {
 		if (!selectedMemberId) return;
@@ -178,7 +145,7 @@
 			moods = mo.data.moods ?? [];
 			journalEntries = j.data.entries ?? [];
 		} catch (e: any) {
-			error = e.response?.data?.error || 'Failed to load tracking data.';
+			fail(e.response?.data?.error || 'Failed to load tracking data.');
 			console.error(e);
 		}
 	}
@@ -239,10 +206,10 @@
 			const status = e.response?.status;
 			if (status === 401 || status === 403) {
 				handleLogout();
-				error = 'Your session has expired. Please sign in again.';
+				fail('Your session has expired. Please sign in again.');
 				return;
 			}
-			error = e.response?.data?.error || 'Failed to load your families.';
+			fail(e.response?.data?.error || 'Failed to load your families.');
 			console.error(e);
 		}
 	}
@@ -362,16 +329,16 @@
 			if (verifyParam) {
 				try {
 					const res = await authAPI.verifyEmail(verifyParam);
-					notice = res.data.message || 'Email verified.';
+					notify(res.data.message || 'Email verified.');
 				} catch (err: any) {
-					error = err.response?.data?.error || 'Verification failed.';
+					fail(err.response?.data?.error || 'Verification failed.');
 				}
 				if (window.history.replaceState) window.history.replaceState(null, '', window.location.pathname);
 			}
 			if (resetParam) {
 				pendingResetToken = resetParam;
 				showForgot = true;
-				notice = 'Enter a new password to complete your password reset.';
+				notify('Enter a new password to complete your password reset.');
 				if (window.history.replaceState) window.history.replaceState(null, '', window.location.pathname);
 			}
 			const token = localStorage.getItem('token');
@@ -388,22 +355,7 @@
 	});
 
 </script>
- 			{#if notice || error}
-				<div class="fixed top-4 right-4 z-[70] w-full max-w-sm space-y-2" role="status" aria-live="polite">
-					{#if notice}
-						<div class="bg-surface border border-line-soft text-ink shadow-card px-4 py-3 rounded-md text-sm">
-							<span class="inline-flex items-center gap-2"><Check class="w-4 h-4 text-accent shrink-0" aria-hidden="true" />
-							{notice}<button type="button" on:click={dismissFeedback} class="ml-auto text-ink-soft hover:text-ink shrink-0" aria-label="Dismiss">&times;</button></span>
-						</div>
-					{/if}
-					{#if error}
-						<div class="bg-danger border border-danger text-danger-text px-4 py-3 rounded-md text-sm">
-							<span class="inline-flex items-center gap-2"><AlertCircle class="w-4 h-4 shrink-0" aria-hidden="true" />
-							{error}<button type="button" on:click={dismissFeedback} class="ml-auto hover:opacity-70 shrink-0" aria-label="Dismiss">&times;</button></span>
-						</div>
-					{/if}
-				</div>
-			{/if}
+ 			<FeedbackToasts />
  			<!-- HOME — future household/property tracking -->
 			<div class="max-w-4xl mx-auto">
 				<div class="flex items-center gap-3 mb-6">

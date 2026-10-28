@@ -5,25 +5,26 @@
 	import { authAPI, userAPI, familiesAPI } from '$lib/api/family';
 	import { feedingAPI, diaperAPI, sleepAPI, growthAPI, healthAPI, milestoneAPI, vaccinationAPI, moodAPI, journalAPI, vitalsAPI } from '$lib/api/records';
 	import { remindersAPI } from '$lib/api/notifications';
-	import { importsAPI, settingsAPI } from '$lib/api/system';
 	import type { PageOptions, Reminder } from '$lib/api/types';
 	import { authStore, authActions } from '$lib/stores/authStore';
 	import { uiStore, uiActions } from '$lib/stores/uiStore';
 	import { applyTimezone } from '$lib/stores/timezoneStore';
-	import ToggleSwitch from '$lib/components/ToggleSwitch.svelte';
+	import { notify, fail } from '$lib/stores/feedback';
 	import Avatar from '$lib/components/Avatar.svelte';
+	import FeedbackToasts from '$lib/components/FeedbackToasts.svelte';
 	import { loadListsCache, saveListsCache } from '$lib/cache';
-	import { flushOutbox } from '$lib/logging/outbox';
+	import { startOutboxSync } from '$lib/logging/outbox';
 	import { DATA_CHANGED } from '$lib/events';
 	import { refreshNotificationCount } from '$lib/stores/notificationCount';
 	import MemberActivity from '$lib/components/logging/MemberActivity.svelte';
 	import GrowthChart from '$lib/components/logging/GrowthChart.svelte';
 	import LogDrawer from '$lib/components/logging/LogDrawer.svelte';
 	import StockGlance from '$lib/components/logging/StockGlance.svelte';
-		import { CATEGORIES, defaultMemberId } from '$lib/shared';
+	import { defaultMemberId } from '$lib/shared';
 	import { reminderNoun, reminderPhrase } from '$lib/shared';
 	import { zonedOptions } from '$lib/logging/format';
-	import { Baby, Star, Users, Trash2, Mail, AlertCircle, Activity, Check, CalendarClock } from 'lucide-svelte';
+	import { computeFeedReports, formatElapsed } from '$lib/logging/feedStats';
+	import { Baby, Star, Users, Trash2, Mail, CalendarClock } from 'lucide-svelte';
 
 
   let familyView: 'dashboard' | 'detail' = 'dashboard';
@@ -35,27 +36,6 @@
 	}
 
 	let isAuthenticated = false;
-	let error = '';
-	let notice = '';
-	let feedbackTimer: ReturnType<typeof setTimeout> | undefined;
-	function dismissFeedback() {
-		notice = '';
-		error = '';
-		if (feedbackTimer) { clearTimeout(feedbackTimer); feedbackTimer = undefined; }
-	}
-	$: if (notice || error) {
-		if (feedbackTimer) clearTimeout(feedbackTimer);
-		feedbackTimer = setTimeout(() => { feedbackTimer = undefined; notice = ''; error = ''; }, 6000);
-	}
-
-	let email = '';
-	let password = '';
-	let showForgot = false;
-	let pendingResetToken = '';
-
-
-
-	let loading = false;
 
 	let profiles: any[] = [];
 	let families: any[] = [];
@@ -137,12 +117,6 @@
 	let newBabyGender = 'female';
 	let creatingBaby = false;
 
-	// Invite-by-email
-	let invitations: any[] = [];
-
-	// Import data (Narababy CSV)
-	let importRuns: any[] = [];
-
 	// Account
 
 	let feedings: any[] = [];
@@ -189,44 +163,9 @@
 	}
 
 
-	function avg(a: number[]): number | null {
-		if (a.length === 0) return null;
-		return a.reduce((s, x) => s + x, 0) / a.length;
-	}
-
-	$: feedReports = (() => {
-		const now = Date.now();
-		const dayAgo = now - 24 * 3600 * 1000;
-		const monthAgo = now - 30 * 24 * 3600 * 1000;
-		const f = feedings.filter((x) => x.type === 'breast' || x.type === 'bottle' || x.type === 'formula');
-		const withDuration = f.filter((x) => x.duration && x.duration > 0);
-		const sizes1d = f.filter((x) => new Date(x.start_time).getTime() >= dayAgo && x.amount).map((x) => Number(x.amount));
-		const sizes30d = f.filter((x) => new Date(x.start_time).getTime() >= monthAgo && x.amount).map((x) => Number(x.amount));
-		const dur1d = withDuration.filter((x) => new Date(x.start_time).getTime() >= dayAgo).map((x) => Number(x.duration));
-		const dur30d = withDuration.filter((x) => new Date(x.start_time).getTime() >= monthAgo).map((x) => Number(x.duration));
-		return {
-			count1d: f.filter((x) => new Date(x.start_time).getTime() >= dayAgo).length,
-			count30d: f.length,
-			avgSize1d: avg(sizes1d),
-			avgSize30d: avg(sizes30d),
-			avgDur1d: avg(dur1d),
-			avgDur30d: avg(dur30d),
-		};
-	})();
-
-	function formatElapsed(ms: number): string {
-		const totalSec = Math.floor(ms / 1000);
-		const h = Math.floor(totalSec / 3600);
-		const m = Math.floor((totalSec % 3600) / 60);
-		const s = totalSec % 60;
-		return `${h > 0 ? h + 'h ' : ''}${String(m).padStart(2, '0')}m ${String(s).padStart(2, '0')}s`;
-	}
-
-
-
+	$: feedReports = computeFeedReports(feedings);
 
 	async function refreshSummary() {
-		if (!selectedMemberId) return;
 		if (!selectedMemberId) return;
 		if (!currentIsTrackable()) {
 			summary = null;
@@ -310,9 +249,9 @@
 			});
 		} catch (e: any) {
 			if (!cached) {
-				error = e.response?.data?.error || 'Failed to load tracking data.';
+				fail(e.response?.data?.error || 'Failed to load tracking data.');
 			} else {
-				notice = 'Showing cached activities — will refresh when connected.';
+				notify('Showing cached activities — will refresh when connected.');
 			}
 			console.error(e);
 		}
@@ -370,15 +309,15 @@
 				selectedMemberId = null;
 				activeCategories = [];
 			}
-			await Promise.all([loadFamilySettings(), refreshLists(), refreshSummary(), loadInvitations(), loadImportRuns(), loadUpcomingAppointments()]);
+			await Promise.all([loadFamilySettings(), refreshLists(), refreshSummary(), loadUpcomingAppointments()]);
 		} catch (e: any) {
 			const status = e.response?.status;
 			if (status === 401 || status === 403) {
 				handleLogout();
-				error = 'Your session has expired. Please sign in again.';
+				fail('Your session has expired. Please sign in again.');
 				return;
 			}
-			error = e.response?.data?.error || 'Failed to load your families.';
+			fail(e.response?.data?.error || 'Failed to load your families.');
 			console.error(e);
 		}
 	}
@@ -393,8 +332,7 @@
 		defaultProfileId = memberId;
 		selectedMemberId = memberId;
 		if (browser) localStorage.setItem('nido.defaultProfile', String(memberId));
-		notice = 'Default profile updated.';
-		error = '';
+		notify('Default profile updated.');
 	}
 
 
@@ -409,9 +347,9 @@
 
 	async function buildFamily(event: SubmitEvent) {
 		event.preventDefault();
-		error = '';
+		fail('');
 		if (!familyName.trim()) {
-			error = 'Give your family a name (e.g. "The Hollybrooks").';
+			fail('Give your family a name (e.g. "The Hollybrooks").');
 			return;
 		}
 		creatingBaby = true;
@@ -427,14 +365,14 @@
 			}
 			const res = await familiesAPI.create(payload);
 			const fam = res.data.family;
-			notice = `${fam.name} created — your family code is ${fam.familyCode}`;
+			notify(`${fam.name} created — your family code is ${fam.familyCode}`);
 			familyName = '';
 			newMemberName = '';
 			newBabyBirthDate = '';
 			if (browser) localStorage.setItem('nido.familyId', fam.familyId);
 			await loadFamilies();
 		} catch (err: any) {
-			error = err.response?.data?.error || 'Failed to create your family.';
+			fail(err.response?.data?.error || 'Failed to create your family.');
 			console.error(err);
 		} finally {
 			creatingBaby = false;
@@ -443,9 +381,9 @@
 
 	async function addFamilyMember(event: SubmitEvent) {
 		event.preventDefault();
-		error = '';
+		fail('');
 		if (!newMemberName) {
-			error = 'Member name is required.';
+			fail('Member name is required.');
 			return;
 		}
 		if (!activeFamilyId) return;
@@ -457,12 +395,12 @@
 				birthDate: newBabyBirthDate ? new Date(newBabyBirthDate).toISOString() : undefined,
 				gender: newBabyGender,
 			});
-			notice = `${res.data.member.name} added to the family.`;
+			notify(`${res.data.member.name} added to the family.`);
 			newMemberName = '';
 			newBabyBirthDate = '';
 			await loadFamilies();
 		} catch (err: any) {
-			error = err.response?.data?.error || 'Failed to add family member.';
+			fail(err.response?.data?.error || 'Failed to add family member.');
 			console.error(err);
 		} finally {
 			creatingBaby = false;
@@ -470,46 +408,8 @@
 	}
 
 
-	async function loadInvitations() {
-		if (!activeFamilyId) {
-			invitations = [];
-			return;
-		}
-		try {
-			const res = await familiesAPI.listInvites(activeFamilyId);
-			invitations = res.data.invitations || [];
-		} catch {
-			invitations = [];
-		}
-	}
-
-
-
-
-	async function loadImportRuns() {
-		try {
-			const res = await importsAPI.runs();
-			importRuns = res.data.runs || [];
-		} catch {
-			importRuns = [];
-		}
-	}
-
-
-
-
-
-	// Instance settings (Admin tab)
-	let appSettings: any = null;
-	let isPanelAdmin = false;
-	let smtpHost = '';
-	let smtpPort = 587;
-	let smtpUser = '';
-	let smtpFrom = '';
-	let signupEnabled = true;
-	let signupEnvLocked = false;
-	let emailVerificationSetting = false;
-
+	// The signed-in user's own profile, and the entry point that loads the
+	// family's reminders; the DATA_CHANGED listener covers later refreshes.
 	async function refreshUserProfile() {
 		try {
 			const res = await userAPI.getMe();
@@ -522,33 +422,13 @@
 					lastName: u.last_name ?? u.lastName ?? '',
 					createdAt: u.created_at ?? u.createdAt ?? '',
 				});
-				isPanelAdmin = Number(u.is_platform_admin ?? 0) === 1;
 			}
 			loadReminders();
 		} catch {
-			isPanelAdmin = false;
+			// getMe failing is not worth a toast; reminders still refresh via
+			// the DATA_CHANGED listener on the next successful mutation.
 		}
 	}
-
-	async function loadAppSettings() {
-		try {
-			const res = await settingsAPI.get();
-			appSettings = res.data.settings;
-			smtpHost = appSettings.smtpHost || '';
-			smtpPort = appSettings.smtpPort || 587;
-			smtpUser = appSettings.smtpUser || '';
-			smtpFrom = appSettings.smtpFrom || '';
-			signupEnabled = appSettings.signupEnabled;
-			signupEnvLocked = appSettings.signupEnvLocked === true;
-			emailVerificationSetting = appSettings.emailVerification;
-		} catch {
-			appSettings = null;
-		}
-	}
-
-
-
-
 
 
 	async function selectMember(memberId: number) {
@@ -585,9 +465,9 @@
 			// mutating the object in place never re-runs the reactive statement, so
 			// the panel kept showing the old layout until a hard reload.
 			profiles = profiles.map((p) => (Number(p.id) === Number(selectedMember.id) ? { ...p, dashboardTiles: tiles } : p));
-			notice = 'Dashboard panel saved.';
+			notify('Dashboard panel saved.');
 		} catch (err: any) {
-			error = err.response?.data?.error || 'Failed to update dashboard tiles';
+			fail(err.response?.data?.error || 'Failed to update dashboard tiles');
 		}
 	}
 
@@ -621,7 +501,7 @@
 		editMemberGender = baby.gender || '';
 		editMemberEmail = baby.email || '';
 		editMemberStage = baby.stage ?? null;
-		error = '';
+		fail('');
 	}
 
 	function closeEditMember() {
@@ -633,11 +513,11 @@
 		if (!confirm(`Delete "${editMemberName.trim() || editingMember.name}" and ALL of their records? This cannot be undone.`)) return;
 		try {
 			await familiesAPI.removeMember(activeFamilyId, Number(editingMember.id));
-			notice = 'Member deleted.';
+			notify('Member deleted.');
 			editingMember = null;
 			await loadFamilies();
 		} catch (err: any) {
-			error = err.response?.data?.error || 'Failed to delete member.';
+			fail(err.response?.data?.error || 'Failed to delete member.');
 		}
 	}
 
@@ -653,11 +533,11 @@
 				email: editMemberEmail.trim() || null,
 				stage: editMemberStage || null,
 			});
-			notice = 'Member updated.';
+			notify('Member updated.');
 			editingMember = null;
 			await loadFamilies();
 		} catch (err: any) {
-			error = err.response?.data?.error || 'Failed to update member.';
+			fail(err.response?.data?.error || 'Failed to update member.');
 		}
 	}
 
@@ -665,10 +545,9 @@
 		if (!email || !activeFamilyId) return;
 		try {
 			await familiesAPI.invite(activeFamilyId, email);
-			notice = `Invite sent to ${email}.`;
-			await loadInvitations();
+			notify(`Invite sent to ${email}.`);
 		} catch (err: any) {
-			error = err.response?.data?.error || 'Failed to send invite.';
+			fail(err.response?.data?.error || 'Failed to send invite.');
 		}
 	}
 
@@ -678,37 +557,25 @@
 		if (!file || !editingMember || !activeFamilyId) return;
 		try {
 			await familiesAPI.uploadAvatar(activeFamilyId, Number(editingMember.id), file);
-			notice = 'Profile photo updated.';
+			notify('Profile photo updated.');
 			await loadFamilies();
 		} catch (err: any) {
-			error = err.response?.data?.error || 'Failed to upload photo.';
+			fail(err.response?.data?.error || 'Failed to upload photo.');
 		}
 	}
 
 
 	
 
-	let outboxTimer: number | undefined;
+	let stopOutboxSync: (() => void) | undefined;
 
 	function openLog(kind: string) {
 		logKind = kind;
 		sheetOpen = true;
 	}
 
-	async function syncOutbox() {
-		const synced = await flushOutbox({
-			feeding: (payload) => feedingAPI.create(payload),
-			sleep: (payload) => sleepAPI.create(payload),
-		});
-		if (synced > 0) {
-			notice = `${synced} offline record(s) synced.`;
-			await refreshLists();
-			await refreshSummary();
-		}
-	}
-
 	async function onLogged(e: CustomEvent<{ message: string }>) {
-		notice = e.detail.message;
+		notify(e.detail.message);
 		await refreshLists();
 		await refreshSummary();
 	}
@@ -736,7 +603,7 @@
 				journalEntries: next.journalEntries, vitals: next.vitals,
 			});
 		} catch (e: any) {
-			notice = e.response?.data?.error || 'Could not load older records.';
+			notify(e.response?.data?.error || 'Could not load older records.');
 		} finally {
 			loadingMore = false;
 		}
@@ -751,16 +618,14 @@
 			if (verifyParam) {
 				try {
 					const res = await authAPI.verifyEmail(verifyParam);
-					notice = res.data.message || 'Email verified.';
+					notify(res.data.message || 'Email verified.');
 				} catch (err: any) {
-					error = err.response?.data?.error || 'Verification failed.';
+					fail(err.response?.data?.error || 'Verification failed.');
 				}
 				if (window.history.replaceState) window.history.replaceState(null, '', window.location.pathname);
 			}
 			if (resetParam) {
-				pendingResetToken = resetParam;
-				showForgot = true;
-				notice = 'Enter a new password to complete your password reset.';
+				notify('Enter a new password to complete your password reset.');
 				if (window.history.replaceState) window.history.replaceState(null, '', window.location.pathname);
 			}
 			const token = localStorage.getItem('token');
@@ -771,10 +636,12 @@
 			}
 			if (isAuthenticated) {
 				await Promise.all([loadFamilies(), refreshUserProfile()]);
-				if (isPanelAdmin) await loadAppSettings();
-				// Reconnect resilience: push anything queued while offline.
-				await syncOutbox();
-				outboxTimer = window.setInterval(() => syncOutbox(), 60 * 1000);
+				// Reconnect resilience: push anything queued while offline, then
+				// keep replaying every 60s until the page goes away.
+				stopOutboxSync = startOutboxSync(async () => {
+					await refreshLists();
+					await refreshSummary();
+				});
 			}
 			// Older builds kept one never-expiring timer blob per member; it is what
 			// made finished feeds reappear, so drop any that are still around.
@@ -787,26 +654,11 @@
 
 
 	onDestroy(() => {
-		if (browser && outboxTimer) window.clearInterval(outboxTimer);
+		if (stopOutboxSync) stopOutboxSync();
 		window.removeEventListener(DATA_CHANGED, onDataChanged);
 	});
 </script>
-		{#if notice || error}
-			<div class="fixed top-4 right-4 z-[70] w-full max-w-sm space-y-2" role="status" aria-live="polite">
-				{#if notice}
-					<div class="bg-surface border border-line-soft text-ink shadow-card px-4 py-3 rounded-md text-sm">
-						<span class="inline-flex items-center gap-2"><Check class="w-4 h-4 text-accent shrink-0" aria-hidden="true" />
-						{notice}<button type="button" on:click={dismissFeedback} class="ml-auto text-ink-soft hover:text-ink shrink-0" aria-label="Dismiss">&times;</button></span>
-					</div>
-				{/if}
-				{#if error}
-					<div class="bg-danger border border-danger text-danger-text px-4 py-3 rounded-md text-sm">
-						<span class="inline-flex items-center gap-2"><AlertCircle class="w-4 h-4 shrink-0" aria-hidden="true" />
-						{error}<button type="button" on:click={dismissFeedback} class="ml-auto hover:opacity-70 shrink-0" aria-label="Dismiss">&times;</button></span>
-					</div>
-				{/if}
-			</div>
-		{/if}
+		<FeedbackToasts />
 		{#if families.length === 0}
 			<!-- FAMILY ONBOARDING: build your family first -->
 			<div class="flex justify-end mb-4">
@@ -1205,6 +1057,6 @@
 	memberId={selectedMemberId}
 	members={profiles}
 	on:saved={onLogged}
-	on:error={(e) => (error = e.detail.message)}
-	on:notice={(e) => (notice = e.detail.message)}
+	on:error={(e) => fail(e.detail.message)}
+	on:notice={(e) => notify(e.detail.message)}
 />

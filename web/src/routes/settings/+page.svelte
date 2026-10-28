@@ -4,17 +4,18 @@
 	import { goto } from '$app/navigation';
 	import { tokenExpired } from '$lib/api/client';
 	import { authAPI, userAPI, familiesAPI } from '$lib/api/family';
-	import { feedingAPI, diaperAPI, sleepAPI, growthAPI, healthAPI, milestoneAPI, vaccinationAPI, moodAPI, journalAPI } from '$lib/api/records';
 	import { importsAPI, familyAdminAPI, accountAPI, settingsAPI } from '$lib/api/system';
 	import { authStore, authActions } from '$lib/stores/authStore';
 	import { uiStore, uiActions } from '$lib/stores/uiStore';
 	import { applyTimezone } from '$lib/stores/timezoneStore';
+	import { notify, fail } from '$lib/stores/feedback';
 	import { detectTimeZone, listTimeZones, zonedOptions } from '$lib/logging/format';
 	import ToggleSwitch from '$lib/components/ToggleSwitch.svelte';
+	import FeedbackToasts from '$lib/components/FeedbackToasts.svelte';
 	import { CATEGORIES, defaultMemberId } from '$lib/shared';
 	import { DIGEST_FREQUENCIES } from '$lib/vocabulary.generated';
 	import type { ComponentStatus, SystemOverview, RegistryView } from '$lib/api/types';
-	import { Users, Home, Trash2, Timer, AlertCircle, Settings, Check, ChevronRight, User, Shield, Upload, Download } from 'lucide-svelte';
+	import { Users, Home, Trash2, Settings, ChevronRight, User, Shield, Upload, Download } from 'lucide-svelte';
 
 
 
@@ -24,47 +25,13 @@
 	}
 
 	let isAuthenticated = false;
-	let error = '';
-	let notice = '';
-	let feedbackTimer: ReturnType<typeof setTimeout> | undefined;
-	function dismissFeedback() {
-		notice = '';
-		error = '';
-		if (feedbackTimer) { clearTimeout(feedbackTimer); feedbackTimer = undefined; }
-	}
-	$: if (notice || error) {
-		if (feedbackTimer) clearTimeout(feedbackTimer);
-		feedbackTimer = setTimeout(() => { feedbackTimer = undefined; notice = ''; error = ''; }, 6000);
-	}
-
-	let email = '';
-	let password = '';
-	let showForgot = false;
-	let pendingResetToken = '';
-	// Per-user mobile quick links (category ids), persisted in localStorage.
-	let loading = false;
 
 	let profiles: any[] = [];
 	let families: any[] = [];
 	let activeFamily: any = null;
 	let activeFamilyId: string | null = null;
 	let selectedMemberId: number | null = null;
-	// Feeds, sleep, diapers and the rest only exist for a trackable profile.
-	/**
-	 * Whether the selected person can be logged against.
-	 *
-	 * Computed here rather than from a `$:` flag: reactive statements are
-	 * scheduled, not synchronous, so selectMember() would call refreshLists()
-	 * before the flag had recomputed and fetch the baby endpoints for whoever was
-	 * selected previously.
-	 */
-	function currentIsTrackable(): boolean {
-		const m = profiles.find((b) => Number(b.id) === selectedMemberId);
-		return !!m && m.trackable !== false;
-	}
-	let activeTab = 'feeds';
 	let defaultProfileId: number | null = null;
-	let summary: any = null;
 
 	// Tracking categories now live in $lib/shared.ts (single source of truth).
 	// Categories enabled for the selected member.
@@ -95,7 +62,6 @@
 	let editMemberCategories: string[] = [];
 
 	// Family onboarding
-	let familyName = '';
 	let memberType = 'child';
 	// Only meaningful for a child: an infant and a ten-year-old are both children
 	// but track different things. Pets and adults imply their own stage.
@@ -119,8 +85,6 @@
 	let importRuns: any[] = [];
 	let undoingRunId: number | null = null;
 
-	// Formula catalog
-	let formulas: any[] = [];
 	// Manual feed entry (backdated) + repeat-last
 	// Diaper detail form
 	// Sleep + growth backdated
@@ -133,122 +97,11 @@
 	let deletingAccount = false;
 	let deleteConfirmName = '';
 
-	let feedStartedAt: number | null = null;
-	let feedElapsed = 0;
-	let leftStartedAt: number | null = null;
-	let leftElapsed = 0;
-	let rightStartedAt: number | null = null;
-	let rightElapsed = 0;
-
-	let sleepStartedAt: number | null = null;
-
-
-	let feedings: any[] = [];
-	let diapers: any[] = [];
-	let sleeps: any[] = [];
-	let growths: any[] = [];
-	let milestones: any[] = [];
-	let vaccinations: any[] = [];
-	let moods: any[] = [];
-	let journalEntries: any[] = [];
-
-	// Breast-feeding totals + last side, derived from loaded feedings.
-
-
-	function avg(a: number[]): number | null {
-		if (a.length === 0) return null;
-		return a.reduce((s, x) => s + x, 0) / a.length;
-	}
-
-	$: feedReports = (() => {
-		const now = Date.now();
-		const dayAgo = now - 24 * 3600 * 1000;
-		const monthAgo = now - 30 * 24 * 3600 * 1000;
-		const f = feedings.filter((x) => x.type === 'breast' || x.type === 'bottle' || x.type === 'formula');
-		const withDuration = f.filter((x) => x.duration && x.duration > 0);
-		const sizes1d = f.filter((x) => new Date(x.start_time).getTime() >= dayAgo && x.amount).map((x) => Number(x.amount));
-		const sizes30d = f.filter((x) => new Date(x.start_time).getTime() >= monthAgo && x.amount).map((x) => Number(x.amount));
-		const dur1d = withDuration.filter((x) => new Date(x.start_time).getTime() >= dayAgo).map((x) => Number(x.duration));
-		const dur30d = withDuration.filter((x) => new Date(x.start_time).getTime() >= monthAgo).map((x) => Number(x.duration));
-		return {
-			count1d: f.filter((x) => new Date(x.start_time).getTime() >= dayAgo).length,
-			count30d: f.length,
-			avgSize1d: avg(sizes1d),
-			avgSize30d: avg(sizes30d),
-			avgDur1d: avg(dur1d),
-			avgDur30d: avg(dur30d),
-		};
-	})();
-
-
-
 	function formatTime(iso: string | null): string {
 		if (!iso) return '—';
 		const d = new Date(iso);
 		return d.toLocaleString(undefined, zonedOptions({ month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }));
 	}
-
-
-
-
-	async function refreshSummary() {
-		if (!selectedMemberId) return;
-		if (!currentIsTrackable()) {
-			// Health summary is baby tracking; an adult profile has none and the
-			// endpoint refuses it, so don't ask and report nothing.
-			summary = null;
-			return;
-		}
-		try {
-			const res = await healthAPI.getSummary(selectedMemberId);
-			summary = res.data.summary;
-		} catch {
-			summary = null;
-		}
-	}
-
-	async function refreshLists() {
-		if (!selectedMemberId) return;
-		if (!currentIsTrackable()) {
-			// Feeds, sleep, diapers, growth, moods and the rest belong to a baby
-			// profile. The person who created the household is now an adult member
-			// of it, so a household with no child yet would otherwise fire eight
-			// requests that all fail.
-			feedings = [];
-			diapers = [];
-			sleeps = [];
-			growths = [];
-			milestones = [];
-			vaccinations = [];
-			moods = [];
-			journalEntries = [];
-			return;
-		}
-		try {
-			const [f, d, s, g, m, v, mo, j] = await Promise.all([
-				feedingAPI.getAll(selectedMemberId),
-				diaperAPI.getAll(selectedMemberId),
-				sleepAPI.getAll(selectedMemberId),
-				growthAPI.getAll(selectedMemberId),
-				milestoneAPI.getAll(selectedMemberId),
-				vaccinationAPI.getAll(selectedMemberId),
-				moodAPI.getAll(selectedMemberId),
-				journalAPI.getAll(selectedMemberId),
-			]);
-			feedings = f.data.feedings;
-			diapers = d.data.diapers;
-			sleeps = s.data.sleep;
-			growths = g.data.growth;
-			milestones = m.data.milestones;
-			vaccinations = v.data.vaccinations;
-			moods = mo.data.moods ?? [];
-			journalEntries = j.data.entries ?? [];
-		} catch (e: any) {
-			error = e.response?.data?.error || 'Failed to load tracking data.';
-			console.error(e);
-		}
-	}
-
 
 
 	// Edit modal state
@@ -302,20 +155,19 @@
 				// The API resolves this to the member's own set, constrained by their
 				// stage. An empty list is a real answer, not a prompt to show everything.
 				activeCategories = selected?.categories ?? [];
-				if (!activeCategories.includes(activeTab)) activeTab = activeCategories[0] || 'feeds';
 			} else {
 				selectedMemberId = null;
 				activeCategories = [];
 			}
-			await Promise.all([loadFamilySettings(), refreshLists(), refreshSummary(), loadInvitations(), loadImportRuns()]);
+			await Promise.all([loadFamilySettings(), loadInvitations(), loadImportRuns()]);
 		} catch (e: any) {
 			const status = e.response?.status;
 			if (status === 401 || status === 403) {
 				handleLogout();
-				error = 'Your session has expired. Please sign in again.';
+				fail('Your session has expired. Please sign in again.');
 				return;
 			}
-			error = e.response?.data?.error || 'Failed to load your families.';
+			fail(e.response?.data?.error || 'Failed to load your families.');
 			console.error(e);
 		}
 	}
@@ -330,21 +182,14 @@
 		isAuthenticated = false;
 		profiles = [];
 		selectedMemberId = null;
-		feedStartedAt = null;
-		leftStartedAt = null;
-		rightStartedAt = null;
-		leftElapsed = 0;
-		rightElapsed = 0;
-		feedElapsed = 0;
-		sleepStartedAt = null;
 	}
 
 
 	async function addFamilyMember(event: SubmitEvent) {
 		event.preventDefault();
-		error = '';
+		fail('');
 		if (!newMemberName) {
-			error = 'Member name is required.';
+			fail('Member name is required.');
 			return;
 		}
 		if (!activeFamilyId) return;
@@ -359,13 +204,13 @@
 				// Only a child needs the family to choose; the API implies the rest.
 				stage: memberType === 'child' ? memberStage : undefined,
 			});
-			notice = `${res.data.member.name} added to the family.`;
+			notify(`${res.data.member.name} added to the family.`);
 			newMemberName = '';
 			newMemberEmail = '';
 			newBabyBirthDate = '';
 			await loadFamilies();
 		} catch (err: any) {
-			error = err.response?.data?.error || 'Failed to add family member.';
+			fail(err.response?.data?.error || 'Failed to add family member.');
 			console.error(err);
 		} finally {
 			creatingBaby = false;
@@ -380,16 +225,16 @@
 
 	async function sendInvite(event: SubmitEvent) {
 		event.preventDefault();
-		error = '';
+		fail('');
 		inviteFallbackUrl = '';
 		if (!inviteEmail.trim() || !activeFamilyId) return;
 		try {
 			const res = await familiesAPI.invite(activeFamilyId, inviteEmail.trim());
-			notice = `Invitation sent to ${res.data.invitation.email}.`;
+			notify(`Invitation sent to ${res.data.invitation.email}.`);
 			inviteEmail = '';
 			await loadInvitations();
 		} catch (err: any) {
-			error = err.response?.data?.error || 'Failed to send invitation.';
+			fail(err.response?.data?.error || 'Failed to send invitation.');
 			// The server keeps the pending invite and hands back a link so the
 			// invite can still reach the recipient without working SMTP.
 			inviteFallbackUrl = err.response?.data?.invitation?.inviteUrl ?? '';
@@ -417,7 +262,7 @@
 			await familiesAPI.revokeInvite(activeFamilyId, inviteId);
 			await loadInvitations();
 		} catch (e: any) {
-			error = e.response?.data?.error || 'Failed to revoke invitation.';
+			fail(e.response?.data?.error || 'Failed to revoke invitation.');
 		}
 	}
 
@@ -428,9 +273,9 @@
 	}
 
 	async function importNarababy() {
-		error = '';
+		fail('');
 		if (!importFile) {
-			error = 'Choose a Narababy export file first.';
+			fail('Choose a Narababy export file first.');
 			return;
 		}
 		importing = true;
@@ -438,12 +283,12 @@
 		try {
 			const res = await importsAPI.narababy(importFile, importTargetBabyId, importType);
 			importResult = res.data;
-			notice = res.data.message || 'Import complete.';
+			notify(res.data.message || 'Import complete.');
 			await loadImportRuns();
 			await loadFamilies();
 			await loadInvitations();
 		} catch (err: any) {
-			error = err.response?.data?.error || 'Import failed.';
+			fail(err.response?.data?.error || 'Import failed.');
 			console.error(err);
 		} finally {
 			importing = false;
@@ -464,11 +309,11 @@
 		undoingRunId = runId;
 		try {
 			const res = await importsAPI.undoRun(runId);
-			notice = res.data.message || 'Import undone.';
+			notify(res.data.message || 'Import undone.');
 			await loadImportRuns();
 			await loadFamilies();
 		} catch (err: any) {
-			error = err.response?.data?.error || 'Failed to undo import.';
+			fail(err.response?.data?.error || 'Failed to undo import.');
 		} finally {
 			undoingRunId = null;
 		}
@@ -485,23 +330,23 @@
 	// Account + family admin
 	async function changePassword(event: SubmitEvent) {
 		event.preventDefault();
-		error = '';
-		if (newPw !== confirmPw) { error = 'New passwords do not match.'; return; }
+		fail('');
+		if (newPw !== confirmPw) { fail('New passwords do not match.'); return; }
 		changingPw = true;
 		try {
 			await accountAPI.changePassword(curPw, newPw);
 			curPw = ''; newPw = ''; confirmPw = '';
-			notice = 'Password updated.';
-		} catch (err: any) { error = err.response?.data?.error || 'Failed to change password.'; }
+			notify('Password updated.');
+		} catch (err: any) { fail(err.response?.data?.error || 'Failed to change password.'); }
 		finally { changingPw = false; }
 	}
 
 	async function deleteAccount() {
-		error = '';
+		fail('');
 		const isOwner = activeFamily?.role === 'owner';
 		const familyName = String(activeFamily?.name ?? '');
 		if (isOwner && deleteConfirmName.trim().toLowerCase() !== familyName.trim().toLowerCase()) {
-			error = 'Type the family name to confirm deleting the family.';
+			fail('Type the family name to confirm deleting the family.');
 			return;
 		}
 		if (!confirm('Delete your account permanently? This cannot be undone. If you own the family, the family and all of its data are removed too.')) return;
@@ -511,7 +356,7 @@
 			authActions.logout();
 			goto('/login');
 		} catch (err: any) {
-			error = err.response?.data?.error || 'Failed to delete account.';
+			fail(err.response?.data?.error || 'Failed to delete account.');
 		} finally {
 			deletingAccount = false;
 		}
@@ -528,8 +373,8 @@
 			a.download = `${activeFamily?.name || 'family'}-backup-${new Date().toISOString().slice(0, 10)}.json`;
 			a.click();
 			URL.revokeObjectURL(url);
-			notice = 'All-data backup downloaded.';
-		} catch (err: any) { error = err.response?.data?.error || 'Backup failed.'; }
+			notify('All-data backup downloaded.');
+		} catch (err: any) { fail(err.response?.data?.error || 'Backup failed.'); }
 	}
 
 	let backupFile: File | null = null;
@@ -687,7 +532,7 @@
 
 	async function saveAppSettings() {
 		savingSettings = true;
-		error = '';
+		fail('');
 		try {
 			const res = await settingsAPI.update({
 				signupEnabled,
@@ -699,9 +544,9 @@
 				smtpFrom: smtpFrom || null,
 			});
 			appSettings = res.data.settings;
-			notice = 'Settings saved.';
+			notify('Settings saved.');
 		} catch (err: any) {
-			error = err.response?.data?.error || 'Failed to save settings.';
+			fail(err.response?.data?.error || 'Failed to save settings.');
 		} finally {
 			savingSettings = false;
 		}
@@ -709,12 +554,12 @@
 
 	async function testSmtp() {
 		testingSmtp = true;
-		error = '';
+		fail('');
 		try {
 			const res = await settingsAPI.test();
-			notice = res.data.message || 'Test email sent.';
+			notify(res.data.message || 'Test email sent.');
 		} catch (err: any) {
-			error = err.response?.data?.error || 'Test failed.';
+			fail(err.response?.data?.error || 'Test failed.');
 		} finally {
 			testingSmtp = false;
 		}
@@ -727,7 +572,7 @@
 
 	async function restoreBackup() {
 		if (!activeFamilyId || !backupFile) {
-			error = 'Choose a Nido backup file first.';
+			fail('Choose a Nido backup file first.');
 			return;
 		}
 		if (!confirm('Restore this backup into your family? Existing members are matched by name and skipped; records will be re-added.')) return;
@@ -736,12 +581,11 @@
 			const text = await backupFile.text();
 			const json = JSON.parse(text);
 			const res = await familyAdminAPI.restore(activeFamilyId, json);
-			notice = `${res.data.message}. Members added: ${res.data.membersAdded}.`;
+			notify(`${res.data.message}. Members added: ${res.data.membersAdded}.`);
 			backupFile = null;
 			await loadFamilies();
-			await refreshLists();
 		} catch (err: any) {
-			error = err.response?.data?.error || (err instanceof SyntaxError ? 'Not a valid JSON backup file.' : 'Restore failed.');
+			fail(err.response?.data?.error || (err instanceof SyntaxError ? 'Not a valid JSON backup file.' : 'Restore failed.'));
 		} finally {
 			restoring = false;
 		}
@@ -752,9 +596,9 @@
 		if (!confirm(`Delete "${activeFamily?.name}" and ALL of its data? This cannot be undone.`)) return;
 		try {
 			await familyAdminAPI.remove(activeFamilyId);
-			notice = 'Family deleted.';
+			notify('Family deleted.');
 			await loadFamilies();
-		} catch (err: any) { error = err.response?.data?.error || 'Failed to delete family.'; }
+		} catch (err: any) { fail(err.response?.data?.error || 'Failed to delete family.'); }
 	}
 
 
@@ -764,7 +608,6 @@
 			const res = await familiesAPI.getSettings(activeFamilyId);
 			familySettings = res.data.settings;
 			anonymizedPreview = res.data.anonymizedPreview ?? anonymizedPreview;
-			const cats = familySettings?.categories;
 		} catch (err: any) {
 			console.error('Failed to load family settings:', err);
 		}
@@ -777,7 +620,7 @@
 			const res = await familiesAPI.getAnonymizedPreview(activeFamilyId);
 			anonymizedPreview = res.data.preview;
 		} catch (err: any) {
-			error = err.response?.data?.error || 'Failed to load anonymized preview.';
+			fail(err.response?.data?.error || 'Failed to load anonymized preview.');
 		} finally {
 			loadingAnonymizedPreview = false;
 		}
@@ -796,9 +639,9 @@
 		try {
 			const res = await familiesAPI.updateSettings(activeFamilyId, { digestFrequency: next });
 			if (familySettings) familySettings.digestFrequency = res.data.settings?.digestFrequency ?? next;
-			notice = 'Digest frequency updated.';
+			notify('Digest frequency updated.');
 		} catch (err: any) {
-			error = err.response?.data?.error || 'Could not update the digest frequency.';
+			fail(err.response?.data?.error || 'Could not update the digest frequency.');
 		}
 	}
 
@@ -815,9 +658,9 @@
 		try {
 			const res = await familiesAPI.updateSettings(activeFamilyId, { feedGroupingMinutes: next });
 			if (familySettings) familySettings.feedGroupingMinutes = res.data.settings?.feedGroupingMinutes ?? next;
-			notice = 'Feed grouping window updated.';
+			notify('Feed grouping window updated.');
 		} catch (err: any) {
-			error = err.response?.data?.error || 'Could not update the feed grouping window.';
+			fail(err.response?.data?.error || 'Could not update the feed grouping window.');
 		}
 	}
 
@@ -863,9 +706,9 @@
 				if (which === 'digest') familySettings.digestSendHour = res.data.settings?.digestSendHour ?? hour;
 				else familySettings.appointmentSendHour = res.data.settings?.appointmentSendHour ?? hour;
 			}
-			notice = hour === null ? 'Sending time cleared — email goes out as soon as it is due.' : `Email will arrive around ${hourLabel(hour)} on the family's clock.`;
+			notify(hour === null ? 'Sending time cleared — email goes out as soon as it is due.' : `Email will arrive around ${hourLabel(hour)} on the family's clock.`);
 		} catch (err: any) {
-			error = err.response?.data?.error || 'Could not update the sending time.';
+			fail(err.response?.data?.error || 'Could not update the sending time.');
 		}
 	}
 
@@ -905,7 +748,7 @@
 	async function setTimezone(next: string) {
 		if (!activeFamilyId) return;
 		savingFamilySettings = true;
-		error = '';
+		fail('');
 		try {
 			const res = await familiesAPI.updateSettings(activeFamilyId, { timezone: next });
 			const saved = (res.data.settings?.timezone as string | null | undefined) ?? next;
@@ -913,9 +756,9 @@
 			// Applied immediately rather than on the next load, so the appointment
 			// list behind this tab is already reading the new clock.
 			applyTimezone(saved);
-			notice = 'Timezone updated.';
+			notify('Timezone updated.');
 		} catch (err: any) {
-			error = err.response?.data?.error || 'Could not update the timezone.';
+			fail(err.response?.data?.error || 'Could not update the timezone.');
 		} finally {
 			savingFamilySettings = false;
 		}
@@ -938,11 +781,11 @@
 				defaultCategoryOptions: familySettings.defaultCategoryOptions,
 				defaultStageCategories: familySettings.defaultStageCategories,
 			};
-			notice = next
+			notify(next
 				? 'Weekly appointment reminders enabled.'
-				: 'Weekly appointment reminders turned off.';
+				: 'Weekly appointment reminders turned off.');
 		} catch (err: any) {
-			error = err.response?.data?.error || 'Could not update appointment reminders.';
+			fail(err.response?.data?.error || 'Could not update appointment reminders.');
 		} finally {
 			savingFamilySettings = false;
 		}
@@ -996,7 +839,7 @@
 			await familiesAPI.updateSettings(activeFamilyId, { stageCategories: merged });
 			if (familySettings) familySettings.stageCategories = merged;
 		} catch (err: any) {
-			error = err.response?.data?.error || 'Could not update the stage.';
+			fail(err.response?.data?.error || 'Could not update the stage.');
 		}
 	}
 
@@ -1006,9 +849,9 @@
 		try {
 			await familiesAPI.updateSettings(activeFamilyId, { categoryOptions: nextOptions });
 			if (familySettings) familySettings.categoryOptions = nextOptions;
-			notice = 'Category options saved.';
+			notify('Category options saved.');
 		} catch (err: any) {
-			error = err.response?.data?.error || 'Failed to save category options.';
+			fail(err.response?.data?.error || 'Failed to save category options.');
 		} finally {
 			savingFamilySettings = false;
 		}
@@ -1026,11 +869,11 @@
 				defaultCategoryOptions: familySettings.defaultCategoryOptions,
 			};
 			anonymizedPreview = res.data.anonymizedPreview ?? anonymizedPreview;
-			notice = next
+			notify(next
 				? 'Daily anonymized sharing enabled.'
-				: 'Daily anonymized sharing disabled.';
+				: 'Daily anonymized sharing disabled.');
 		} catch (err: any) {
-			error = err.response?.data?.error || 'Failed to update anonymized sharing setting.';
+			fail(err.response?.data?.error || 'Failed to update anonymized sharing setting.');
 		} finally {
 			savingFamilySettings = false;
 		}
@@ -1070,7 +913,7 @@
 		editMemberGender = baby.gender || '';
 		editMemberEmail = baby.email || '';
 		editMemberCategories = Array.isArray(baby.categories) ? [...baby.categories] : [];
-		error = '';
+		fail('');
 	}
 
 	function closeEditMember() {
@@ -1093,14 +936,14 @@
 
 	async function toggleMemberTracking(baby: any) {
 		if (!activeFamilyId) return;
-		error = '';
+		fail('');
 		const next = !baby.trackable;
 		try {
 			await familiesAPI.updateMember(activeFamilyId, Number(baby.id), { trackable: next });
 			await loadFamilies();
-			notice = next ? `${baby.name} will now be tracked.` : `${baby.name} is no longer tracked.`;
+			notify(next ? `${baby.name} will now be tracked.` : `${baby.name} is no longer tracked.`);
 		} catch (err: any) {
-			error = err.response?.data?.error || 'Failed to update tracking.';
+			fail(err.response?.data?.error || 'Failed to update tracking.');
 		}
 	}
 
@@ -1109,11 +952,11 @@
 		if (!confirm(`Delete "${editMemberName.trim() || editingMember.name}" and ALL of their records? This cannot be undone.`)) return;
 		try {
 			await familiesAPI.removeMember(activeFamilyId, Number(editingMember.id));
-			notice = 'Member deleted.';
+			notify('Member deleted.');
 			editingMember = null;
 			await loadFamilies();
 		} catch (err: any) {
-			error = err.response?.data?.error || 'Failed to delete member.';
+			fail(err.response?.data?.error || 'Failed to delete member.');
 		}
 	}
 
@@ -1129,11 +972,11 @@
 				email: editMemberEmail.trim() || null,
 				categories: editMemberCategories,
 			});
-			notice = 'Member updated.';
+			notify('Member updated.');
 			editingMember = null;
 			await loadFamilies();
 		} catch (err: any) {
-			error = err.response?.data?.error || 'Failed to update member.';
+			fail(err.response?.data?.error || 'Failed to update member.');
 		}
 	}
 
@@ -1141,10 +984,10 @@
 		if (!email || !activeFamilyId) return;
 		try {
 			await familiesAPI.invite(activeFamilyId, email);
-			notice = `Invite sent to ${email}.`;
+			notify(`Invite sent to ${email}.`);
 			await loadInvitations();
 		} catch (err: any) {
-			error = err.response?.data?.error || 'Failed to send invite.';
+			fail(err.response?.data?.error || 'Failed to send invite.');
 		}
 	}
 
@@ -1154,40 +997,13 @@
 		if (!file || !editingMember || !activeFamilyId) return;
 		try {
 			await familiesAPI.uploadAvatar(activeFamilyId, Number(editingMember.id), file);
-			notice = 'Profile photo updated.';
+			notify('Profile photo updated.');
 			await loadFamilies();
 		} catch (err: any) {
-			error = err.response?.data?.error || 'Failed to upload photo.';
+			fail(err.response?.data?.error || 'Failed to upload photo.');
 		}
 	}
 
-
-	// Live per-side elapsed (ms) = frozen total + live running time.
-
-	// ----- Connection-resilience: persisted timers + offline outbox -----
-	// Timer state is written to localStorage on every mutation so a reload or a
-	// dropped connection mid-session does not lose accumulated time. The outbox
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-	
 
 	onMount(async () => {
 		if (browser) {
@@ -1197,16 +1013,14 @@
 			if (verifyParam) {
 				try {
 					const res = await authAPI.verifyEmail(verifyParam);
-					notice = res.data.message || 'Email verified.';
+					notify(res.data.message || 'Email verified.');
 				} catch (err: any) {
-					error = err.response?.data?.error || 'Verification failed.';
+					fail(err.response?.data?.error || 'Verification failed.');
 				}
 				if (window.history.replaceState) window.history.replaceState(null, '', window.location.pathname);
 			}
 			if (resetParam) {
-				pendingResetToken = resetParam;
-				showForgot = true;
-				notice = 'Enter a new password to complete your password reset.';
+				notify('Enter a new password to complete your password reset.');
 				if (window.history.replaceState) window.history.replaceState(null, '', window.location.pathname);
 			}
 			const token = localStorage.getItem('token');
@@ -1222,22 +1036,7 @@
 		}
 	});
 </script>
- 				{#if notice || error}
-					<div class="fixed top-4 right-4 z-[70] w-full max-w-sm space-y-2" role="status" aria-live="polite">
-						{#if notice}
-							<div class="bg-surface border border-line-soft text-ink shadow-card px-4 py-3 rounded-md text-sm">
-								<span class="inline-flex items-center gap-2"><Check class="w-4 h-4 text-accent shrink-0" aria-hidden="true" />
-								{notice}<button type="button" on:click={dismissFeedback} class="ml-auto text-ink-soft hover:text-ink shrink-0" aria-label="Dismiss">&times;</button></span>
-							</div>
-						{/if}
-						{#if error}
-							<div class="bg-danger border border-danger text-danger-text px-4 py-3 rounded-md text-sm">
-								<span class="inline-flex items-center gap-2"><AlertCircle class="w-4 h-4 shrink-0" aria-hidden="true" />
-								{error}<button type="button" on:click={dismissFeedback} class="ml-auto hover:opacity-70 shrink-0" aria-label="Dismiss">&times;</button></span>
-							</div>
-						{/if}
-					</div>
-				{/if}
+ 				<FeedbackToasts />
  				<div class="max-w-4xl mx-auto">
 					{#if settingsTab === null}
 					<div class="flex items-center gap-3 mb-6">

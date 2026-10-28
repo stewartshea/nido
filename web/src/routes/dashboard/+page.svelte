@@ -10,16 +10,19 @@
 	import { authStore, authActions } from '$lib/stores/authStore';
 	import { uiStore, uiActions } from '$lib/stores/uiStore';
 	import { applyTimezone } from '$lib/stores/timezoneStore';
+	import { notify, fail } from '$lib/stores/feedback';
 	import ToggleSwitch from '$lib/components/ToggleSwitch.svelte';
 	import Avatar from '$lib/components/Avatar.svelte';
+	import FeedbackToasts from '$lib/components/FeedbackToasts.svelte';
 	import { loadListsCache, saveListsCache } from '$lib/cache';
-	import { flushOutbox } from '$lib/logging/outbox';
+	import { startOutboxSync } from '$lib/logging/outbox';
+	import { computeFeedReports } from '$lib/logging/feedStats';
 	import MemberActivity from '$lib/components/logging/MemberActivity.svelte';
 	import MemberSwitcher from '$lib/components/logging/MemberSwitcher.svelte';
 	import StockGlance from '$lib/components/logging/StockGlance.svelte';
 	import LogDrawer from '$lib/components/logging/LogDrawer.svelte';
 	import Trends from '$lib/components/logging/Trends.svelte';
-	import { Users, Home, AlertCircle, Check } from 'lucide-svelte';
+	import { Users, Home } from 'lucide-svelte';
 
 	import { CATEGORIES, defaultMemberId } from '$lib/shared';
 
@@ -31,18 +34,6 @@
 	}
 
 	let isAuthenticated = false;
-	let error = '';
-	let notice = '';
-	let feedbackTimer: ReturnType<typeof setTimeout> | undefined;
-	function dismissFeedback() {
-		notice = '';
-		error = '';
-		if (feedbackTimer) { clearTimeout(feedbackTimer); feedbackTimer = undefined; }
-	}
-	$: if (notice || error) {
-		if (feedbackTimer) clearTimeout(feedbackTimer);
-		feedbackTimer = setTimeout(() => { feedbackTimer = undefined; notice = ''; error = ''; }, 6000);
-	}
 
 	let email = '';
 	let password = '';
@@ -189,38 +180,14 @@
 				journalEntries: next.journalEntries, vitals: next.vitals,
 			});
 		} catch (e: any) {
-			notice = e.response?.data?.error || 'Could not load older records.';
+			notify(e.response?.data?.error || 'Could not load older records.');
 		} finally {
 			loadingMore = false;
 		}
 	}
 
-	// Breast-feeding totals + last side, derived from loaded feedings.
-
-	function avg(a: number[]): number | null {
-		if (a.length === 0) return null;
-		return a.reduce((s, x) => s + x, 0) / a.length;
-	}
-
-	$: feedReports = (() => {
-		const now = Date.now();
-		const dayAgo = now - 24 * 3600 * 1000;
-		const monthAgo = now - 30 * 24 * 3600 * 1000;
-		const f = feedings.filter((x) => x.type === 'breast' || x.type === 'bottle' || x.type === 'formula');
-		const withDuration = f.filter((x) => x.duration && x.duration > 0);
-		const sizes1d = f.filter((x) => new Date(x.start_time).getTime() >= dayAgo && x.amount).map((x) => Number(x.amount));
-		const sizes30d = f.filter((x) => new Date(x.start_time).getTime() >= monthAgo && x.amount).map((x) => Number(x.amount));
-		const dur1d = withDuration.filter((x) => new Date(x.start_time).getTime() >= dayAgo).map((x) => Number(x.duration));
-		const dur30d = withDuration.filter((x) => new Date(x.start_time).getTime() >= monthAgo).map((x) => Number(x.duration));
-		return {
-			count1d: f.filter((x) => new Date(x.start_time).getTime() >= dayAgo).length,
-			count30d: f.length,
-			avgSize1d: avg(sizes1d),
-			avgSize30d: avg(sizes30d),
-			avgDur1d: avg(dur1d),
-			avgDur30d: avg(dur30d),
-		};
-	})();
+	// Quick feed reports over the loaded feedings (see $lib/logging/feedStats).
+	$: feedReports = computeFeedReports(feedings);
 
 	async function refreshSummary() {
 		if (!selectedMemberId) return;
@@ -309,9 +276,9 @@
 			});
 		} catch (e: any) {
 			if (!cached) {
-				error = e.response?.data?.error || 'Failed to load tracking data.';
+				fail(e.response?.data?.error || 'Failed to load tracking data.');
 			} else {
-				notice = 'Showing cached activities — will refresh when connected.';
+				notify('Showing cached activities — will refresh when connected.');
 			}
 			console.error(e);
 		}
@@ -381,10 +348,10 @@
 			const status = e.response?.status;
 			if (status === 401 || status === 403) {
 				handleLogout();
-				error = 'Your session has expired. Please sign in again.';
+				fail('Your session has expired. Please sign in again.');
 				return;
 			}
-			error = e.response?.data?.error || 'Failed to load your families.';
+			fail(e.response?.data?.error || 'Failed to load your families.');
 			console.error(e);
 		}
 	}
@@ -524,9 +491,9 @@
 			// mutating the object in place does not re-run the reactive statement,
 			// so the panel kept showing the old layout until a hard reload.
 			profiles = profiles.map((p) => (Number(p.id) === Number(selectedMember.id) ? { ...p, dashboardTiles: tiles } : p));
-			notice = 'Dashboard panel saved.';
+			notify('Dashboard panel saved.');
 		} catch (err: any) {
-			error = err.response?.data?.error || 'Failed to update dashboard tiles';
+			fail(err.response?.data?.error || 'Failed to update dashboard tiles');
 		}
 	}
 
@@ -550,22 +517,10 @@
 
 	
 
-	let outboxTimer: number | undefined;
-
-	async function syncOutbox() {
-		const synced = await flushOutbox({
-			feeding: (payload) => feedingAPI.create(payload),
-			sleep: (payload) => sleepAPI.create(payload),
-		});
-		if (synced > 0) {
-			notice = `${synced} offline record(s) synced.`;
-			await refreshLists();
-			await refreshSummary();
-		}
-	}
+	let stopOutboxSync: (() => void) | undefined;
 
 	async function onLogged(e: CustomEvent<{ message: string }>) {
-		notice = e.detail.message;
+		notify(e.detail.message);
 		await refreshLists();
 		await refreshSummary();
 	}
@@ -578,16 +533,16 @@
 			if (verifyParam) {
 				try {
 					const res = await authAPI.verifyEmail(verifyParam);
-					notice = res.data.message || 'Email verified.';
+					notify(res.data.message || 'Email verified.');
 				} catch (err: any) {
-					error = err.response?.data?.error || 'Verification failed.';
+					fail(err.response?.data?.error || 'Verification failed.');
 				}
 				if (window.history.replaceState) window.history.replaceState(null, '', window.location.pathname);
 			}
 			if (resetParam) {
 				pendingResetToken = resetParam;
 				showForgot = true;
-				notice = 'Enter a new password to complete your password reset.';
+				notify('Enter a new password to complete your password reset.');
 				if (window.history.replaceState) window.history.replaceState(null, '', window.location.pathname);
 			}
 			const token = localStorage.getItem('token');
@@ -599,9 +554,12 @@
 			if (isAuthenticated) {
 				await Promise.all([loadFamilies(), refreshUserProfile()]);
 				if (isPanelAdmin) await loadAppSettings();
-				// Reconnect resilience: push anything queued while offline.
-				await syncOutbox();
-				outboxTimer = window.setInterval(() => syncOutbox(), 60 * 1000);
+				// Reconnect resilience: push anything queued while offline, then
+				// keep replaying every 60s until the page goes away.
+				stopOutboxSync = startOutboxSync(async () => {
+					await refreshLists();
+					await refreshSummary();
+				});
 			}
 			// Older builds kept one never-expiring timer blob per member; it is what
 			// made finished feeds reappear, so drop any that are still around.
@@ -613,25 +571,10 @@
 	});
 
 	onDestroy(() => {
-		if (browser && outboxTimer) window.clearInterval(outboxTimer);
+		if (stopOutboxSync) stopOutboxSync();
 	});
 </script>
-				{#if notice || error}
-					<div class="fixed top-4 right-4 z-[70] w-full max-w-sm space-y-2" role="status" aria-live="polite">
-						{#if notice}
-							<div class="bg-surface border border-line-soft text-ink shadow-card px-4 py-3 rounded-md text-sm">
-								<span class="inline-flex items-center gap-2"><Check class="w-4 h-4 text-accent shrink-0" aria-hidden="true" />
-								{notice}<button type="button" on:click={dismissFeedback} class="ml-auto text-ink-soft hover:text-ink shrink-0" aria-label="Dismiss">&times;</button></span>
-							</div>
-						{/if}
-						{#if error}
-							<div class="bg-danger border border-danger text-danger-text px-4 py-3 rounded-md text-sm">
-								<span class="inline-flex items-center gap-2"><AlertCircle class="w-4 h-4 shrink-0" aria-hidden="true" />
-								{error}<button type="button" on:click={dismissFeedback} class="ml-auto hover:opacity-70 shrink-0" aria-label="Dismiss">&times;</button></span>
-							</div>
-						{/if}
-					</div>
-				{/if}
+				<FeedbackToasts />
 				<div class="max-w-4xl mx-auto space-y-6 md:space-y-4 md:space-y-6">
 					<section>
 						<div class="flex items-center justify-between mb-6">
@@ -745,6 +688,6 @@
 	memberId={selectedMemberId}
 	members={profiles}
 	on:saved={onLogged}
-	on:error={(e) => (error = e.detail.message)}
-	on:notice={(e) => (notice = e.detail.message)}
+	on:error={(e) => fail(e.detail.message)}
+	on:notice={(e) => notify(e.detail.message)}
 />

@@ -120,12 +120,12 @@
   one before exposing an upload path to untrusted or high-volume traffic.
 - **Offline queueing**: client-side writes that might fail offline are
   queued under the `nido.outbox` localStorage key (capped to the most
-  recent 200 entries) and flushed on page mount plus every 60s
-  (`enqueueRecord()` / `flushOutbox()`, currently duplicated per-page in
-  family/dashboard/home/settings). Reuse this exact shape for new
-  offline-capable mutations rather than inventing a new queue — and prefer
-  extracting it to `$lib/shared.ts` the next time one of these files is
-  touched, since it's already duplicated 4x.
+  recent 200 entries) and flushed on page mount plus every 60s. The
+  mechanism lives in `web/src/lib/logging/outbox.ts` (`enqueueRecord()` /
+  `flushOutbox()`), and the wiring is a single `startOutboxSync()` call
+  per page — the per-page copies that used to be duplicated 4x were
+  extracted there, closing issue #57. Reuse this exact shape for new
+  offline-capable mutations rather than inventing a new queue.
 - **Auth tokens**: JWTs are signed with a 30-day expiry
   (`jwt.sign(..., { expiresIn: '30d' })` in `api/src/routes/auth.ts`) and
   carry `userId`/`email`/`familyId`/`role`. Never mint a token without an
