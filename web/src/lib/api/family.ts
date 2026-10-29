@@ -36,14 +36,31 @@ export const subjectAPI = {
   delete: (id: number) => api.delete(`/profiles/${id}`),
 };
 
-// Family API functions — family-first model
+/** A residence — a `homes` row (the H in the HOME modules). */
+export interface Home {
+  id: number;
+  name: string;
+  kind: string;
+  address: string | null;
+  timezone: string | null;
+  isPrimary: boolean;
+  picture: number | null;
+}
+
 export const familiesAPI = {
   list: () => api.get('/families'),
   create: (data: { name: string; member?: { type: string; name: string; birthDate?: string; gender?: string; email?: string } }) =>
     api.post('/families', data),
   members: (familyId: string) => api.get(`/families/${familyId}/members`),
   /** The family's residences — `homes` rows (the H in the HOME modules). */
-  homes: (familyId: string) => api.get<{ homes: { id: number; name: string; kind: string; address: string | null; timezone: string | null; isPrimary: boolean }[] }>(`/families/${familyId}/homes`),
+  homes: (familyId: string) => api.get<{ homes: Home[] }>(`/families/${familyId}/homes`),
+  addHome: (familyId: string, data: { name: string; kind?: string; address?: string | null; timezone?: string | null; isPrimary?: boolean }) =>
+    api.post<{ home: Home }>(`/families/${familyId}/homes`, data),
+  updateHome: (familyId: string, id: number, data: Partial<{ name: string; kind: string; address: string | null; timezone: string | null; isPrimary: boolean }>) =>
+    api.put<{ home: Home }>(`/families/${familyId}/homes/${id}`, data),
+  deleteHome: (familyId: string, id: number) => api.delete(`/families/${familyId}/homes/${id}`),
+  getHomePicture: (familyId: string, id: number) =>
+    api.get(`/families/${familyId}/homes/${id}/picture`, { responseType: 'blob' }),
   accounts: () => api.get<{ accounts: FamilyAccount[] }>('/families/accounts'),
   addMember: (familyId: string, data: { type?: string; name: string; birthDate?: string; gender?: string; email?: string; categories?: string[]; stage?: string; trackable?: boolean }) =>
     api.post(`/families/${familyId}/members`, data),

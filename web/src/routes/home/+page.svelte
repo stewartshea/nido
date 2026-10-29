@@ -7,6 +7,8 @@
 	import { feedingAPI, diaperAPI, sleepAPI, growthAPI, milestoneAPI, vaccinationAPI, moodAPI, journalAPI } from '$lib/api/records';
 	import { importsAPI } from '$lib/api/system';
 	import { assetsAPI } from '$lib/api/assets';
+	import HomeForm from '$lib/components/logging/HomeForm.svelte';
+	import HomePicture from '$lib/components/HomePicture.svelte';
 	import { authStore, authActions } from '$lib/stores/authStore';
 	import { uiStore, uiActions } from '$lib/stores/uiStore';
 	import { notify, fail } from '$lib/stores/feedback';
@@ -64,8 +66,13 @@
 	// with its assets. The residence IS the homes row — never a home asset —
 	// and assets that carry no homeId stay family-wide, shown once at the
 	// end rather than duplicated under every home.
-	let residences: { id: number; name: string; address: string | null; isPrimary: boolean }[] = [];
+	let residences: { id: number; name: string; kind: string; address: string | null; isPrimary: boolean; picture: number | null }[] = [];
 	let homeAssets: any[] = [];
+	// Management state (issue #76): the homes registry was read-only before.
+	let showHomeForm = false;
+	let editingHome: any = null;
+	let homeNotice = '';
+	let homeError = '';
 
 	async function loadHomesAndAssets() {
 		const familyId = currentFamilyId();
@@ -86,6 +93,42 @@
 
 	function assetsAt(homeId: number | null): any[] {
 		return homeAssets.filter((a) => (a.homeId ?? null) === homeId);
+	}
+
+	function onHomeSaved() {
+		showHomeForm = false;
+		editingHome = null;
+		homeNotice = '';
+		loadHomesAndAssets();
+	}
+
+	function onHomeDeleted() {
+		showHomeForm = false;
+		editingHome = null;
+		// The API promotes a survivor when the primary goes; refresh shows it.
+		loadHomesAndAssets();
+	}
+
+	/** The picture input's change: upload, then refresh the card. */
+	async function onPictureChosen(event: Event, homeId: number) {
+		const input = event.currentTarget as HTMLInputElement;
+		const file = input.files?.[0];
+		input.value = '';
+		if (!file) return;
+		homeError = '';
+		const familyId = currentFamilyId();
+		if (!familyId) return;
+		try {
+			const form = new FormData();
+			form.append('file', file);
+			// familiesAPI has no FormData upload for homes; the route matches
+			// the member-avatar shape, so post it directly through the client.
+			const { default: client } = await import('$lib/api/client');
+			await client.post(`/families/${familyId}/homes/${homeId}/picture`, form);
+			await loadHomesAndAssets();
+		} catch (e: any) {
+			homeError = e?.response?.data?.error || 'Could not upload that picture.';
+		}
 	}
 
 	// Quick feed reports over the loaded feedings (see $lib/logging/feedStats).
@@ -249,34 +292,59 @@
 				</div>
 
 				{#if profiles.length > 0}
+					{@const fid = currentFamilyId()}
 					<div class="bg-surface rounded-lg shadow-card p-4 md:p-6 mb-6" data-testid="homes-card">
 						<div class="flex items-baseline justify-between mb-3">
 							<h3 class="text-xl font-display font-semibold">Homes</h3>
-							<a href="/assets" class="text-sm font-semibold text-accent hover:underline">Manage assets &rarr;</a>
+							<div class="flex items-center gap-3">
+								<button type="button" class="text-sm font-semibold text-accent hover:underline" on:click={() => { showHomeForm = true; editingHome = null; }}>
+									+ Add home
+								</button>
+								<a href="/assets" class="text-sm font-semibold text-accent hover:underline">Manage assets &rarr;</a>
+							</div>
 						</div>
+
+						{#if showHomeForm}
+							<HomeForm familyId={fid ?? ''} editing={editingHome}
+								on:save={onHomeSaved} on:delete={onHomeDeleted}
+								on:cancel={() => { showHomeForm = false; editingHome = null; }} />
+						{/if}
+						{#if homeNotice}<p class="text-sm text-ink-soft mb-3" role="status">{homeNotice}</p>{/if}
+						{#if homeError}<p class="text-sm text-danger-text mb-3">{homeError}</p>{/if}
+
 						{#if residences.length === 0}
 							<div class="border border-dashed border-line rounded-md p-4 md:p-6 text-center text-ink-soft">
 								<p class="text-lg font-display flex items-center justify-center gap-2"><Home class="w-5 h-5" /> Your first home will appear here</p>
-								<p class="text-sm mt-2">Add a residence in Settings to start scoping assets to it.</p>
+								<p class="text-sm mt-2">Add a residence to start scoping assets to it.</p>
 							</div>
 						{:else}
 							<ul class="grid gap-3">
 								{#each residences as home (home.id)}
-									<li class="border border-line-soft rounded-md p-3">
-										<div class="flex items-baseline justify-between gap-2">
-											<p class="font-semibold text-ink">
-												{home.name}{#if home.isPrimary}<span class="ml-2 text-xs font-normal text-ink-soft">primary</span>{/if}
-											</p>
-											<a href="/assets?homeId={home.id}" class="text-xs text-accent hover:underline">
-												{assetsAt(home.id).length} asset{assetsAt(home.id).length === 1 ? '' : 's'} &rarr;
-											</a>
+									<li class="border border-line-soft rounded-md p-3 flex gap-3" data-testid={`home-card-${home.id}`}>
+										<HomePicture familyId={fid} homeId={home.id} picture={home.picture} alt={home.name} />
+										<div class="min-w-0 flex-1">
+											<div class="flex items-baseline justify-between gap-2">
+												<p class="font-semibold text-ink">
+													{home.name}{#if home.isPrimary}<span class="ml-2 text-xs font-normal text-ink-soft">primary</span>{/if}
+												</p>
+												<a href="/assets?homeId={home.id}" class="text-xs text-accent hover:underline">
+													{assetsAt(home.id).length} asset{assetsAt(home.id).length === 1 ? '' : 's'} &rarr;
+												</a>
+											</div>
+											{#if home.address}<p class="text-sm text-ink-soft mt-0.5">{home.address}</p>{/if}
+											{#if assetsAt(home.id).length > 0}
+												<p class="text-xs text-ink-soft mt-1">
+													{assetsAt(home.id).map((a) => a.name).join(', ')}
+												</p>
+											{/if}
+											<div class="flex items-center gap-3 mt-1.5 text-xs">
+												<button type="button" class="underline text-ink-soft hover:text-ink" on:click={() => { showHomeForm = true; editingHome = home; }}>Edit</button>
+												<label class="underline text-ink-soft hover:text-ink cursor-pointer">
+													Picture
+													<input type="file" accept="image/*" class="hidden" on:change={(e) => onPictureChosen(e, home.id)} />
+												</label>
+											</div>
 										</div>
-										{#if home.address}<p class="text-sm text-ink-soft mt-0.5">{home.address}</p>{/if}
-										{#if assetsAt(home.id).length > 0}
-											<p class="text-xs text-ink-soft mt-1">
-												{assetsAt(home.id).map((a) => a.name).join(', ')}
-											</p>
-										{/if}
 									</li>
 								{/each}
 								{#if assetsAt(null).length > 0}

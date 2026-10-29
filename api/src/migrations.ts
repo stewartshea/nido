@@ -1264,6 +1264,20 @@ ALTER TABLE inventory_adjustments ADD COLUMN source TEXT DEFAULT 'manual';
       raw.exec('CREATE INDEX IF NOT EXISTS idx_home_assets_home ON home_assets(home_id)');
     },
   },
+  {
+    version: 43,
+    name: 'homes-picture',
+    // The homes registry grows a management surface (issue #76): names,
+    // addresses, and a picture per residence. `picture` is the attachment-id
+    // marker, the same shape `family_members.avatar` uses — the bytes live in
+    // the encrypted blob store, attachments carries the row.
+    run: (raw) => {
+      const cols = raw.pragma('table_info(homes)') as Array<{ name: string }>;
+      if (!cols.some((c) => c.name === 'picture')) {
+        raw.exec('ALTER TABLE homes ADD COLUMN picture TEXT');
+      }
+    },
+  },
 ];
 
 /**

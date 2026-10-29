@@ -103,6 +103,29 @@ test('assets: home scoping — lives at, the Homes card, and the deep link (74)'
 	await expect(cards).toHaveCount(1);
 });
 
+test('homes: add the cabin, rename it, and see it on the card (76)', async ({ page }) => {
+	await page.goto('/home');
+	const card = page.getByTestId('homes-card');
+	await expect(card).toBeVisible();
+
+	await page.getByRole('button', { name: '+ Add home' }).click();
+	await expect(page.getByTestId('home-form')).toBeVisible();
+	await page.getByPlaceholder('The Cabin').fill('The Cabin');
+	await page.getByLabel('Kind').selectOption('cabin');
+	await page.getByPlaceholder('Lake Road 12').fill('Lake Road 12');
+	await page.getByRole('button', { name: 'Add home', exact: true }).click();
+
+	// It joins the card beside the seeded primary, with its address.
+	await expect(card.getByText('The Cabin')).toBeVisible();
+	await expect(card.getByText('Lake Road 12')).toBeVisible();
+
+	// Edit: rename — and check primary moved when promoted.
+	await card.getByRole('button', { name: 'Edit' }).last().click();
+	await page.getByPlaceholder('The Cabin').fill('The Cabin at the Lake');
+	await page.getByRole('button', { name: 'Save changes' }).click();
+	await expect(card.getByText('The Cabin at the Lake')).toBeVisible();
+});
+
 // The shared browser session carries into whichever spec runs next (the
 // smoke suite re-registers on a signed-out page), so leave it signed out.
 test('sign out after the asset suite', async ({ page }) => {
