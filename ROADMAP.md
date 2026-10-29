@@ -29,6 +29,7 @@ that board by `scripts/roadmap-sync.mjs` so it cannot quietly disagree with them
 | [70](https://github.com/stewartshea/nido/issues/70) | Feature: HOME module — service providers (family address book) | Todo | P2-Medium | Home and inventory |
 | [71](https://github.com/stewartshea/nido/issues/71) | Feature: HOME module — category templates & the add-an-asset populate moment | Todo | P2-Medium | Home and inventory |
 | [74](https://github.com/stewartshea/nido/issues/74) | Feature: HOME module — home scoping for assets (home_id) + the real Homes card on /home | Todo | P2-Medium | Home and inventory |
+| [76](https://github.com/stewartshea/nido/issues/76) | Feature: HOME — homes management (create/edit/delete residences, pictures) | Todo | P2-Medium | Home and inventory |
 | [13](https://github.com/stewartshea/nido/issues/13) | Feature: formal release strategy (versioning, changelog, tagging) | Done | P3-Low | Platform |
 
 <!-- drift:start -->

@@ -26,6 +26,8 @@ const identitySchema = z.object({
 const createAssetSchema = z.object({
 	name: z.string().trim().min(1).max(200),
 	category: z.enum(ASSET_CATEGORY_IDS),
+	/** The residence this asset lives at; null/omitted = family-wide. */
+	homeId: z.number().int().positive().nullable().optional(),
 	identity: identitySchema.default({}),
 	acquiredAt: z.string().regex(DATE_ONLY, 'Use a calendar date (YYYY-MM-DD)').nullable().optional(),
 	purchasePrice: z.number().int().min(0).max(100_000_000).nullable().optional(),   // cents
@@ -35,6 +37,7 @@ const createAssetSchema = z.object({
 const updateAssetSchema = z.object({
 	name: z.string().trim().min(1).max(200).optional(),
 	category: z.enum(ASSET_CATEGORY_IDS).optional(),
+	homeId: z.number().int().positive().nullable().optional(),
 	identity: identitySchema.optional(),
 	acquiredAt: z.string().regex(DATE_ONLY).nullable().optional(),
 	purchasePrice: z.number().int().min(0).max(100_000_000).nullable().optional(),
@@ -44,6 +47,20 @@ const updateAssetSchema = z.object({
 async function householdIdFor(db: any, userId: string): Promise<number | null> {
 	const res = await db.execute({ sql: 'SELECT household_id FROM user_households WHERE user_id = ?', args: [userId] });
 	return res.rows[0] ? Number((res.rows[0] as any).household_id) : null;
+}
+
+/**
+ * A home id, only when it belongs to the caller's family.
+ *
+ * Same scoping rule as an asset: a wrong-family home id is rejected, not
+ * silently kept — otherwise `homeId` would be a probe for which homes exist.
+ */
+async function homeExistsForFamily(db: any, homeId: number, householdId: number): Promise<boolean> {
+	const res = await db.execute({
+		sql: 'SELECT 1 FROM homes WHERE id = ? AND household_id = ? LIMIT 1',
+		args: [homeId, householdId],
+	});
+	return res.rows.length > 0;
 }
 
 /**
@@ -79,13 +96,18 @@ homeAssetRoutes.get('/', async (c) => {
 
 	const includeArchived = c.req.query('includeArchived') === 'true';
 	const archivedFilter = includeArchived ? '' : 'AND archived_at IS NULL';
+	// `?homeId=` scopes the list to one residence's assets (the /home Homes
+	// card); null homeId is NOT expressible here — "family-wide" is simply
+	// no filter, so an unscoped call stays the default.
+	const homeIdParam = c.req.query('homeId');
+	const homeFilter = homeIdParam ? 'AND home_id = ?' : '';
 	const res = await db.execute({
 		sql: `
 			SELECT * FROM home_assets
-			WHERE household_id = ? ${archivedFilter}
+			WHERE household_id = ? ${archivedFilter} ${homeFilter}
 			ORDER BY archived_at IS NOT NULL, name COLLATE NOCASE, id
 		`,
-		args: [householdId],
+		args: homeIdParam ? [householdId, Number(homeIdParam)] : [householdId],
 	});
 	return c.json({ assets: (res.rows as unknown as AssetRow[]).map(shapeAsset) });
 });
@@ -104,6 +126,10 @@ homeAssetRoutes.post('/', zValidator('json', createAssetSchema), async (c) => {
 	if (householdId === null) return c.json({ error: 'Not a member of any family' }, 403);
 
 	const body = c.req.valid('json');
+	// A home id that is not this family's is rejected, not silently stored.
+	if (body.homeId != null && !(await homeExistsForFamily(db, body.homeId, householdId))) {
+		return c.json({ error: 'Home not found' }, 404);
+	}
 	const identity = {
 		manufacturer: body.identity.manufacturer ?? null,
 		model: body.identity.model ?? null,
@@ -113,12 +139,12 @@ homeAssetRoutes.post('/', zValidator('json', createAssetSchema), async (c) => {
 	const res = await db.execute({
 		sql: `
 			INSERT INTO home_assets
-			  (household_id, name, category, manufacturer, model, model_year, serial,
+			  (household_id, home_id, name, category, manufacturer, model, model_year, serial,
 			   acquired_at, purchase_price, notes, created_by)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		`,
 		args: [
-			householdId, body.name, body.category,
+			householdId, body.homeId ?? null, body.name, body.category,
 			identity.manufacturer, identity.model, identity.model_year, identity.serial,
 			body.acquiredAt ?? null, body.purchasePrice ?? null, body.notes ?? null, c.get('userId'),
 		],
@@ -147,19 +173,23 @@ homeAssetRoutes.put('/:id', zValidator('json', updateAssetSchema), async (c) => 
 	if (!previous) return c.json({ error: 'Asset not found' }, 404);
 
 	const body = c.req.valid('json');
+	if (body.homeId != null && !(await homeExistsForFamily(db, body.homeId, householdId))) {
+		return c.json({ error: 'Home not found' }, 404);
+	}
 	const identity = identityMerge(previous, body.identity ?? {});
 	const updatedAt = new Date().toISOString();
 
 	await db.execute({
 		sql: `
 			UPDATE home_assets SET
-			  name = ?, category = ?, manufacturer = ?, model = ?, model_year = ?,
+			  name = ?, category = ?, home_id = ?, manufacturer = ?, model = ?, model_year = ?,
 			  serial = ?, acquired_at = ?, purchase_price = ?, notes = ?, updated_at = ?
 			WHERE id = ? AND household_id = ?
 		`,
 		args: [
 			body.name ?? previous.name,
 			body.category ?? previous.category,
+			body.homeId === undefined ? previous.home_id : (body.homeId ?? null),
 			identity.manufacturer, identity.model, identity.model_year, identity.serial,
 			body.acquiredAt === undefined ? previous.acquired_at : (body.acquiredAt ?? null),
 			body.purchasePrice === undefined ? previous.purchase_price : (body.purchasePrice ?? null),

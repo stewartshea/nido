@@ -365,21 +365,20 @@
 							<div class="bg-surface rounded-lg shadow-card p-4 md:p-6 mb-6">
 								<h3 class="text-xl font-display font-semibold mb-3">Homes</h3>
 								<p class="text-ink-soft mb-4">
-									Multi-home tracking is coming in a future module — manage property assets, seasonal maintenance,
-									appliance manuals, and household routines for multiple homes.
+									Your residences and what lives at them — the full card is on the Home page.
 								</p>
 								<div class="border border-dashed border-line rounded-md p-4 md:p-6 text-center text-ink-soft">
-									<p class="text-lg font-display flex items-center justify-center gap-2"><Home class="w-5 h-5" /> Your first home will appear here</p>
-									<p class="text-sm mt-2">Home tracking arrives with the Home module.</p>
+									<p class="text-lg font-display flex items-center justify-center gap-2"><Home class="w-5 h-5" /> Homes and their assets live on the Home page</p>
+									<p class="text-sm mt-2"><button type="button" on:click={() => goto('/home')} class="text-accent underline">Go to the Homes card &rarr;</button></p>
 								</div>
 							</div>
 						{/if}
 
 						<div class="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6">
-							<div class="bg-surface rounded-lg shadow p-4 md:p-6 text-center">
+							<a href="/assets" class="bg-surface rounded-lg shadow p-4 md:p-6 text-center hover:shadow-md block">
 								<h3 class="text-lg font-display font-semibold mb-2">Property Assets</h3>
 								<p class="text-ink-soft">Track physical property and appliance inventory.</p>
-							</div>
+							</a>
 							<div class="bg-surface rounded-lg shadow p-4 md:p-6 text-center">
 								<h3 class="text-lg font-display font-semibold mb-2">Maintenance</h3>
 								<p class="text-ink-soft">Seasonal upkeep schedules and service reminders.</p>

@@ -5,8 +5,13 @@ on:
   push:
     branches: [main]
     tags: ["v*"]
+  # Any pull request, not just ones targeting main: a stacked PR (based on
+  # another PR's branch) is deployed by preview.yml exactly like an unstacked
+  # one, and that deployment pins the same immutable sha-<commit> tags this
+  # build pushes — so the images must exist for every PR head, or the preview
+  # job times out waiting for an image that was never built. A fork's token
+  # cannot write packages; the build then validates without pushing.
   pull_request:
-    branches: [main]
 
 env:
   REGISTRY: ghcr.io

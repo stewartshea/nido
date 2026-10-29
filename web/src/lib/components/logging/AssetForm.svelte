@@ -7,11 +7,16 @@
 	// and a category; the identity quartet is optional because it exists to
 	// key manuals and suggestions (PRD §7.4/§7.5), not to gate saving.
 	export let editing: Asset | null = null;
+	// The family's residences, for the "lives at" picker. Empty = none loaded
+	// yet; the select hides and family-wide is the default.
+	export let homes: { id: number; name: string }[] = [];
 
 	const dispatch = createEventDispatcher<{ save: void; cancel: void }>();
 
 	let name = editing?.name ?? '';
 	let category: AssetCategoryId = editing?.category ?? 'vehicle';
+	// null = family-wide ("ours"), not a data loss — the default.
+	let homeId: number | null = editing?.homeId ?? null;
 	let manufacturer = editing?.identity.manufacturer ?? '';
 	let model = editing?.identity.model ?? '';
 	let modelYear = editing?.identity.modelYear ? String(editing.identity.modelYear) : '';
@@ -35,6 +40,7 @@
 		const data = {
 			name: name.trim(),
 			category,
+			homeId,
 			identity: {
 				manufacturer: manufacturer.trim() || null,
 				model: model.trim() || null,
@@ -70,11 +76,22 @@
 				<option value="vehicle">Vehicle</option>
 				<option value="appliance">Appliance</option>
 				<option value="hvac">Heating &amp; cooling</option>
-				<option value="structure">Home &amp; structure</option>
+				<option value="structure">Structures &amp; improvements</option>
 				<option value="outdoor">Yard &amp; outdoor</option>
 				<option value="other">Other</option>
 			</select>
 		</label>
+		{#if homes.length > 0}
+			<label class="text-sm text-ink-soft">
+				Lives at
+				<select class="w-full mt-1 px-3 py-2 border border-line rounded-md bg-page text-ink" bind:value={homeId}>
+					<option value={null}>Family-wide — no one home</option>
+					{#each homes as home (home.id)}
+						<option value={home.id}>{home.name}</option>
+					{/each}
+				</select>
+			</label>
+		{/if}
 		<label class="text-sm text-ink-soft">
 			Acquired (YYYY-MM-DD)
 			<input type="date" class="w-full mt-1 px-3 py-2 border border-line rounded-md bg-page text-ink" bind:value={acquiredAt} />

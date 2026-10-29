@@ -28,7 +28,9 @@ export const ASSET_CATEGORIES: ReadonlyArray<{ id: AssetCategoryId; label: strin
 	{ id: 'vehicle', label: 'Vehicle' },
 	{ id: 'appliance', label: 'Appliance' },
 	{ id: 'hvac', label: 'Heating & cooling' },
-	{ id: 'structure', label: 'Home & structure' },
+	// Structure = improvements at a residence (shed, fence, driveway, sump) —
+	// the residence itself is a `homes` row, never an asset (PRD §2.1).
+	{ id: 'structure', label: 'Structures & improvements' },
 	{ id: 'outdoor', label: 'Yard & outdoor' },
 	{ id: 'other', label: 'Other' },
 ];
@@ -41,6 +43,8 @@ export function isAssetCategory(value: unknown): value is AssetCategoryId {
 export interface AssetRow {
 	id: number;
 	household_id: number;
+	/** The residence this asset lives at, or null for family-wide (PRD §2.1). */
+	home_id: number | null;
 	name: string;
 	category: string;
 	manufacturer: string | null;
@@ -75,6 +79,8 @@ export interface Asset {
 	id: number;
 	name: string;
 	category: AssetCategoryId;
+	/** The residence this asset lives at: a homes row id, or null = family-wide. */
+	homeId: number | null;
 	identity: AssetIdentity;
 	acquiredAt: string | null;
 	/** Cents. Kept integer so a cost rollup never invents precision. */
@@ -96,6 +102,7 @@ export function shapeAsset(row: AssetRow): Asset {
 		id: Number(row.id),
 		name: String(row.name),
 		category: isAssetCategory(row.category) ? row.category : 'other',
+		homeId: row.home_id === null || row.home_id === undefined ? null : Number(row.home_id),
 		identity: {
 			manufacturer: row.manufacturer ?? null,
 			model: row.model ?? null,
