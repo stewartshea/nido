@@ -162,6 +162,30 @@ export interface RegistryView {
   settings: RegistrySettingsView;
 }
 
+/** The controlled vocabulary of home asset categories (API is the source of truth). */
+export type AssetCategoryId = 'vehicle' | 'appliance' | 'hvac' | 'structure' | 'outdoor' | 'other';
+
+/** A durable thing the family owns that needs care. Not inventory stock. */
+export interface Asset {
+	id: number;
+	name: string;
+	category: AssetCategoryId;
+	/** The identity quartet: keys manuals and the "add a car" populate moment. */
+	identity: {
+		manufacturer: string | null;
+		model: string | null;
+		modelYear: number | null;
+		serial: string | null;
+	};
+	acquiredAt: string | null;
+	/** Cents. Kept integer so a cost rollup never invents precision. */
+	purchasePrice: number | null;
+	notes: string | null;
+	archivedAt: string | null;
+	createdAt: string | null;
+	updatedAt: string | null;
+}
+
 export interface InventoryItem {
 	id: number;
 	memberId: number | null;
