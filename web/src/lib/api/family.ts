@@ -42,6 +42,8 @@ export const familiesAPI = {
   create: (data: { name: string; member?: { type: string; name: string; birthDate?: string; gender?: string; email?: string } }) =>
     api.post('/families', data),
   members: (familyId: string) => api.get(`/families/${familyId}/members`),
+  /** The family's residences — `homes` rows (the H in the HOME modules). */
+  homes: (familyId: string) => api.get<{ homes: { id: number; name: string; kind: string; address: string | null; timezone: string | null; isPrimary: boolean }[] }>(`/families/${familyId}/homes`),
   accounts: () => api.get<{ accounts: FamilyAccount[] }>('/families/accounts'),
   addMember: (familyId: string, data: { type?: string; name: string; birthDate?: string; gender?: string; email?: string; categories?: string[]; stage?: string; trackable?: boolean }) =>
     api.post(`/families/${familyId}/members`, data),

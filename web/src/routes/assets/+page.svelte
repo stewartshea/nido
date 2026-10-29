@@ -1,8 +1,8 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
-	import { tokenExpired } from '$lib/api/client';
-	import { userAPI } from '$lib/api/family';
+	import { tokenExpired, currentFamilyId } from '$lib/api/client';
+	import { userAPI, familiesAPI } from '$lib/api/family';
 	import { assetsAPI } from '$lib/api/assets';
 	import { authActions } from '$lib/stores/authStore';
 	import type { Asset, AssetCategoryId } from '$lib/api/types';
@@ -11,22 +11,29 @@
 	// The home asset registry (HOME module 1, issue #65): the car, the
 	// furnace, the house itself. Its own surface, like inventory — assets
 	// answer "what do we own and what does it need", inventory answers "what
-	// do we have and how much is left".
+	// do we have and how much is left". Assets may name a home they live at
+	// (issue #74) — null is family-wide, the default.
 
 	let notice = '';
 	let error = '';
 	let loaded = false;
 	let assets: Asset[] = [];
+	let homes: { id: number; name: string }[] = [];
 	let showArchived = false;
 	let showForm = false;
 	let editing: Asset | null = null;
+	// A `?homeId=` deep link (the Homes card on /home) scopes the list to one
+	// residence; null = the whole registry.
+	let filterHomeId: number | null = null;
 	// Fallback so the category picker renders before the fetch lands; the API
 	// is the source of truth once it does.
 	let categories: { id: AssetCategoryId; label: string }[] = [
 		{ id: 'vehicle', label: 'Vehicle' }, { id: 'appliance', label: 'Appliance' },
-		{ id: 'hvac', label: 'Heating & cooling' }, { id: 'structure', label: 'Home & structure' },
+		{ id: 'hvac', label: 'Heating & cooling' }, { id: 'structure', label: 'Structures & improvements' },
 		{ id: 'outdoor', label: 'Yard & outdoor' }, { id: 'other', label: 'Other' },
 	];
+
+	$: homeName = (id: number | null) => (id === null ? '' : homes.find((h) => h.id === id)?.name ?? '');
 
 	function identityLine(asset: Asset): string {
 		const i = asset.identity;
@@ -48,7 +55,7 @@
 				await goto('/login');
 				return;
 			}
-			const res = await assetsAPI.list(showArchived);
+			const res = await assetsAPI.list(showArchived, filterHomeId);
 			assets = res.data.assets ?? [];
 		} catch (e: any) {
 			if (e?.response?.status === 401) await goto('/login');
@@ -56,6 +63,13 @@
 		} finally {
 			loaded = true;
 		}
+	}
+
+	/** Drop the home filter and show the whole registry. */
+	async function clearHomeFilter() {
+		filterHomeId = null;
+		loaded = false;
+		await load();
 	}
 
 	async function archive(asset: Asset) {
@@ -102,6 +116,9 @@
 	}
 
 	onMount(() => {
+		// The Homes card deep link (?homeId=) scopes this list to one residence.
+		const param = new URLSearchParams(window.location.search).get('homeId');
+		if (param && Number.isFinite(Number(param))) filterHomeId = Number(param);
 		load();
 		// The same rehydrate every authenticated page runs: the account menu
 		// reads $authStore.user, which a full navigation resets (only the
@@ -119,6 +136,10 @@
 			}
 		}).catch(() => {});
 		assetsAPI.categories().then((r) => { categories = r.data.categories; }).catch(() => {});
+		const familyId = currentFamilyId();
+		if (familyId) {
+			familiesAPI.homes(familyId).then((r) => { homes = r.data.homes ?? []; }).catch(() => {});
+		}
 	});
 </script>
 
@@ -130,13 +151,21 @@
 	<div class="mb-4">
 		<h1 class="text-2xl font-display font-semibold text-ink">Home assets</h1>
 		<p class="text-sm text-ink-soft mt-1">
-			The things you own and keep: the car, the furnace, the house itself. Add an
-			asset here; maintenance, schedules, and manuals hang off it.
+			The things you own and keep: the car, the furnace, the shed. Add an
+			asset here; maintenance, schedules, and manuals hang off it. The home
+			itself is on the <a href="/home" class="underline">Homes card</a>.
 		</p>
 	</div>
 
 	{#if notice}<p class="text-sm text-ink-soft mb-3" role="status">{notice}</p>{/if}
 	{#if error}<p class="text-sm text-danger-text mb-3">{error}</p>{/if}
+
+	{#if filterHomeId !== null}
+		<div class="mb-3 text-sm text-ink-soft">
+			Showing assets at <span class="font-semibold text-ink">{homeName(filterHomeId) || 'one home'}</span>
+			<button type="button" class="ml-2 underline text-accent" on:click={clearHomeFilter}>Show all</button>
+		</div>
+	{/if}
 
 	{#if loaded}
 		<div class="flex items-center justify-between mb-4 gap-2">
@@ -150,7 +179,7 @@
 		</div>
 
 		{#if showForm}
-			<AssetForm {editing} on:save={onSaved} on:cancel={() => { showForm = false; editing = null; }} />
+			<AssetForm {editing} {homes} on:save={onSaved} on:cancel={() => { showForm = false; editing = null; }} />
 		{/if}
 
 		{#if assets.length === 0}
@@ -166,6 +195,9 @@
 							<div class="min-w-0">
 								<p class="font-semibold text-ink truncate">{asset.name}{#if asset.archivedAt}<span class="ml-2 text-xs font-normal text-ink-soft">archived</span>{/if}</p>
 								<p class="text-sm text-ink-soft">{identityLine(asset)}</p>
+								{#if asset.homeId !== null && homeName(asset.homeId)}
+									<p class="text-xs text-ink-soft mt-0.5">Lives at {homeName(asset.homeId)}</p>
+								{/if}
 								{#if asset.purchasePrice !== null}
 									<p class="text-xs text-ink-soft mt-1">Bought {formatPrice(asset.purchasePrice)}{#if asset.acquiredAt}&nbsp;on {asset.acquiredAt}{/if}</p>
 								{:else if asset.acquiredAt}

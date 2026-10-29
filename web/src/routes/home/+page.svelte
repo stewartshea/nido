@@ -2,10 +2,11 @@
 	import { onMount } from 'svelte';
 	import { browser } from '$app/environment';
 	import { get } from 'svelte/store';
-	import { tokenExpired } from '$lib/api/client';
+	import { tokenExpired, currentFamilyId } from '$lib/api/client';
 	import { authAPI, userAPI, familiesAPI } from '$lib/api/family';
 	import { feedingAPI, diaperAPI, sleepAPI, growthAPI, milestoneAPI, vaccinationAPI, moodAPI, journalAPI } from '$lib/api/records';
 	import { importsAPI } from '$lib/api/system';
+	import { assetsAPI } from '$lib/api/assets';
 	import { authStore, authActions } from '$lib/stores/authStore';
 	import { uiStore, uiActions } from '$lib/stores/uiStore';
 	import { notify, fail } from '$lib/stores/feedback';
@@ -58,6 +59,34 @@
 	let vaccinations: any[] = [];
 	let moods: any[] = [];
 	let journalEntries: any[] = [];
+
+	// The Homes card (issue #74): residences from the `homes` registry, each
+	// with its assets. The residence IS the homes row — never a home asset —
+	// and assets that carry no homeId stay family-wide, shown once at the
+	// end rather than duplicated under every home.
+	let residences: { id: number; name: string; address: string | null; isPrimary: boolean }[] = [];
+	let homeAssets: any[] = [];
+
+	async function loadHomesAndAssets() {
+		const familyId = currentFamilyId();
+		if (!familyId) return;
+		try {
+			const [homesRes, assetsRes] = await Promise.all([
+				familiesAPI.homes(familyId),
+				assetsAPI.list(),
+			]);
+			residences = homesRes.data.homes ?? [];
+			homeAssets = (assetsRes.data.assets ?? []).filter((a: any) => a.archivedAt === null);
+		} catch {
+			// The card is an index, not a gate; an empty card is honest.
+			residences = [];
+			homeAssets = [];
+		}
+	}
+
+	function assetsAt(homeId: number | null): any[] {
+		return homeAssets.filter((a) => (a.homeId ?? null) === homeId);
+	}
 
 	// Quick feed reports over the loaded feedings (see $lib/logging/feedStats).
 	$: feedReports = computeFeedReports(feedings);
@@ -202,7 +231,7 @@
 			// starts empty, like the page-local state this replaced.
 			if (!isAuthenticated) familyActions.reset();
 			if (isAuthenticated) {
-				await Promise.all([loadFamilies(), refreshUserProfile()]);
+				await Promise.all([loadFamilies(), refreshUserProfile(), loadHomesAndAssets()]);
 			}
 		}
 	});
@@ -220,16 +249,49 @@
 				</div>
 
 				{#if profiles.length > 0}
-					<div class="bg-surface rounded-lg shadow-card p-4 md:p-6 mb-6">
-						<h3 class="text-xl font-display font-semibold mb-3">Homes</h3>
-						<p class="text-ink-soft mb-4">
-							Multi-home tracking is coming in a future module — manage property assets, seasonal maintenance,
-							appliance manuals, and household routines for multiple homes.
-						</p>
-						<div class="border border-dashed border-line rounded-md p-4 md:p-6 text-center text-ink-soft">
-							<p class="text-lg font-display flex items-center justify-center gap-2"><Home class="w-5 h-5" /> Your first home will appear here</p>
-							<p class="text-sm mt-2">Home tracking arrives with the Home module.</p>
+					<div class="bg-surface rounded-lg shadow-card p-4 md:p-6 mb-6" data-testid="homes-card">
+						<div class="flex items-baseline justify-between mb-3">
+							<h3 class="text-xl font-display font-semibold">Homes</h3>
+							<a href="/assets" class="text-sm font-semibold text-accent hover:underline">Manage assets &rarr;</a>
 						</div>
+						{#if residences.length === 0}
+							<div class="border border-dashed border-line rounded-md p-4 md:p-6 text-center text-ink-soft">
+								<p class="text-lg font-display flex items-center justify-center gap-2"><Home class="w-5 h-5" /> Your first home will appear here</p>
+								<p class="text-sm mt-2">Add a residence in Settings to start scoping assets to it.</p>
+							</div>
+						{:else}
+							<ul class="grid gap-3">
+								{#each residences as home (home.id)}
+									<li class="border border-line-soft rounded-md p-3">
+										<div class="flex items-baseline justify-between gap-2">
+											<p class="font-semibold text-ink">
+												{home.name}{#if home.isPrimary}<span class="ml-2 text-xs font-normal text-ink-soft">primary</span>{/if}
+											</p>
+											<a href="/assets?homeId={home.id}" class="text-xs text-accent hover:underline">
+												{assetsAt(home.id).length} asset{assetsAt(home.id).length === 1 ? '' : 's'} &rarr;
+											</a>
+										</div>
+										{#if home.address}<p class="text-sm text-ink-soft mt-0.5">{home.address}</p>{/if}
+										{#if assetsAt(home.id).length > 0}
+											<p class="text-xs text-ink-soft mt-1">
+												{assetsAt(home.id).map((a) => a.name).join(', ')}
+											</p>
+										{/if}
+									</li>
+								{/each}
+								{#if assetsAt(null).length > 0}
+									<li class="border border-dashed border-line-soft rounded-md p-3">
+										<div class="flex items-baseline justify-between gap-2">
+											<p class="font-semibold text-ink">Family-wide</p>
+											<a href="/assets" class="text-xs text-accent hover:underline">
+												{assetsAt(null).length} asset{assetsAt(null).length === 1 ? '' : 's'} &rarr;
+											</a>
+										</div>
+										<p class="text-xs text-ink-soft mt-1">{assetsAt(null).map((a) => a.name).join(', ')}</p>
+									</li>
+								{/if}
+							</ul>
+						{/if}
 					</div>
 				{/if}
 

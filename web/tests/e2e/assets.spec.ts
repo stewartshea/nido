@@ -78,6 +78,31 @@ test('assets: archive hides it from the default list, show archived brings it ba
 	await expect(cards.getByText('archived')).toHaveCount(0);
 });
 
+test('assets: home scoping — lives at, the Homes card, and the deep link (74)', async ({ page }) => {
+	await page.goto('/assets');
+	await page.getByRole('button', { name: 'Edit' }).click();
+	// "Lives at" appears once homes have loaded (lazily seeded by the homes route).
+	await page.getByLabel('Lives at').selectOption({ label: 'Primary Home' });
+	await page.getByRole('button', { name: 'Save changes' }).click();
+	await expect(page.getByText('Lives at Primary Home')).toBeVisible();
+
+	// The Homes card on /home groups assets under their residence.
+	await page.goto('/home');
+	const homesCard = page.getByTestId('homes-card');
+	await expect(homesCard).toBeVisible();
+	await expect(homesCard.getByText('Primary Home')).toBeVisible();
+	await expect(homesCard.getByText('The Mazda')).toBeVisible();
+
+	// The per-home deep link scopes the registry to that residence.
+	await page.goto(`/assets?homeId=1`);
+	await expect(page.getByText('Showing assets at')).toBeVisible();
+	const cards = page.locator('[data-testid^="asset-"]');
+	await expect(cards).toHaveCount(1);
+	await page.getByRole('button', { name: 'Show all' }).click();
+	await expect(page.getByText('Showing assets at')).toHaveCount(0);
+	await expect(cards).toHaveCount(1);
+});
+
 // The shared browser session carries into whichever spec runs next (the
 // smoke suite re-registers on a signed-out page), so leave it signed out.
 test('sign out after the asset suite', async ({ page }) => {

@@ -1426,6 +1426,33 @@ async function handleDeleteFamily(c: Context<AuthEnv>) {
 	return c.json({ error: 'Family deletion is deferred to Phase D' }, 501);
 }
 
+// The family's residences (homes rows). Read-only here: seeding and member
+// links are the families route's own machinery; assets scope to a home by
+// home_id (issue #74), and the /home page lists each home's assets.
+async function handleGetHomes(c: Context<AuthEnv>) {
+	const db = c.get('db');
+	const role = await familyAccess(c);
+	if (!role) return c.json({ error: 'No family access' }, 403);
+	// Lazy seed, same as the members route: a family provisioned before the
+	// homes table (or one whose homes were never touched) still answers with
+	// its primary residence rather than an empty list.
+	await ensureDefaultHome(db);
+	const res = await db.execute({
+		sql: 'SELECT id, name, kind, address, timezone, is_primary FROM homes WHERE household_id = ? ORDER BY is_primary DESC, id',
+		args: [NAMESPACE_HOUSEHOLD_ID],
+	});
+	return c.json({
+		homes: (res.rows as any[]).map((r) => ({
+			id: Number(r.id),
+			name: String(r.name),
+			kind: r.kind ?? 'residence',
+			address: r.address ?? null,
+			timezone: r.timezone ?? null,
+			isPrimary: Number(r.is_primary ?? 0) === 1,
+		})),
+	});
+}
+
 // ── Canonical route registrations ──────────────────────────────────────────
 
 familyRoutes.get('/', handleGetFamilies);
@@ -1446,6 +1473,7 @@ familyRoutes.get('/invitations', handleGetInvitations);
 familyRoutes.delete('/invitations/:inviteId{[0-9]+}', handleDeleteInvitation);
 
 familyRoutes.get('/settings', handleGetSettings);
+familyRoutes.get('/homes', handleGetHomes);
 familyRoutes.put('/settings', zValidator('json', settingsSchema), handleUpdateSettings);
 familyRoutes.get('/settings/anonymized-preview', handleAnonymizedPreview);
 
@@ -1499,6 +1527,10 @@ familyRoutes.delete('/:familyRef/invitations/:inviteId{[0-9]+}', async (c) => {
 familyRoutes.get('/:familyRef/settings', async (c) => {
 	if (!validateFamilyRef(c)) return c.json({ error: 'Family not found' }, 404);
 	return handleGetSettings(c);
+});
+familyRoutes.get('/:familyRef/homes', async (c) => {
+	if (!validateFamilyRef(c)) return c.json({ error: 'Family not found' }, 404);
+	return handleGetHomes(c);
 });
 familyRoutes.put('/:familyRef/settings', zValidator('json', settingsSchema), async (c) => {
 	if (!validateFamilyRef(c)) return c.json({ error: 'Family not found' }, 404);
