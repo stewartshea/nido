@@ -234,10 +234,10 @@
 				{/if}
 
 				<div class="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6">
-					<div class="bg-surface rounded-lg shadow p-4 md:p-6 text-center">
+					<a href="/assets" class="bg-surface rounded-lg shadow p-4 md:p-6 text-center hover:shadow-md block">
 						<h3 class="text-lg font-display font-semibold mb-2">Property Assets</h3>
 						<p class="text-ink-soft">Track physical property and appliance inventory.</p>
-					</div>
+					</a>
 					<div class="bg-surface rounded-lg shadow p-4 md:p-6 text-center">
 						<h3 class="text-lg font-display font-semibold mb-2">Maintenance</h3>
 						<p class="text-ink-soft">Seasonal upkeep schedules and service reminders.</p>
