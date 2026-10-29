@@ -249,6 +249,14 @@ const settingsSchema = z.object({
 const HOME_ID_PRIMARY = 1;
 
 async function ensureDefaultHome(db: ReturnType<typeof getFamilyClient>) {
+	// Seed only when the family has no homes at all. A bare INSERT OR IGNORE
+	// with a fixed id resurrects a home the family deleted — the delete
+	// succeeded and the next read brought it back (issue #76).
+	const count = (await db.execute({
+		sql: 'SELECT COUNT(*) AS n FROM homes WHERE household_id = ?',
+		args: [NAMESPACE_HOUSEHOLD_ID],
+	})).rows[0] as any;
+	if (Number(count?.n ?? 0) > 0) return;
 	await db.execute({
 		sql: `INSERT OR IGNORE INTO homes (id, household_id, name, kind, is_primary, created_at, updated_at)
 		      VALUES (?, ?, ?, ?, 1, ?, ?)`,
@@ -1426,6 +1434,241 @@ async function handleDeleteFamily(c: Context<AuthEnv>) {
 	return c.json({ error: 'Family deletion is deferred to Phase D' }, 501);
 }
 
+// The family's residences (homes rows). Read-only here: seeding and member
+// links are the families route's own machinery; assets scope to a home by
+// home_id (issue #74), and the /home page lists each home's assets.
+async function handleGetHomes(c: Context<AuthEnv>) {
+	const db = c.get('db');
+	const role = await familyAccess(c);
+	if (!role) return c.json({ error: 'No family access' }, 403);
+	// Lazy seed, same as the members route: a family provisioned before the
+	// homes table (or one whose homes were never touched) still answers with
+	// its primary residence rather than an empty list.
+	await ensureDefaultHome(db);
+	const res = await db.execute({
+		sql: 'SELECT * FROM homes WHERE household_id = ? ORDER BY is_primary DESC, id',
+		args: [NAMESPACE_HOUSEHOLD_ID],
+	});
+	return c.json({ homes: (res.rows as any[]).map(shapeHome) });
+}
+
+// ── Homes management (issue #76) ────────────────────────────────────────────
+//
+// The homes registry was seed-only (issue #74 read it; nothing could write
+// it): "Primary Home" could never be renamed, the address column was never
+// settable, and adding the cabin was impossible. These are the writes.
+
+// A timezone is an IANA zone name or nothing — free text here meant a home
+// could carry a zone `Intl` silently refuses and every digest after it goes
+// off the rail (issue #76). `isValidTimezone` (timezone.ts) is the same
+// validator the family settings schema already uses.
+const timezoneSchema = z.string().trim().max(60)
+	.refine(isValidTimezone, 'Use an IANA timezone name, e.g. America/Toronto')
+	.nullable().optional();
+
+/** The family's own zone, for defaulting a new home's timezone. */
+async function familyTimezone(db: ReturnType<typeof getFamilyClient>): Promise<string | null> {
+	const row = (await db.execute({
+		sql: 'SELECT timezone FROM family_settings WHERE family_id = ? LIMIT 1',
+		args: [NAMESPACE_HOUSEHOLD_ID],
+	})).rows[0] as { timezone?: string | null } | undefined;
+	const zone = row?.timezone ?? null;
+	return zone && isValidTimezone(zone) ? zone : null;
+}
+
+const homeSchema = z.object({
+	name: z.string().trim().min(1).max(120),
+	kind: z.enum(['residence', 'cabin', 'rental', 'storage', 'other']).default('residence'),
+	address: z.string().trim().max(300).nullable().optional(),
+	timezone: timezoneSchema,
+	isPrimary: z.boolean().optional(),
+});
+
+const homeUpdateSchema = homeSchema.partial();
+
+async function homeFor(db: ReturnType<typeof getFamilyClient>, id: number) {
+	const res = await db.execute({
+		sql: 'SELECT * FROM homes WHERE id = ? AND household_id = ? LIMIT 1',
+		args: [id, NAMESPACE_HOUSEHOLD_ID],
+	});
+	return (res.rows[0] as any | undefined) ?? null;
+}
+
+/** Setting a home primary demotes every other home — exactly one is. */
+async function makePrimary(db: ReturnType<typeof getFamilyClient>, id: number) {
+	await db.execute({
+		sql: 'UPDATE homes SET is_primary = CASE id WHEN ? THEN 1 ELSE 0 END, updated_at = ? WHERE household_id = ?',
+		args: [id, isoNow(), NAMESPACE_HOUSEHOLD_ID],
+	});
+}
+
+async function handleCreateHome(c: Context<AuthEnv>) {
+	const db = c.get('db');
+	// Homes shape where the whole family lives; writes are owner/admin.
+	if (!(await familyAccess(c, ['owner', 'admin']))) return c.json({ error: 'No family access' }, 403);
+	const body = (c.req as any).valid('json') as z.infer<typeof homeSchema>;
+	// A home with no timezone stated inherits the family's zone — most homes
+	// are where the family is, and a null zone silently defaults to UTC
+	// everywhere downstream (the same wall-clock wrongness issue #55 was).
+	const timezone = body.timezone !== undefined && body.timezone !== null
+		? body.timezone
+		: (await familyTimezone(db));
+	const count = (await db.execute({
+		sql: 'SELECT COUNT(*) AS n FROM homes WHERE household_id = ?',
+		args: [NAMESPACE_HOUSEHOLD_ID],
+	})).rows[0] as any;
+	const first = Number(count?.n ?? 0) === 0;
+	const res = await db.execute({
+		sql: `INSERT INTO homes (household_id, name, kind, address, timezone, is_primary, created_at, updated_at)
+		      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		args: [
+			NAMESPACE_HOUSEHOLD_ID, body.name, body.kind, body.address ?? null, timezone,
+			first || body.isPrimary ? 1 : 0, isoNow(), isoNow(),
+		],
+	});
+	const id = Number(res.lastInsertRowid);
+	// A new primary demotes the rest; a family's first home is primary by
+	// default so the lazy seed's contract ("one primary") survives creation.
+	if (body.isPrimary || first) await makePrimary(db, id);
+	const home = await homeFor(db, id);
+	return c.json({ home: { ...shapeHome(home!), picture: null } }, 201);
+}
+
+async function handleUpdateHome(c: Context<AuthEnv>) {
+	const db = c.get('db');
+	if (!(await familyAccess(c, ['owner', 'admin']))) return c.json({ error: 'No family access' }, 403);
+	const id = Number(c.req.param('id'));
+	const previous = await homeFor(db, id);
+	if (!previous) return c.json({ error: 'Home not found' }, 404);
+	const body = (c.req as any).valid('json') as z.infer<typeof homeUpdateSchema>;
+	await db.execute({
+		sql: `UPDATE homes SET
+		        name = ?, kind = ?, address = ?, timezone = ?, is_primary = ?, updated_at = ?
+		      WHERE id = ? AND household_id = ?`,
+		args: [
+			body.name ?? previous.name,
+			body.kind ?? previous.kind,
+			body.address === undefined ? previous.address : (body.address ?? null),
+			body.timezone === undefined ? previous.timezone : (body.timezone ?? null),
+			body.isPrimary === undefined ? Number(previous.is_primary ?? 0) : (body.isPrimary ? 1 : 0),
+			isoNow(), id, NAMESPACE_HOUSEHOLD_ID,
+		],
+	});
+	if (body.isPrimary) await makePrimary(db, id);
+	return c.json({ home: shapeHome((await homeFor(db, id))!) });
+}
+
+async function handleDeleteHome(c: Context<AuthEnv>) {
+	const db = c.get('db');
+	if (!(await familyAccess(c, ['owner', 'admin']))) return c.json({ error: 'No family access' }, 403);
+	const id = Number(c.req.param('id'));
+	const home = await homeFor(db, id);
+	if (!home) return c.json({ error: 'Home not found' }, 404);
+	const count = (await db.execute({
+		sql: 'SELECT COUNT(*) AS n FROM homes WHERE household_id = ?',
+		args: [NAMESPACE_HOUSEHOLD_ID],
+	})).rows[0] as any;
+	if (Number(count?.n ?? 0) <= 1) {
+		// The family's only home is what members link to and what the lazy
+		// seed promises; deleting it would orphan both. De-scope its assets
+		// manually if you truly must, but keep one home.
+		return c.json({ error: 'A family needs at least one home' }, 400);
+	}
+	const wasPrimary = Number(home.is_primary ?? 0) === 1;
+	// member_homes rows go first: their FK has no ON DELETE action, and a
+	// home's member links die with the home. Assets de-scope themselves
+	// (v42: ON DELETE SET NULL) and keep their history.
+	await db.execute({ sql: 'DELETE FROM member_homes WHERE home_id = ?', args: [id] });
+	if (home.picture && /^[0-9]+$/.test(String(home.picture))) {
+		await deleteAttachment(db, c.get('familyId'), Number(home.picture));
+	}
+	await db.execute({ sql: 'DELETE FROM homes WHERE id = ? AND household_id = ?', args: [id, NAMESPACE_HOUSEHOLD_ID] });
+	// A deleted primary promotes the oldest survivor, so "exactly one
+	// primary" never becomes "none".
+	if (wasPrimary) {
+		const survivor = (await db.execute({
+			sql: 'SELECT id FROM homes WHERE household_id = ? ORDER BY id LIMIT 1',
+			args: [NAMESPACE_HOUSEHOLD_ID],
+		})).rows[0] as any;
+		if (survivor) await makePrimary(db, Number(survivor.id));
+	}
+	return c.json({ message: 'Home deleted' });
+}
+
+// The picture is the member-avatar shape pointed at a home: one attachment
+// row (ref_type='home'), bytes in the encrypted blob store, marker on
+// homes.picture, previous replaced so nothing leaks.
+async function handleUploadHomePicture(c: Context<AuthEnv>) {
+	const db = c.get('db');
+	const familyId = c.get('familyId');
+	const userId = c.get('userId');
+	if (!(await familyAccess(c, ['owner', 'admin']))) return c.json({ error: 'No family access' }, 403);
+	const id = Number(c.req.param('id'));
+	const home = await homeFor(db, id);
+	if (!home) return c.json({ error: 'Home not found' }, 404);
+
+	const form = await c.req.formData();
+	const file = form.get('file');
+	if (!file || typeof file === 'string') return c.json({ error: 'Missing image file' }, 400);
+	const mime = file.type || 'application/octet-stream';
+	if (!mime.startsWith('image/')) return c.json({ error: 'Only image uploads are allowed' }, 400);
+
+	let attachmentId: number;
+	try {
+		const put = await avatarStore().put(familyId, Readable.fromWeb(file.stream() as any));
+		const ins = await db.execute({
+			sql: `INSERT INTO attachments (subject_id, ref_type, ref_id, blob_id, storage_key, filename, content_type, size, created_at, created_by)
+			      VALUES (NULL, 'home', ?, ?, ?, ?, ?, ?, ?, ?)`,
+			args: [id, put.blobId, put.storageKey, file.name || null, mime, put.size, isoNow(), userId],
+		});
+		attachmentId = Number(ins.lastInsertRowid);
+	} catch {
+		return c.json({ error: 'Could not store that image' }, 500);
+	}
+	if (home.picture && /^[0-9]+$/.test(String(home.picture))) {
+		await deleteAttachment(db, familyId, Number(home.picture));
+	}
+	await db.execute({ sql: 'UPDATE homes SET picture = ?, updated_at = ? WHERE id = ?', args: [String(attachmentId), isoNow(), id] });
+	return c.json({ message: 'Picture uploaded', picture: String(attachmentId) });
+}
+
+async function handleGetHomePicture(c: Context<AuthEnv>) {
+	const db = c.get('db');
+	const familyId = c.get('familyId');
+	if (!(await familyAccess(c))) return c.json({ error: 'No family access' }, 403);
+	const home = await homeFor(db, Number(c.req.param('id')));
+	if (!home) return c.json({ error: 'Home not found' }, 404);
+	const marker = home.picture ? String(home.picture) : null;
+	if (!marker || !/^[0-9]+$/.test(marker)) return c.json({ error: 'No picture' }, 404);
+	const att = (await db.execute({
+		sql: 'SELECT blob_id, content_type, created_at FROM attachments WHERE id = ? LIMIT 1',
+		args: [Number(marker)],
+	})).rows[0] as any;
+	if (!att) return c.json({ error: 'No picture' }, 404);
+	try {
+		const stream = await avatarStore().open(familyId, String(att.blob_id), new Date(String(att.created_at)));
+		return new Response(Readable.toWeb(stream) as any, {
+			status: 200,
+			headers: { 'Content-Type': String(att.content_type), 'Cache-Control': 'private, max-age=31536000' },
+		});
+	} catch {
+		return c.json({ error: 'Picture file missing' }, 404);
+	}
+}
+
+/** A homes row back into API shape (marker -> number). */
+function shapeHome(row: any) {
+	return {
+		id: Number(row.id),
+		name: String(row.name),
+		kind: row.kind ?? 'residence',
+		address: row.address ?? null,
+		timezone: row.timezone ?? null,
+		isPrimary: Number(row.is_primary ?? 0) === 1,
+		picture: row.picture && /^[0-9]+$/.test(String(row.picture)) ? Number(row.picture) : null,
+	};
+}
+
 // ── Canonical route registrations ──────────────────────────────────────────
 
 familyRoutes.get('/', handleGetFamilies);
@@ -1446,6 +1689,12 @@ familyRoutes.get('/invitations', handleGetInvitations);
 familyRoutes.delete('/invitations/:inviteId{[0-9]+}', handleDeleteInvitation);
 
 familyRoutes.get('/settings', handleGetSettings);
+familyRoutes.get('/homes', handleGetHomes);
+familyRoutes.post('/homes', zValidator('json', homeSchema), handleCreateHome);
+familyRoutes.put('/homes/:id{[0-9]+}', zValidator('json', homeUpdateSchema), handleUpdateHome);
+familyRoutes.delete('/homes/:id{[0-9]+}', handleDeleteHome);
+familyRoutes.post('/homes/:id{[0-9]+}/picture', handleUploadHomePicture);
+familyRoutes.get('/homes/:id{[0-9]+}/picture', handleGetHomePicture);
 familyRoutes.put('/settings', zValidator('json', settingsSchema), handleUpdateSettings);
 familyRoutes.get('/settings/anonymized-preview', handleAnonymizedPreview);
 
@@ -1499,6 +1748,30 @@ familyRoutes.delete('/:familyRef/invitations/:inviteId{[0-9]+}', async (c) => {
 familyRoutes.get('/:familyRef/settings', async (c) => {
 	if (!validateFamilyRef(c)) return c.json({ error: 'Family not found' }, 404);
 	return handleGetSettings(c);
+});
+familyRoutes.get('/:familyRef/homes', async (c) => {
+	if (!validateFamilyRef(c)) return c.json({ error: 'Family not found' }, 404);
+	return handleGetHomes(c);
+});
+familyRoutes.post('/:familyRef/homes', zValidator('json', homeSchema), async (c) => {
+	if (!validateFamilyRef(c)) return c.json({ error: 'Family not found' }, 404);
+	return handleCreateHome(c);
+});
+familyRoutes.put('/:familyRef/homes/:id{[0-9]+}', zValidator('json', homeUpdateSchema), async (c) => {
+	if (!validateFamilyRef(c)) return c.json({ error: 'Family not found' }, 404);
+	return handleUpdateHome(c);
+});
+familyRoutes.delete('/:familyRef/homes/:id{[0-9]+}', async (c) => {
+	if (!validateFamilyRef(c)) return c.json({ error: 'Family not found' }, 404);
+	return handleDeleteHome(c);
+});
+familyRoutes.post('/:familyRef/homes/:id{[0-9]+}/picture', async (c) => {
+	if (!validateFamilyRef(c)) return c.json({ error: 'Family not found' }, 404);
+	return handleUploadHomePicture(c);
+});
+familyRoutes.get('/:familyRef/homes/:id{[0-9]+}/picture', async (c) => {
+	if (!validateFamilyRef(c)) return c.json({ error: 'Family not found' }, 404);
+	return handleGetHomePicture(c);
 });
 familyRoutes.put('/:familyRef/settings', zValidator('json', settingsSchema), async (c) => {
 	if (!validateFamilyRef(c)) return c.json({ error: 'Family not found' }, 404);

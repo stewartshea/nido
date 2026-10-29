@@ -1243,6 +1243,41 @@ ALTER TABLE inventory_adjustments ADD COLUMN source TEXT DEFAULT 'manual';
         ON home_assets(household_id, archived_at);
     `,
   },
+  {
+    version: 42,
+    name: 'home-assets-home-scoping',
+    // HOME modules (issue #74, PRD §2.1): `homes` is the H — the residence
+    // registry (address, timezone, member_homes) these modules grow around —
+    // and an asset may say which residence it lives at. Nullable on purpose:
+    // null = family-wide (the car is just "ours"), set = this home's furnace.
+    // `structure` means improvements AT a residence (shed, fence, sump), so
+    // the residence itself is a homes row, never an asset (§2.1, §10).
+    //
+    // Column-add is guarded like v40: SQLite has no ADD COLUMN IF NOT
+    // EXISTS, and the idempotence tests re-run the chain on a rewound
+    // user_version.
+    run: (raw) => {
+      const cols = raw.pragma('table_info(home_assets)') as Array<{ name: string }>;
+      if (!cols.some((c) => c.name === 'home_id')) {
+        raw.exec('ALTER TABLE home_assets ADD COLUMN home_id INTEGER REFERENCES homes(id) ON DELETE SET NULL');
+      }
+      raw.exec('CREATE INDEX IF NOT EXISTS idx_home_assets_home ON home_assets(home_id)');
+    },
+  },
+  {
+    version: 43,
+    name: 'homes-picture',
+    // The homes registry grows a management surface (issue #76): names,
+    // addresses, and a picture per residence. `picture` is the attachment-id
+    // marker, the same shape `family_members.avatar` uses — the bytes live in
+    // the encrypted blob store, attachments carries the row.
+    run: (raw) => {
+      const cols = raw.pragma('table_info(homes)') as Array<{ name: string }>;
+      if (!cols.some((c) => c.name === 'picture')) {
+        raw.exec('ALTER TABLE homes ADD COLUMN picture TEXT');
+      }
+    },
+  },
 ];
 
 /**

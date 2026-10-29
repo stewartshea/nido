@@ -111,6 +111,41 @@ describe('home-assets: the registry', () => {
 		expect(write.status).toBe(404);
 	});
 
+	it('scopes an asset to a home, and rejects a home that is not the family\'s', async () => {
+		// The family's own home: seeded at registration (families route seeds
+		// one per family), so read it back rather than assume an id.
+		const fam = (jwt.decode(token) as any).familyId as string;
+		const homes = await call('GET', token, `/api/v1/families/${fam}/homes`);
+		expect(homes.status).toBeLessThan(400);
+		const homeId = homes.body.homes?.[0]?.id;
+		expect(homeId).toBeTruthy();
+
+		// Family-wide by default (null), home-scoped when set.
+		const res = await call('PUT', token, `/api/v1/home-assets/${assetId}`, { homeId });
+		expect(res.status).toBe(200);
+		expect(res.body.asset.homeId).toBe(Number(homeId));
+
+		// The list filter answers "what lives at this home" (the /home card).
+		const scoped = await call('GET', token, `/api/v1/home-assets?homeId=${homeId}`);
+		expect(scoped.body.assets).toHaveLength(1);
+		const other = await call('GET', token, `/api/v1/home-assets?homeId=${Number(homeId) + 999}`);
+		expect(other.body.assets).toHaveLength(0);
+
+		// Setting back to null is explicit ("ours"), not a data loss.
+		const cleared = await call('PUT', token, `/api/v1/home-assets/${assetId}`, { homeId: null });
+		expect(cleared.status).toBe(200);
+		expect(cleared.body.asset.homeId).toBeNull();
+
+		// A home id from another family is rejected, not silently stored.
+		const otherFam = (jwt.decode(otherToken) as any).familyId as string;
+		const otherHomes = await call('GET', otherToken, `/api/v1/families/${otherFam}/homes`);
+		const otherHomeId = otherHomes.body.homes?.[0]?.id;
+		if (otherHomeId && Number(otherHomeId) !== Number(homeId)) {
+			const stolen = await call('POST', token, '/api/v1/home-assets', { name: 'Probe', category: 'other', homeId: Number(otherHomeId) });
+			expect(stolen.status).toBe(404);
+		}
+	});
+
 	it('requires auth', async () => {
 		const res = await call('GET', '', '/api/v1/home-assets');
 		expect(res.status).toBe(401);

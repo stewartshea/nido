@@ -170,6 +170,8 @@ export interface Asset {
 	id: number;
 	name: string;
 	category: AssetCategoryId;
+	/** The residence this asset lives at (a homes row), or null = family-wide. */
+	homeId: number | null;
 	/** The identity quartet: keys manuals and the "add a car" populate moment. */
 	identity: {
 		manufacturer: string | null;
