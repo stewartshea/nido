@@ -1208,6 +1208,41 @@ ALTER TABLE inventory_adjustments ADD COLUMN source TEXT DEFAULT 'manual';
       }
     },
   },
+  {
+    version: 41,
+    name: 'home-assets',
+    // HOME module milestone 1 (issue #65): a home asset is a durable thing a
+    // family owns that needs care — car, furnace, the house itself — and it
+    // is deliberately NOT fields on inventory_items. Stock is countable and
+    // consumable; an asset is neither. The two meet by reference instead:
+    // maintenance entries consume inventory lines (PRD §6).
+    //
+    // category is a controlled vocabulary (vehicle, appliance, hvac,
+    // structure, outdoor, other), not free text, so assets can be reported
+    // on and a future category template (issue #71) can key off it.
+    sql: `
+      CREATE TABLE IF NOT EXISTS home_assets (
+        id             INTEGER PRIMARY KEY AUTOINCREMENT,
+        household_id   INTEGER NOT NULL,
+        name           TEXT NOT NULL,
+        category       TEXT NOT NULL,
+        manufacturer   TEXT,
+        model          TEXT,
+        model_year     INTEGER,
+        serial         TEXT,
+        acquired_at    TEXT,
+        purchase_price INTEGER,
+        notes          TEXT,
+        archived_at    TEXT,
+        created_by     TEXT,
+        created_at     TEXT DEFAULT CURRENT_TIMESTAMP,
+        updated_at     TEXT DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (household_id) REFERENCES households(id) ON DELETE CASCADE
+      );
+      CREATE INDEX IF NOT EXISTS idx_home_assets_family
+        ON home_assets(household_id, archived_at);
+    `,
+  },
 ];
 
 /**

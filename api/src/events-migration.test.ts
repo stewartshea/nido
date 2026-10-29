@@ -140,9 +140,9 @@ describe('migration 38: events and plans', () => {
 	it('is idempotent: a database already migrated opens unchanged', () => {
 		const db = openDb(':memory:');
 		runMigrations(db.raw, FAMILY_MIGRATIONS);
-		// Re-running the whole chain (a future migration running after 38 must
+		// Re-running the whole chain (a future migration running after 41 must
 		// not trip over its guards) is a no-op.
 		runMigrations(db.raw, FAMILY_MIGRATIONS);
-		expect(db.raw.pragma('user_version')).toMatchObject([{ user_version: 40 }]);
+		expect(db.raw.pragma('user_version')).toMatchObject([{ user_version: 41 }]);
 	});
 });
