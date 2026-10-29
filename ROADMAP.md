@@ -14,17 +14,34 @@ that board by `scripts/roadmap-sync.mjs` so it cannot quietly disagree with them
 
 | Issue | Capability | Status | Priority | Area |
 | --- | --- | --- | --- | --- |
-| [17](https://github.com/stewartshea/nido/issues/17) | Feature: quick-select which person the dashboard is showing | Todo | P1-High | Family tracking |
+| [17](https://github.com/stewartshea/nido/issues/17) | Feature: quick-select which person the dashboard is showing | In Progress | P1-High | Family tracking |
 | [20](https://github.com/stewartshea/nido/issues/20) | Feature: tracking templates per life stage (infant, child, adult) | Done | P1-High | Family tracking |
 | [22](https://github.com/stewartshea/nido/issues/22) | Feature: high availability for the data tier (survive node loss and rolling deploys) | Todo | P1-High | Platform |
 | [11](https://github.com/stewartshea/nido/issues/11) | Feature: inventory management system (family + home categories) | Done | P2-Medium | Home and inventory |
-| [18](https://github.com/stewartshea/nido/issues/18) | Feature: pet tracking (grooming, vet visits, vaccinations, medication) | Todo | P2-Medium | Family tracking |
+| [18](https://github.com/stewartshea/nido/issues/18) | Feature: pet tracking (grooming, vet visits, vaccinations, medication) | In Progress | P2-Medium | Family tracking |
 | [19](https://github.com/stewartshea/nido/issues/19) | Feature: attachments on records and profiles | Todo | P2-Medium | Platform |
-| [21](https://github.com/stewartshea/nido/issues/21) | Feature: adult tracking (medication, appointments, immunisations, vitals) | Todo | P2-Medium | Family tracking |
-| [13](https://github.com/stewartshea/nido/issues/13) | Feature: formal release strategy (versioning, changelog, tagging) | Todo | P3-Low | Platform |
+| [21](https://github.com/stewartshea/nido/issues/21) | Feature: adult tracking (medication, appointments, immunisations, vitals) | Done | P2-Medium | Family tracking |
+| [65](https://github.com/stewartshea/nido/issues/65) | Feature: HOME module — home asset registry (new first-class entity) | Todo | P2-Medium | Home and inventory |
+| [66](https://github.com/stewartshea/nido/issues/66) | Feature: HOME module — meters (odometer & usage-hours), time+distance+hours triggers | Todo | P2-Medium | Home and inventory |
+| [67](https://github.com/stewartshea/nido/issues/67) | Feature: HOME module — schedules, seasonal windows, and the What's-due view | Todo | P2-Medium | Home and inventory |
+| [68](https://github.com/stewartshea/nido/issues/68) | Feature: HOME module — maintenance log, cost rollups & seasonal checklist instances | Todo | P2-Medium | Home and inventory |
+| [69](https://github.com/stewartshea/nido/issues/69) | Feature: HOME module — documents, manuals & best-effort OCR | Todo | P2-Medium | Home and inventory |
+| [70](https://github.com/stewartshea/nido/issues/70) | Feature: HOME module — service providers (family address book) | Todo | P2-Medium | Home and inventory |
+| [71](https://github.com/stewartshea/nido/issues/71) | Feature: HOME module — category templates & the add-an-asset populate moment | Todo | P2-Medium | Home and inventory |
+| [13](https://github.com/stewartshea/nido/issues/13) | Feature: formal release strategy (versioning, changelog, tagging) | Done | P3-Low | Platform |
 
 <!-- drift:start -->
-**In sync?** Yes — every `feature request` issue is on the board, and the board agrees with the issue states.
+**In sync?** No. These need attention:
+
+- **#40** is labelled `feature request` but is not on the board — run `node scripts/roadmap-sync.mjs --add 40` or add it manually.
+- **#23** is labelled `feature request` but is not on the board — run `node scripts/roadmap-sync.mjs --add 23` or add it manually.
+- **#13** is `Done` on the board but is missing the `roadmap: shipped` label.
+- **#13** still carries `roadmap: candidate`, but the board says `Done` (`roadmap: shipped`).
+- **#17** is closed but the board says `In Progress`.
+- **#17** is `In Progress` on the board but is missing the `roadmap: planned` label.
+- **#17** still carries `roadmap: candidate`, but the board says `In Progress` (`roadmap: planned`).
+- **#18** is `In Progress` on the board but is missing the `roadmap: planned` label.
+- **#18** still carries `roadmap: candidate`, but the board says `In Progress` (`roadmap: planned`).
 
 <!-- drift:end -->
 <!-- roadmap:end -->

@@ -127,9 +127,9 @@ _Avoid_: note, diary
 ### Inventory
 
 **Item**:
-A stockable or asset-trackable thing a family owns (formula, diapers, wipes;
-or an asset with warranty/service intervals).
-_Avoid_: inventory item, product
+A stockable thing a family owns and consumes (formula, diapers, wipes).
+_Avoid_: inventory item, product, asset (see: home asset — assets are not
+stock and live in their own table)
 
 **Consumption rule**:
 A rule that bills stock from an item when events of a source category match
@@ -144,7 +144,71 @@ _Avoid_: correction, manual count
 The forecast of how long current item stock lasts at the recent usage rate.
 _Avoid_: runout, runway
 
-### Notifications
+### Home assets (HOME modules)
+
+**Home asset**:
+A durable thing a family owns that needs care (car, furnace, the house
+itself): a first-class `home_assets` row with a controlled-vocabulary
+category (`vehicle`, `appliance`, `hvac`, `structure`, `outdoor`, `other`),
+an optional identity quartet (manufacturer/model/model_year/serial), and
+archivability. Assets are NOT inventory items — the two meet by reference
+(`consumed_items` on a maintenance entry). The house is an asset with
+category `structure`.
+_Avoid_: asset (unqualified), home ("home" means the residence), inventory
+item, equipment
+
+**Meter**:
+A monotonic counter attached to an asset: `distance` (odometer, km), `time`
+(run-hours), or `count` (cycles). Latest reading wins; readings are sparse
+and interpolated between.
+_Avoid_: odometer (that is one meter), tracker, usage log
+
+**Reading**:
+One confirmed value of a meter at a point in time. Reminders evaluate
+against a linear estimate between readings; a confirmed reading always
+overrides the estimate.
+_Avoid_: entry (that is maintenance), measurement
+
+**Maintenance entry**:
+The unit of care: one thing done to one asset, once — with cost, optional
+provider, consumed inventory lines, and attachments. Ad-hoc work has no
+schedule item.
+_Avoid_: service record, log entry, event (an event is the care-event
+envelope)
+
+**Schedule item**:
+One recurring care obligation on one asset, with a list of trigger
+conditions and a match rule (`any` = whichever fires first; the oil-change
+case "every 8,000 km or 6 months" is one schedule item, not two).
+_Avoid_: reminder (that is the general rule concept), recurring task, cron
+
+**Seasonal window**:
+A trigger condition that recurs every year without a year anchor
+(start_month_day – end_month_day). Overdue means past window close and
+unsatisfied.
+_Avoid_: season, annual reminder
+
+**Checklist instance**:
+Derived state, materialized at read time: schedule items in an active
+window render as cards, and a card checks off iff a qualifying maintenance
+entry exists in that window (or an explicit "not this season" skip with a
+reason). Never stored, never "checked off" without a backing record.
+_Avoid_: checklist, todo list
+
+**Provider**:
+A person or business in a family's address book who performs maintenance.
+Selectable on an entry, clickable on a phone. A family member who does the
+work is recorded as no-provider plus notes.
+_Avoid_: vendor (a vendor field is a name on a bill), contact, mechanic
+
+**Manual**:
+The operating document for an asset, in one of two forms behind one Manuals
+section: a **manual file** (encrypted attachment referenced to the asset) or
+a **manual link** (`manual_url` — Nido does not hold the bytes).
+_Avoid_: documentation (that is the docs site), guide, attachment (an
+attachment is the general blob)
+
+## Notifications
 
 **Reminder**:
 A rule that pokes users about an inactivity or interval condition ("no
@@ -202,6 +266,21 @@ _Picked by code review 2026-10 — schema voted on most of these._
   means one thing.
 - **growth units**: store typed values + `unit_system`, imperial default;
   convert to metric only for percentile math (`toMetric`).
+- **home asset, not inventory item** (2026-10): assets are not stock — no
+  count to deplete, no consumption rules. First-class `home_assets` table;
+  inventory stays consumables. They meet by reference: `consumed_items` on a
+  maintenance entry. "Home" keeps meaning the residence; the modules are the
+  HOME modules, the entity is a home asset.
+- **meters interpolate** (2026-10): sparse readings + a linear estimate
+  evaluate triggers; a confirmed reading always overrides. No automatic
+  imports.
+- **checklists are derived** (2026-10): a checklist instance is read-time
+  state from schedule items + entries. Nothing is checked off without a
+  backing maintenance record.
+- **suggest, never assert** (2026-10): templates propose schedule items
+  unchecked; Nido never silently writes a schedule the user did not confirm.
+- **OCR is text only** (2026-10): best-effort extraction stored as searchable
+  text beside the scan; no structured field extraction into data.
 - **db file seams** (refactor/split-db-namespaces): `api/src/migrations.ts` is
   the versioned DDL history of both databases (registry + family); the runtime
   lifecycle (clients, cache, provisioning, teardown) is
