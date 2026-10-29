@@ -48,8 +48,11 @@ A pending offer for an email to join a family as a user.
 _Avoid_: invite code
 
 **Home**:
-A residence an inventory belongs to. Members can be linked to homes.
-_Avoid_: house, location
+A residence an inventory belongs to. Members can be linked to homes. The
+`homes` table is the registry of residences — **the H in the HOME modules**
+— and assets may carry a nullable `home_id` to say which residence they live
+at. The residence itself is never a home asset (§2.1 of the HOME PRD).
+_Avoid_: house, location, property
 
 ### Records
 
@@ -147,13 +150,14 @@ _Avoid_: runout, runway
 ### Home assets (HOME modules)
 
 **Home asset**:
-A durable thing a family owns that needs care (car, furnace, the house
-itself): a first-class `home_assets` row with a controlled-vocabulary
+A durable thing a family owns that needs care (car, furnace, shed): a
+first-class `home_assets` row with a controlled-vocabulary
 category (`vehicle`, `appliance`, `hvac`, `structure`, `outdoor`, `other`),
-an optional identity quartet (manufacturer/model/model_year/serial), and
-archivability. Assets are NOT inventory items — the two meet by reference
-(`consumed_items` on a maintenance entry). The house is an asset with
-category `structure`.
+an optional identity quartet (manufacturer/model/model_year/serial), an
+optional `home_id` saying which residence it lives at, and archivability.
+Assets are NOT inventory items — the two meet by reference
+(`consumed_items` on a maintenance entry). `structure` means improvements
+(shed, fence, sump) — the residence itself is a Home, never an asset.
 _Avoid_: asset (unqualified), home ("home" means the residence), inventory
 item, equipment
 
@@ -271,6 +275,12 @@ _Picked by code review 2026-10 — schema voted on most of these._
   inventory stays consumables. They meet by reference: `consumed_items` on a
   maintenance entry. "Home" keeps meaning the residence; the modules are the
   HOME modules, the entity is a home asset.
+- **homes is the residence, not a house-shaped asset** (2026-10): the `homes`
+  table already represents the residence (address, timezone, member links);
+  a `structure` home asset means an improvement at one (shed, fence, sump).
+  `home_assets.home_id` is nullable — family-scoped by default, home-scoped
+  when it matters. There is no separate future "Homes module"; these modules
+  grow around the homes registry.
 - **meters interpolate** (2026-10): sparse readings + a linear estimate
   evaluate triggers; a confirmed reading always overrides. No automatic
   imports.

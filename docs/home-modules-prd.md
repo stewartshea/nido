@@ -21,9 +21,12 @@ shoebox. Nido already tracks feeds and diapers with reminders, schedules, and
 encrypted attachments — the HOME modules point the same machinery at the
 physical world around the family.
 
-The modules are **HOME** as a backronym, one module per letter:
+The modules are **HOME** as a backronym — but this is not a new concept
+beside an existing "Homes module"; **the `homes` registry (§2.1) is the H**,
+and these modules are the home module that grows around it:
 
-1. **H — Home asset registry** (§3)
+1. **H — Homes & the asset registry** (§2.1, §3): residences already exist
+   in the schema; assets are the durable things that belong to them
 2. **O — Odometer & usage meters** (§5)
 3. **M — Maintenance log & documents** (§6, §7)
 4. **E — Events, schedules & seasonal checklists** (§8)
@@ -36,12 +39,39 @@ has, which is the strongest argument for the shape of this PRD.
 
 | Existing capability | Where | HOME reuses it for |
 | --- | --- | --- |
+| **Homes (residences)** | `homes`, `member_homes` tables; seeded per family | **The H.** The residence registry already exists — address, timezone, primary flag. These modules grow around it; there is no separate future "Homes module" |
 | Inventory items + categories | `api/src/inventory.ts` | Categories, audience, list UX — *not* the asset itself (see §4) |
 | Reminder conditions | `api/src/reminder-conditions.ts` | Schedule triggers read the same condition grammar |
 | Scheduler + email digests | `api/src/scheduler.ts`, `notifications.ts` | Maintenance reminders ride the existing timer loop |
 | Encrypted attachments | `api/src/attachments.ts`, `blob-store.ts` | Bills, manuals, warranty scans |
 | Event model | `docs/event-model-design.md` | Maintenance entries as events; templates instantiate against it |
 | Appointments (forward-looking list) | `api/src/appointments.ts` | Booked service visits |
+
+## 2.1 Homes and assets — one model, not two
+
+The PRD's first draft scoped `home_assets` to the family alone and treated
+"the house" as one more asset. Review caught the drift that invites: `homes`
+already represents the residence (address, timezone, member links), and a
+second house-shaped row in `home_assets` would be two representations of the
+same physical thing — one with schedules, one with an address — guaranteed to
+disagree.
+
+- **`homes` is the residence.** Address, timezone, and "who lives here" are
+  home concerns; `member_homes` already carries them.
+- **`home_assets.home_id` is nullable.** Family-scoped by default — a car is
+  just "ours" — but a family with a cabin or a rental says *which* home a
+  furnace or a shed belongs to. The registry stays family-flat; home is a
+  scope, not a hierarchy (asset nesting stays deferred, §10).
+- **`category: structure` means improvements** — shed, fence, driveway, sump
+  pump — the durable things *at* a residence. The residence itself is
+  `homes`, never a `home_assets` row.
+- **The `/home` page's "Homes" card becomes real**: residences, their
+  members, and each home's assets. The placeholder copy ("multi-home
+  tracking coming in a future module") retires with this PRD.
+
+**Open (migration order):** the registry (issue #65) shipped family-scoped
+before this section existed; `home_id` is an additive migration (v42) and the
+routes/UI grow a `homeId` filter. Nothing already written is invalidated.
 
 ## 3. H — The home asset registry
 
@@ -54,6 +84,7 @@ the spare oil and the winter tires-as-inventory stay in inventory.
 | Field | Type | Notes |
 | --- | --- | --- |
 | `id`, `family_id` | uuid | Family-scoped, like inventory |
+| `home_id` | uuid, nullable | The residence this asset lives at (§2.1) — null = family-wide, no `homes` row for e.g. a storage locker |
 | `name`, `notes` | text | "The Mazda", "VIN ends 4417" |
 | `category` | enum | Controlled vocabulary (`vehicle`, `appliance`, `hvac`, `structure`, `outdoor`, `other`) — same registry pattern as inventory categories, not free text, so assets can be reported on |
 | `manufacturer`, `model`, `model_year`, `serial` | text, int, text | The identity quartet. Optional, but it is what makes manuals (§7.4) and populated details (§7.5) possible |
@@ -308,11 +339,12 @@ fine and expected — entries simply record it as no-provider plus notes.
 
 ## 10. The home itself
 
-The house is an asset with `category: structure`. This is deliberately
-un-special: the furnace, the roof, the gutters, and the sump pump are either
-schedule items on the house-asset ("gutter cleaning, seasonal Oct") or their
-own appliance assets hanging off it. **Open (needs design):** whether an asset
-can *contain* another asset (furnace ⊂ house) — proposed as a nullable
+~~The house is an asset with `category: structure`.~~ — **revised by §2.1:**
+the house is `homes`, never a `home_assets` row. The furnace, the roof, the
+gutters, and the sump pump are either schedule items on a structure asset
+("gutter cleaning, seasonal Oct") or their own appliance assets — each
+optionally carrying a `home_id`. **Open (needs design):** whether an asset can
+*contain* another asset (furnace ⊂ house) — proposed as a nullable
 `parent_asset_id` in a later phase if the flat list hurts; v1 ships flat.
 
 ## 11. Permissions & tenancy summary
