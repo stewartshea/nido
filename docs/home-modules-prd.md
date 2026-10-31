@@ -215,6 +215,17 @@ context**: cost, vendor, and warranty metadata ride on the maintenance entry
 it hangs from. No new blob storage — `attachments.ts` and `blob-store.ts` are
 reused as-is.
 
+Files attach at two levels, both through the same attachments table:
+
+| Attaches to | `ref_type` | What it carries |
+| --- | --- | --- |
+| The asset | `asset` | The cover photo (one, replaced rather than accumulated, mirrored by `home_assets.picture` like `homes.picture`), plus manuals, model-plate shots, and any other file for the thing itself |
+| A maintenance entry | `maintenance` | The receipt, the invoice, and before/after photos for that job — they live and die with the entry |
+
+The asset's own files and its entries' files are read in one query by the care
+aggregate, so a page shows the whole file drawer without a request per history
+row.
+
 | Field | Lives on | Notes |
 | --- | --- | --- |
 | Bill/receipt scan | attachment | Encrypted, per existing attachment model |

@@ -37,7 +37,16 @@ const REF_TABLES: Record<string, string> = {
 	mood: 'moods',
 	journal: 'journal_entries',
 	subject: 'subjects',
+	// HOME modules: a photo or manual for the thing itself, and the receipt or
+	// before/after photo for the work done on it. Neither table carries a
+	// subject_id — an asset belongs to the family, not to a person — so these
+	// are resolved by existence alone (see SUBJECTLESS).
+	asset: 'home_assets',
+	maintenance: 'maintenance_entries',
 };
+
+/** Ref types whose table has no subject_id: family-scoped, not member-scoped. */
+const SUBJECTLESS = new Set(['asset', 'maintenance']);
 
 const MAX_BYTES = 25 * 1024 * 1024;
 
@@ -48,7 +57,7 @@ const MAX_BYTES = 25 * 1024 * 1024;
 const LIST_LIMIT = 1000;
 
 /** The REST shape of one attachment row. */
-function shapeAttachment(r: any) {
+export function shapeAttachment(r: any) {
 	return {
 		id: Number(r.id),
 		subjectId: r.subject_id === null ? null : Number(r.subject_id),
@@ -89,11 +98,15 @@ async function resolveRef(db: SqliteFacade, refType: string, refId: number): Pro
 	}
 	const table = REF_TABLES[refType];
 	if (!table) return null;
+	const subjectless = SUBJECTLESS.has(refType);
 	const row = (await db.execute({
-		sql: `SELECT subject_id FROM ${table} WHERE id = ? LIMIT 1`,
+		sql: subjectless
+			? `SELECT id FROM ${table} WHERE id = ? LIMIT 1`
+			: `SELECT subject_id FROM ${table} WHERE id = ? LIMIT 1`,
 		args: [refId],
-	})).rows[0] as { subject_id?: number } | undefined;
+	})).rows[0] as { id?: number; subject_id?: number } | undefined;
 	if (!row) return null;
+	if (subjectless) return { subjectId: null };
 	return { subjectId: row.subject_id === undefined || row.subject_id === null ? null : Number(row.subject_id) };
 }
 
@@ -237,6 +250,10 @@ attachmentRoutes.delete('/:id{[0-9]+}', async (c) => {
 
 	await blobStore().remove(familyId, String(row.blob_id), new Date(String(row.created_at)));
 	await db.execute({ sql: 'DELETE FROM attachments WHERE id = ?', args: [id] });
+	// A cover photo is referenced twice — once by this row, once by the
+	// marker column. Clearing the marker here keeps the pointer from outliving
+	// the bytes, so the page falls back to its placeholder instead of 404ing.
+	await db.execute({ sql: 'UPDATE home_assets SET picture = NULL WHERE picture = ?', args: [String(id)] });
 	return c.json({ message: 'Attachment removed' });
 });
 

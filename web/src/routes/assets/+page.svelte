@@ -7,6 +7,7 @@
 	import { authActions } from '$lib/stores/authStore';
 	import type { Asset, AssetCategoryId } from '$lib/api/types';
 	import AssetForm from '$lib/components/logging/AssetForm.svelte';
+	import AssetPicture from '$lib/components/AssetPicture.svelte';
 
 	// The home asset registry (HOME module 1, issue #65): the car, the
 	// furnace, the house itself. Its own surface, like inventory — assets
@@ -25,6 +26,9 @@
 	// A `?homeId=` deep link (the Homes card on /home) scopes the list to one
 	// residence; null = the whole registry.
 	let filterHomeId: number | null = null;
+	// How many schedules are overdue/due per asset, for the card badge. One
+	// cross-asset call, not one per asset.
+	let dueCounts: Record<number, number> = {};
 	// Fallback so the category picker renders before the fetch lands; the API
 	// is the source of truth once it does.
 	let categories: { id: AssetCategoryId; label: string }[] = [
@@ -55,8 +59,15 @@
 				await goto('/login');
 				return;
 			}
-			const res = await assetsAPI.list(showArchived, filterHomeId);
+			const [res, due] = await Promise.all([
+				assetsAPI.list(showArchived, filterHomeId),
+				assetsAPI.due(),
+			]);
 			assets = res.data.assets ?? [];
+			dueCounts = {};
+			for (const item of due.data.items ?? []) {
+				dueCounts[item.assetId] = (dueCounts[item.assetId] ?? 0) + 1;
+			}
 		} catch (e: any) {
 			if (e?.response?.status === 401) await goto('/login');
 			else error = e?.response?.data?.error || 'Could not load your assets.';
@@ -192,8 +203,18 @@
 				{#each assets as asset (asset.id)}
 					<li class="bg-surface border border-line-soft rounded-xl shadow-sm p-4" data-testid={`asset-${asset.id}`}>
 						<div class="flex items-start justify-between gap-3">
+							<div class="flex items-start gap-3 min-w-0">
+								{#if asset.picture}
+									<AssetPicture assetId={asset.id} picture={asset.picture} alt={asset.name} size="w-12 h-12 shrink-0" />
+								{/if}
 							<div class="min-w-0">
-								<p class="font-semibold text-ink truncate">{asset.name}{#if asset.archivedAt}<span class="ml-2 text-xs font-normal text-ink-soft">archived</span>{/if}</p>
+								<p class="font-semibold text-ink truncate">
+									<a href={`/assets/${asset.id}`} class="hover:underline">{asset.name}</a>
+									{#if asset.archivedAt}<span class="ml-2 text-xs font-normal text-ink-soft">archived</span>{/if}
+									{#if dueCounts[asset.id]}
+										<span class="ml-2 text-xs font-semibold border border-accent text-accent rounded-full px-2 py-0.5">{dueCounts[asset.id]} due</span>
+									{/if}
+								</p>
 								<p class="text-sm text-ink-soft">{identityLine(asset)}</p>
 								{#if asset.homeId !== null && homeName(asset.homeId)}
 									<p class="text-xs text-ink-soft mt-0.5">Lives at {homeName(asset.homeId)}</p>
@@ -204,6 +225,7 @@
 									<p class="text-xs text-ink-soft mt-1">Since {asset.acquiredAt}</p>
 								{/if}
 								{#if asset.notes}<p class="text-xs text-ink-soft mt-1 whitespace-pre-wrap">{asset.notes}</p>{/if}
+							</div>
 							</div>
 							<select
 								class="w-32 px-3 py-1.5 border border-line rounded-md text-sm text-ink bg-surface"
@@ -217,6 +239,7 @@
 							</select>
 						</div>
 						<div class="flex gap-2 mt-3 text-sm">
+							<a href={`/assets/${asset.id}`} class="underline text-accent">Care &amp; history</a>
 							<button type="button" class="underline text-ink-soft hover:text-ink" on:click={() => { showForm = true; editing = asset; }}>Edit</button>
 							{#if asset.archivedAt}
 								<button type="button" class="underline text-ink-soft hover:text-ink" on:click={() => unarchive(asset)}>Unarchive</button>

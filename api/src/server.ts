@@ -17,6 +17,7 @@ import { feedingRoutes } from './routes/feedings';
 import { diaperRoutes } from './routes/diapers';
 import inventoryRoutes from './routes/inventory';
 import homeAssetRoutes from './routes/home-assets';
+import homeCareRoutes from './routes/home-care';
 import { sleepRoutes } from './routes/sleep';
 import { growthRoutes } from './routes/growth';
 import { healthRoutes } from './routes/health';
@@ -73,6 +74,8 @@ app.route('/api/v1/subjects', subjectRoutes);
 app.route('/api/v1/feedings', feedingRoutes);
 app.route('/api/v1/diapers', diaperRoutes);
 app.route('/api/v1/inventory', inventoryRoutes);
+// Care first: it owns `/due`, and the registry's `/:id` would swallow it.
+app.route('/api/v1/home-assets', homeCareRoutes);
 app.route('/api/v1/home-assets', homeAssetRoutes);
 app.route('/api/v1/notifications', notificationStatusRoutes);
 app.route('/api/v1/sleep', sleepRoutes);
