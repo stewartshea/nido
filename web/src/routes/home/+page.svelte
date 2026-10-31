@@ -7,6 +7,7 @@
 	import { feedingAPI, diaperAPI, sleepAPI, growthAPI, milestoneAPI, vaccinationAPI, moodAPI, journalAPI } from '$lib/api/records';
 	import { importsAPI } from '$lib/api/system';
 	import { assetsAPI } from '$lib/api/assets';
+	import type { DueItem } from '$lib/api/types';
 	import HomeForm from '$lib/components/logging/HomeForm.svelte';
 	import HomePicture from '$lib/components/HomePicture.svelte';
 	import { authStore, authActions } from '$lib/stores/authStore';
@@ -74,20 +75,28 @@
 	let homeNotice = '';
 	let homeError = '';
 
+	// "What's due" (HOME module 3, issue #67): one list across every asset,
+	// overdue first. It is the same evaluation the asset page shows — one API,
+	// so the dashboard and the detail page cannot disagree.
+	let dueItems: DueItem[] = [];
+
 	async function loadHomesAndAssets() {
 		const familyId = currentFamilyId();
 		if (!familyId) return;
 		try {
-			const [homesRes, assetsRes] = await Promise.all([
+			const [homesRes, assetsRes, dueRes] = await Promise.all([
 				familiesAPI.homes(familyId),
 				assetsAPI.list(),
+				assetsAPI.due(),
 			]);
 			residences = homesRes.data.homes ?? [];
 			homeAssets = (assetsRes.data.assets ?? []).filter((a: any) => a.archivedAt === null);
+			dueItems = dueRes.data.items ?? [];
 		} catch {
 			// The card is an index, not a gate; an empty card is honest.
 			residences = [];
 			homeAssets = [];
+			dueItems = [];
 		}
 	}
 
@@ -358,15 +367,38 @@
 					</div>
 				{/if}
 
-				<div class="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6">
+				<div class="bg-surface rounded-lg shadow-card p-4 md:p-6 mb-6" data-testid="due-card">
+					<div class="flex items-baseline justify-between mb-3">
+						<h3 class="text-xl font-display font-semibold">What's due</h3>
+						<a href="/assets" class="text-sm font-semibold text-accent hover:underline">All assets &rarr;</a>
+					</div>
+					{#if dueItems.length === 0}
+						<p class="text-sm text-ink-soft">Nothing overdue or coming up. Give an asset a schedule and Nido will remind you.</p>
+					{:else}
+						<ul class="grid gap-2">
+							{#each dueItems.slice(0, 6) as item (item.scheduleId)}
+								<li class="flex items-start justify-between gap-3 border border-line-soft rounded-md p-3" data-testid={`due-${item.scheduleId}`}>
+									<div class="min-w-0">
+										<p class="text-sm font-semibold text-ink">{item.task}</p>
+										<p class="text-xs text-ink-soft">{item.assetName} · {item.detail}</p>
+									</div>
+									<a href={`/assets/${item.assetId}`} class="text-xs font-semibold shrink-0 {item.state === 'overdue' ? 'text-danger-text' : 'text-accent'}">
+										{item.state === 'overdue' ? 'Overdue' : 'Due'} &rarr;
+									</a>
+								</li>
+							{/each}
+						</ul>
+						{#if dueItems.length > 6}
+							<p class="text-xs text-ink-soft mt-2">and {dueItems.length - 6} more</p>
+						{/if}
+					{/if}
+				</div>
+
+				<div class="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
 					<a href="/assets" class="bg-surface rounded-lg shadow p-4 md:p-6 text-center hover:shadow-md block">
 						<h3 class="text-lg font-display font-semibold mb-2">Property Assets</h3>
 						<p class="text-ink-soft">Track physical property and appliance inventory.</p>
 					</a>
-					<div class="bg-surface rounded-lg shadow p-4 md:p-6 text-center">
-						<h3 class="text-lg font-display font-semibold mb-2">Maintenance</h3>
-						<p class="text-ink-soft">Seasonal upkeep schedules and service reminders.</p>
-					</div>
 					<div class="bg-surface rounded-lg shadow p-4 md:p-6 text-center">
 						<h3 class="text-lg font-display font-semibold mb-2">Manuals &amp; Routines</h3>
 						<p class="text-ink-soft">Store appliance manuals and household routines.</p>

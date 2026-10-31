@@ -54,6 +54,8 @@ export interface AssetRow {
 	acquired_at: string | null;
 	purchase_price: number | null;
 	notes: string | null;
+	/** Attachment id of the asset's photo, or null. */
+	picture: string | null;
 	archived_at: string | null;
 	created_by: string | null;
 	created_at: string | null;
@@ -86,6 +88,8 @@ export interface Asset {
 	/** Cents. Kept integer so a cost rollup never invents precision. */
 	purchasePrice: number | null;
 	notes: string | null;
+	/** Attachment id of the asset's photo, or null when it has none. */
+	picture: number | null;
 	archivedAt: string | null;
 	createdAt: string | null;
 	updatedAt: string | null;
@@ -112,8 +116,29 @@ export function shapeAsset(row: AssetRow): Asset {
 		acquiredAt: row.acquired_at ?? null,
 		purchasePrice: row.purchase_price === null || row.purchase_price === undefined ? null : Number(row.purchase_price),
 		notes: row.notes ?? null,
+		picture: row.picture && /^[0-9]+$/.test(String(row.picture)) ? Number(row.picture) : null,
 		archivedAt: row.archived_at ?? null,
 		createdAt: row.created_at ?? null,
 		updatedAt: row.updated_at ?? null,
 	};
+}
+
+/** The caller's family (household) id, or null when they belong to none. */
+export async function householdIdFor(db: any, userId: string): Promise<number | null> {
+	const res = await db.execute({ sql: 'SELECT household_id FROM user_households WHERE user_id = ?', args: [userId] });
+	return res.rows[0] ? Number((res.rows[0] as any).household_id) : null;
+}
+
+/**
+ * The asset row, only when it belongs to the caller's family.
+ *
+ * Family scoping is the join, not a filter after it: a wrong-family id is a
+ * 404, not a 403, so an outsider cannot probe which ids exist.
+ */
+export async function assetFor(db: any, id: number, householdId: number): Promise<AssetRow | null> {
+	const res = await db.execute({
+		sql: 'SELECT * FROM home_assets WHERE id = ? AND household_id = ? LIMIT 1',
+		args: [id, householdId],
+	});
+	return (res.rows[0] as AssetRow | undefined) ?? null;
 }

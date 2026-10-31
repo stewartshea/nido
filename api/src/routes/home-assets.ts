@@ -10,7 +10,9 @@ import { Hono } from 'hono';
 import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 import { type AuthEnv } from '../auth';
-import { ASSET_CATEGORIES, ASSET_CATEGORY_IDS, shapeAsset, type AssetRow } from '../home-assets';
+import {
+	ASSET_CATEGORIES, ASSET_CATEGORY_IDS, assetFor, householdIdFor, shapeAsset, type AssetRow,
+} from '../home-assets';
 
 const homeAssetRoutes = new Hono<AuthEnv>();
 
@@ -44,11 +46,6 @@ const updateAssetSchema = z.object({
 	notes: z.string().max(2000).nullable().optional(),
 });
 
-async function householdIdFor(db: any, userId: string): Promise<number | null> {
-	const res = await db.execute({ sql: 'SELECT household_id FROM user_households WHERE user_id = ?', args: [userId] });
-	return res.rows[0] ? Number((res.rows[0] as any).household_id) : null;
-}
-
 /**
  * A home id, only when it belongs to the caller's family.
  *
@@ -61,20 +58,6 @@ async function homeExistsForFamily(db: any, homeId: number, householdId: number)
 		args: [homeId, householdId],
 	});
 	return res.rows.length > 0;
-}
-
-/**
- * The asset row, only when it belongs to the caller's family.
- *
- * Family scoping is the join, not a filter after it: a wrong-family id is a
- * 404, not a 403, so an outsider cannot probe which ids exist.
- */
-async function assetFor(db: any, id: number, householdId: number): Promise<AssetRow | null> {
-	const res = await db.execute({
-		sql: 'SELECT * FROM home_assets WHERE id = ? AND household_id = ? LIMIT 1',
-		args: [id, householdId],
-	});
-	return (res.rows[0] as AssetRow | undefined) ?? null;
 }
 
 /** Merge a request's identity document over the stored one. */

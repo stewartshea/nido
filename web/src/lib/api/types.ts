@@ -183,6 +183,8 @@ export interface Asset {
 	/** Cents. Kept integer so a cost rollup never invents precision. */
 	purchasePrice: number | null;
 	notes: string | null;
+	/** Attachment id of the asset's photo, or null. */
+	picture: number | null;
 	archivedAt: string | null;
 	createdAt: string | null;
 	updatedAt: string | null;
@@ -378,4 +380,141 @@ export interface Plan {
 	fulfilled_by: number | null;
 	overdue: boolean;
 	created_at: string;
+}
+
+// ---------------------------------------------------------------------------
+// HOME care loop — meters (#66), schedules (#67), maintenance (#68)
+// ---------------------------------------------------------------------------
+
+export type MeterKind = 'distance' | 'time' | 'count';
+
+export interface MeterReading {
+	id: number;
+	value: number;
+	recordedAt: string;
+	source: string;
+	maintenanceEntryId: number | null;
+}
+
+export interface MeterEstimate {
+	/** The value today: the last confirmed reading, or the interpolation. */
+	value: number;
+	estimated: boolean;
+	asOf: string;
+	ratePerDay: number;
+}
+
+export interface Meter {
+	id: number;
+	assetId: number;
+	kind: MeterKind;
+	unit: string;
+	label: string | null;
+	/** Newest first. */
+	readings: MeterReading[];
+	lastReading: MeterReading | null;
+	estimate: MeterEstimate | null;
+	createdAt: string | null;
+	updatedAt: string | null;
+}
+
+export type IntervalUnit = 'days' | 'months';
+
+export type ScheduleCondition =
+	| { kind: 'interval'; every: number; unit: IntervalUnit }
+	| { kind: 'meter'; meterId: number; every: number }
+	| { kind: 'seasonal'; start: string; end: string };
+
+export type ConditionState = 'ok' | 'due' | 'overdue';
+
+export interface ConditionStatus {
+	kind: ScheduleCondition['kind'];
+	label: string;
+	state: ConditionState;
+	dueAt: string | null;
+	remaining: number | null;
+	remainingUnit: 'days' | string;
+	detail: string;
+}
+
+export interface SeasonalStatus {
+	window: { start: string; end: string };
+	state: 'upcoming' | 'open' | 'closed';
+	satisfied: boolean;
+	skipped: boolean;
+	entryAt: string | null;
+	skipReason: string | null;
+	remainingDays: number;
+}
+
+export interface ScheduleStatus {
+	state: ConditionState;
+	dueAt: string | null;
+	remainingDays: number | null;
+	conditions: ConditionStatus[];
+	season: SeasonalStatus | null;
+}
+
+export interface Schedule {
+	id: number;
+	assetId: number;
+	task: string;
+	conditions: ScheduleCondition[];
+	match: 'any' | 'all';
+	leadDays: number;
+	archivedAt: string | null;
+	createdAt: string | null;
+	status: ScheduleStatus;
+}
+
+export interface ConsumedItem {
+	itemId: number;
+	quantity: number;
+	name?: string;
+	unit?: string;
+}
+
+export interface MaintenanceEntry {
+	id: number;
+	assetId: number;
+	scheduleId: number | null;
+	task: string;
+	performedAt: string;
+	/** Cents. */
+	cost: number | null;
+	providerId: number | null;
+	notes: string | null;
+	consumedItems: ConsumedItem[];
+	createdAt: string | null;
+	updatedAt: string | null;
+}
+
+export interface CostRollup {
+	total: number | null;
+	count: number;
+	byYear: { year: string; total: number; count: number }[];
+}
+
+export interface AssetCare {
+	today: string;
+	asset: Asset;
+	meters: Meter[];
+	schedules: Schedule[];
+	entries: MaintenanceEntry[];
+	rollup: CostRollup;
+	/** Every file on the asset and on its entries, newest first. */
+	attachments: AttachmentMeta[];
+}
+
+export interface DueItem {
+	scheduleId: number;
+	assetId: number;
+	assetName: string;
+	homeId: number | null;
+	task: string;
+	state: ConditionState;
+	dueAt: string | null;
+	remainingDays: number | null;
+	detail: string;
+	season: SeasonalStatus | null;
 }

@@ -1278,6 +1278,157 @@ ALTER TABLE inventory_adjustments ADD COLUMN source TEXT DEFAULT 'manual';
       }
     },
   },
+  {
+    version: 44,
+    name: 'asset-meters',
+    // HOME module milestone 2 (issue #66): a meter is a monotonic counter on
+    // one asset — odometer, run-hours, cycles. Readings are sparse by design
+    // ("nobody logs an odometer daily"); the API interpolates between the two
+    // most recent ones, so a trigger can be evaluated against an estimate
+    // today while the reminder still shows the last *confirmed* reading.
+    //
+    // recorded_at is a calendar date (YYYY-MM-DD): the honest precision of
+    // "I read the dash on the way to work", not a made-up timestamp.
+    sql: `
+      CREATE TABLE IF NOT EXISTS asset_meters (
+        id           INTEGER PRIMARY KEY AUTOINCREMENT,
+        household_id INTEGER NOT NULL,
+        asset_id     INTEGER NOT NULL,
+        kind         TEXT NOT NULL,
+        unit         TEXT NOT NULL,
+        label        TEXT,
+        created_at   TEXT DEFAULT CURRENT_TIMESTAMP,
+        updated_at   TEXT DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (household_id) REFERENCES households(id) ON DELETE CASCADE,
+        FOREIGN KEY (asset_id) REFERENCES home_assets(id) ON DELETE CASCADE
+      );
+      CREATE INDEX IF NOT EXISTS idx_asset_meters_asset
+        ON asset_meters(household_id, asset_id);
+
+      CREATE TABLE IF NOT EXISTS asset_meter_readings (
+        id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+        household_id         INTEGER NOT NULL,
+        meter_id             INTEGER NOT NULL,
+        value                REAL NOT NULL,
+        recorded_at          TEXT NOT NULL,
+        source               TEXT NOT NULL DEFAULT 'manual',
+        maintenance_entry_id INTEGER,
+        created_by           TEXT,
+        created_at           TEXT DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (meter_id) REFERENCES asset_meters(id) ON DELETE CASCADE
+      );
+      CREATE INDEX IF NOT EXISTS idx_asset_meter_readings_meter
+        ON asset_meter_readings(meter_id, recorded_at);
+    `,
+  },
+  {
+    version: 45,
+    name: 'asset-schedules',
+    // HOME module milestone 3 (issue #67): one recurring care obligation on
+    // one asset ("oil change", "swap to winter tires").
+    //
+    // conditions is a JSON document reusing the reminder grammar's shape —
+    // interval / meter / seasonal_window — and match_mode is 'any' by
+    // default, because "every 8,000 km *or* 6 months, whichever comes first"
+    // is ONE schedule item with two conditions, not two schedules.
+    //
+    // A seasonal skip ("not this winter, we're away") is a row keyed to the
+    // window it excuses. Checklists stay derived: nothing here stores a
+    // checkbox that could disagree with the maintenance log.
+    sql: `
+      CREATE TABLE IF NOT EXISTS asset_schedules (
+        id           INTEGER PRIMARY KEY AUTOINCREMENT,
+        household_id INTEGER NOT NULL,
+        asset_id     INTEGER NOT NULL,
+        task         TEXT NOT NULL,
+        conditions   TEXT NOT NULL,
+        match_mode   TEXT NOT NULL DEFAULT 'any',
+        lead_days    INTEGER NOT NULL DEFAULT 14,
+        archived_at  TEXT,
+        created_by   TEXT,
+        created_at   TEXT DEFAULT CURRENT_TIMESTAMP,
+        updated_at   TEXT DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (household_id) REFERENCES households(id) ON DELETE CASCADE,
+        FOREIGN KEY (asset_id) REFERENCES home_assets(id) ON DELETE CASCADE
+      );
+      CREATE INDEX IF NOT EXISTS idx_asset_schedules_asset
+        ON asset_schedules(household_id, asset_id, archived_at);
+
+      CREATE TABLE IF NOT EXISTS asset_schedule_skips (
+        id           INTEGER PRIMARY KEY AUTOINCREMENT,
+        household_id INTEGER NOT NULL,
+        schedule_id  INTEGER NOT NULL,
+        window_start TEXT NOT NULL,
+        reason       TEXT,
+        created_by   TEXT,
+        created_at   TEXT DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(schedule_id, window_start),
+        FOREIGN KEY (schedule_id) REFERENCES asset_schedules(id) ON DELETE CASCADE
+      );
+    `,
+  },
+  {
+    version: 46,
+    name: 'maintenance-entries',
+    // HOME module milestone 4 (issue #68): the maintenance log — one thing
+    // done to one asset, once. `schedule_id` NULL is ad-hoc work ("fixed the
+    // squeaky door"); set means this entry satisfies a scheduled line, which
+    // is how a seasonal checklist gets checked off without a checkbox table.
+    //
+    // consumed_items writes through the same inventory ledger the manual
+    // adjust route uses, so "1 × furnace filter from stock" keeps stock
+    // honest instead of keeping a second count here.
+    sql: `
+      CREATE TABLE IF NOT EXISTS maintenance_entries (
+        id           INTEGER PRIMARY KEY AUTOINCREMENT,
+        household_id INTEGER NOT NULL,
+        asset_id     INTEGER NOT NULL,
+        schedule_id  INTEGER,
+        task         TEXT NOT NULL,
+        performed_at TEXT NOT NULL,
+        cost         INTEGER,
+        provider_id  INTEGER,
+        notes        TEXT,
+        created_by   TEXT,
+        created_at   TEXT DEFAULT CURRENT_TIMESTAMP,
+        updated_at   TEXT DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (household_id) REFERENCES households(id) ON DELETE CASCADE,
+        FOREIGN KEY (asset_id) REFERENCES home_assets(id) ON DELETE CASCADE,
+        FOREIGN KEY (schedule_id) REFERENCES asset_schedules(id) ON DELETE SET NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_maintenance_entries_asset
+        ON maintenance_entries(household_id, asset_id, performed_at);
+      CREATE INDEX IF NOT EXISTS idx_maintenance_entries_schedule
+        ON maintenance_entries(schedule_id, performed_at);
+
+      CREATE TABLE IF NOT EXISTS maintenance_consumed_items (
+        id           INTEGER PRIMARY KEY AUTOINCREMENT,
+        household_id INTEGER NOT NULL,
+        entry_id     INTEGER NOT NULL,
+        item_id      INTEGER NOT NULL,
+        quantity     REAL NOT NULL,
+        created_at   TEXT DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (entry_id) REFERENCES maintenance_entries(id) ON DELETE CASCADE
+      );
+      CREATE INDEX IF NOT EXISTS idx_maintenance_consumed_entry
+        ON maintenance_consumed_items(entry_id);
+    `,
+  },
+  {
+    version: 47,
+    name: 'home-assets-picture',
+    // A photo of the thing itself — the mower you are trying to identify in a
+    // shed, the furnace whose model plate nobody can read. The marker is the
+    // attachment id, the same shape homes.picture and family_members.avatar
+    // use, so the bytes stay in the encrypted blob store and the row carries
+    // only a pointer.
+    run: (raw) => {
+      const cols = raw.pragma('table_info(home_assets)') as Array<{ name: string }>;
+      if (!cols.some((c) => c.name === 'picture')) {
+        raw.exec('ALTER TABLE home_assets ADD COLUMN picture TEXT');
+      }
+    },
+  },
 ];
 
 /**
