@@ -14,11 +14,13 @@ codebase with the same features.
 or follow development.
 
 <!-- prettier-ignore -->
-> **On the name.** *Nido* means "nest" in Spanish and Italian. 巣 (*su*) is the
-> Japanese kanji for "nest" and doubles as the project's mark. The two are a
-> deliberate pairing, not a translation of each other. A nest is something you
-> build, keep, and look after — which is the point, and the reason the project
-> grows the way it does.
+> **On the name and the marks.** *Nido* means "nest" in Spanish and Italian.
+> 巣 (*su*) is the Japanese kanji for "nest" and is the project's editorial
+> crest — it heads this file. The app icon is the other mark: an egg in a
+> nest, because a glyph as dense as 巣 does not survive sixteen pixels.
+> Both mean the same thing — a nest is something you build, keep, and look
+> after — which is the point, and the reason the project grows the way it
+> does.
 
 ## Features
 
@@ -36,6 +38,32 @@ or follow development.
 - **Export / restore** — move a family's whole dataset as JSON
 - **Offline queue** — writes made without a connection are queued and replayed
 - **Themes** — 7 palettes × light/dark, plus a custom theme editor
+
+### The home, past the baby stage
+
+The HOME modules ([PRD](docs/home-modules-prd.md)) — the same care loop, pointed at the
+physical world around the family:
+
+- **Homes** — the residences themselves: address, timezone, who lives there,
+  and a picture. A home can be archived, never deleted.
+- **Home assets** — the durable things a family owns and cares for: the car,
+  the furnace. Category, manufacturer/model/serial, purchase details; archived
+  when sold, keeping their history. Assets can scope to a home.
+- **Meters** — odometer and usage counters on an asset. Readings are dated and
+  interpolated, so "every 8,000 km or six months, whichever comes first" is one
+  schedule, honestly evaluated against an estimate — with the last confirmed
+  reading shown.
+- **Schedules** — interval, meter, and seasonal-window conditions (`any` or
+  `all`), with lead time. Seasons recur without a year anchor and wrap the new
+  year; the **What's due** view shows everything across assets, overdue first.
+- **Maintenance log** — what was done, when, what it cost, and who did it. An
+  entry can consume inventory stock ("one furnace filter") and carry its
+  receipts and photos; a seasonal checklist card checks off only when an entry
+  exists in the window — never a stored checkbox that could disagree with the
+  log.
+
+Still ahead in the PRD: best-effort OCR on scanned documents, service
+providers (a small address book), and per-category schedule templates.
 
 ## Quick start
 
@@ -276,9 +304,12 @@ tracked. See [`ROADMAP.md`](ROADMAP.md) for the labels and how they map to the
 board's fields.
 
 Two directions at the moment: making the family tracking loop trustworthy, and
-the move into [inventory management](https://github.com/stewartshea/nido/issues/11)
-covering both family and home use cases — where stock is consumed by events you
-already record, and runout is forecast ahead of time.
+the HOME modules ([PRD](docs/home-modules-prd.md)) — the registry, meters,
+schedules, and the maintenance log are in; documents/OCR, service providers,
+and templates are next. The
+[inventory management](https://github.com/stewartshea/nido/issues/11) work —
+where stock is consumed by events you already record, and runout is forecast
+ahead of time — feeds the maintenance log, which consumes stock itself.
 
 Also on the list:
 

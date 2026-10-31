@@ -4,6 +4,7 @@
 	import { authStore } from '$lib/stores/authStore';
 	import { familiesAPI } from '$lib/api/family';
 	import { AlertCircle, Check, Users } from 'lucide-svelte';
+	import NidoMark from '$lib/components/NidoMark.svelte';
 
 	let familyId = '';
 	let token = '';
@@ -50,7 +51,7 @@
 
 <div class="min-h-[80vh] flex flex-col items-center justify-center px-4 py-8">
 	<div class="text-center mb-8">
-		<div class="inline-flex items-center justify-center w-16 h-16 rounded-full border-2 border-accent/50 text-accent text-3xl font-light mb-4" aria-hidden="true">巣</div>
+		<div class="inline-flex items-center justify-center w-16 h-16 rounded-full border-2 border-accent/50 text-accent mb-4" aria-hidden="true"><NidoMark size={34} /></div>
 		<h1 class="text-4xl font-display font-bold text-ink mb-2">Nido</h1>
 		<p class="text-base text-ink-soft italic">tending to the home</p>
 	</div>
