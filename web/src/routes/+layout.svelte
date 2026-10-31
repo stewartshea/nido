@@ -10,6 +10,7 @@
 	import { restoreThemeEarly } from '$lib/theme';
 	import ThemePicker from '$lib/components/ThemePicker.svelte';
 	import BottomNav from '$lib/components/BottomNav.svelte';
+	import NidoMark from '$lib/components/NidoMark.svelte';
 	import { PRIMARY_NAV } from '$lib/nav';
 	import { authStore, authActions } from '$lib/stores/authStore';
 	import { familiesAPI } from '$lib/api/family';
@@ -111,7 +112,7 @@
 		<div class="mx-auto max-w-6xl px-4 py-2 md:py-3 flex items-center justify-between">
 			<div class="flex items-center gap-3">
 				<a href="/" class="flex items-center gap-2">
-					<span class="w-9 h-9 rounded-full border border-accent/50 text-accent flex items-center justify-center text-lg font-light" aria-hidden="true">巣</span>
+					<span class="w-9 h-9 rounded-full border border-accent/50 text-accent flex items-center justify-center" aria-hidden="true"><NidoMark size={22} /></span>
 					<span class="text-xl md:text-2xl font-display text-on-primary tracking-wide">Nido</span>
 				</a>
 				<span class="hidden md:inline text-sm text-accent italic ml-2">tending to the home</span>

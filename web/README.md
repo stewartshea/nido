@@ -53,6 +53,12 @@ npm run preview
 - Milestone tracking
 - Vaccination tracking
 
+### Home & Inventory
+- Homes and property assets — registry, cover photos, scoping to a residence
+- Meters with interpolated readings; schedules with interval, meter, and seasonal-window triggers
+- Maintenance log — cost, consumed stock, receipts; seasonal checklists derived from the log
+- Stock items that deplete from logged activity and forecast runout
+
 ### Analytics
 - Health summaries
 - Pattern recognition
@@ -64,7 +70,7 @@ Nido is calm and trustworthy — a quiet surface you can check at 3am without
 glaring light.
 - **Palette**: Deep forest greens (primary surfaces, active states) paired with warm brass accents, set against a warm cream "paper" neutral and "char" ink for text.
 - **Typography**: Large serif display headings (Lora) combined with a clean sans-serif (Inter) for UI elements, utilizing generous whitespace.
-- **Crest**: A minimalist kanji crest featuring the character 巣 (*su*: nest) inside a refined thin circular ring, rendered in brass on a deep forest background.
+- **Crest**: two marks. The app icon — an egg in a nest (`static/favicon.svg`), drawn in the accent color of the active palette in-app (`lib/components/NidoMark.svelte`) — and the kanji 巣 (*su*: nest), the editorial crest in the README and docs.
 
 ## Tech Stack
 - SvelteKit
