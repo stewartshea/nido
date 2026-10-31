@@ -236,10 +236,36 @@ guessing. Self-hosters: see
 
 ## Home
 
-**Home** carries the household half of Nido: the **homes** themselves, the
-**property assets** in them, **maintenance** records, and **manuals &
-routines**. It is the same member-and-record model as the baby log, which is
-what makes adding it cheap.
+**Home** is where the house itself is tracked. It starts with the
+**residences**: add a home with its address and timezone, mark who lives
+there, and give it a picture.
+
+Then the durable things get their own pages:
+
+- **Add an asset** for anything the family owns and cares for — the car, the
+  furnace. A category, the manufacturer and model if you know them, and what
+  it cost. Sold or disposed things are **archived**, not deleted, so their
+  history stays. An asset can be scoped to a home, or just belong to the
+  family.
+- **Add a meter** for anything the asset counts — odometer, run-hours, cycles.
+  Record a reading whenever you happen to see one; Nido interpolates between
+  the last two readings, so a schedule can trigger off distance without
+  anyone logging mileage daily.
+- **Add a schedule** for recurring care. Interval ("every six months"), meter
+  ("every 8,000 km"), or a seasonal window ("Nov 15 – Dec 15") — combined with
+  *any* (whichever comes first) or *all*.
+- **Log maintenance** when care happens: what was done, when, what it cost,
+  and who did it. An entry can **use inventory stock** — pick the furnace
+  filter and the count — and attach the receipt, encrypted like every other
+  file in Nido.
+
+The **What's due** card on the Home page shows every asset's obligations
+across the house, overdue first, and feeds the same
+[email digest](#email) as everything else.
+
+A seasonal schedule shows as a **checklist** — "Winter 2026" — and a card
+checks off when an entry is logged inside the window. Nothing is checked that
+is not backed by a record; skipping a season takes a reason.
 
 ## Working offline
 

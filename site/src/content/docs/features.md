@@ -238,15 +238,39 @@ your own scheduler. See [Configuration →](../reference/configuration/) and
 
 ## Home
 
-The same pattern, past the baby stage. A home tracks:
+The same care loop, past the baby stage — the HOME modules, built in the open
+([PRD](https://github.com/stewartshea/nido/blob/main/docs/home-modules-prd.md)).
 
-- **Homes** — the properties themselves
-- **Property assets** — the things in them
-- **Maintenance** — what was done, when
-- **Manuals & routines** — the paper that used to live in a drawer
+- **Homes** — the residences themselves: address, timezone, who lives there,
+  a picture. The first thing every other home record scopes to.
+- **Assets** — the durable things a family owns and cares for: the car, the
+  furnace, the lawnmower. Category, manufacturer/model/serial, purchase
+  details. Archived, never deleted — sold things keep their history, and an
+  asset can scope to one home.
+- **Meters** — odometer, hours, cycles on an asset. Nobody reads their
+  odometer daily, so readings are dated and **interpolated**: a schedule can
+  say "every 8,000 km *or* six months, whichever comes first" and be evaluated
+  honestly against a linear estimate, with the last confirmed reading shown
+  beside it.
+- **Schedules** — interval, meter, and **seasonal-window** conditions (`any`
+  or `all`), with lead time. A window recurs every year without a year-anchored
+  row to maintain, and "past the close and unsatisfied" shows as overdue.
+- **Maintenance log** — what was done, when, what it cost, who did it. An
+  entry can **consume inventory stock** ("one furnace filter from the shelf")
+  and carries its own receipts and photos, encrypted like every other
+  attachment. A seasonal checklist card checks off only when an entry exists
+  in the window — or an explicit skip with a reason — never a stored checkbox
+  that could disagree with the log.
+- **What's due** — one view across every asset, overdue first, feeding the
+  same digest as feeds and filters. One email, not two systems to check.
 
-This is where "grows to cover the whole home" stops being a slogan: the
-member-plus-record model is what makes it cheap to add.
+The asset page is the drawer, made real: the cover photo, the meters, the
+schedules, the history with costs, and every file — the manuals and the
+receipts — in one place.
+
+Still ahead: best-effort OCR on scanned documents, service providers (a small
+family address book), and per-category schedule templates — see
+[the roadmap](project/roadmap/).
 
 ## Reports
 
