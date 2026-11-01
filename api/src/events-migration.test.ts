@@ -143,6 +143,6 @@ describe('migration 38: events and plans', () => {
 		// Re-running the whole chain (a future migration running after 43 must
 		// not trip over its guards) is a no-op.
 		runMigrations(db.raw, FAMILY_MIGRATIONS);
-		expect(db.raw.pragma('user_version')).toMatchObject([{ user_version: 47 }]);
+		expect(db.raw.pragma('user_version')).toMatchObject([{ user_version: 48 }]);
 	});
 });

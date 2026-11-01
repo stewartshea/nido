@@ -315,6 +315,12 @@ export interface ConsumptionRule {
 	unitsPerUse: number;
 	/** How many items one whole use subtracts (X in "X per N"). */
 	amountPerUse: number;
+	/**
+	 * When set, the bill is the event's own number for this attribute
+	 * (a feed's 'amountOz') instead of the whole-use ratio — a formula can
+	 * loses exactly the ounces each bottle held.
+	 */
+	amountAttr: string | null;
 	/** Accrued progress toward the next whole use. */
 	consumeCarry: number;
 }

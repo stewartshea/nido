@@ -136,7 +136,11 @@ stock and live in their own table)
 
 **Consumption rule**:
 A rule that bills stock from an item when events of a source category match
-its conditions ("each feeding uses 2 oz of formula").
+its conditions ("each feeding uses 2 oz of formula"). A whole-use ratio
+subtracts X per N events; a **direct-amount rule** (`amount_attr`) subtracts
+the event's own quantity instead — a formula can loses the ounces each
+bottle feed held, and fires only for the feed whose `formula_item_id`
+names that can.
 _Avoid_: usage rule
 
 **Adjustment**:

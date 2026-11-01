@@ -5,9 +5,20 @@ import { type CategorySheet, categoryRoutes } from './category-routes';
 
 const selectColumns = [
 	'id', 'subject_id', 'start_time', 'end_time', 'duration', 'amount', 'amount_unit', 'type', 'side',
-	'left_breast_at', 'right_breast_at', 'left_duration', 'right_duration', 'formula_id', 'notes',
+	'left_breast_at', 'right_breast_at', 'left_duration', 'right_duration', 'formula_id', 'formula_item_id', 'notes',
 	'created_at', 'created_by',
 ];
+
+// ML_PER_OZ — the US fluid ounce, the one amountUnit 'oz' means here.
+export const ML_PER_OZ = 29.5735295625;
+
+/** Any logged quantity, normalized to ounces — the unit formula stock is kept in. */
+export function amountOz(data: Record<string, unknown>): number | null {
+	const amount = Number(data.amount);
+	if (!Number.isFinite(amount) || amount <= 0) return null;
+	const oz = data.amountUnit === 'ml' ? amount / ML_PER_OZ : amount;
+	return Math.round(oz * 100) / 100;
+}
 
 // Zod schemas for validation
 const createFeedingSchema = z.object({
@@ -23,6 +34,10 @@ const createFeedingSchema = z.object({
 	leftDuration: z.number().int().nonnegative().optional(),
 	rightDuration: z.number().int().nonnegative().optional(),
 	formulaId: z.number().optional(),
+	// The inventory container the bottle drew from. `formula_id` keeps
+	// accepting legacy payloads (an offline queue replaying a pre-inventory
+	// record); new readers use this.
+	formulaItemId: z.number().int().positive().optional(),
 	notes: z.string().optional(),
 });
 
@@ -38,6 +53,7 @@ const updateFeedingSchema = z.object({
 	leftDuration: z.number().int().nonnegative().nullable().optional(),
 	rightDuration: z.number().int().nonnegative().nullable().optional(),
 	formulaId: z.number().optional(),
+	formulaItemId: z.number().int().positive().nullable().optional(),
 	notes: z.string().optional(),
 });
 
@@ -70,6 +86,7 @@ const feedingSheet: CategorySheet = {
 		leftDuration: 'left_duration',
 		rightDuration: 'right_duration',
 		formulaId: 'formula_id',
+		formulaItemId: 'formula_item_id',
 		notes: 'notes',
 	},
 	insert: {
@@ -96,6 +113,7 @@ const feedingSheet: CategorySheet = {
 				d.leftDuration ?? null,
 				d.rightDuration ?? null,
 				d.formulaId || null,
+				d.formulaItemId ?? null,
 				d.notes || null,
 				now,
 				userId,
@@ -125,8 +143,19 @@ const feedingSheet: CategorySheet = {
 	},
 	// A bottle fed is a bottle to wash, so a linked item bills stock from this
 	// log, with the feed's type among the event's attributes so a rule can
-	// narrow to bottle feeds only.
-	emit: { category: 'feeds', attrs: (d) => ({ type: d.type as string }) },
+	// narrow to bottle feeds only. Two more travel the same way:
+	// `amountOz` (the logged amount normalized to ounces) is what a
+	// direct-amount rule subtracts from a formula container, and `billedItem`
+	// is which container — the pin that keeps one family's two cans from
+	// each billing every feed.
+	emit: {
+		category: 'feeds',
+		billedItem: (d) => (d.formulaItemId == null ? null : Number(d.formulaItemId)),
+		attrs: (d) => ({
+			type: d.type as string,
+			amountOz: amountOz(d) == null ? null : String(amountOz(d)),
+		}),
+	},
 };
 
 export const feedingRoutes = categoryRoutes(feedingSheet);

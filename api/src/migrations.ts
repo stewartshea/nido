@@ -1429,7 +1429,157 @@ ALTER TABLE inventory_adjustments ADD COLUMN source TEXT DEFAULT 'manual';
       }
     },
   },
+  {
+    version: 48,
+    name: 'formula-inventory-items',
+    // The bottle feed's formula picker was a retail catalog; what a family
+    // actually manages is the can in the cupboard (issue #81). A formula
+    // becomes an inventory item — remaining oz on `quantity`, container size
+    // on `pack_size` — and a bottle feed's `formula_item_id` names the
+    // container it drew from, which decrements its stock by the oz logged.
+    //
+    // `formulas` keeps its rows as a thin alias (`inventory_item_id`) so old
+    // clients still sending `formulaId` — an offline queue replaying, the
+    // import path remapping formulas — resolve to the same container instead
+    // of pointing at a registry nobody reads. Only formulas a feed has
+    // actually referenced become items: the seeded catalog is not real stock,
+    // and converting all of it would lie ("48 oz on hand") about cans that
+    // never existed. Untouched, the picker stops being offered and the table
+    // stops being written to — the catalog dies with its last reader.
+    run: (raw) => {
+      const feedingCols = raw.pragma('table_info(feedings)') as Array<{ name: string }>;
+      if (feedingCols.length && !feedingCols.some((c) => c.name === 'formula_item_id')) {
+        raw.exec('ALTER TABLE feedings ADD COLUMN formula_item_id INTEGER');
+      }
+      raw.exec(`
+        CREATE INDEX IF NOT EXISTS idx_feedings_formula_item
+          ON feedings(formula_item_id, start_time);
+      `);
+      const formulaCols = raw.pragma('table_info(formulas)') as Array<{ name: string }>;
+      if (formulaCols.length && !formulaCols.some((c) => c.name === 'inventory_item_id')) {
+        raw.exec('ALTER TABLE formulas ADD COLUMN inventory_item_id INTEGER');
+      }
+      const itemCols = raw.pragma('table_info(inventory_items)') as Array<{ name: string }>;
+      const hasSubject = itemCols.some((c) => c.name === 'subject_id');
+      const itemCol = hasSubject ? 'subject_id' : 'baby_id';
+      if (itemCols.length) {
+        // Width tracking is per event, not per whole use: "the bottle held
+        // 4.5 oz" must move 4.5 oz of powder, not floor to 4 with a carry the
+        // next feed inherits. `amount_attr` says the bill is the event's own
+        // number for the named attribute — the inventory ledger gets a row
+        // per feeding, and the carry arithmetic does not apply.
+        const ruleCols = raw.pragma('table_info(inventory_consumption_rules)') as Array<{ name: string }>;
+        if (ruleCols.length && !ruleCols.some((c) => c.name === 'amount_attr')) {
+          raw.exec('ALTER TABLE inventory_consumption_rules ADD COLUMN amount_attr TEXT');
+        }
+        raw.exec(`
+          CREATE UNIQUE INDEX IF NOT EXISTS idx_inv_consume_rules_item_active
+            ON inventory_consumption_rules(item_id) WHERE active = 1 AND amount_attr IS NOT NULL;
+        `);
+      }
+      migrateToFormulaInventoryItems(raw, itemCol);
+    },
+  },
 ];
+
+/**
+ * One referenced formula becomes one inventory item, its feedings re-pointed
+ * and a direct-amount consumption rule beside it.
+ *
+ * Exported for tests: a fresh database runs this with no referenced formulas,
+ * so the backfill itself needs a seeded caller. Idempotent — a formula whose
+ * `inventory_item_id` is already set is left alone, so a re-run (or a database
+ * that fetched the columns ahead of the backfill) never duplicates a can.
+ */
+export function migrateToFormulaInventoryItems(raw: {
+  exec(sql: string): unknown;
+  pragma(sql: string): unknown;
+}, itemCol?: string) {
+  const feedingCols = raw.pragma('table_info(feedings)') as Array<{ name: string }>;
+  const formulaCols = raw.pragma('table_info(formulas)') as Array<{ name: string }>;
+  const itemCols = raw.pragma('table_info(inventory_items)') as Array<{ name: string }>;
+  const ruleCols = raw.pragma('table_info(inventory_consumption_rules)') as Array<{ name: string }>;
+  if (
+    !feedingCols.length || !formulaCols.length || !itemCols.length || !ruleCols.length ||
+    !feedingCols.some((c) => c.name === 'formula_item_id') ||
+    !formulaCols.some((c) => c.name === 'inventory_item_id') ||
+    !ruleCols.some((c) => c.name === 'amount_attr')
+  ) return;
+
+  // Which column inventory_items carries its subject on changed with the
+  // members rename; feedings did too, so both come from the same era.
+  const subjectCol = itemCol ?? (itemCols.some((c) => c.name === 'subject_id') ? 'subject_id' : 'baby_id');
+
+  // Formulas a feed actually referenced — the cans a family really opened.
+  raw.exec(`
+    INSERT INTO inventory_items
+      (${subjectCol}, name, category, variant, quantity, unit, active, notes, created_at, updated_at)
+    SELECT NULL,
+           TRIM(COALESCE(brand, '') || ' ' || name),
+           'formula',
+           COALESCE(formula_type, 'standard'),
+           0, 'oz',
+           1,
+           'Created from the formula the family was logging. Set the amount on hand.',
+           CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+    FROM formulas f
+    WHERE f.inventory_item_id IS NULL
+      AND EXISTS (SELECT 1 FROM feedings t WHERE t.formula_id = f.id)
+      AND NOT EXISTS (
+        SELECT 1 FROM inventory_items i
+        WHERE i.category = 'formula'
+          AND TRIM(COALESCE(f.brand, '') || ' ' || f.name) = i.name
+      );
+  `);
+
+  // The alias: both future lookups (a legacy formulaId arriving from an old
+  // client or a restore) and this migration's own re-pointing read it.
+  raw.exec(`
+    UPDATE formulas
+    SET inventory_item_id = (
+      SELECT i.id FROM inventory_items i
+      WHERE i.category = 'formula'
+        AND TRIM(COALESCE(formulas.brand, '') || ' ' || formulas.name) = i.name
+    )
+    WHERE inventory_item_id IS NULL
+      AND EXISTS (SELECT 1 FROM feedings t WHERE t.formula_id = formulas.id);
+  `);
+
+  // The direct-amount rule: feeds of the container bill its stock by the oz
+  // logged. The pinning to the container is server policy (emitActivity
+  // matches a direct-amount rule only against an event that named its item),
+  // so the conditions stay the plain activity filter and any member is fine
+  // because the subject is NULL — household stock follows any member's feeds.
+  raw.exec(`
+    INSERT INTO inventory_consumption_rules
+      (item_id, source_table, source_category, subject_id, match, conditions,
+       units_per_use, amount_per_use, amount_attr, created_at, updated_at)
+    SELECT f.inventory_item_id, 'feedings', 'feeds', NULL, 'all',
+           json_array(json_object('attr', 'type', 'values', json_array('bottle', 'formula'))),
+           1, 1, 'amountOz',
+           CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+    FROM formulas f
+    WHERE f.inventory_item_id IS NOT NULL
+      AND NOT EXISTS (
+        SELECT 1 FROM inventory_consumption_rules r
+        WHERE r.item_id = f.inventory_item_id
+      );
+  `);
+  // The per-item-active partial index (above and in the entry) means an
+  // item can carry at most one direct-amount rule while active; the
+  // NOT EXISTS above plus the index together keep this re-runnable.
+
+  // Old feedings keep their formula_id and learn the container it meant, so
+  // "last formula used" survives the alias before the picker reads items.
+  raw.exec(`
+    UPDATE feedings
+    SET formula_item_id = (
+      SELECT f.inventory_item_id FROM formulas f WHERE f.id = feedings.formula_id
+    )
+    WHERE formula_id IS NOT NULL
+      AND formula_item_id IS NULL;
+  `);
+}
 
 /**
  * Move an item's consumption rule off the item and into its own table.

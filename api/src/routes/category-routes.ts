@@ -125,8 +125,16 @@ export interface CategorySheet {
 	 * where raw mode's default is the 404 of a missing row.
 	 */
 	memberDeniedStatus?: 403 | 404;
-	/** Consumption: category id + how the body's attrs are derived, or null to not bill. */
-	emit: { category: string; attrs: (data: Record<string, unknown>) => Record<string, string | null> } | null;
+	/**
+	 * Consumption: category id + how the body's attrs are derived, or null to not bill.
+	 * `billedItem` names the stock container the record drew from — what makes a
+	 * direct-amount rule (`amount_attr`) this record's own, and nothing to any other.
+	 */
+	emit: {
+		category: string;
+		attrs: (data: Record<string, unknown>) => Record<string, string | null>;
+		billedItem?: (data: Record<string, unknown>) => number | null;
+	} | null;
 	/**
 	 * vaccinations needs this: a static, DB-less sub-endpoint (GET
 	 * /schedule) that shares the mount path but none of the five
@@ -274,12 +282,14 @@ export function categoryRoutes(sheet: CategorySheet): Hono<AuthEnv> {
 				// already stored — a consumption failure must not lose it.
 				if (sheet.emit) {
 					try {
+						const billed = sheet.emit.billedItem?.(data);
 						await emitActivity(db, {
 							category: sheet.emit.category,
 							refTable: sheet.table,
 							refId: id,
 							subjectId,
 							attrs: sheet.emit.attrs(data),
+							...(billed != null ? { billedItem: billed } : {}),
 							createdBy: userId,
 						});
 					} catch (err: unknown) {

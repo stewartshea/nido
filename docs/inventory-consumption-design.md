@@ -161,6 +161,18 @@ rows carry it (and the unique index becomes partial,
 scheduled rows keep `rule_id NULL`. The ledger stays keyed by `item_id` for
 forecasts, rates, and drift — those are per-item questions.
 
+The formula journey (issue #81) extended the same document rather than
+inventing a second mechanism: `amount_attr`, nullable, says the bill is the
+event's own number for the named attribute — a feed's `amountOz` — instead of
+the X-per-N ratio. One ledger row per event, fractional amounts intact; the
+carry arithmetic does not apply. A rule with `amount_attr` is **pinned to its
+container**: `emitActivity` receives `billedItem` (the feed's
+`formula_item_id`) and applies the rule only when the event names it — so two
+open cans each burn only their own stock, and an event that names no can
+bills nothing ("we don't know which can you fed" beats every can draining at
+once). Whole-use rules keep matching any member's events regardless; the pin
+is a fact about distribution, not about matching.
+
 ### 4.4 Conditions
 
 ```jsonc
