@@ -10,7 +10,7 @@ import { consumptionRate, coverForecast, cadenceRate, dueCycles, nextConsumption
 import { emitActivity, parseConsumptionConditions, parseRuleMatch } from '../inventory-consume';
 import {
 	consumableCategories,
-	validateConsumptionConditions, type ConsumptionCondition,
+	validateConsumptionConditions, validateAmountAttr, type ConsumptionCondition,
 } from '../category-registry';
 import { familyOptionValues } from '../reminder-conditions';
 import { SIGNALS, signalByName } from '../inventory-signals';
@@ -37,6 +37,11 @@ const consumptionRuleSchema = z.object({
 	})).max(10).nullish(),
 	unitsPerUse: z.number().int().min(1).max(10000).nullish(),
 	amountPerUse: z.number().positive().max(100000).nullish(),
+	// When set, the bill is the event's own number for this attribute key
+	// ('amountOz' on a feed), not the every-N ratio: one ledger row per
+	// event, fractional amounts intact — how a formula can loses the ounces
+	// a bottle actually held.
+	amountAttr: z.string().min(1).max(40).nullish(),
 });
 
 /** The normalized shape rules are stored and reasoned in. */
@@ -46,6 +51,8 @@ interface RuleSpec {
 	conditions: ConsumptionCondition[] | null;
 	unitsPerUse: number;
 	amountPerUse: number;
+	/** The event attribute whose number the rule bills directly; null = whole-use ratio. */
+	amountAttr: string | null;
 }
 
 /** A stored rule row, back in spec form. */
@@ -57,6 +64,7 @@ function specOfRule(rule: any): RuleSpec {
 		conditions: conditions.length ? conditions : null,
 		unitsPerUse: Number(rule.units_per_use ?? 1) || 1,
 		amountPerUse: Number(rule.amount_per_use ?? 1) || 1,
+		amountAttr: rule.amount_attr ? String(rule.amount_attr) : null,
 	};
 }
 
@@ -99,6 +107,7 @@ function legacySpecFromRow(row: any): RuleSpec {
 			: null,
 		unitsPerUse: Number(row.units_per_decrement ?? 1) || 1,
 		amountPerUse: Number(row.decrement_per_event ?? 1) || 1,
+		amountAttr: null,
 	};
 }
 
@@ -126,6 +135,7 @@ function specFromBody(body: {
 			conditions: conditions.length ? conditions : null,
 			unitsPerUse: r.unitsPerUse ?? 1,
 			amountPerUse: r.amountPerUse ?? 1,
+			amountAttr: r.amountAttr?.trim() || null,
 		};
 	}
 	if (body.eventCategory) {
@@ -138,6 +148,9 @@ function specFromBody(body: {
 				: null,
 			unitsPerUse: body.unitsPerDecrement ?? 1,
 			amountPerUse: body.decrementPerEvent ?? 1,
+			// The flattened fields predate amount attributes; without the
+			// nested document the rule stays a whole-use ratio.
+			amountAttr: null,
 		};
 	}
 	return null;
@@ -287,6 +300,7 @@ function shapeItem(row: any, forecast: ItemForecast, firing: boolean, rule: any 
 				conditions: spec.conditions ?? [],
 				unitsPerUse: spec.unitsPerUse,
 				amountPerUse: spec.amountPerUse,
+				amountAttr: spec.amountAttr,
 				consumeCarry: Number(rule.consume_carry ?? 0),
 			}
 			: null,
@@ -498,6 +512,8 @@ inventoryRoutes.post('/', zValidator('json', createItemSchema), async (c) => {
 		const custom = await familyOptionValues(db);
 		const invalid = validateConsumptionConditions(spec.sourceCategory, spec.conditions ?? [], custom);
 		if (invalid) return c.json({ error: invalid }, 400);
+		const badAmount = validateAmountAttr(spec.sourceCategory, spec.amountAttr);
+		if (badAmount) return c.json({ error: badAmount }, 400);
 	}
 	const mirror = spec ? legacyColumnsFromSpec(spec) : {
 		event_category: body.eventCategory ?? null,
@@ -532,12 +548,12 @@ inventoryRoutes.post('/', zValidator('json', createItemSchema), async (c) => {
 			// for one release because the column is still NOT NULL; Phase 1c
 			// drops it with the milestones table.
 			sql: `INSERT INTO inventory_consumption_rules
-			      (item_id, source_category, source_table, subject_id, match, conditions, units_per_use, amount_per_use, created_at, updated_at)
-			      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			      (item_id, source_category, source_table, subject_id, match, conditions, units_per_use, amount_per_use, amount_attr, created_at, updated_at)
+			      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			args: [
 				itemId, spec.sourceCategory, spec.sourceCategory, subjectId, spec.match,
 				spec.conditions ? JSON.stringify(spec.conditions) : null,
-				spec.unitsPerUse, spec.amountPerUse, now, now,
+				spec.unitsPerUse, spec.amountPerUse, spec.amountAttr, now, now,
 			],
 		});
 	}
@@ -604,6 +620,7 @@ inventoryRoutes.put('/:id{[0-9]+}', zValidator('json', updateItemSchema), async 
 					: null,
 				unitsPerUse: body.unitsPerDecrement ?? 1,
 				amountPerUse: body.decrementPerEvent ?? current?.amountPerUse ?? 1,
+				amountAttr: null,
 			};
 		} else {
 			const base = current ?? legacySpecFromRow(row);
@@ -631,6 +648,8 @@ inventoryRoutes.put('/:id{[0-9]+}', zValidator('json', updateItemSchema), async 
 		const custom = await familyOptionValues(db);
 		const invalid = validateConsumptionConditions(next.sourceCategory, next.conditions ?? [], custom);
 		if (invalid) return c.json({ error: invalid }, 400);
+		const badAmount = validateAmountAttr(next.sourceCategory, next.amountAttr);
+		if (badAmount) return c.json({ error: badAmount }, 400);
 	}
 
 	// Persist the rule. A change to what the event costs (activity, filter,
@@ -657,6 +676,7 @@ inventoryRoutes.put('/:id{[0-9]+}', zValidator('json', updateItemSchema), async 
 				current.sourceCategory !== next.sourceCategory
 				|| JSON.stringify(current.conditions) !== JSON.stringify(next.conditions)
 				|| current.unitsPerUse !== next.unitsPerUse
+				|| current.amountAttr !== next.amountAttr
 			);
 			const carry = costChanged ? 0 : Number(currentRule?.consume_carry ?? 0);
 			mirrorCarry = carry;
@@ -665,19 +685,19 @@ inventoryRoutes.put('/:id{[0-9]+}', zValidator('json', updateItemSchema), async 
 					// source_table mirrors source_category for one release (the
 					// column is still NOT NULL); Phase 1c drops it.
 					sql: `UPDATE inventory_consumption_rules
-					      SET source_category = ?, source_table = ?, match = ?, conditions = ?, units_per_use = ?, amount_per_use = ?, consume_carry = ?, updated_at = ?
+					      SET source_category = ?, source_table = ?, match = ?, conditions = ?, units_per_use = ?, amount_per_use = ?, amount_attr = ?, consume_carry = ?, updated_at = ?
 					      WHERE id = ?`,
 					args: [next.sourceCategory, next.sourceCategory, next.match, next.conditions ? JSON.stringify(next.conditions) : null,
-						next.unitsPerUse, next.amountPerUse, carry, nowRule, currentRule.id],
+						next.unitsPerUse, next.amountPerUse, next.amountAttr, carry, nowRule, currentRule.id],
 				});
 			} else {
 				await db.execute({
 					sql: `INSERT INTO inventory_consumption_rules
-					      (item_id, source_category, source_table, subject_id, match, conditions, units_per_use, amount_per_use, consume_carry, created_at, updated_at)
-					      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+					      (item_id, source_category, source_table, subject_id, match, conditions, units_per_use, amount_per_use, amount_attr, consume_carry, created_at, updated_at)
+					      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 					args: [id, next.sourceCategory, next.sourceCategory, row.subject_id ?? null, next.match,
 						next.conditions ? JSON.stringify(next.conditions) : null,
-						next.unitsPerUse, next.amountPerUse, 0, nowRule, nowRule],
+						next.unitsPerUse, next.amountPerUse, next.amountAttr, 0, nowRule, nowRule],
 				});
 			}
 		}

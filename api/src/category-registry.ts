@@ -177,6 +177,19 @@ export const CATEGORIES = {
 			options: { type: ['breast', 'formula', 'bottle', 'pump', 'solid'], side: ['left', 'right', 'both'] },
 			optionKey: 'type',
 			tense: ['record'],
+			// The route's own attributes, declared explicitly because the one
+			// a rule can bill by is not a form choice the filter can list:
+			// `amountOz` is the feed's quantity normalized to ounces — the
+			// number an `amount_attr` rule subtracts from a formula can. The
+			// raw `amount` column is deliberately not listed: it is per-unit
+			// and the stock side always wants ounces, so a condition on it
+			// would be a phantom. The container itself travels the emit as
+			// `billedItem`, not as a filterable attribute — a rule pinned to
+			// one can is server policy, not a string the picker has to spell.
+			attributes: [
+				{ key: 'type', column: 'type', kind: 'enum', values: ['breast', 'formula', 'bottle', 'solid'], customKeys: [['feeds', 'type']] },
+				{ key: 'amountOz', column: 'amount', kind: 'number' },
+			],
 		},
 	),
 	diapers: category(
@@ -704,5 +717,21 @@ export function validateConsumptionConditions(
 			}
 		}
 	}
+	return null;
+}
+
+/**
+ * Check a rule's direct-amount attribute against the registry, or return the
+ * reason it is refused. The attribute must be declared number-kind — the
+ * rule subtracts the event's own number for it, and an enum or text value
+ * cannot be oz of powder.
+ */
+export function validateAmountAttr(sourceCategory: string, amountAttr: string | null): string | null {
+	if (!amountAttr) return null;
+	const activity = consumableCategories().find((a) => a.id === sourceCategory);
+	if (!activity) return `"${sourceCategory}" is not something Nido can bill stock from.`;
+	const attr = activity.attributes.find((at) => at.key === amountAttr);
+	if (!attr) return `"${amountAttr}" is not something ${activity.label.toLowerCase()}s carry.`;
+	if (attr.kind !== 'number') return `"${amountAttr}" is not a number on ${activity.label.toLowerCase()}s, so it cannot be the amount of stock an event uses.`;
 	return null;
 }

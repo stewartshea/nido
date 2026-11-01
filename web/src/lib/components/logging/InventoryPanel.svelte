@@ -27,10 +27,14 @@
 	// "every 4 bottle feeds, subtract 1". Activity, attributes and option
 	// values come from the API's /inventory/activities, which only lists what
 	// actually fires. Each attribute gets its own chosen value ('' = any).
+	// Number-kind attributes don't appear: the form builds whole-use ratios,
+	// and an amount_attr rule (a formula can billed by the ounces its feeds
+	// held) is the picker in BottleFields, not a row here.
 	$: currentActivity = activities.find((a) => a.id === eventActivity) ?? null;
+	$: filterableAttributes = currentActivity?.attributes.filter((at) => at.kind === 'enum') ?? [];
 	$: activityN = Math.max(1, Number(eventEvery) || 1);
 	$: chosenOptions = currentActivity
-		? currentActivity.attributes.map((at) => eventOptions[at.key] ?? '').filter(Boolean).join(' ')
+		? filterableAttributes.map((at) => eventOptions[at.key] ?? '').filter(Boolean).join(' ')
 		: '';
 	$: activityPhrase = currentActivity
 		? `${chosenOptions ? `${chosenOptions} ` : ''}${currentActivity.label.toLowerCase()}${activityN > 1 ? 's' : ''}`
@@ -40,7 +44,7 @@
 	$: if (eventActivity !== lastActivity) {
 		lastActivity = eventActivity;
 		const next: Record<string, string> = {};
-		for (const at of (activities.find((a) => a.id === eventActivity)?.attributes ?? [])) next[at.key] = '';
+		for (const at of (activities.find((a) => a.id === eventActivity)?.attributes.filter((at) => at.kind === 'enum') ?? [])) next[at.key] = '';
 		eventOptions = next;
 	}
 
@@ -295,16 +299,19 @@
 				packSize: packSize ? Number(packSize) : null,
 				leadDays: leadDays ? Number(leadDays) : null,
 				// The rule in its real shape: category, conditions, ratio. Only
-				// the attributes the form chose a value for become conditions.
+				// the enum attributes the form chose a value for become
+				// conditions; this form writes whole-use ratios, so amountAttr
+				// (the direct-amount rule's field) is never set here.
 				consumptionRule: linkedToLogs && currentActivity
 					? {
 						sourceCategory: currentActivity.id,
 						match: 'all',
-						conditions: currentActivity.attributes
+						conditions: filterableAttributes
 							.map((at) => ({ attr: at.key, values: [eventOptions[at.key] ?? ''] }))
 							.filter((cond) => cond.values[0] !== ''),
 						unitsPerUse: Math.max(1, Number(eventEvery) || 1),
 						amountPerUse: Math.max(1, Number(eventQty) || 1),
+						amountAttr: null,
 					}
 					: null,
 				// With no activity, the quantity is the calendar cadence's per-period use.
@@ -432,6 +439,13 @@
 	function linkRule(item: InventoryItem): string {
 		const rule = item.consumptionRule;
 		const act = activityFor(item);
+		// A direct-amount rule bills the event's own quantity, not a ratio —
+		// the feed's ounces are what leave the can, so "per N" reads backwards.
+		if (rule?.amountAttr) {
+			const filters = rule.conditions.flatMap((cond) => cond.values).join(' ');
+			const noun = `${filters}${(act?.label ?? rule.sourceCategory ?? 'logged event').toLowerCase()}`;
+			return `the amount each ${noun} used`;
+		}
 		const n = rule?.unitsPerUse ?? item.unitsPerDecrement ?? 1;
 		const per = rule?.amountPerUse ?? item.decrementPerEvent ?? 1;
 		const filters = rule
@@ -552,11 +566,11 @@
 									{#each activities as a (a.id)}<option value={a.id}>{a.label}</option>{/each}
 								</select>
 							</div>
-							{#if currentActivity && currentActivity.attributes.length > 0}
-								{#each currentActivity.attributes as attr (attr.key)}
+							{#if filterableAttributes.length > 0}
+								{#each filterableAttributes as attr (attr.key)}
 									<div>
 										<label for="inv-attr-{attr.key}" class="block text-xs text-ink-soft mb-1">
-											{currentActivity.attributes.length > 1 ? `${attr.key[0]?.toUpperCase() ?? ''}${attr.key.slice(1)}` : 'Only those that are'}
+											{filterableAttributes.length > 1 ? `${attr.key[0]?.toUpperCase() ?? ''}${attr.key.slice(1)}` : 'Only those that are'}
 										</label>
 										<select id="inv-attr-{attr.key}" bind:value={eventOptions[attr.key]} class="w-full px-3 py-2 border border-line rounded-md">
 											<option value="">any</option>

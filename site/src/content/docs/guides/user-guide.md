@@ -49,6 +49,15 @@ Pick **breast**, **bottle**, or **formula**.
   straight back to it.
 - A **bottle** or **formula** takes an amount and unit.
 
+A formula bottle picks its can from **Inventory**, not a catalog. Add what you
+actually buy — a name and a can size — and the picker lists the family's
+formula stock with what is left of each can. The can you last fed is already
+selected; opening the same bottle of the same formula is a tap, or nothing at
+all once you type the amount. Each feed subtracts the ounces it held, so
+Inventory shows both the stock and the tracker's "how long till we run out".
+Feeds logged before can-inventory existed keep their formula and still show it;
+their cans arrive in Inventory automatically.
+
 A feed logged while you are offline is held on the device and sent when the
 app next talks to the server. See [Working offline →](#working-offline).
 
@@ -168,6 +177,10 @@ carries a **variant** (a diaper size, a scent) and an **expiry date**.
 
 - **Diaper stock follows the log.** A logged diaper change is one unit used,
   so you never adjust the count by hand.
+- **Formula cans follow the bottle.** A formula inventory item, added by the
+  feed form or here, loses the ounces each bottle feed held — chosen from the
+  can's rule, no per-feed bookkeeping. The feed picks the can; the can picks
+  its meaning.
 - **Cadenced items deplete on their own.** Give an item a rate — eight a day
   — and it falls between logs, so wipes and nappies are tracked even when
   nobody records using them.

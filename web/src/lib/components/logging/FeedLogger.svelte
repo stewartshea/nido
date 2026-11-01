@@ -32,7 +32,7 @@
 	let rightMin = '';
 	let notes = '';
 	let bottleSource: 'breastmilk' | 'formula' = 'breastmilk';
-	let formulaId: number | null = null;
+	let formulaItemId: number | null = null;
 	let amount = '';
 
 	$: breastFeeds = recent.filter((f) => f.type === 'breast');
@@ -96,7 +96,7 @@
 
 	function rememberLast() {
 		try {
-			localStorage.setItem('nido.lastFeed', JSON.stringify({ kind, side, bottleSource, formulaId, amount }));
+			localStorage.setItem('nido.lastFeed', JSON.stringify({ kind, side, bottleSource, formulaItemId, amount }));
 		} catch { /* storage unavailable */ }
 	}
 
@@ -106,11 +106,19 @@
 			if (!raw) { fail('No previous feed to repeat.'); return; }
 			const l = JSON.parse(raw);
 			const k: Kind = l.kind === 'bottle' || l.kind === 'combo' ? l.kind : 'breast';
+			let formulaItem: number | null = null;
+			if (l.kind === 'bottle' || l.kind === 'combo') {
+				// Stored before the inventory picker only carried a catalog
+				// `formulaId`; that id means nothing to the inventory list and
+				// would prefill nothing — the picker re-prefills from the last
+				// logged feed instead.
+				formulaItem = Number.isInteger(l.formulaItemId) ? l.formulaItemId : null;
+			}
 			choose(k);
 			mode = 'log';
 			side = l.side === 'right' || l.side === 'both' ? l.side : 'left';
 			bottleSource = l.bottleSource === 'formula' ? 'formula' : 'breastmilk';
-			formulaId = l.formulaId ?? null;
+			formulaItemId = l.bottleSource === 'formula' ? formulaItem : null;
 			amount = l.amount ?? '';
 		} catch {
 			fail('No previous feed to repeat.');
@@ -123,14 +131,14 @@
 			memberId,
 			startTime,
 			type: type as 'formula' | 'bottle',
-			formulaId: type === 'formula' ? (formulaId ?? undefined) : undefined,
+			formulaItemId: type === 'formula' ? (formulaItemId ?? undefined) : undefined,
 			amount: amount ? Number(amount) : undefined,
 			notes: notes || undefined,
 		};
 	}
 
 	function bottleInvalid(): string | null {
-		if ((kind === 'bottle' || kind === 'combo') && bottleSource === 'formula' && !formulaId) return 'Pick a formula for the bottle.';
+		if ((kind === 'bottle' || kind === 'combo') && bottleSource === 'formula' && !formulaItemId) return 'Pick a formula for the bottle.';
 		return null;
 	}
 
@@ -246,7 +254,7 @@
 			{#if kind === 'combo'}
 				<div class="mt-4 space-y-3 border-t pt-3">
 					<p class="text-sm font-medium text-ink-soft">Bottle</p>
-					<BottleFields {familyId} bind:source={bottleSource} bind:formulaId bind:amount on:error={(e) => fail(e.detail.message)} />
+					<BottleFields {familyId} {recent} bind:source={bottleSource} bind:formulaItemId bind:amount on:error={(e) => fail(e.detail.message)} />
 				</div>
 			{/if}
 			<div class="mt-3">
@@ -264,7 +272,7 @@
 				<BreastLogFields bind:side bind:endsOn bind:leftMin bind:rightMin lastSide={lastBreast} />
 			{/if}
 			{#if kind === 'bottle' || kind === 'combo'}
-				<BottleFields {familyId} bind:source={bottleSource} bind:formulaId bind:amount on:error={(e) => fail(e.detail.message)} />
+				<BottleFields {familyId} {recent} bind:source={bottleSource} bind:formulaItemId bind:amount on:error={(e) => fail(e.detail.message)} />
 			{/if}
 			<div>
 				<label for="feed-notes" class="block text-sm font-medium text-ink-soft mb-1">Notes</label>

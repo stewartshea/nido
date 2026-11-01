@@ -42,6 +42,17 @@ export interface ActivityEmit {
 	units?: number;
 	/** Attribute values read off the record, keyed by the registry's attribute keys. */
 	attrs?: Record<string, string | null>;
+	/**
+	 * The container this event drew from, when the record names one — a
+	 * bottle feed's `formula_item_id`. Rules that bill a whole-use ratio
+	 * fire on any record their conditions match, but a direct-amount rule
+	 * (`amount_attr`) tracks one container's distribution: it fires only
+	 * when the event says the use was theirs. An event that names no
+	 * container bills no amount rule — a family logging from before the
+	 * picker loses tracking until they log from it again, which beats every
+	 * open can silently draining at once.
+	 */
+	billedItem?: number;
 	createdBy?: string | null;
 }
 
@@ -104,6 +115,16 @@ export function matchesConditions(
  * for the first three — the ledger records whole uses only, while the events
  * gate keeps a retried event from adding its partial progress twice.
  *
+ * A rule with `amount_attr` set bills by the event's own number instead, and
+ * does not carry: washing "8 bottles" in one log or feeding 4.5 oz of
+ * formula must move 8 or 4.5, and flooring either would lie about stock.
+ * The lookup is the rule's attribute key against the emit's attrs (feeds
+ * read `amountOz`, the logged amount normalized to ounces); an event
+ * without that number bills nothing, because a rule that asks for a
+ * quantity a record does not carry has nothing honest to subtract. The gate
+ * is the same idempotency — one row per (rule, record) — so a retried event
+ * never subtracts twice.
+ *
  * A ledger row for this exact (rule, event) — or one with no rule, written
  * before rules existed — is also read as "already applied", so rows the
  * migration grandfathered are never counted again.
@@ -131,6 +152,12 @@ export async function emitActivity(db: any, emit: ActivityEmit): Promise<string[
 		})).rows[0];
 		if (!item) continue;
 
+		// A direct-amount rule is pinned to its container's own use: without
+		// this event naming the rule's item, the amount has no address.
+		if (rule.amount_attr && (emit.billedItem === undefined || Number(rule.item_id) !== emit.billedItem)) {
+			continue;
+		}
+
 		if (!matchesConditions(parseRuleMatch(rule.match), parseConsumptionConditions(rule.conditions), emit.attrs ?? {})) {
 			continue;
 		}
@@ -156,10 +183,34 @@ export async function emitActivity(db: any, emit: ActivityEmit): Promise<string[
 		const nRaw = Number(rule.units_per_use ?? 1);
 		const n = Number.isFinite(nRaw) && nRaw >= 1 ? nRaw : 1;
 		const per = Number(rule.amount_per_use ?? 1);
+		const now = new Date().toISOString();
+
+		// The event's own quantity bills directly, one ledger row per event
+		// (the gate above has already deduplicated the record): the `amount`
+		// attribute's value, in the item's unit, read off the emit's attrs.
+		// No carry — a 4.5 oz feed moves 4.5 oz, and the next feed must not
+		// inherit progress that belongs to no one.
+		if (rule.amount_attr) {
+			const raw = (emit.attrs ?? {})[String(rule.amount_attr)];
+			if (raw === null || raw === undefined || raw === '') continue;
+			const amount = Number(raw);
+			if (!Number.isFinite(amount) || amount <= 0) continue;
+			await db.execute({
+				sql: `INSERT INTO inventory_adjustments (item_id, rule_id, change, reason, ref_table, ref_id, created_by, created_at, source)
+				      VALUES (?, ?, ?, 'used', ?, ?, ?, ?, 'event')`,
+				args: [rule.item_id, rule.id, -amount, emit.refTable, emit.refId, emit.createdBy ?? null, now],
+			});
+			await db.execute({
+				sql: 'UPDATE inventory_items SET quantity = MAX(0, quantity - ?), updated_at = ? WHERE id = ?',
+				args: [amount, now, rule.item_id],
+			});
+			applied.push(String(item.name));
+			continue;
+		}
+
 		const carry = Number(rule.consume_carry ?? 0) + units;
 		const whole = Math.floor(carry / n);
 		const nextCarry = carry - whole * n;
-		const now = new Date().toISOString();
 
 		if (whole > 0) {
 			const change = -(whole * per);

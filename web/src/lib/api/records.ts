@@ -19,9 +19,9 @@ export const feedingAPI = {
   getPage: (memberId: number, opts?: PageOptions) =>
     api.get(`/feedings?memberId=${memberId}${pageQuery(opts)}`),
   getById: (id: number) => api.get(`/feedings/${id}`),
-  create: (feedingData: { memberId: number; startTime: string; endTime?: string; amount?: number; amountUnit?: 'ml' | 'oz'; type: 'breast' | 'bottle' | 'formula' | 'pump' | 'solid'; side?: 'left' | 'right' | 'both'; leftBreastAt?: string; rightBreastAt?: string; leftDuration?: number; rightDuration?: number; formulaId?: number; notes?: string }) => 
+  create: (feedingData: { memberId: number; startTime: string; endTime?: string; amount?: number; amountUnit?: 'ml' | 'oz'; type: 'breast' | 'bottle' | 'formula' | 'pump' | 'solid'; side?: 'left' | 'right' | 'both'; leftBreastAt?: string; rightBreastAt?: string; leftDuration?: number; rightDuration?: number; formulaId?: number; formulaItemId?: number; notes?: string }) => 
     api.post('/feedings', feedingData),
-  update: (id: number, feedingData: Partial<{ startTime: string; endTime?: string; amount?: number; amountUnit?: 'ml' | 'oz'; type: 'breast' | 'bottle' | 'formula' | 'pump' | 'solid'; side?: 'left' | 'right' | 'both' | null; leftBreastAt?: string | null; rightBreastAt?: string | null; leftDuration?: number | null; rightDuration?: number | null; formulaId?: number; notes?: string }>) => 
+  update: (id: number, feedingData: Partial<{ startTime: string; endTime?: string; amount?: number; amountUnit?: 'ml' | 'oz'; type: 'breast' | 'bottle' | 'formula' | 'pump' | 'solid'; side?: 'left' | 'right' | 'both' | null; leftBreastAt?: string | null; rightBreastAt?: string | null; leftDuration?: number | null; rightDuration?: number | null; formulaId?: number; formulaItemId?: number | null; notes?: string }>) => 
     api.put(`/feedings/${id}`, feedingData),
   delete: (id: number) => api.delete(`/feedings/${id}`),
 };
