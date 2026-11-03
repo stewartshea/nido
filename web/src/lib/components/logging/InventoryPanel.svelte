@@ -4,6 +4,7 @@
 	import type { InventoryItem, InventoryAlert, DiaperBand, ConsumableActivity } from '$lib/api/types';
 	import { defaultMemberId } from '$lib/shared';
 	import { zonedOptions } from '$lib/logging/format';
+	import UsageSparkline from '$lib/components/reports/UsageSparkline.svelte';
 
 	export let members: { id: number | string; name: string; trackable?: boolean }[] = [];
 
@@ -80,6 +81,9 @@
 	$: managing = items.find((i) => i.id === managingId) ?? null;
 	let recountValue = '';
 	let recountNote = '';
+	/** The item's ledger, for the small usage sparkline in the manage panel. */
+	let manageAdjustments: any[] = [];
+	let manageLoading = false;
 	let loadedSizesFor: number | null = null;
 	let loading = true;
 	let error = '';
@@ -182,6 +186,22 @@
 		managingId = managingId === item.id ? null : item.id;
 		recountValue = String(item.quantity);
 		recountNote = '';
+		manageAdjustments = [];
+		if (managingId === item.id) loadAdjustments(item.id);
+	}
+
+	/** The ledger behind the forecast, drawn small so drift is visible at a glance. */
+	async function loadAdjustments(itemId: number) {
+		manageLoading = true;
+		try {
+			const res = await inventoryAPI.adjustments(itemId);
+			// Ignore a response that arrived after the panel was closed or moved.
+			if (managingId === itemId) manageAdjustments = res.data.adjustments ?? [];
+		} catch {
+			if (managingId === itemId) manageAdjustments = [];
+		} finally {
+			if (managingId === itemId) manageLoading = false;
+		}
 	}
 
 	async function load() {
@@ -895,6 +915,16 @@
 									<button type="button" on:click={() => resetHistory(managing)} class="px-2 py-1.5 rounded-md bg-surface text-ink-soft text-xs">Reset history</button>
 									<button type="button" on:click={() => hide(managing)} class="px-2 py-1.5 rounded-md bg-surface text-ink-soft text-xs">Stop tracking</button>
 									<button type="button" on:click={() => (managingId = null)} class="px-2 py-1.5 rounded-md bg-surface text-ink-soft text-xs">Close</button>
+								</div>
+								<div class="border-t border-line-soft pt-2">
+									<p class="text-xs text-ink-soft mb-1">Usage, last 30 days</p>
+									{#if manageLoading}
+										<p class="text-xs text-ink-soft">Loading…</p>
+									{:else if manageAdjustments.length}
+										<UsageSparkline adjustments={manageAdjustments} unit={managing.unit} />
+									{:else}
+										<p class="text-xs text-ink-soft">No usage recorded yet.</p>
+									{/if}
 								</div>
 			</div>
 		{/if}

@@ -36,6 +36,7 @@ import { reminderRoutes } from './routes/reminders';
 import { medicationRoutes } from './routes/medications';
 import { vitalRoutes } from './routes/vitals';
 import { notificationStatusRoutes } from './routes/notification-status';
+import { reportRoutes } from './routes/reports';
 import { startScheduler, stopScheduler } from './scheduler';
 import { bootstrapAdmin } from './authz';
 
@@ -81,6 +82,7 @@ app.route('/api/v1/notifications', notificationStatusRoutes);
 app.route('/api/v1/sleep', sleepRoutes);
 app.route('/api/v1/growth', growthRoutes);
 app.route('/api/v1/health', healthRoutes);
+app.route('/api/v1/reports', reportRoutes);
 app.route('/api/v1/milestones', milestoneRoutes);
 app.route('/api/v1/events', eventRoutes);
 app.route('/api/v1/plans', planRoutes);
