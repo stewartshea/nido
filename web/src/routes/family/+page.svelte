@@ -81,12 +81,41 @@
 	// page only triggers the initial loads (refreshUserProfile and
 	// loadFamilies) and renders from the stores.
 
+	let starredMemberId: number | null = null;
+
+	function starredKey(): string {
+		return `nido.starred.${$familyStore.activeFamilyId ?? 'none'}`;
+	}
+
+	function loadStarred() {
+		try {
+			const raw = localStorage.getItem(starredKey());
+			starredMemberId = raw ? Number(raw) : null;
+		} catch {
+			starredMemberId = null;
+		}
+		if (starredMemberId === null && $familyStore.defaultProfileId !== null) {
+			starredMemberId = $familyStore.defaultProfileId;
+		}
+	}
+
+	function setStarred(memberId: number) {
+		starredMemberId = memberId;
+		try { localStorage.setItem(starredKey(), String(memberId)); } catch { /* private mode */ }
+		familyActions.setDefaultProfile(memberId);
+		const member = profiles.find((b) => Number(b.id) === memberId);
+		if (member) notify(`${member.name} set as favorite.`);
+	}
+
 	// The family/member loading core is familyActions.loadFamilies
 	// ($lib/stores/family); this wrapper runs this page's post-load extras in
 	// the order the page always ran them. Extras are skipped when the core
 	// load bails (the pre-store copies returned early on every error path).
 	async function loadFamilies() {
-		const loaded = await familyActions.loadFamilies();
+		const loaded = await familyActions.loadFamilies(() => {
+			loadStarred();
+			return starredMemberId;
+		});
 		if (!loaded) return;
 		await Promise.all([
 			loadFamilySettings({ applyTimezone: true }),
@@ -98,11 +127,12 @@
 
 	function setActiveFamily(familyId: string) {
 		familyActions.setActiveFamily(familyId);
+		loadStarred();
 		loadFamilies();
 	}
 
 	function setDefaultProfile(memberId: number) {
-		familyActions.setDefaultProfile(memberId);
+		setStarred(memberId);
 	}
 
 	function handleLogout() {
@@ -327,6 +357,7 @@
 
 	onMount(async () => {
 		if (browser) {
+			loadStarred();
 			const params = new URLSearchParams(window.location.search);
 			const verifyParam = params.get('verify');
 			const resetParam = params.get('reset');
@@ -467,9 +498,15 @@
 				</form>
 			</div>
 		{:else}
-			<!-- DASHBOARD (family + members) -->
+			<!-- DASHBOARD or DETAIL (family + members) -->
+			{#if familyView === 'detail'}
+				<button type="button" on:click={() => (familyView = 'dashboard')} class="mb-4 text-ink-soft hover:text-ink flex items-center gap-1 text-sm font-semibold">
+					<span aria-hidden="true">‹</span> {activeFamily?.name || 'Family'} <span class="text-ink-soft" aria-hidden="true">/</span> <span class="text-ink">{profiles.find((b) => Number(b.id) === selectedMemberId)?.name || 'Baby'}</span>
+				</button>
+			{/if}
+
 			{#if familyView === 'dashboard'}
-			<div class="flex flex-col mb-6 gap-4">
+			<div class="flex flex-col mb-4 gap-3">
 				<div class="flex flex-col gap-3">
 					{#if families.length > 1}
 						<div class="flex overflow-x-auto no-scrollbar">
@@ -495,28 +532,40 @@
 											<Avatar familyId={activeFamilyId} memberId={baby.id} avatar={baby.avatar} alt={baby.name} class="w-5 h-5 rounded-full object-cover">
 												<Baby class="w-4 h-4" />
 											</Avatar>
-											{baby.name}
+											<span>{baby.name}</span>
+											{#if starredMemberId === Number(baby.id)}
+												<Star class="w-3.5 h-3.5 text-accent" fill="currentColor" aria-label="Favorite" />
+											{/if}
 										</button>
 									{/each}
 								</div>
 							</div>
 							<button
 								type="button"
-								title="Set as default profile"
-								class="px-2 py-1 rounded-md text-ink-soft hover:text-accent text-xs shrink-0"
-								on:click={() => { if (selectedMemberId) setDefaultProfile(selectedMemberId); }}
+								title={starredMemberId === selectedMemberId ? 'Favorite person' : 'Set as favorite'}
+								class="h-11 px-3.5 rounded-full border border-line-soft bg-surface text-ink-soft hover:text-accent flex items-center gap-1.5 text-xs font-semibold shrink-0 transition-colors"
+								on:click={() => { if (selectedMemberId) setStarred(selectedMemberId); }}
 							>
-								<Star class="w-5 h-5 {defaultProfileId === selectedMemberId ? 'text-accent' : 'text-ink-soft opacity-50'}" aria-hidden="true" />
+								<Star class="w-4 h-4 {starredMemberId === selectedMemberId ? 'text-accent' : 'text-ink-soft opacity-60'}" fill={starredMemberId === selectedMemberId ? 'currentColor' : 'none'} aria-hidden="true" />
+								<span>Favorite</span>
 							</button>
 						{:else if profiles.length === 1}
-							<h2 class="text-xl md:text-2xl font-display font-semibold text-ink flex items-center gap-2">
-								<Avatar familyId={activeFamilyId} memberId={profiles[0].id} avatar={profiles[0].avatar} alt={profiles[0].name} class="w-8 h-8 rounded-full object-cover" />
-								{profiles[0].name}
-							</h2>
+							<div class="flex items-center gap-3">
+								<h2 class="text-xl md:text-2xl font-display font-semibold text-ink flex items-center gap-2">
+									<Avatar familyId={activeFamilyId} memberId={profiles[0].id} avatar={profiles[0].avatar} alt={profiles[0].name} class="w-8 h-8 rounded-full object-cover" />
+									{profiles[0].name}
+								</h2>
+								<button
+									type="button"
+									title={starredMemberId === Number(profiles[0].id) ? 'Favorite person' : 'Set as favorite'}
+									class="p-1.5 rounded-full text-accent hover:opacity-80"
+									on:click={() => setStarred(Number(profiles[0].id))}
+								>
+									<Star class="w-5 h-5" fill={starredMemberId === Number(profiles[0].id) ? 'currentColor' : 'none'} aria-hidden="true" />
+								</button>
+							</div>
 						{/if}
 					</div>
-				</div>
-<div class="flex flex-wrap items-center gap-2">
 				</div>
 			</div>
 			{/if}
@@ -540,179 +589,148 @@
 				</div>
 			{/if}
 
-			{#if familyView === 'dashboard'}
-				<div class="mb-8">
-					<h2 class="text-2xl font-display font-semibold mb-4">Family Overview</h2>
-					
-					<div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
-						{#each profiles as baby}
-							<div class="bg-surface rounded-lg shadow-card p-5 border border-line-soft flex items-center justify-between" data-testid="member-card">
-								<div class="flex items-center gap-4">
-									<div class="w-12 h-12 rounded-full bg-accent text-on-accent flex items-center justify-center font-display text-xl overflow-hidden">
-										<Avatar familyId={activeFamilyId} memberId={baby.id} avatar={baby.avatar} alt={baby.name} class="w-full h-full object-cover">
-											{baby.name[0]}
-										</Avatar>
+			<MemberActivity
+				memberName={selectedMember?.name || 'Selected'}
+				memberId={selectedMemberId}
+				{summary}
+				{activeCategories}
+				quickLinks={selectedMember?.quickLinks ?? null}
+				dashboardTiles={selectedMember?.dashboardTiles ?? null}
+				stage={selectedMember?.stage ?? null}
+				{feedings} {diapers} {sleeps} {growths}
+				{milestones} {vaccinations} {moods} {journalEntries} {vitals}
+				totals={listTotals}
+				{loadingMore}
+				on:log={(e) => openLog(e.detail.kind)}
+				on:loadmore={loadMoreLists}
+				on:refresh={async () => { await refreshLists(); await refreshSummary(); }}
+				on:pin={(e) => setQuickLink(e.detail.kind, true)}
+				on:unpin={(e) => setQuickLink(e.detail.kind, false)}
+				on:saveTiles={(e) => saveDashboardTiles(e.detail.tiles)}
+			>
+				{#if familyView === 'dashboard'}
+					<div class="mt-8 mb-6">
+						<h2 class="text-2xl font-display font-semibold mb-4">Family Overview</h2>
+						
+						<div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+							{#each profiles as baby}
+								<div class="bg-surface rounded-lg shadow-card p-5 border border-line-soft flex items-center justify-between" data-testid="member-card">
+									<div class="flex items-center gap-4">
+										<div class="w-12 h-12 rounded-full bg-accent text-on-accent flex items-center justify-center font-display text-xl overflow-hidden">
+											<Avatar familyId={activeFamilyId} memberId={baby.id} avatar={baby.avatar} alt={baby.name} class="w-full h-full object-cover">
+												{baby.name[0]}
+											</Avatar>
+										</div>
+										<div>
+											<h3 class="font-display font-semibold text-lg">{baby.name}</h3>
+											<p class="text-sm text-ink-soft">Born {baby.birth_date.slice(0, 10)}</p>
+										</div>
 									</div>
-									<div>
-										<h3 class="font-display font-semibold text-lg">{baby.name}</h3>
-										<p class="text-sm text-ink-soft">Born {baby.birth_date.slice(0, 10)}</p>
+									<div class="flex items-center gap-2">
+										<button
+											type="button"
+											on:click={() => setStarred(Number(baby.id))}
+											title={starredMemberId === Number(baby.id) ? 'Favorite person' : 'Set as favorite'}
+											class="px-2.5 py-2 text-xs rounded-md border flex items-center gap-1 font-semibold transition-colors {starredMemberId === Number(baby.id) ? 'bg-accent-soft text-ink border-accent' : 'bg-surface2 text-ink-soft hover:text-ink border-line-soft'}"
+										>
+											<Star class="w-3.5 h-3.5 text-accent" fill={starredMemberId === Number(baby.id) ? 'currentColor' : 'none'} aria-hidden="true" />
+											<span>Favorite</span>
+										</button>
+										{#if baby.email}
+											<button type="button" on:click={() => inviteMemberEmail(baby.email)} title="Re-send invite" class="px-2 py-2 text-xs text-accent hover:underline"><Mail class="w-4 h-4 inline mr-1" /> Invite</button>
+										{/if}
+										<button type="button" on:click={() => openEditMember(baby)} class="px-3 py-2 text-xs bg-surface2 text-ink-soft hover:text-ink rounded-md">Edit</button>
+										<button type="button" on:click={() => { selectMember(baby.id); familyView = 'detail'; }} class="px-4 py-2 bg-surface2 text-ink-soft hover:text-ink rounded-md text-sm font-semibold">
+											Log Activity
+										</button>
 									</div>
 								</div>
-								<div class="flex items-center gap-2">
-								{#if baby.email}
-									<button type="button" on:click={() => inviteMemberEmail(baby.email)} title="Re-send invite" class="px-2 py-2 text-xs text-accent hover:underline"><Mail class="w-4 h-4 inline mr-1" /> Invite</button>
-								{/if}
-								<button type="button" on:click={() => openEditMember(baby)} class="px-3 py-2 text-xs bg-surface2 text-ink-soft hover:text-ink rounded-md">Edit</button>
-								<button type="button" on:click={() => { selectMember(baby.id); familyView = 'detail'; }} class="px-4 py-2 bg-surface2 text-ink-soft hover:text-ink rounded-md text-sm font-semibold">
-									Log Activity
-								</button>
-							</div>
-							</div>
-						{/each}
-					</div>
-
-					<!-- What the whole family has booked, alongside the member grid:
-					     family-level information belongs here, not on the dashboard. -->
-					<div class="bg-surface rounded-lg shadow-card p-5 border border-line-soft mb-8" data-testid="upcoming-appointments-card">
-						<div class="flex items-center justify-between mb-3">
-							<h3 class="text-lg font-display font-semibold flex items-center gap-2">
-								<CalendarClock class="w-5 h-5 text-accent" aria-hidden="true" />
-								Upcoming
-							</h3>
-							<a href="/appointments" class="text-sm font-semibold text-link hover:underline">See all &rarr;</a>
+							{/each}
 						</div>
-						{#if $upcomingAppointments.length === 0}
-							<p class="text-sm text-ink-soft">
-								Nothing booked in the next 30 days. Log any activity with a future date and it appears here.
-							</p>
-						{:else}
-							<ul class="space-y-2">
-								{#each $upcomingAppointments as a (a.id)}
-									<li class="flex items-baseline gap-3 text-sm">
-										<span class="tabular-nums text-ink-soft shrink-0 w-28">
-											{new Date(a.date).toLocaleDateString(undefined, zonedOptions({ weekday: 'short', month: 'short', day: 'numeric' }))}
-										</span>
-										<span class="text-ink min-w-0">
-											{#if a.memberName}<span class="font-semibold">{a.memberName}</span> · {/if}{a.title}
-										</span>
-									</li>
-								{/each}
-							</ul>
-						{/if}
-					</div>
 
-					<div class="bg-surface rounded-lg shadow-card p-5 border border-line-soft mb-8">
-						<div class="flex items-center justify-between mb-3">
-							<h3 class="text-lg font-display font-semibold">Quick reports <span class="text-xs text-ink-soft">· feeds</span></h3>
-							<a href={selectedMemberId ? `/reports?memberId=${selectedMemberId}` : '/reports'} class="text-sm font-semibold text-accent hover:underline">
-								Full reports &rarr;
-							</a>
+						<!-- Upcoming appointments card -->
+						<div class="bg-surface rounded-lg shadow-card p-5 border border-line-soft mb-6" data-testid="upcoming-appointments-card">
+							<div class="flex items-center justify-between mb-3">
+								<h3 class="text-lg font-display font-semibold flex items-center gap-2">
+									<CalendarClock class="w-5 h-5 text-accent" aria-hidden="true" />
+									Upcoming
+								</h3>
+								<a href="/appointments" class="text-sm font-semibold text-link hover:underline">See all &rarr;</a>
+							</div>
+							{#if $upcomingAppointments.length === 0}
+								<p class="text-sm text-ink-soft">
+									Nothing booked in the next 30 days. Log any activity with a future date and it appears here.
+								</p>
+							{:else}
+								<ul class="space-y-2">
+									{#each $upcomingAppointments as a (a.id)}
+										<li class="flex items-baseline gap-3 text-sm">
+											<span class="tabular-nums text-ink-soft shrink-0 w-28">
+												{new Date(a.date).toLocaleDateString(undefined, zonedOptions({ weekday: 'short', month: 'short', day: 'numeric' }))}
+											</span>
+											<span class="text-ink min-w-0">
+												{#if a.memberName}<span class="font-semibold">{a.memberName}</span> · {/if}{a.title}
+											</span>
+										</li>
+									{/each}
+								</ul>
+							{/if}
 						</div>
-						<div class="grid grid-cols-2 md:grid-cols-4 gap-3">
-							<div>
-								<p class="text-xs text-ink-soft uppercase font-semibold">Feeds (24h)</p>
-								<p class="text-xl font-display font-semibold text-ink">{feedReports.count1d}</p>
+
+						<!-- Quick reports card -->
+						<div class="bg-surface rounded-lg shadow-card p-5 border border-line-soft mb-6">
+							<div class="flex items-center justify-between mb-3">
+								<h3 class="text-lg font-display font-semibold">Quick reports <span class="text-xs text-ink-soft">· feeds</span></h3>
+								<a href={selectedMemberId ? `/reports?memberId=${selectedMemberId}` : '/reports'} class="text-sm font-semibold text-accent hover:underline">
+									Full reports &rarr;
+								</a>
 							</div>
-							<div>
-								<p class="text-xs text-ink-soft uppercase font-semibold">Avg size (24h)</p>
-								<p class="text-xl font-display font-semibold text-ink">{feedReports.avgSize1d != null ? `${feedReports.avgSize1d.toFixed(1)}oz` : '—'}</p>
-							</div>
-							<div>
-								<p class="text-xs text-ink-soft uppercase font-semibold">Avg size (30d)</p>
-								<p class="text-xl font-display font-semibold text-ink">{feedReports.avgSize30d != null ? `${feedReports.avgSize30d.toFixed(1)}oz` : '—'}</p>
-							</div>
-							<div>
-								<p class="text-xs text-ink-soft uppercase font-semibold">Feeds (30d)</p>
-								<p class="text-xl font-display font-semibold text-ink">{feedReports.count30d}</p>
-							</div>
-							<div>
-								<p class="text-xs text-ink-soft uppercase font-semibold">Avg length (24h)</p>
-								<p class="text-xl font-display font-semibold text-ink">{feedReports.avgDur1d != null ? formatElapsed(feedReports.avgDur1d) : '—'}</p>
-							</div>
-							<div>
-								<p class="text-xs text-ink-soft uppercase font-semibold">Avg length (30d)</p>
-								<p class="text-xl font-display font-semibold text-ink">{feedReports.avgDur30d != null ? formatElapsed(feedReports.avgDur30d) : '—'}</p>
+							<div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+								<div>
+									<p class="text-xs text-ink-soft uppercase font-semibold">Feeds (24h)</p>
+									<p class="text-xl font-display font-semibold text-ink">{feedReports.count1d}</p>
+								</div>
+								<div>
+									<p class="text-xs text-ink-soft uppercase font-semibold">Avg size (24h)</p>
+									<p class="text-xl font-display font-semibold text-ink">{feedReports.avgSize1d != null ? `${feedReports.avgSize1d.toFixed(1)}oz` : '—'}</p>
+								</div>
+								<div>
+									<p class="text-xs text-ink-soft uppercase font-semibold">Avg size (30d)</p>
+									<p class="text-xl font-display font-semibold text-ink">{feedReports.avgSize30d != null ? `${feedReports.avgSize30d.toFixed(1)}oz` : '—'}</p>
+								</div>
+								<div>
+									<p class="text-xs text-ink-soft uppercase font-semibold">Feeds (30d)</p>
+									<p class="text-xl font-display font-semibold text-ink">{feedReports.count30d}</p>
+								</div>
+								<div>
+									<p class="text-xs text-ink-soft uppercase font-semibold">Avg length (24h)</p>
+									<p class="text-xl font-display font-semibold text-ink">{feedReports.avgDur1d != null ? formatElapsed(feedReports.avgDur1d) : '—'}</p>
+								</div>
+								<div>
+									<p class="text-xs text-ink-soft uppercase font-semibold">Avg length (30d)</p>
+									<p class="text-xl font-display font-semibold text-ink">{feedReports.avgDur30d != null ? formatElapsed(feedReports.avgDur30d) : '—'}</p>
+								</div>
 							</div>
 						</div>
 					</div>
+				{/if}
 
-					<MemberActivity
-						memberName={selectedMember?.name || 'Selected'}
-						memberId={selectedMemberId}
-						{summary}
-						{activeCategories}
-						quickLinks={selectedMember?.quickLinks ?? null}
-						dashboardTiles={selectedMember?.dashboardTiles ?? null}
-						stage={selectedMember?.stage ?? null}
-						{feedings} {diapers} {sleeps} {growths}
-						{milestones} {vaccinations} {moods} {journalEntries} {vitals}
-						totals={listTotals}
-						{loadingMore}
-						on:log={(e) => openLog(e.detail.kind)}
-						on:loadmore={loadMoreLists}
-						on:refresh={async () => { await refreshLists(); await refreshSummary(); }}
-						on:pin={(e) => setQuickLink(e.detail.kind, true)}
-						on:unpin={(e) => setQuickLink(e.detail.kind, false)}
-						on:saveTiles={(e) => saveDashboardTiles(e.detail.tiles)}
-					>
-						{#if selectedMember}
-							<div class="mt-6">
-								<Trends memberId={Number(selectedMember.id)} memberName={selectedMember.name} categories={activeCategories} />
-							</div>
-						{/if}
-
-						{#if selectedMember && selectedMember.type === 'child' && activeCategories.includes('growth')}
-							<div class="mt-6">
-								<GrowthChart memberId={Number(selectedMember.id)} memberName={selectedMember.name} />
-							</div>
-						{/if}
-
-						<div class="mt-6">
-							<StockGlance />
-						</div>
-					</MemberActivity>
-				</div>
-			{:else}
-				<button type="button" on:click={() => (familyView = 'dashboard')} class="mb-2 text-ink-soft hover:text-ink flex items-center gap-1 text-sm font-semibold">
-					<span aria-hidden="true">‹</span> {activeFamily?.name || 'Family'} <span class="text-ink-soft" aria-hidden="true">/</span> <span class="text-ink">{profiles.find((b) => Number(b.id) === selectedMemberId)?.name || 'Baby'}</span>
-				</button>
-
-				<MemberActivity
-					memberName={selectedMember?.name || 'Selected'}
-					memberId={selectedMemberId}
-					{summary}
-					{activeCategories}
-					quickLinks={selectedMember?.quickLinks ?? null}
-					dashboardTiles={selectedMember?.dashboardTiles ?? null}
-					stage={selectedMember?.stage ?? null}
-					{feedings} {diapers} {sleeps} {growths}
-					{milestones} {vaccinations} {moods} {journalEntries} {vitals}
-					totals={listTotals}
-					{loadingMore}
-					on:log={(e) => openLog(e.detail.kind)}
-					on:loadmore={loadMoreLists}
-					on:refresh={async () => { await refreshLists(); await refreshSummary(); }}
-					on:pin={(e) => setQuickLink(e.detail.kind, true)}
-					on:unpin={(e) => setQuickLink(e.detail.kind, false)}
-					on:saveTiles={(e) => saveDashboardTiles(e.detail.tiles)}
-				>
-					{#if selectedMember}
-						<div class="mt-6">
-							<Trends memberId={Number(selectedMember.id)} memberName={selectedMember.name} categories={activeCategories} />
-						</div>
-					{/if}
-
-					{#if selectedMember && selectedMember.type === 'child' && activeCategories.includes('growth')}
-						<div class="mt-6">
-							<GrowthChart memberId={Number(selectedMember.id)} memberName={selectedMember.name} />
-						</div>
-					{/if}
-
+				{#if selectedMember}
 					<div class="mt-6">
-						<StockGlance />
+						<Trends memberId={Number(selectedMember.id)} memberName={selectedMember.name} categories={activeCategories} />
 					</div>
-				</MemberActivity>
-			{/if}
+				{/if}
+
+				{#if selectedMember && selectedMember.type === 'child' && activeCategories.includes('growth')}
+					<div class="mt-6">
+						<GrowthChart memberId={Number(selectedMember.id)} memberName={selectedMember.name} />
+					</div>
+				{/if}
+
+				<div class="mt-6">
+					<StockGlance />
+				</div>
+			</MemberActivity>
 		{/if}
 
 		{#if editingMember}
