@@ -3,6 +3,7 @@
 	import { notify, fail } from '$lib/stores/feedback';
 	import { accountAPI, familyAdminAPI } from '$lib/api/system';
 	import { authStore, authActions } from '$lib/stores/authStore';
+	import { startPageStore, setStartPage, ALLOWED_START_PAGES, type StartPagePath } from '$lib/startPage';
 	import { Trash2 } from 'lucide-svelte';
 
 	/**
@@ -79,6 +80,25 @@
 	<div class="mb-6">
 		<p class="text-sm text-ink-soft mb-1">Email</p>
 		<p class="font-semibold text-ink">{$authStore.user?.email}</p>
+	</div>
+	<div class="border-t border-line-soft pt-4 mb-6">
+		<h4 class="font-display font-semibold mb-2">Default start page</h4>
+		<p class="text-xs text-ink-soft mb-3">Which page Nido opens to on sign in, when clicking the logo, or visiting the root URL.</p>
+		<div class="max-w-sm">
+			<select
+				class="w-full px-3 py-2 border border-line rounded-md bg-surface text-ink text-sm"
+				value={$startPageStore}
+				on:change={(e) => {
+					const val = e.currentTarget.value;
+					setStartPage(val);
+					notify(`Start page set to ${ALLOWED_START_PAGES.find(p => p.path === val)?.label ?? val}.`);
+				}}
+			>
+				{#each ALLOWED_START_PAGES as option (option.path)}
+					<option value={option.path}>{option.label} ({option.path})</option>
+				{/each}
+			</select>
+		</div>
 	</div>
 	<div class="border-t border-line-soft pt-4">
 		<h4 class="font-display font-semibold mb-3">Change password</h4>

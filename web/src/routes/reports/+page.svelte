@@ -80,6 +80,10 @@
 				members = (membersRes.data.members ?? [])
 					.filter((m: any) => m.trackable !== false)
 					.map((m: any) => ({ id: Number(m.id), name: m.name }));
+				const mParam = new URLSearchParams(window.location.search).get('memberId');
+				if (mParam && members.some((m) => m.id === Number(mParam))) {
+					memberId = Number(mParam);
+				}
 			}
 			await loadReport();
 		} catch (e: any) {
@@ -157,7 +161,7 @@
 
 <svelte:head><title>Reports · Nido</title></svelte:head>
 
-<div class="max-w-6xl mx-auto px-4 py-4 md:py-6">
+<div class="max-w-4xl mx-auto px-4 py-4 md:py-6">
 	<div class="mb-4">
 		<h1 class="text-2xl font-display font-semibold text-ink">Reports</h1>
 		<p class="text-sm text-ink-soft mt-1">
@@ -249,8 +253,17 @@
 				{/each}
 			</div>
 
+			{#if loading}
+				<p class="text-sm text-ink-soft py-8">Loading…</p>
+			{:else if report && report.days.some((d) => d.pumpedOz || d.formulaOz || d.bottleOz || d.used)}
+				<DailySeriesChart {report} {enabled} {enabledCategories} onSelectDay={(date) => (selectedDate = date)} />
+				<p class="text-xs text-ink-soft mt-2 mb-3">Volume is on the left axis (oz); inventory units on the right. Dashed is inventory.</p>
+			{:else if report}
+				<p class="text-sm text-ink-soft py-8">Nothing recorded in this window yet.</p>
+			{/if}
+
 			{#if report && report.categories.length}
-				<div class="flex flex-wrap items-center gap-2 mb-3" role="group" aria-label="Categories">
+				<div class="flex flex-wrap items-center gap-2 pt-3 border-t border-line-soft" role="group" aria-label="Categories">
 					<span class="text-xs font-semibold text-ink-soft uppercase tracking-wider">By category</span>
 					{#each report.categories as cat (cat.category)}
 						<button
@@ -264,15 +277,6 @@
 						</button>
 					{/each}
 				</div>
-			{/if}
-
-			{#if loading}
-				<p class="text-sm text-ink-soft py-8">Loading…</p>
-			{:else if report && report.days.some((d) => d.pumpedOz || d.formulaOz || d.bottleOz || d.used)}
-				<DailySeriesChart {report} {enabled} {enabledCategories} onSelectDay={(date) => (selectedDate = date)} />
-				<p class="text-xs text-ink-soft mt-2">Volume is on the left axis (oz); inventory units on the right. Dashed is inventory.</p>
-			{:else if report}
-				<p class="text-sm text-ink-soft py-8">Nothing recorded in this window yet.</p>
 			{/if}
 		</div>
 

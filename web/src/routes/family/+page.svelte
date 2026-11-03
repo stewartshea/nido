@@ -16,6 +16,7 @@
 	import { loadReminders, loadUpcomingAppointments, overdueReminders, upcomingAppointments } from '$lib/stores/reminders';
 	import MemberActivity from '$lib/components/logging/MemberActivity.svelte';
 	import GrowthChart from '$lib/components/logging/GrowthChart.svelte';
+	import Trends from '$lib/components/logging/Trends.svelte';
 	import LogDrawer from '$lib/components/logging/LogDrawer.svelte';
 	import StockGlance from '$lib/components/logging/StockGlance.svelte';
 	import { reminderNoun, reminderPhrase } from '$lib/shared';
@@ -601,9 +602,12 @@
 					</div>
 
 					<div class="bg-surface rounded-lg shadow-card p-5 border border-line-soft mb-8">
-						<button type="button" on:click={() => { familyView = 'detail'; }} class="w-full text-left hover:bg-surface2 transition-colors rounded-md">
-							<h3 class="text-lg font-display font-semibold mb-1">Quick reports <span class="text-xs text-ink-soft">· feeds →</span></h3>
-						</button>
+						<div class="flex items-center justify-between mb-3">
+							<h3 class="text-lg font-display font-semibold">Quick reports <span class="text-xs text-ink-soft">· feeds</span></h3>
+							<a href={selectedMemberId ? `/reports?memberId=${selectedMemberId}` : '/reports'} class="text-sm font-semibold text-accent hover:underline">
+								Full reports &rarr;
+							</a>
+						</div>
 						<div class="grid grid-cols-2 md:grid-cols-4 gap-3">
 							<div>
 								<p class="text-xs text-ink-soft uppercase font-semibold">Feeds (24h)</p>
@@ -632,8 +636,6 @@
 						</div>
 					</div>
 
-					<StockGlance />
-
 					<MemberActivity
 						memberName={selectedMember?.name || 'Selected'}
 						memberId={selectedMemberId}
@@ -652,15 +654,23 @@
 						on:pin={(e) => setQuickLink(e.detail.kind, true)}
 						on:unpin={(e) => setQuickLink(e.detail.kind, false)}
 						on:saveTiles={(e) => saveDashboardTiles(e.detail.tiles)}
-					/>
+					>
+						{#if selectedMember}
+							<div class="mt-6">
+								<Trends memberId={Number(selectedMember.id)} memberName={selectedMember.name} categories={activeCategories} />
+							</div>
+						{/if}
 
-					<!-- The selected person's own reports. WHO percentiles are child
-					     reference data — and a "child" includes legacy members created
-					     before stages existed, whose stage is null. Test the type, not
-					     the stage. -->
-					{#if selectedMember && selectedMember.type === 'child' && activeCategories.includes('growth')}
-						<GrowthChart memberId={Number(selectedMember.id)} memberName={selectedMember.name} />
-					{/if}
+						{#if selectedMember && selectedMember.type === 'child' && activeCategories.includes('growth')}
+							<div class="mt-6">
+								<GrowthChart memberId={Number(selectedMember.id)} memberName={selectedMember.name} />
+							</div>
+						{/if}
+
+						<div class="mt-6">
+							<StockGlance />
+						</div>
+					</MemberActivity>
 				</div>
 			{:else}
 				<button type="button" on:click={() => (familyView = 'dashboard')} class="mb-2 text-ink-soft hover:text-ink flex items-center gap-1 text-sm font-semibold">
@@ -685,17 +695,23 @@
 					on:pin={(e) => setQuickLink(e.detail.kind, true)}
 					on:unpin={(e) => setQuickLink(e.detail.kind, false)}
 					on:saveTiles={(e) => saveDashboardTiles(e.detail.tiles)}
-				/>
+				>
+					{#if selectedMember}
+						<div class="mt-6">
+							<Trends memberId={Number(selectedMember.id)} memberName={selectedMember.name} categories={activeCategories} />
+						</div>
+					{/if}
 
-				<!--
-					Growth percentiles are WHO child reference data, so this only makes
-					sense for a child who tracks growth — not an adult, and not a pet.
-					Test the type: a legacy child created before stages exists has a null
-					stage, and must still see the chart.
-				-->
-				{#if selectedMember && selectedMember.type === 'child' && activeCategories.includes('growth')}
-					<GrowthChart memberId={Number(selectedMember.id)} memberName={selectedMember.name} />
-				{/if}
+					{#if selectedMember && selectedMember.type === 'child' && activeCategories.includes('growth')}
+						<div class="mt-6">
+							<GrowthChart memberId={Number(selectedMember.id)} memberName={selectedMember.name} />
+						</div>
+					{/if}
+
+					<div class="mt-6">
+						<StockGlance />
+					</div>
+				</MemberActivity>
 			{/if}
 		{/if}
 
