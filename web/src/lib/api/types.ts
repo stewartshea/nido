@@ -558,5 +558,7 @@ export interface DailyReport {
 	categories: ReportCategorySeries[];
 	timezone: string;
 	windowDays: number;
+	from: string;
+	to: string;
 	memberId: number | null;
 }

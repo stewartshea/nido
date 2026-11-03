@@ -220,7 +220,8 @@ advance and discovering at 2am that there are none left.
 
 **Reports** turns the quick numbers on the Family Overview into series over
 time, so you can see a trend rather than an average. Pick a window — 7, 30, or
-90 days — and toggle which lines to draw: **Pumped** (milk expressed),
+90 days, or **Custom** for an explicit start and end date (up to a year) — and
+toggle which lines to draw: **Pumped** (milk expressed),
 **Formula**, **Bottled milk**, and **Inventory used**. Volume is on the left
 axis in ounces; inventory units are on the right, dashed, so overlaying them
 stays honest about the two different scales.

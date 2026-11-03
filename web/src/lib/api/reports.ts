@@ -4,9 +4,15 @@ import api from './client';
 import type { DailyReport } from './types';
 
 export const reportsAPI = {
-	daily: (opts?: { days?: number; memberId?: number | null }) => {
+	/** `from`/`to` (YYYY-MM-DD) win over `days` when both are given. */
+	daily: (opts?: { days?: number; from?: string; to?: string; memberId?: number | null }) => {
 		const qs = new URLSearchParams();
-		if (opts?.days) qs.set('days', String(opts.days));
+		if (opts?.from && opts?.to) {
+			qs.set('from', opts.from);
+			qs.set('to', opts.to);
+		} else if (opts?.days) {
+			qs.set('days', String(opts.days));
+		}
 		if (opts?.memberId) qs.set('memberId', String(opts.memberId));
 		const q = qs.toString();
 		return api.get<{ report: DailyReport }>(`/reports/daily${q ? `?${q}` : ''}`);

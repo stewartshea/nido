@@ -4,7 +4,8 @@
 	import { tokenExpired } from '$lib/api/client';
 	import { familiesAPI } from '$lib/api/family';
 	import { reportsAPI } from '$lib/api/reports';
-	import type { DailyReport, ReportDay } from '$lib/api/types';
+	import { todayKey, dayKeyOffset } from '$lib/logging/format';
+	import type { DailyReport } from '$lib/api/types';
 	import DailySeriesChart from '$lib/components/reports/DailySeriesChart.svelte';
 
 	// The overlay view the quick reports on Family Overview cannot be: the same
@@ -17,7 +18,10 @@
 	let loading = false;
 	let error = '';
 
-	let days = 30;
+	// A preset day count, or 'custom' with an explicit from/to range.
+	let range: number | 'custom' = 30;
+	let fromDate = '';
+	let toDate = '';
 	let memberId: number | null = null;
 	let report: DailyReport | null = null;
 	let selectedDate: string | null = null;
@@ -44,7 +48,9 @@
 		loading = true;
 		error = '';
 		try {
-			const res = await reportsAPI.daily({ days, memberId });
+			const res = await reportsAPI.daily(
+				range === 'custom' ? { from: fromDate, to: toDate, memberId } : { days: range, memberId },
+			);
 			report = res.data.report;
 			selectedDate = null;
 		} catch (e: any) {
@@ -92,6 +98,10 @@
 		}
 		: null;
 
+	// The divisor for every "per day" figure: the window the server actually
+	// returned, so a custom range of 12 days divides by 12, not by a preset.
+	$: windowDays = report?.windowDays ?? (typeof range === 'number' ? range : 30);
+
 	$: selected = report && selectedDate ? report.days.find((d) => d.date === selectedDate) ?? null : null;
 	$: selectedItems = report && selectedDate
 		? report.items.filter((i) => i.daily[selectedDate!] != null)
@@ -102,9 +112,38 @@
 	}
 
 	async function onRange(next: number) {
-		days = next;
+		range = next;
 		await loadReport();
 	}
+
+	/** Seed a sensible custom window (the last 30 days) the first time it opens. */
+	function onCustom() {
+		range = 'custom';
+		if (!fromDate || !toDate) {
+			toDate = todayKey();
+			fromDate = dayKeyOffset(toDate, -29);
+		}
+		applyCustom();
+	}
+
+	/** Whole days between two keys, inclusive. */
+	function spanDays(from: string, to: string): number {
+		return Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000) + 1;
+	}
+
+	function customError(): string | null {
+		if (!fromDate || !toDate) return 'Pick both a start and an end date.';
+		if (fromDate > toDate) return 'The start date must be on or before the end date.';
+		if (spanDays(fromDate, toDate) > 366) return 'That range is longer than a year.';
+		return null;
+	}
+
+	async function applyCustom() {
+		const bad = customError();
+		if (bad) { error = bad; return; }
+		await loadReport();
+	}
+
 	async function onMember(e: Event) {
 		const value = (e.target as HTMLSelectElement).value;
 		memberId = value ? Number(value) : null;
@@ -131,12 +170,32 @@
 				{#each RANGES as r (r)}
 					<button
 						type="button"
-						aria-pressed={days === r}
-						class="h-9 px-3 text-sm font-semibold {days === r ? 'bg-primary text-on-primary' : 'bg-surface text-ink-soft hover:bg-surface2'}"
+						aria-pressed={range === r}
+						class="h-9 px-3 text-sm font-semibold {range === r ? 'bg-primary text-on-primary' : 'bg-surface text-ink-soft hover:bg-surface2'}"
 						on:click={() => onRange(r)}
 					>{r}d</button>
 				{/each}
+				<button
+					type="button"
+					aria-pressed={range === 'custom'}
+					class="h-9 px-3 text-sm font-semibold {range === 'custom' ? 'bg-primary text-on-primary' : 'bg-surface text-ink-soft hover:bg-surface2'}"
+					on:click={onCustom}
+				>Custom</button>
 			</div>
+
+			{#if range === 'custom'}
+				<div class="flex flex-wrap items-center gap-2" data-testid="custom-range">
+					<label class="flex items-center gap-1.5 text-sm text-ink-soft">
+						<span>From</span>
+						<input type="date" bind:value={fromDate} max={toDate || todayKey()} class="px-2 py-1.5 border border-line rounded-md bg-surface text-ink text-sm" />
+					</label>
+					<label class="flex items-center gap-1.5 text-sm text-ink-soft">
+						<span>To</span>
+						<input type="date" bind:value={toDate} min={fromDate || undefined} max={todayKey()} class="px-2 py-1.5 border border-line rounded-md bg-surface text-ink text-sm" />
+					</label>
+					<button type="button" on:click={applyCustom} class="h-9 px-3 rounded-md bg-primary text-on-primary text-sm font-semibold">Apply</button>
+				</div>
+			{/if}
 
 			<label class="flex items-center gap-2 text-sm text-ink-soft">
 				<span>For</span>
@@ -154,22 +213,22 @@
 				<div class="bg-surface rounded-lg border border-line-soft px-3 py-2.5">
 					<p class="text-xs text-ink-soft leading-tight">Pumped</p>
 					<p class="text-2xl font-display font-semibold text-ink leading-tight mt-0.5">{totals.pumpedOz.toFixed(1)} oz</p>
-					<p class="text-[11px] text-ink-soft leading-tight mt-0.5">{(totals.pumpedOz / days).toFixed(1)} oz / day</p>
+					<p class="text-[11px] text-ink-soft leading-tight mt-0.5">{(totals.pumpedOz / windowDays).toFixed(1)} oz / day</p>
 				</div>
 				<div class="bg-surface rounded-lg border border-line-soft px-3 py-2.5">
 					<p class="text-xs text-ink-soft leading-tight">Formula</p>
 					<p class="text-2xl font-display font-semibold text-ink leading-tight mt-0.5">{totals.formulaOz.toFixed(1)} oz</p>
-					<p class="text-[11px] text-ink-soft leading-tight mt-0.5">{(totals.formulaOz / days).toFixed(1)} oz / day</p>
+					<p class="text-[11px] text-ink-soft leading-tight mt-0.5">{(totals.formulaOz / windowDays).toFixed(1)} oz / day</p>
 				</div>
 				<div class="bg-surface rounded-lg border border-line-soft px-3 py-2.5">
 					<p class="text-xs text-ink-soft leading-tight">Bottled milk</p>
 					<p class="text-2xl font-display font-semibold text-ink leading-tight mt-0.5">{totals.bottleOz.toFixed(1)} oz</p>
-					<p class="text-[11px] text-ink-soft leading-tight mt-0.5">{(totals.bottleOz / days).toFixed(1)} oz / day</p>
+					<p class="text-[11px] text-ink-soft leading-tight mt-0.5">{(totals.bottleOz / windowDays).toFixed(1)} oz / day</p>
 				</div>
 				<div class="bg-surface rounded-lg border border-line-soft px-3 py-2.5">
 					<p class="text-xs text-ink-soft leading-tight">Inventory used</p>
 					<p class="text-2xl font-display font-semibold text-ink leading-tight mt-0.5">{totals.used.toFixed(1)}</p>
-					<p class="text-[11px] text-ink-soft leading-tight mt-0.5">{(totals.used / days).toFixed(1)} / day</p>
+					<p class="text-[11px] text-ink-soft leading-tight mt-0.5">{(totals.used / windowDays).toFixed(1)} / day</p>
 				</div>
 			</div>
 		{/if}
@@ -241,7 +300,7 @@
 									<td class="py-1.5 pr-3 text-ink">{item.name}</td>
 									<td class="py-1.5 pr-3 text-ink-soft">{item.category}</td>
 									<td class="py-1.5 pr-3 text-right text-ink">{total.toFixed(1)} {item.unit}</td>
-									<td class="py-1.5 text-right text-ink-soft">{(total / days).toFixed(1)}</td>
+									<td class="py-1.5 text-right text-ink-soft">{(total / windowDays).toFixed(1)}</td>
 								</tr>
 							{/each}
 						</tbody>

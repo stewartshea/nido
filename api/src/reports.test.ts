@@ -178,4 +178,24 @@ describe('GET /reports/daily', () => {
 		const res = await call('GET', token, '/api/v1/reports/daily?days=7&memberId=999999');
 		expect(res.status).toBe(404);
 	});
+
+	it('honours a custom from/to range instead of a day count', async () => {
+		const to = new Date().toISOString().slice(0, 10);
+		const from = daysAgo(1).slice(0, 10);
+		const res = await call('GET', token, `/api/v1/reports/daily?from=${from}&to=${to}`);
+		expect(res.status).toBe(200);
+		expect(res.body.report.days.map((d: any) => d.date)).toEqual([from, to]);
+		expect(res.body.report.windowDays).toBe(2);
+		expect(res.body.report.from).toBe(from);
+		expect(res.body.report.to).toBe(to);
+		// The formula feed sits on yesterday, so it lands in the first bucket.
+		expect(res.body.report.days[0].formulaOz).toBe(5);
+	});
+
+	it('refuses a reversed or oversized custom range rather than guessing', async () => {
+		const reversed = await call('GET', token, '/api/v1/reports/daily?from=2026-11-05&to=2026-11-01');
+		expect(reversed.status).toBe(400);
+		const oversized = await call('GET', token, '/api/v1/reports/daily?from=2020-01-01&to=2026-01-01');
+		expect(oversized.status).toBe(400);
+	});
 });

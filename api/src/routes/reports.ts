@@ -8,7 +8,7 @@ import { type AuthEnv } from '../auth';
 import { NAMESPACE_HOUSEHOLD_ID } from '../db-core';
 import { resolveTrackableMember } from '../member-scope';
 import { timezoneForHousehold } from '../medications';
-import { addDays } from '../dates';
+import { addDays, dayDiff, isoDate, parseDate } from '../dates';
 import { zonedDate } from '../timezone';
 import { buildDailyReport, type ItemMeta } from '../reports';
 
@@ -17,6 +17,13 @@ const reportRoutes = new Hono<AuthEnv>();
 const DAY_MS = 86_400_000;
 const DEFAULT_DAYS = 30;
 const MAX_DAYS = 366;
+
+/** A real YYYY-MM-DD, rejecting a well-shaped date that rolls over (2026-13-45). */
+function isValidDay(value: string | undefined): value is string {
+	if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+	const parsed = parseDate(value);
+	return parsed !== null && isoDate(parsed) === value;
+}
 
 /**
  * GET /daily?days=30&memberId=12
@@ -32,7 +39,6 @@ reportRoutes.get('/daily', async (c) => {
 		const db = c.get('db');
 		const userId = c.get('userId');
 
-		const days = Math.min(MAX_DAYS, Math.max(1, Math.trunc(Number(c.req.query('days')) || DEFAULT_DAYS)));
 		const memberIdRaw = c.req.query('memberId');
 		const memberId = memberIdRaw ? Number(memberIdRaw) : null;
 
@@ -43,15 +49,38 @@ reportRoutes.get('/daily', async (c) => {
 			subjectId = scope.subjectId;
 		}
 
+		// A caller either names a window in days or an explicit `from`/`to` range.
+		// Both are accepted so the presets stay one number while a custom range
+		// can reach a slice of history the presets cannot.
+		const fromQ = c.req.query('from');
+		const toQ = c.req.query('to');
+		const custom = isValidDay(fromQ) && isValidDay(toQ);
+
 		const nowMs = Date.now();
 		const timeZone = await timezoneForHousehold(db, NAMESPACE_HOUSEHOLD_ID);
-		const today = zonedDate(nowMs, timeZone);
-		const dates: string[] = [];
-		for (let i = days - 1; i >= 0; i--) dates.push(addDays(today, -i));
 
-		// One extra day back covers a zone that runs behind UTC, so the first
-		// local bucket is never starved of the instant that opened it.
-		const since = new Date(nowMs - (days + 1) * DAY_MS).toISOString();
+		let dates: string[];
+		let days: number;
+		if (custom) {
+			if (fromQ > toQ) return c.json({ error: 'The start date must be on or before the end date.' }, 400);
+			const span = dayDiff(fromQ, toQ) + 1;
+			if (span > MAX_DAYS) {
+				return c.json({ error: `That range is ${span} days; the most this can show is ${MAX_DAYS}.` }, 400);
+			}
+			dates = [];
+			for (let day = fromQ; day <= toQ; day = addDays(day, 1)) dates.push(day);
+			days = dates.length;
+		} else {
+			days = Math.min(MAX_DAYS, Math.max(1, Math.trunc(Number(c.req.query('days')) || DEFAULT_DAYS)));
+			const today = zonedDate(nowMs, timeZone);
+			dates = [];
+			for (let i = days - 1; i >= 0; i--) dates.push(addDays(today, -i));
+		}
+
+		// The UTC midnight of the first day, one day back, covers any zone offset
+		// so the earliest local bucket is never starved of the instant that
+		// opened it. Anything after the window is dropped by the aggregator.
+		const since = new Date(new Date(`${dates[0]}T00:00:00.000Z`).getTime() - DAY_MS).toISOString();
 
 		const feedArgs: unknown[] = [since];
 		let feedSql = 'SELECT type, amount, amount_unit, start_time FROM feedings WHERE start_time >= ?';
@@ -97,6 +126,8 @@ reportRoutes.get('/daily', async (c) => {
 				...report,
 				timezone: timeZone,
 				windowDays: days,
+				from: dates[0],
+				to: dates[dates.length - 1],
 				memberId: memberId ?? null,
 			},
 		});
