@@ -195,12 +195,14 @@ export async function runFamilyDigest(
 			sent += 1;
 			// Recorded per person, and only for someone who actually received it.
 			// A bounce must not mark them as told forever.
-			const byItem = new Map<number, InventoryRule>();
+			//
+			// One per alert, not one per item: an item can match several rules, and
+			// collapsing them by item would record only the last rule for that item.
+			// The rest would look never-notified and re-fire on every digest.
 			for (const alert of lines) {
 				const rule = byRule.get(alert.ruleId);
-				if (rule) byItem.set(alert.itemId, rule);
+				if (rule) await recordNotified(db, rule.id, alert.itemId, [recipient.userId], nowMs);
 			}
-			for (const [itemId, rule] of byItem) await recordNotified(db, rule.id, itemId, [recipient.userId], nowMs);
 		} catch (err: any) {
 			failed.push(`${recipient.email}: ${err?.message ?? 'failed'}`);
 			logger.warn('inventory alert email failed', { err, familyId, ruleId: lines[0]?.ruleId });
