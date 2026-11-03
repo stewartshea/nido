@@ -27,9 +27,10 @@ is in, or set `SIGNUP_ENABLED=false`, which is authoritative.
 
 ## The five places
 
-The app has five destinations, in the header on desktop and the bottom bar
-on a phone: **Dashboard**, **Family**, **Home**, **Inventory**, and
-**Notifications**. Settings is in the account menu in the header.
+The app has five destinations in the bottom bar on a phone: **Dashboard**,
+**Family**, **Home**, **Inventory**, and **Notifications**. Two more live in
+the header: **Reports** (a look-back) and **Assets** (set-up). Settings is in
+the account menu in the header.
 
 Everything on this page is reached from those, plus the log forms.
 
@@ -214,6 +215,25 @@ Set a **weight band** on each diaper size and Nido fits a trend through the
 weights you have recorded — it needs at least two — then projects the day
 the next size is needed. That is the difference between buying size 4 in
 advance and discovering at 2am that there are none left.
+
+## Reports
+
+**Reports** turns the quick numbers on the Family Overview into series over
+time, so you can see a trend rather than an average. Pick a window — 7, 30, or
+90 days — and toggle which lines to draw: **Pumped** (milk expressed),
+**Formula**, **Bottled milk**, and **Inventory used**. Volume is on the left
+axis in ounces; inventory units are on the right, dashed, so overlaying them
+stays honest about the two different scales.
+
+Days follow the family's timezone, not the server's, so two caregivers see the
+same buckets. **Tap a day** on the chart to open it: that day's totals and the
+items that were used to make them up. Below the chart, **What got used** lists
+every item with its total and per-day rate over the window.
+
+By default the report is the whole family's. Choosing a person narrows the
+feeding lines to them; inventory stays the household's ledger, since a box of
+diapers is not one child's. A manual recount shows as a **correction**, kept
+apart from **use**, so a stock count never reads as consumption.
 
 ## Notifications
 
