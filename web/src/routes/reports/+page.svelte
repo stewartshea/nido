@@ -7,6 +7,7 @@
 	import { todayKey, dayKeyOffset } from '$lib/logging/format';
 	import type { DailyReport } from '$lib/api/types';
 	import DailySeriesChart from '$lib/components/reports/DailySeriesChart.svelte';
+	import { categoryColorVar } from '$lib/components/reports/categoryColors';
 
 	// The overlay view the quick reports on Family Overview cannot be: the same
 	// numbers as per-day series, side by side, with a day openable into the rows
@@ -28,6 +29,9 @@
 
 	// Toggles for the overlay. Kept on the page so the chart stays a dumb view.
 	let enabled: Record<string, boolean> = { pumpedOz: true, formulaOz: true, bottleOz: false, used: true };
+	// Category lines start off: a busy household should not open onto six
+	// lines it did not ask for. Turned on from the "By category" row.
+	let enabledCategories: Record<string, boolean> = {};
 
 	const RANGES = [7, 30, 90];
 	const SERIES_LABELS: [string, string][] = [
@@ -245,10 +249,27 @@
 				{/each}
 			</div>
 
+			{#if report && report.categories.length}
+				<div class="flex flex-wrap items-center gap-2 mb-3" role="group" aria-label="Categories">
+					<span class="text-xs font-semibold text-ink-soft uppercase tracking-wider">By category</span>
+					{#each report.categories as cat (cat.category)}
+						<button
+							type="button"
+							aria-pressed={!!enabledCategories[cat.category]}
+							class="h-8 px-3 rounded-full text-xs font-semibold border inline-flex items-center gap-1.5 {enabledCategories[cat.category] ? 'bg-surface border-line text-ink' : 'bg-surface2 border-line-soft text-ink-soft'}"
+							on:click={() => (enabledCategories = { ...enabledCategories, [cat.category]: !enabledCategories[cat.category] })}
+						>
+							<span class="w-2 h-2 rounded-full shrink-0" style="background: rgb(var({categoryColorVar(report.categories, cat.category)}))"></span>
+							{cat.category}
+						</button>
+					{/each}
+				</div>
+			{/if}
+
 			{#if loading}
 				<p class="text-sm text-ink-soft py-8">Loading…</p>
 			{:else if report && report.days.some((d) => d.pumpedOz || d.formulaOz || d.bottleOz || d.used)}
-				<DailySeriesChart {report} {enabled} onSelectDay={(date) => (selectedDate = date)} />
+				<DailySeriesChart {report} {enabled} {enabledCategories} onSelectDay={(date) => (selectedDate = date)} />
 				<p class="text-xs text-ink-soft mt-2">Volume is on the left axis (oz); inventory units on the right. Dashed is inventory.</p>
 			{:else if report}
 				<p class="text-sm text-ink-soft py-8">Nothing recorded in this window yet.</p>

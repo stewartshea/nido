@@ -226,6 +226,11 @@ toggle which lines to draw: **Pumped** (milk expressed),
 axis in ounces; inventory units are on the right, dashed, so overlaying them
 stays honest about the two different scales.
 
+Below those, a **By category** row adds one line per inventory category —
+diapers, formula, and so on — on the inventory axis, each labeled with its
+unit. They start off; turn on only the ones you want to compare, so a household
+with a long inventory list does not open onto a thicket of lines.
+
 Days follow the family's timezone, not the server's, so two caregivers see the
 same buckets. **Tap a day** on the chart to open it: that day's totals and the
 items that were used to make them up. Below the chart, **What got used** lists
