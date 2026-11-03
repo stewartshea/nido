@@ -20,7 +20,9 @@
 	let audienceKind: 'family' | 'users' = 'family';
 	let audienceIds: string[] = [];
 
-	let showAdd = false;
+	let showForm = false;
+	/** null means the form is adding; a number means it is editing that rule. */
+	let editingId: number | null = null;
 	let itemId: number | null = null;
 	let signal = '';
 	let comparator: 'lt' | 'lte' | 'gt' | 'gte' = 'lte';
@@ -76,7 +78,47 @@
 		return `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
 	}
 
-	async function add(event: SubmitEvent) {
+	/** Clear the form back to a blank "add" state, whoever opened it. */
+	function resetForm() {
+		editingId = null;
+		itemId = null;
+		signal = '';
+		comparator = 'lte';
+		threshold = '';
+		repeatDays = '';
+		audienceKind = 'family';
+		audienceIds = [];
+	}
+
+	function openAdd() {
+		resetForm();
+		error = '';
+		notice = '';
+		showForm = true;
+	}
+
+	/** Load an existing rule into the form. Saving then updates it in place. */
+	function startEdit(rule: InventoryRule) {
+		editingId = rule.id;
+		itemId = rule.itemId;
+		signal = rule.signal;
+		comparator = rule.comparator;
+		threshold = String(rule.threshold);
+		repeatDays = rule.repeatDays === null ? '' : String(rule.repeatDays);
+		audienceKind = rule.audienceKind;
+		audienceIds = [...rule.audienceIds];
+		error = '';
+		notice = '';
+		showForm = true;
+	}
+
+	function cancel() {
+		resetForm();
+		showForm = false;
+		error = '';
+	}
+
+	async function save(event: SubmitEvent) {
 		event.preventDefault();
 		if (!signal || threshold === '') { error = 'Choose a signal and a limit.'; return; }
 		if (audienceKind === 'users' && audienceIds.length === 0) {
@@ -85,19 +127,26 @@
 		}
 		busy = true;
 		error = '';
+		const payload = {
+			itemId, signal, comparator, threshold: Number(threshold),
+			repeatDays: repeatDays ? Number(repeatDays) : null,
+			audienceKind, audienceIds,
+		};
+		const editing = editingId;
 		try {
-			await inventoryAPI.createRule({
-				itemId, signal, comparator, threshold: Number(threshold),
-				repeatDays: repeatDays ? Number(repeatDays) : null,
-				audienceKind, audienceIds,
-			});
-			threshold = ''; repeatDays = ''; showAdd = false;
-			audienceKind = 'family'; audienceIds = [];
-			notice = 'Rule added.';
+			if (editing === null) {
+				await inventoryAPI.createRule(payload);
+				notice = 'Rule added.';
+			} else {
+				await inventoryAPI.updateRule(editing, payload);
+				notice = 'Rule updated.';
+			}
+			resetForm();
+			showForm = false;
 			await load();
 			dispatch('changed');
 		} catch (e: any) {
-			error = e?.response?.data?.error || 'Could not add that rule.';
+			error = e?.response?.data?.error || (editing === null ? 'Could not add that rule.' : 'Could not update that rule.');
 		} finally {
 			busy = false;
 		}
@@ -107,6 +156,7 @@
 		if (!confirm('Remove this rule?')) return;
 		try {
 			await inventoryAPI.deleteRule(id);
+			if (editingId === id) cancel();
 			await load();
 			dispatch('changed');
 		} catch (e: any) {
@@ -120,8 +170,8 @@
 <div class="border-t border-line-soft pt-4 mt-4">
 	<div class="flex items-center justify-between mb-1">
 		<h4 class="font-display font-semibold text-sm">Inventory alerts</h4>
-		<button type="button" on:click={() => (showAdd = !showAdd)} class="px-2 py-1 rounded-md bg-surface2 text-ink-soft text-xs font-semibold">
-			{showAdd ? 'Cancel' : 'Add rule'}
+		<button type="button" on:click={showForm ? cancel : openAdd} class="px-2 py-1 rounded-md bg-surface2 text-ink-soft text-xs font-semibold">
+			{showForm ? 'Cancel' : 'Add rule'}
 		</button>
 	</div>
 	<p class="text-sm text-ink-soft mb-3">
@@ -134,13 +184,16 @@
 	{#if rules.length > 0}
 		<ul class="space-y-1 mb-3">
 			{#each rules as rule (rule.id)}
-				<li class="text-sm flex items-center gap-2">
+				<li class="text-sm flex items-center gap-2" class:opacity-60={editingId === rule.id}>
 					<span>
 						{describe(rule)} — {itemName(rule.itemId)}
 						{rule.repeatDays ? ` · repeat every ${rule.repeatDays}d` : ' · once until it clears'}
 						<span class="text-ink-soft"> · told to {audienceLabel(rule)}{rule.createdByName ? ` · set by ${rule.createdByName}` : ''}</span>
 					</span>
-					<button type="button" on:click={() => remove(rule.id)} class="text-xs text-ink-soft hover:text-danger-text shrink-0">remove</button>
+					<span class="ml-auto shrink-0 flex items-center gap-2">
+						<button type="button" on:click={() => startEdit(rule)} class="text-xs text-ink-soft hover:text-ink">edit</button>
+						<button type="button" on:click={() => remove(rule.id)} class="text-xs text-ink-soft hover:text-danger-text">remove</button>
+					</span>
 				</li>
 			{/each}
 		</ul>
@@ -148,8 +201,8 @@
 		<p class="text-sm text-ink-soft mb-3">No rules yet, so nothing is being watched.</p>
 	{/if}
 
-	{#if showAdd}
-		<form on:submit={add} class="flex flex-wrap items-end gap-2">
+	{#if showForm}
+		<form on:submit={save} class="flex flex-wrap items-end gap-2">
 			<div class="min-w-[10rem]">
 				<label for="sr-item" class="block text-xs text-ink-soft mb-1">Applies to</label>
 				<select id="sr-item" value={itemId} on:change={(e) => (itemId = e.currentTarget.value === '' ? null : Number(e.currentTarget.value))} class="px-2 py-1.5 border border-line rounded-md">
@@ -184,7 +237,9 @@
 			<div class="min-w-[12rem]">
 				<AudiencePicker bind:audienceKind bind:audienceIds />
 			</div>
-			<button type="submit" disabled={busy} class="px-3 py-1.5 rounded-md bg-primary text-on-primary text-sm font-semibold">Add</button>
+			<button type="submit" disabled={busy} class="px-3 py-1.5 rounded-md bg-primary text-on-primary text-sm font-semibold">
+				{editingId === null ? 'Add' : 'Save'}
+			</button>
 		</form>
 		{#if signalMeta}
 			<p class="text-xs text-ink-soft mt-2">{signalMeta.describe}</p>

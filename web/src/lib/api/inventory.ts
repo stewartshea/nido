@@ -23,6 +23,11 @@ export const inventoryAPI = {
 		comparator?: 'lt' | 'lte' | 'gt' | 'gte'; threshold: number; repeatDays?: number | null;
 		audienceKind?: 'family' | 'users'; audienceIds?: string[];
 	}) => api.post('/inventory/rules', data),
+	updateRule: (id: number, data: Partial<{
+		itemId: number | null; category: string | null; signal: string;
+		comparator: 'lt' | 'lte' | 'gt' | 'gte'; threshold: number; repeatDays: number | null;
+		enabled: boolean; audienceKind: 'family' | 'users'; audienceIds: string[];
+	}>) => api.put(`/inventory/rules/${id}`, data),
 	deleteRule: (id: number) => api.delete(`/inventory/rules/${id}`),
 	recount: (id: number, quantity: number, note?: string | null) =>
 		api.post(`/inventory/${id}/recount`, { quantity, note: note ?? null }),
