@@ -245,6 +245,40 @@ describe('inventory: the diaper journey', () => {
 		await call('DELETE', token, `/api/v1/inventory/rules/${narrowed.body.rule.id}`);
 	});
 
+	it('updates an existing rule in place, keeping its id and notification state', async () => {
+		const items = (await call('GET', token, '/api/v1/inventory')).body.items;
+		const first = items.find((i: any) => i.variant === '3');
+		const second = await call('POST', token, '/api/v1/inventory', {
+			memberId, name: 'Wipes', category: 'baby_care', quantity: 10,
+		});
+
+		const made = await call('POST', token, '/api/v1/inventory/rules', {
+			itemId: first.id, signal: 'quantity', comparator: 'lte', threshold: 5,
+		});
+		expect(made.status).toBe(201);
+		const id = made.body.rule.id;
+
+		// Edit scope, signal, test, limit and repeat together — the edit form
+		// sends the whole rule, and the API must apply every field without
+		// creating a new rule or losing the one being edited.
+		const updated = await call('PUT', token, `/api/v1/inventory/rules/${id}`, {
+			itemId: second.body.item.id, signal: 'days_of_cover', comparator: 'lt',
+			threshold: 3, repeatDays: 4,
+		});
+		expect(updated.status).toBe(200);
+		expect(updated.body.rule.id).toBe(id);
+		expect(updated.body.rule.itemId).toBe(second.body.item.id);
+		expect(updated.body.rule.signal).toBe('days_of_cover');
+		expect(updated.body.rule.comparator).toBe('lt');
+		expect(updated.body.rule.threshold).toBe(3);
+		expect(updated.body.rule.repeatDays).toBe(4);
+
+		const listed = (await call('GET', token, '/api/v1/inventory/rules')).body.rules;
+		expect(listed.filter((r: any) => r.id === id).length).toBe(1);
+
+		await call('DELETE', token, `/api/v1/inventory/rules/${id}`);
+	});
+
 it('does not fire a size-up rule on a member\'s non-diaper stock', async () => {
 		// Both items belong to the same child, so both see the same sizes and
 		// weights. Only diaper stock should be told about outgrowing a size.
