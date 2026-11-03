@@ -524,3 +524,41 @@ export interface DueItem {
 	detail: string;
 	season: SeasonalStatus | null;
 }
+
+// The Reports page: one bucket per local day, plus the inventory rollups that
+// let a day be opened into the items behind it. Mirrors DailyReport in
+// api/src/reports.ts.
+export interface ReportDay {
+	date: string;
+	pumpedOz: number;
+	formulaOz: number;
+	bottleOz: number;
+	bottleFedOz: number;
+	used: number;
+	corrected: number;
+}
+
+export interface ReportItemSeries {
+	itemId: number;
+	name: string;
+	category: string;
+	unit: string;
+	daily: Record<string, number>;
+}
+
+export interface ReportCategorySeries {
+	category: string;
+	unit: string;
+	daily: Record<string, number>;
+}
+
+export interface DailyReport {
+	days: ReportDay[];
+	items: ReportItemSeries[];
+	categories: ReportCategorySeries[];
+	timezone: string;
+	windowDays: number;
+	from: string;
+	to: string;
+	memberId: number | null;
+}

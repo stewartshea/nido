@@ -35,6 +35,7 @@ or follow development.
 - **Shared family access** — invite caregivers, owner/admin/member roles
 - **Reminders** — inactivity and interval nudges
 - **Notifications** — one page for every rule, with email digests sent on a timer
+- **Reports** — daily series for pumped volume, formula, and inventory use, overlayable and openable by day
 - **Export / restore** — move a family's whole dataset as JSON
 - **Offline queue** — writes made without a connection are queued and replayed
 - **Themes** — 7 palettes × light/dark, plus a custom theme editor
