@@ -274,5 +274,16 @@
 				<p class="text-sm text-ink-soft">Nothing overdue or coming up. Give an asset a schedule and Nido will remind you.</p>
 			</div>
 		{/if}
+
+		<div class="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
+			<a href="/assets" class="bg-surface rounded-lg shadow p-4 md:p-6 text-center hover:shadow-md block">
+				<h3 class="text-lg font-display font-semibold mb-2">Property Assets</h3>
+				<p class="text-ink-soft">Track physical property and appliance inventory.</p>
+			</a>
+			<div class="bg-surface rounded-lg shadow p-4 md:p-6 text-center">
+				<h3 class="text-lg font-display font-semibold mb-2">Manuals &amp; Routines</h3>
+				<p class="text-ink-soft">Store appliance manuals and household routines.</p>
+			</div>
+		</div>
 	{/if}
 </div>

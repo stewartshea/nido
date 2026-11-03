@@ -498,32 +498,31 @@
 				</form>
 			</div>
 		{:else}
-			<!-- DASHBOARD or DETAIL (family + members) -->
-			{#if familyView === 'detail'}
-				<button type="button" on:click={() => (familyView = 'dashboard')} class="mb-4 text-ink-soft hover:text-ink flex items-center gap-1 text-sm font-semibold">
-					<span aria-hidden="true">‹</span> {activeFamily?.name || 'Family'} <span class="text-ink-soft" aria-hidden="true">/</span> <span class="text-ink">{profiles.find((b) => Number(b.id) === selectedMemberId)?.name || 'Baby'}</span>
-				</button>
-			{/if}
-
-			{#if familyView === 'dashboard'}
-			<div class="flex flex-col mb-4 gap-3">
-				<div class="flex flex-col gap-3">
-					{#if families.length > 1}
-						<div class="flex overflow-x-auto no-scrollbar">
-							<div class="flex gap-2">
-								{#each families as fam}
-									<button type="button" on:click={() => setActiveFamily(fam.familyId)} class="{activeFamilyId === fam.familyId ? 'bg-surface2 text-ink border-line' : 'bg-surface text-ink-soft border-line-soft'} h-9 px-3 rounded-full text-xs border flex items-center gap-2 whitespace-nowrap font-semibold transition-colors">
-										<Users class="w-3 h-3" />
-										{fam.name}
-									</button>
-								{/each}
-							</div>
+			<!-- Top control bar: Family switcher, Member pills, Favorite star, and [ Care & Log | Family Overview ] toggle -->
+			<div class="flex flex-col mb-5 gap-3">
+				{#if families.length > 1}
+					<div class="flex overflow-x-auto no-scrollbar">
+						<div class="flex gap-2">
+							{#each families as fam}
+								<button type="button" on:click={() => setActiveFamily(fam.familyId)} class="{activeFamilyId === fam.familyId ? 'bg-surface2 text-ink border-line' : 'bg-surface text-ink-soft border-line-soft'} h-9 px-3 rounded-full text-xs border flex items-center gap-2 whitespace-nowrap font-semibold transition-colors">
+									<Users class="w-3 h-3" />
+									{fam.name}
+								</button>
+							{/each}
 						</div>
-					{:else}
-						<span class="text-sm font-semibold text-ink-soft flex items-center gap-1"><Users class="w-4 h-4" /> {activeFamily?.name}</span>
-					{/if}
+					</div>
+				{:else}
+					<span class="text-sm font-semibold text-ink-soft flex items-center gap-1"><Users class="w-4 h-4" /> {activeFamily?.name}</span>
+				{/if}
 
-					<div class="flex items-center gap-3">
+				<div class="flex flex-wrap items-center justify-between gap-3">
+					<div class="flex items-center gap-2 flex-1 min-w-0">
+						{#if familyView === 'detail'}
+							<button type="button" on:click={() => (familyView = 'dashboard')} class="text-ink-soft hover:text-ink flex items-center gap-1 text-sm font-semibold mr-1 shrink-0">
+								<span aria-hidden="true">‹</span> {activeFamily?.name || 'Family'} <span class="text-ink-soft" aria-hidden="true">/</span> <span class="text-ink">{profiles.find((b) => Number(b.id) === selectedMemberId)?.name || 'Baby'}</span>
+							</button>
+						{/if}
+
 						{#if profiles.length > 1}
 							<div class="flex-1 overflow-x-auto no-scrollbar">
 								<div class="flex gap-2">
@@ -566,9 +565,24 @@
 							</div>
 						{/if}
 					</div>
+
+					<!-- Segmented view toggle: [ Care & Log | Family Overview ] -->
+					<div class="inline-flex rounded-lg border border-line-soft bg-surface2 p-1 shrink-0" role="group" aria-label="Family view">
+						<button
+							type="button"
+							aria-pressed={familyView === 'detail'}
+							on:click={() => (familyView = 'detail')}
+							class="h-9 px-3 rounded-md text-sm font-semibold transition-colors {familyView === 'detail' ? 'bg-primary text-on-primary shadow-sm' : 'text-ink-soft hover:text-ink'}"
+						>Care &amp; Log</button>
+						<button
+							type="button"
+							aria-pressed={familyView === 'dashboard'}
+							on:click={() => (familyView = 'dashboard')}
+							class="h-9 px-3 rounded-md text-sm font-semibold transition-colors {familyView === 'dashboard' ? 'bg-primary text-on-primary shadow-sm' : 'text-ink-soft hover:text-ink'}"
+						>Family Overview</button>
+					</div>
 				</div>
 			</div>
-			{/if}
 
 			{#if $overdueReminders.length > 0}
 				<div class="bg-danger border border-danger text-danger-text rounded-lg px-4 py-3 mb-4 flex items-center justify-between gap-3" data-testid="reminders-banner">
@@ -589,148 +603,152 @@
 				</div>
 			{/if}
 
-			<MemberActivity
-				memberName={selectedMember?.name || 'Selected'}
-				memberId={selectedMemberId}
-				{summary}
-				{activeCategories}
-				quickLinks={selectedMember?.quickLinks ?? null}
-				dashboardTiles={selectedMember?.dashboardTiles ?? null}
-				stage={selectedMember?.stage ?? null}
-				{feedings} {diapers} {sleeps} {growths}
-				{milestones} {vaccinations} {moods} {journalEntries} {vitals}
-				totals={listTotals}
-				{loadingMore}
-				on:log={(e) => openLog(e.detail.kind)}
-				on:loadmore={loadMoreLists}
-				on:refresh={async () => { await refreshLists(); await refreshSummary(); }}
-				on:pin={(e) => setQuickLink(e.detail.kind, true)}
-				on:unpin={(e) => setQuickLink(e.detail.kind, false)}
-				on:saveTiles={(e) => saveDashboardTiles(e.detail.tiles)}
-			>
-				{#if familyView === 'dashboard'}
-					<div class="mt-8 mb-6">
-						<h2 class="text-2xl font-display font-semibold mb-4">Family Overview</h2>
-						
-						<div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-							{#each profiles as baby}
-								<div class="bg-surface rounded-lg shadow-card p-5 border border-line-soft flex items-center justify-between" data-testid="member-card">
-									<div class="flex items-center gap-4">
-										<div class="w-12 h-12 rounded-full bg-accent text-on-accent flex items-center justify-center font-display text-xl overflow-hidden">
-											<Avatar familyId={activeFamilyId} memberId={baby.id} avatar={baby.avatar} alt={baby.name} class="w-full h-full object-cover">
-												{baby.name[0]}
-											</Avatar>
-										</div>
-										<div>
-											<h3 class="font-display font-semibold text-lg">{baby.name}</h3>
-											<p class="text-sm text-ink-soft">Born {baby.birth_date.slice(0, 10)}</p>
-										</div>
+			{#if familyView === 'dashboard'}
+				<!-- MODE 1: FAMILY OVERVIEW (Clean family-level hub — no MemberActivity duplicated below!) -->
+				<div class="mb-8">
+					<h2 class="text-2xl font-display font-semibold mb-4">Family Overview</h2>
+					
+					<div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+						{#each profiles as baby}
+							<div class="bg-surface rounded-lg shadow-card p-5 border border-line-soft flex items-center justify-between" data-testid="member-card">
+								<div class="flex items-center gap-4">
+									<div class="w-12 h-12 rounded-full bg-accent text-on-accent flex items-center justify-center font-display text-xl overflow-hidden">
+										<Avatar familyId={activeFamilyId} memberId={baby.id} avatar={baby.avatar} alt={baby.name} class="w-full h-full object-cover">
+											{baby.name[0]}
+										</Avatar>
 									</div>
-									<div class="flex items-center gap-2">
-										<button
-											type="button"
-											on:click={() => setStarred(Number(baby.id))}
-											title={starredMemberId === Number(baby.id) ? 'Favorite person' : 'Set as favorite'}
-											class="px-2.5 py-2 text-xs rounded-md border flex items-center gap-1 font-semibold transition-colors {starredMemberId === Number(baby.id) ? 'bg-accent-soft text-ink border-accent' : 'bg-surface2 text-ink-soft hover:text-ink border-line-soft'}"
-										>
-											<Star class="w-3.5 h-3.5 text-accent" fill={starredMemberId === Number(baby.id) ? 'currentColor' : 'none'} aria-hidden="true" />
-											<span>Favorite</span>
-										</button>
-										{#if baby.email}
-											<button type="button" on:click={() => inviteMemberEmail(baby.email)} title="Re-send invite" class="px-2 py-2 text-xs text-accent hover:underline"><Mail class="w-4 h-4 inline mr-1" /> Invite</button>
-										{/if}
-										<button type="button" on:click={() => openEditMember(baby)} class="px-3 py-2 text-xs bg-surface2 text-ink-soft hover:text-ink rounded-md">Edit</button>
-										<button type="button" on:click={() => { selectMember(baby.id); familyView = 'detail'; }} class="px-4 py-2 bg-surface2 text-ink-soft hover:text-ink rounded-md text-sm font-semibold">
-											Log Activity
-										</button>
+									<div>
+										<h3 class="font-display font-semibold text-lg">{baby.name}</h3>
+										<p class="text-sm text-ink-soft">Born {baby.birth_date.slice(0, 10)}</p>
 									</div>
 								</div>
-							{/each}
-						</div>
-
-						<!-- Upcoming appointments card -->
-						<div class="bg-surface rounded-lg shadow-card p-5 border border-line-soft mb-6" data-testid="upcoming-appointments-card">
-							<div class="flex items-center justify-between mb-3">
-								<h3 class="text-lg font-display font-semibold flex items-center gap-2">
-									<CalendarClock class="w-5 h-5 text-accent" aria-hidden="true" />
-									Upcoming
-								</h3>
-								<a href="/appointments" class="text-sm font-semibold text-link hover:underline">See all &rarr;</a>
+								<div class="flex items-center gap-2">
+									<button
+										type="button"
+										on:click={() => setStarred(Number(baby.id))}
+										title={starredMemberId === Number(baby.id) ? 'Favorite person' : 'Set as favorite'}
+										class="px-2.5 py-2 text-xs rounded-md border flex items-center gap-1 font-semibold transition-colors {starredMemberId === Number(baby.id) ? 'bg-accent-soft text-ink border-accent' : 'bg-surface2 text-ink-soft hover:text-ink border-line-soft'}"
+									>
+										<Star class="w-3.5 h-3.5 text-accent" fill={starredMemberId === Number(baby.id) ? 'currentColor' : 'none'} aria-hidden="true" />
+										<span>Favorite</span>
+									</button>
+									{#if baby.email}
+										<button type="button" on:click={() => inviteMemberEmail(baby.email)} title="Re-send invite" class="px-2 py-2 text-xs text-accent hover:underline"><Mail class="w-4 h-4 inline mr-1" /> Invite</button>
+									{/if}
+									<button type="button" on:click={() => openEditMember(baby)} class="px-3 py-2 text-xs bg-surface2 text-ink-soft hover:text-ink rounded-md">Edit</button>
+									<button type="button" on:click={() => { selectMember(baby.id); familyView = 'detail'; }} class="px-4 py-2 bg-primary text-on-primary rounded-md text-sm font-semibold hover:opacity-95 shadow-sm">
+										Log Activity &rarr;
+									</button>
+								</div>
 							</div>
-							{#if $upcomingAppointments.length === 0}
-								<p class="text-sm text-ink-soft">
-									Nothing booked in the next 30 days. Log any activity with a future date and it appears here.
-								</p>
-							{:else}
-								<ul class="space-y-2">
-									{#each $upcomingAppointments as a (a.id)}
-										<li class="flex items-baseline gap-3 text-sm">
-											<span class="tabular-nums text-ink-soft shrink-0 w-28">
-												{new Date(a.date).toLocaleDateString(undefined, zonedOptions({ weekday: 'short', month: 'short', day: 'numeric' }))}
-											</span>
-											<span class="text-ink min-w-0">
-												{#if a.memberName}<span class="font-semibold">{a.memberName}</span> · {/if}{a.title}
-											</span>
-										</li>
-									{/each}
-								</ul>
-							{/if}
-						</div>
+						{/each}
+					</div>
 
-						<!-- Quick reports card -->
-						<div class="bg-surface rounded-lg shadow-card p-5 border border-line-soft mb-6">
-							<div class="flex items-center justify-between mb-3">
-								<h3 class="text-lg font-display font-semibold">Quick reports <span class="text-xs text-ink-soft">· feeds</span></h3>
-								<a href={selectedMemberId ? `/reports?memberId=${selectedMemberId}` : '/reports'} class="text-sm font-semibold text-accent hover:underline">
-									Full reports &rarr;
-								</a>
+					<!-- Upcoming appointments card -->
+					<div class="bg-surface rounded-lg shadow-card p-5 border border-line-soft mb-6" data-testid="upcoming-appointments-card">
+						<div class="flex items-center justify-between mb-3">
+							<h3 class="text-lg font-display font-semibold flex items-center gap-2">
+								<CalendarClock class="w-5 h-5 text-accent" aria-hidden="true" />
+								Upcoming
+							</h3>
+							<a href="/appointments" class="text-sm font-semibold text-link hover:underline">See all &rarr;</a>
+						</div>
+						{#if $upcomingAppointments.length === 0}
+							<p class="text-sm text-ink-soft">
+								Nothing booked in the next 30 days. Log any activity with a future date and it appears here.
+							</p>
+						{:else}
+							<ul class="space-y-2">
+								{#each $upcomingAppointments as a (a.id)}
+									<li class="flex items-baseline gap-3 text-sm">
+										<span class="tabular-nums text-ink-soft shrink-0 w-28">
+											{new Date(a.date).toLocaleDateString(undefined, zonedOptions({ weekday: 'short', month: 'short', day: 'numeric' }))}
+										</span>
+										<span class="text-ink min-w-0">
+											{#if a.memberName}<span class="font-semibold">{a.memberName}</span> · {/if}{a.title}
+										</span>
+									</li>
+								{/each}
+							</ul>
+						{/if}
+					</div>
+
+					<!-- Quick reports card -->
+					<div class="bg-surface rounded-lg shadow-card p-5 border border-line-soft mb-6">
+						<div class="flex items-center justify-between mb-3">
+							<h3 class="text-lg font-display font-semibold">Quick reports <span class="text-xs text-ink-soft">· feeds</span></h3>
+							<a href={selectedMemberId ? `/reports?memberId=${selectedMemberId}` : '/reports'} class="text-sm font-semibold text-accent hover:underline">
+								Full reports &rarr;
+							</a>
+						</div>
+						<div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+							<div>
+								<p class="text-xs text-ink-soft uppercase font-semibold">Feeds (24h)</p>
+								<p class="text-xl font-display font-semibold text-ink">{feedReports.count1d}</p>
 							</div>
-							<div class="grid grid-cols-2 md:grid-cols-4 gap-3">
-								<div>
-									<p class="text-xs text-ink-soft uppercase font-semibold">Feeds (24h)</p>
-									<p class="text-xl font-display font-semibold text-ink">{feedReports.count1d}</p>
-								</div>
-								<div>
-									<p class="text-xs text-ink-soft uppercase font-semibold">Avg size (24h)</p>
-									<p class="text-xl font-display font-semibold text-ink">{feedReports.avgSize1d != null ? `${feedReports.avgSize1d.toFixed(1)}oz` : '—'}</p>
-								</div>
-								<div>
-									<p class="text-xs text-ink-soft uppercase font-semibold">Avg size (30d)</p>
-									<p class="text-xl font-display font-semibold text-ink">{feedReports.avgSize30d != null ? `${feedReports.avgSize30d.toFixed(1)}oz` : '—'}</p>
-								</div>
-								<div>
-									<p class="text-xs text-ink-soft uppercase font-semibold">Feeds (30d)</p>
-									<p class="text-xl font-display font-semibold text-ink">{feedReports.count30d}</p>
-								</div>
-								<div>
-									<p class="text-xs text-ink-soft uppercase font-semibold">Avg length (24h)</p>
-									<p class="text-xl font-display font-semibold text-ink">{feedReports.avgDur1d != null ? formatElapsed(feedReports.avgDur1d) : '—'}</p>
-								</div>
-								<div>
-									<p class="text-xs text-ink-soft uppercase font-semibold">Avg length (30d)</p>
-									<p class="text-xl font-display font-semibold text-ink">{feedReports.avgDur30d != null ? formatElapsed(feedReports.avgDur30d) : '—'}</p>
-								</div>
+							<div>
+								<p class="text-xs text-ink-soft uppercase font-semibold">Avg size (24h)</p>
+								<p class="text-xl font-display font-semibold text-ink">{feedReports.avgSize1d != null ? `${feedReports.avgSize1d.toFixed(1)}oz` : '—'}</p>
+							</div>
+							<div>
+								<p class="text-xs text-ink-soft uppercase font-semibold">Avg size (30d)</p>
+								<p class="text-xl font-display font-semibold text-ink">{feedReports.avgSize30d != null ? `${feedReports.avgSize30d.toFixed(1)}oz` : '—'}</p>
+							</div>
+							<div>
+								<p class="text-xs text-ink-soft uppercase font-semibold">Feeds (30d)</p>
+								<p class="text-xl font-display font-semibold text-ink">{feedReports.count30d}</p>
+							</div>
+							<div>
+								<p class="text-xs text-ink-soft uppercase font-semibold">Avg length (24h)</p>
+								<p class="text-xl font-display font-semibold text-ink">{feedReports.avgDur1d != null ? formatElapsed(feedReports.avgDur1d) : '—'}</p>
+							</div>
+							<div>
+								<p class="text-xs text-ink-soft uppercase font-semibold">Avg length (30d)</p>
+								<p class="text-xl font-display font-semibold text-ink">{feedReports.avgDur30d != null ? formatElapsed(feedReports.avgDur30d) : '—'}</p>
 							</div>
 						</div>
 					</div>
-				{/if}
 
-				{#if selectedMember}
-					<div class="mt-6">
-						<Trends memberId={Number(selectedMember.id)} memberName={selectedMember.name} categories={activeCategories} />
-					</div>
-				{/if}
-
-				{#if selectedMember && selectedMember.type === 'child' && activeCategories.includes('growth')}
-					<div class="mt-6">
-						<GrowthChart memberId={Number(selectedMember.id)} memberName={selectedMember.name} />
-					</div>
-				{/if}
-
-				<div class="mt-6">
 					<StockGlance />
 				</div>
-			</MemberActivity>
+			{:else}
+				<!-- MODE 2: CARE & LOG (Clean 2-click recording — QuickActions directly at top!) -->
+				<MemberActivity
+					memberName={selectedMember?.name || 'Selected'}
+					memberId={selectedMemberId}
+					{summary}
+					{activeCategories}
+					quickLinks={selectedMember?.quickLinks ?? null}
+					dashboardTiles={selectedMember?.dashboardTiles ?? null}
+					stage={selectedMember?.stage ?? null}
+					{feedings} {diapers} {sleeps} {growths}
+					{milestones} {vaccinations} {moods} {journalEntries} {vitals}
+					totals={listTotals}
+					{loadingMore}
+					on:log={(e) => openLog(e.detail.kind)}
+					on:loadmore={loadMoreLists}
+					on:refresh={async () => { await refreshLists(); await refreshSummary(); }}
+					on:pin={(e) => setQuickLink(e.detail.kind, true)}
+					on:unpin={(e) => setQuickLink(e.detail.kind, false)}
+					on:saveTiles={(e) => saveDashboardTiles(e.detail.tiles)}
+				>
+					{#if selectedMember}
+						<div class="mt-6">
+							<Trends memberId={Number(selectedMember.id)} memberName={selectedMember.name} categories={activeCategories} />
+						</div>
+					{/if}
+
+					{#if selectedMember && selectedMember.type === 'child' && activeCategories.includes('growth')}
+						<div class="mt-6">
+							<GrowthChart memberId={Number(selectedMember.id)} memberName={selectedMember.name} />
+						</div>
+					{/if}
+
+					<div class="mt-6">
+						<StockGlance />
+					</div>
+				</MemberActivity>
+			{/if}
 		{/if}
 
 		{#if editingMember}

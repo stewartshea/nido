@@ -9,7 +9,7 @@
 			<Home class="w-5 h-5" />
 		</span>
 		<div>
-			<h1 class="text-2xl font-display font-semibold text-ink">Household</h1>
+			<h1 class="text-2xl font-display font-semibold text-ink">{current === 'home' ? 'Home' : 'Home assets'}</h1>
 			<p class="text-ink-soft text-sm">Residences, property assets, and upkeep schedules.</p>
 		</div>
 	</div>

@@ -10,7 +10,7 @@
 - [x] Step 2: Create `web/src/lib/startPage.ts` (`nido.startPage`, defaulting to `'/family'`) and wire root redirect (`web/src/routes/+page.svelte`), header logo link + pin indicator + account menu action (`web/src/routes/+layout.svelte`), and Settings selector (`web/src/lib/components/settings/AccountPanel.svelte`).
 - [x] Step 3: Update `web/src/lib/components/BottomNav.svelte` to use `isNavItemActive()` so all 5 pillars (including `Reports`) are accessible on mobile and `Household` stays active on `/assets`.
 - [x] Step 4: Create `web/src/lib/components/HouseholdNav.svelte` (`[ Residences & Upkeep | Property Assets ]` 2-button segmented switcher) and apply top-to-bottom layout improvements to `web/src/routes/home/+page.svelte` and `web/src/routes/assets/+page.svelte` (plus remove dead baby-tracking fetches and static placeholder cards from `/home`).
-- [x] Step 5: Refactor `web/src/routes/family/+page.svelte` top-to-bottom hierarchy so `MemberSwitcher`, urgent banners, and `QuickActions`/`TodaySummary` sit above the fold, `Quick reports` links to `/reports?memberId=...`, `Trends` + `GrowthChart` + `StockGlance` sit above the feed, and `ActivityHistory` sits at the bottom.
+- [x] Step 5: Refactor `web/src/routes/family/+page.svelte` so `/family` cleanly separates `Care & Log` (fast 2-click logging at top with QuickActions, Timers, TodaySummary, and Activities) from `Family Overview` (member cards with Favorite toggle, Upcoming appointments, and Quick reports) via a top segmented toggle and member cards, with 1-click `★` favoriting.
 - [x] Step 6: Apply top-to-bottom layout cleanups to `web/src/routes/inventory/+page.svelte`, `web/src/routes/reports/+page.svelte`, and `web/src/routes/notifications/+page.svelte` (remove top-level `← Back` buttons, standardize `max-w-4xl`, elevate urgent alerts/rules above explanatory text, and wire `?memberId=` on `/reports`).
 
 ---
@@ -234,33 +234,48 @@ Create `web/src/lib/components/HouseholdNav.svelte` to unify `/home` and `/asset
 
 ---
 
-### 5.2 Pillar 2: Family (`web/src/routes/family/+page.svelte`)
+### 5.2 Pillar 2: Family (`web/src/routes/family/+page.svelte`) — Redesigned Clean 2-Mode Architecture
 
-#### Top → Bottom Stack on `/family` (When Family & Members Exist):
-1. **Row 1 — Family & Member Switcher Bar (Above the Fold):**
-   - Multi-family pills (if `families.length > 1`) or family name header.
-   - Member switcher row (`h-11` member pills with `<Avatar />` + `<Star />` default member toggle) + compact member management actions for the selected member (`Edit`, `Invite` if `selectedMember.email`) and a collapsible/toggleable `Family overview` roster (`data-testid="member-card"`) so daily logging is never pushed down by a multi-row member directory.
-2. **Row 2 — Urgent Status Banners (Conditional — 0px when idle):**
-   - Overdue Reminders banner (`#if $overdueReminders.length > 0`, `data-testid="reminders-banner"`).
-3. **Row 3 — Primary Daily Logging & Active Timers (Above the Fold):**
-   - `<MemberActivity>` top half: `<QuickActions>` (1-tap log tiles) → `<RunningTimers>` → `<TodaySummary>` ("Last seen" tiles) → `<MedicationsPanel>` (if enabled).
-4. **Row 4 — Household & Member Context Cards (Placed inside `<MemberActivity>`'s `<slot />`, *above* `<ActivityHistory>`):**
-   - **2-Column Grid (`grid-cols-1 md:grid-cols-2 gap-4 my-6`):**
-     - **Upcoming Appointments Card (`data-testid="upcoming-appointments-card"`):** Next 30 days + `<a href="/appointments">See all &rarr;</a>`.
-     - **Quick Reports Card (`feeds`):** 24h and 30d feed stats, with its header linking to `/reports`:
-       ```svelte
-       <div class="flex items-center justify-between mb-3">
-       	<h3 class="text-lg font-display font-semibold">Quick reports <span class="text-xs text-ink-soft">· feeds</span></h3>
-       	<a href={selectedMemberId ? `/reports?memberId=${selectedMemberId}` : '/reports'} class="text-sm font-semibold text-accent hover:underline">
-       		Full reports &rarr;
-       	</a>
-       </div>
-       ```
-   - **Trends Card:** `<Trends memberId={Number(selectedMember.id)} memberName={selectedMember.name} categories={activeCategories} />` (brings `/dashboard`'s 7-day rate table into `/family`).
-   - **WHO Growth Chart (Child profiles with `growth` enabled):** `<GrowthChart memberId={Number(selectedMember.id)} memberName={selectedMember.name} />` — moved **above** `ActivityHistory` so it is never buried beneath dozens of activity rows.
-   - **Stock Glance:** `<StockGlance />`.
-5. **Row 5 — Chronological Activity Log (Bottom of Page):**
-   - `#activities` (`<ActivityHistory />`) sits at the bottom of the page.
+#### Why the Previous Implementation Was Rejected (Anti-Pattern Warning)
+Do **not** stuff `Family Overview` (member directory cards, family-wide `Upcoming` card, `Quick reports`) inside `<MemberActivity>`'s `<slot />` between `TodaySummary` and `Activities`, and do **not** keep the old horizontal member pill row + bolted-on "Favorite" button. That created a cluttered Franken-page where `Today for {name}` was separated from `Activities` by 1,200px of family-wide overview cards.
+
+#### Core Design Principle
+`/dashboard` was fast because it used `<MemberSwitcher>` (a single compact pill with inline + dropdown `★` favoriting) followed immediately by `<MemberActivity>` (`QuickActions` → `RunningTimers` → `TodaySummary` → `Activities`).
+`/family` must **be** that exact clean, 2-click recording experience by default (`familyView === 'care'`), with a compact 2-option segmented switcher in the top bar to switch to **`Family Overview`** (`familyView === 'overview'`) when the user wants to manage members, resend invites, or view family-wide cards.
+
+#### Required Top Bar on `/family` (When Family & Members Exist):
+Render a single `flex flex-wrap items-center justify-between gap-3 mb-6` top bar:
+1. **Left — `<MemberSwitcher>` (imported from `$lib/components/logging/MemberSwitcher.svelte`):**
+   - Pass `members={profiles.map((b) => ({ id: Number(b.id), name: b.name, avatar: b.avatar, stage: b.stage }))}`, `selectedId={selectedMemberId}`, `starredId={starredMemberId}`, `familyId={activeFamilyId}`.
+   - Wire `on:select={(e) => selectMember(e.detail.memberId)}` and `on:star={(e) => { setStarred(e.detail.memberId); selectMember(e.detail.memberId); }}`.
+   - `MemberSwitcher` already provides:
+     - Inline avatar, name, stage badge, and `★` Star button (`Make {name} the default`) on the main pill.
+     - Dropdown listbox (`aria-label="Switch person"`) where **every** member has their own `★` Star button + name/stage option + `"Opens on {starred.name}"` footer.
+   - If `families.length > 1`, render a compact family selector beside it.
+2. **Right — 2-Option Segmented View Toggle (`role="group" aria-label="Family view"`):**
+   - `Care & Log` (`familyView = 'care'`, **default on load**)
+   - `Family Overview` (`familyView = 'overview'`)
+
+#### Mode A: `familyView === 'care'` (Default — Clean 2-Click Recording)
+Nothing sits between the top bar and `<QuickActions>` except the conditional overdue-reminders banner (`#if $overdueReminders.length > 0`).
+The vertical stack in `Care & Log` mode is:
+1. **Conditional Overdue Reminders Banner** (`data-testid="reminders-banner"`).
+2. **`<MemberActivity>`** (which renders `<QuickActions>` → `<RunningTimers>` → `<TodaySummary>` → `<MedicationsPanel>` → `<slot />` → `<ActivityHistory>`):
+   - Keep `<MemberActivity>`'s `<slot />` **empty** (or only `<Trends>`), and place `<Trends>` and `<GrowthChart>` in a clean section **below** `<MemberActivity>` (or inside the slot *without* any Family Overview cards) so `QuickActions` → `Today for {name}` → `Activities` flows uninterrupted!
+   - Add a `Full reports →` link (`href={selectedMemberId ? `/reports?memberId=${selectedMemberId}` : '/reports'}`) in the header above `<Trends>` / `<GrowthChart>`.
+
+#### Mode B: `familyView === 'overview'` (Secondary — Family Roster & Household Overview)
+When the user clicks **`Family Overview`** in the top segmented bar, render the family-level overview cards cleanly without `<MemberActivity>` duplicated underneath:
+1. **Family Roster (`grid-cols-1 md:grid-cols-2 gap-4 mb-6`):**
+   - Each member card (`data-testid="member-card"`) shows:
+     - `<Avatar>`, Name (with a filled `<Star />` badge if `starredMemberId === Number(baby.id)`), and `Born YYYY-MM-DD` / stage.
+     - Actions: `★` Star toggle button (`on:click={() => setStarred(Number(baby.id))}`), `Invite` (if `baby.email`), `Edit` (`openEditMember(baby)`), and `Log Activity` (`on:click={() => { selectMember(Number(baby.id)); familyView = 'care'; }}`).
+2. **Upcoming Appointments Card (`data-testid="upcoming-appointments-card"`):**
+   - Next 30 days of family-wide booked plans + `See all →` (`href="/appointments"`).
+3. **Quick Reports Card (`feeds`):**
+   - 24h and 30d feed counts/averages + `Full reports →` (`href={selectedMemberId ? `/reports?memberId=${selectedMemberId}` : '/reports'}`).
+4. **Household Stock Glance (`<StockGlance />`):**
+   - At-risk stock items + links to `/inventory` and `/notifications`.
 
 ---
 
