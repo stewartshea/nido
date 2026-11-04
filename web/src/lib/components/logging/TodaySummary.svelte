@@ -151,7 +151,13 @@
 				</div>
 				{#if age}
 					<p class="text-2xl font-display font-semibold text-ink">{age.value}{#if age.unit} <span class="text-sm text-ink-soft font-sans font-normal">{age.unit}</span>{/if}</p>
-					<p class="text-sm text-ink-soft mt-1">Add measurement</p>
+					{#if summary.latestGrowth}
+						{@const measurement = formatGrowthHeadline(summary.latestGrowth)}
+						<p class="text-sm text-ink-soft mt-1 truncate">{measurement ?? 'measurement recorded'}</p>
+						<p class="text-xs text-ink-soft mt-0.5">{ago(summary.latestGrowth.measurement_date)}</p>
+					{:else}
+						<p class="text-sm text-ink-soft mt-1">Add measurement</p>
+					{/if}
 				{:else}
 					{@const measurement = formatGrowthHeadline(summary.latestGrowth)}
 					<p class="text-xl font-display font-semibold text-ink">{measurement ?? '—'}</p>

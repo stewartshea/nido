@@ -27,12 +27,17 @@ is in, or set `SIGNUP_ENABLED=false`, which is authoritative.
 
 ## The five places
 
-The app has five destinations in the bottom bar on a phone: **Dashboard**,
-**Family**, **Home**, **Inventory**, and **Notifications**. Two more live in
-the header: **Reports** (a look-back) and **Assets** (set-up). Settings is in
-the account menu in the header.
+The app has five destinations, shared in the same order between the header on
+desktop and the bottom bar on a phone: **Household**, **Family**,
+**Inventory**, **Reports**, and **Notifications**. Settings lives in the
+account menu in the header.
 
-Everything on this page is reached from those, plus the log forms.
+By default, opening Nido or tapping the egg-in-nest mark in the header takes
+you to **Family**. You can pin any pillar (**Family**, **Household**,
+**Inventory**, or **Reports**) as your default **Start page** from the header
+account menu (**Pin this page as start**) or under **Settings → Profile**.
+
+Everything on this page is reached from those five places, plus the log forms.
 
 ## Logging the everyday things
 
@@ -189,6 +194,23 @@ carries a **variant** (a diaper size, a scent) and an **expiry date**.
 Every item then shows **days of cover** and when the next unit is due,
 worked out from your recent rate of use.
 
+### Scannable cards and interactive metric filters
+
+At the top of **Inventory**, six summary tiles report the shape of your stock:
+**Items tracked**, **Needs attention**, **Expiring soon**, **Counts disagree**,
+**No forecast yet**, and **Auto-decrementing**. Tap any tile to filter the
+inventory list below to the exact items contributing to that figure — for
+example, tapping **Counts disagree** isolates the items where automatic
+tracking and your last physical count have drifted apart.
+
+In **Cards** view, each item shows its on-hand quantity, a 30-day cover bar,
+a days-left badge, and a `[ −1 | +1 | ⋯ ]` stepper. Tapping `⋯` opens an
+inline drawer right inside that card to record a physical recount, inspect a
+30-day daily usage sparkline, reset history, or stop tracking. Setup drawers
+for **Diaper sizes** and **Categories** stay tucked behind toolbar buttons
+(`📏 Diaper sizes` and `🏷️ Categories`) so your stock list is always at the
+top of the page.
+
 ### Rules
 
 A rule compares a **signal** against a limit, and the notification appears
@@ -218,23 +240,29 @@ advance and discovering at 2am that there are none left.
 
 ## Reports
 
-**Reports** turns the quick numbers on the Family Overview into series over
-time, so you can see a trend rather than an average. Pick a window — 7, 30, or
-90 days, or **Custom** for an explicit start and end date (up to a year) — and
-toggle which lines to draw: **Pumped** (milk expressed),
+**Reports** turns your logged feedings, pumping sessions, and stock ledger into
+daily series over time, so you can see a trend rather than an average. Pick a
+window — 7, 30, or 90 days, or **Custom** for an explicit start and end date
+(up to a year) — and toggle which lines to draw: **Pumped** (milk expressed),
 **Formula**, **Bottled milk**, and **Inventory used**. Volume is on the left
 axis in ounces; inventory units are on the right, dashed, so overlaying them
 stays honest about the two different scales.
 
+When a family feeds from two or more formula cans in **Inventory**, a
+**Formula** row appears with **All combined** alongside individual toggles for
+each formula item, so you can compare specific formulas or view the combined
+total on the volume axis.
+
 Below those, a **By category** row adds one line per inventory category —
-diapers, formula, and so on — on the inventory axis, each labeled with its
-unit. They start off; turn on only the ones you want to compare, so a household
-with a long inventory list does not open onto a thicket of lines.
+diapers, formula, wipes, and so on — on the inventory axis, each labeled with
+its unit. They start off; turn on only the ones you want to compare, so a
+household with a long inventory list does not open onto a thicket of lines.
 
 Days follow the family's timezone, not the server's, so two caregivers see the
 same buckets. **Tap a day** on the chart to open it: that day's totals and the
 items that were used to make them up. Below the chart, **What got used** lists
-every item with its total and per-day rate over the window.
+every item with its total and per-day rate over the window, followed by weekly
+category rates and WHO growth curves for the selected child.
 
 By default the report is the whole family's. Choosing a person narrows the
 feeding lines to them; inventory stays the household's ledger, since a box of
@@ -243,8 +271,8 @@ apart from **use**, so a stock count never reads as consumption.
 
 ## Notifications
 
-**Notifications** is one page in four parts: what needs attention now,
-tracking rules, inventory rules, and email.
+**Notifications** is one page in four parts, ordered from most urgent to setup:
+what needs attention now, tracking rules, inventory rules, and email digests.
 
 ### Needs attention now
 
@@ -273,11 +301,12 @@ controls them. If they are off, this section says so rather than leaving you
 guessing. Self-hosters: see
 [Configuration →](../reference/configuration/).
 
-## Home
+## Household
 
-**Home** is where the house itself is tracked. It starts with the
-**residences**: add a home with its address and timezone, mark who lives
-there, and give it a picture.
+**Household** is where the house itself is tracked, with a top switcher between
+**Residences & Upkeep** (`/home`) and **Property Assets** (`/assets`). It
+starts with the **residences**: add a home with its address and timezone, mark
+who lives there, and give it a picture.
 
 Then the durable things get their own pages:
 
@@ -298,9 +327,9 @@ Then the durable things get their own pages:
   filter and the count — and attach the receipt, encrypted like every other
   file in Nido.
 
-The **What's due** card on the Home page shows every asset's obligations
-across the house, overdue first, and feeds the same
-[email digest](#email) as everything else.
+The **What's due** card on the Household page rises to the top whenever an
+asset's maintenance schedule is due or overdue across the house, and feeds the
+same [email digest](#email) as everything else.
 
 A seasonal schedule shows as a **checklist** — "Winter 2026" — and a card
 checks off when an entry is logged inside the window. Nothing is checked that
@@ -310,8 +339,8 @@ is not backed by a record; skipping a season takes a reason.
 
 Feed and sleep records — including pump sessions — are queued on the device
 if the server is unreachable, up to the most recent 200, and sent when
-connectivity returns. The queue drains when you next open the **Dashboard**
-or **Family** page, and tells you how many records synced.
+connectivity returns. The queue drains when you next open the **Family** page,
+and tells you how many records synced.
 
 :::note[Not every category queues]
 Only feeds, pumps, and sleep are held offline. A diaper logged with no

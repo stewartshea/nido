@@ -120,16 +120,21 @@ under **Settings → Household**.
 
 ## Today
 
-The Today view answers four questions without navigation:
+The Today view answers what is happening right now without navigation:
 
-- **Age** — in weeks, from birth date
+- **Age & latest growth** — age in weeks or months from birth date, with the
+  most recent weight or length measurement and how long ago it was recorded
+  right underneath
 - **Last feed** — how long ago, the clock time, the type, and who logged it
 - **Last diaper** — same shape
 - **Last sleep** — how long ago it started, and how long it lasted
+- **Upcoming** — the next future-dated appointment, medical visit, or routine
 
 "How long ago" is the headline because that is the question a "last seen" tile
 is actually asked. The exact time sits underneath for when it matters. Every
-tile is also a shortcut into the matching log form.
+tile is also a shortcut into the matching log form (or the upcoming
+appointments list), and **Customize** lets you choose which tiles appear and in
+what order for each member.
 
 ## Quick Actions
 
@@ -166,12 +171,19 @@ shopping list, one that forecasts.
 - Items carry a **category**, **quantity**, **unit**, an optional **variant**
   (a diaper size, a scent) and an optional **expiry date**. Categories are
   yours to define; `diapers` ships as the default.
-- **Diaper stock counts itself.** A logged diaper change is one unit used, so
-  the count follows the log rather than being a second thing to maintain.
+- **Diaper and formula stock count themselves.** A logged diaper change is one
+  unit used, and a logged formula bottle subtracts the ounces it held from the
+  chosen formula can in inventory.
 - Items can also run on a **cadence** — eight a day — and deplete themselves
   between logs, so wipes and nappies fall without anyone recording them.
-- Every item is **forecast**. Nido works out the recent rate of use and
-  reports days of cover and when the next unit falls due.
+- **Interactive metric filters.** Six summary tiles at the top (**Items
+  tracked**, **Needs attention**, **Expiring soon**, **Counts disagree**, **No
+  forecast yet**, and **Auto-decrementing**) act as 1-tap filters to isolate
+  the exact items behind each number.
+- **Scannable cards and inline recounts.** Each item card displays its tabular
+  quantity, a proportional 30-day cover bar, a days-left badge, and a
+  `[ −1 | +1 | ⋯ ]` stepper. Tapping `⋯` opens an inline drawer inside the
+  card with a recount form and a 30-day daily usage sparkline.
 
 ### Rules that reason about time, not just counts
 
@@ -274,9 +286,24 @@ family address book), and per-category schedule templates — see
 
 ## Reports
 
-The Family page carries feed rollups for the last 24 hours and 30 days —
-count, average size, and average length. Enough to answer "is this normal for
-them this week" without building a report.
+**Reports** turns daily feeding, pumping, and inventory ledger entries into
+overlaid time series — accessible as a primary destination in both the desktop
+header and the mobile bottom bar:
+
+- **Flexible windows** — 7, 30, or 90 days, or a **Custom** date range up to a
+  full year, bucketed on the family's timezone.
+- **Volume and stock on one chart** — toggle **Pumped**, **Formula**,
+  **Bottled milk** (left axis, in ounces) and **Inventory used** (right axis,
+  dashed units).
+- **Per-formula breakdown** — when a household feeds from two or more formula
+  items in inventory, toggle **All combined** or individual formula cans to
+  compare them side by side.
+- **By-category inventory lines** — overlay individual inventory categories
+  (diapers, wipes, formula, filters) on the stock axis, plus **tap any day** on
+  the chart to inspect that day's exact breakdown and any manual recount
+  corrections.
+- **Weekly rates and WHO growth curves** — per-member 7-day category rates and
+  WHO weight/length percentile curves sit alongside the daily series.
 
 ## Multi-caregiver, one record
 

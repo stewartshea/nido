@@ -3,12 +3,13 @@
 	import { browser } from '$app/environment';
 	import { goto } from '$app/navigation';
 	import { tokenExpired } from '$lib/api/client';
+	import { getStartPage } from '$lib/startPage';
 
 	onMount(() => {
 		if (browser) {
 			const token = localStorage.getItem('token');
 			if (token && !tokenExpired()) {
-				goto('/dashboard');
+				goto(getStartPage());
 			} else {
 				goto('/login' + window.location.search);
 			}

@@ -16,6 +16,10 @@ import phoneGrowthLight from '../../assets/screenshots/phone-growth-light.jpg';
 import phoneGrowthDark from '../../assets/screenshots/phone-growth-dark.jpg';
 import phoneInventoryLight from '../../assets/screenshots/phone-inventory-light.jpg';
 import phoneInventoryDark from '../../assets/screenshots/phone-inventory-dark.jpg';
+import phoneReportsLight from '../../assets/screenshots/phone-reports-light.jpg';
+import phoneReportsDark from '../../assets/screenshots/phone-reports-dark.jpg';
+import phoneHouseholdLight from '../../assets/screenshots/phone-household-light.jpg';
+import phoneHouseholdDark from '../../assets/screenshots/phone-household-dark.jpg';
 import phoneFamilyLight from '../../assets/screenshots/phone-family-members-light.jpg';
 import phoneFamilyDark from '../../assets/screenshots/phone-family-members-dark.jpg';
 import phoneNotificationsLight from '../../assets/screenshots/phone-notifications-light.jpg';
@@ -79,12 +83,38 @@ import phoneNotificationsDark from '../../assets/screenshots/phone-notifications
 			<div class="nido-slide__text">
 				<span class="nido-slide__eyebrow">Inventory</span>
 				<h3>Know your diaper runway</h3>
-				<p>Stock counts itself as you log. Nido forecasts days of cover and tells you before you run out — not at 2am.</p>
+				<p>Stock counts itself as you log. Tap any metric card to filter, see 30-day cover bars at a glance, and recount in place.</p>
 			</div>
 			<div class="nido-slide__phone">
 				<picture>
-					<img src={phoneInventoryLight.src} class="light:sl-hidden" width="390" height="844" alt="Nido on a phone: inventory with days-of-cover forecast" loading="lazy" decoding="async" />
+					<img src={phoneInventoryLight.src} class="light:sl-hidden" width="390" height="844" alt="Nido on a phone: inventory cards with days-of-cover progress bars and interactive stat filters" loading="lazy" decoding="async" />
 					<img src={phoneInventoryDark.src} class="dark:sl-hidden" width="390" height="844" alt="" loading="lazy" decoding="async" />
+				</picture>
+			</div>
+		</li>
+		<li class="nido-slide" id="slide-reports">
+			<div class="nido-slide__text">
+				<span class="nido-slide__eyebrow">Reports</span>
+				<h3>Daily series, by formula and category</h3>
+				<p>Overlay pumped volume, individual formula cans, and inventory usage on one chart — and tap any day to see what made it up.</p>
+			</div>
+			<div class="nido-slide__phone">
+				<picture>
+					<img src={phoneReportsLight.src} class="light:sl-hidden" width="390" height="844" alt="Nido on a phone: reports page with daily volume series, per-formula breakdown, and category lines" loading="lazy" decoding="async" />
+					<img src={phoneReportsDark.src} class="dark:sl-hidden" width="390" height="844" alt="" loading="lazy" decoding="async" />
+				</picture>
+			</div>
+		</li>
+		<li class="nido-slide" id="slide-household">
+			<div class="nido-slide__text">
+				<span class="nido-slide__eyebrow">Household</span>
+				<h3>Tend to every place you call home</h3>
+				<p>Residences, property assets, odometer and usage meters, and seasonal upkeep schedules in one household record.</p>
+			</div>
+			<div class="nido-slide__phone">
+				<picture>
+					<img src={phoneHouseholdLight.src} class="light:sl-hidden" width="390" height="844" alt="Nido on a phone: household page with residences, property assets, and upkeep schedules" loading="lazy" decoding="async" />
+					<img src={phoneHouseholdDark.src} class="dark:sl-hidden" width="390" height="844" alt="" loading="lazy" decoding="async" />
 				</picture>
 			</div>
 		</li>
@@ -92,11 +122,11 @@ import phoneNotificationsDark from '../../assets/screenshots/phone-notifications
 			<div class="nido-slide__text">
 				<span class="nido-slide__eyebrow">Family</span>
 				<h3>Everyone in the family</h3>
-				<p>Babies, adults, pets — each with their own categories. Track a second child, or a parent's medications.</p>
+				<p>Babies, children, adults, pets — star your default person and switch between family members in a single tap.</p>
 			</div>
 			<div class="nido-slide__phone">
 				<picture>
-					<img src={phoneFamilyLight.src} class="light:sl-hidden" width="390" height="844" alt="Nido on a phone: family overview with multiple members" loading="lazy" decoding="async" />
+					<img src={phoneFamilyLight.src} class="light:sl-hidden" width="390" height="844" alt="Nido on a phone: compact member switcher with favorite stars" loading="lazy" decoding="async" />
 					<img src={phoneFamilyDark.src} class="dark:sl-hidden" width="390" height="844" alt="" loading="lazy" decoding="async" />
 				</picture>
 			</div>
@@ -109,7 +139,7 @@ import phoneNotificationsDark from '../../assets/screenshots/phone-notifications
 			</div>
 			<div class="nido-slide__phone">
 				<picture>
-					<img src={phoneNotificationsLight.src} class="light:sl-hidden" width="390" height="844" alt="Nido on a phone: notifications page with active reminders" loading="lazy" decoding="async" />
+					<img src={phoneNotificationsLight.src} class="light:sl-hidden" width="390" height="844" alt="Nido on a phone: notifications page with active reminders and rules" loading="lazy" decoding="async" />
 					<img src={phoneNotificationsDark.src} class="dark:sl-hidden" width="390" height="844" alt="" loading="lazy" decoding="async" />
 				</picture>
 			</div>
@@ -121,6 +151,8 @@ import phoneNotificationsDark from '../../assets/screenshots/phone-notifications
 		<a href="#slide-trends" aria-label="Trends"></a>
 		<a href="#slide-growth" aria-label="Growth"></a>
 		<a href="#slide-inventory" aria-label="Inventory"></a>
+		<a href="#slide-reports" aria-label="Reports"></a>
+		<a href="#slide-household" aria-label="Household"></a>
 		<a href="#slide-family" aria-label="Family"></a>
 		<a href="#slide-notifications" aria-label="Notifications"></a>
 	</nav>

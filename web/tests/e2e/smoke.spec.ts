@@ -41,11 +41,11 @@ test('register lands on the dashboard with the owner as the starting profile', a
 	await page.fill('#reg-password', PASSWORD);
 	await page.getByRole('button', { name: 'Register' }).click();
 
-	// Registration signs the account in and drops it on the dashboard. The
+	// Registration signs the account in and drops it on the start page. The
 	// family is provisioned during registration (POST /families answers 409 —
 	// "creation happens during registration"), so the empty state must NOT
 	// render and the owner's own profile is the member the page opens on.
-	await page.waitForURL('**/dashboard');
+	await page.waitForURL('**/family');
 	await expect(page.getByRole('button', { name: 'Switch person' })).toBeVisible();
 	// The owner is an untrackable adult, so there is no "Today for" panel
 	// yet — but the switcher names them and the activity feed renders.
@@ -55,19 +55,12 @@ test('register lands on the dashboard with the owner as the starting profile', a
 	await expect(page.getByText('Your family has no members yet.')).toHaveCount(0);
 });
 
-test('family page: overview renders, upcoming card shows, no reminders banner', async ({ page }) => {
+test('family page: renders member switcher and activities, no reminders banner', async ({ page }) => {
 	await page.goto('/family');
 
-	await expect(page.getByRole('heading', { name: 'Family Overview' })).toBeVisible();
-	// The owner is the only member so far, so the overview shows their card.
-	await expect(page.getByTestId('member-card').filter({ hasText: `${FIRST_NAME} ${LAST_NAME}` })).toBeVisible();
-
-	// The family-level "what's booked ahead" card renders with its empty
-	// copy — family-level data belongs on the family page, not the dashboard.
-	const upcoming = page.getByTestId('upcoming-appointments-card');
-	await expect(upcoming).toBeVisible();
-	await expect(upcoming.getByRole('heading', { name: 'Upcoming' })).toBeVisible();
-	await expect(upcoming).toContainText('Nothing booked in the next 30 days.');
+	await expect(page.getByRole('button', { name: 'Switch person' })).toBeVisible();
+	await expect(page.getByRole('heading', { name: 'Quick Actions' })).toBeVisible();
+	await expect(page.getByRole('heading', { name: 'Activities' })).toBeVisible();
 
 	// A fresh family has no overdue reminder rules, so the danger banner
 	// ($lib/stores/reminders) must not render at all.
@@ -106,41 +99,19 @@ test('settings Members tab: add a member; the toast confirms then auto-dismisses
 	await expect(page.locator('li').filter({ hasText: CHILD })).toBeVisible();
 });
 
-test('family page: member pills switch, detail view opens and returns', async ({ page }) => {
+test('family page: member switcher switches person', async ({ page }) => {
 	await page.goto('/family');
 
-	// Two members now, so the pill row renders. Switch to the child.
-	const childPill = page.getByRole('button', { name: new RegExp(`\\b${CHILD}\\b`) });
-	await expect(childPill).toBeVisible();
-	await childPill.click();
-	await expect(childPill).toHaveClass(/bg-accent/);
-
-	// Open the child's detail view from the overview card.
-	await page
-		.getByTestId('member-card')
-		.filter({ hasText: CHILD })
-		.getByRole('button', { name: 'Log Activity' })
-		.click();
-
-	// familyView='detail': the breadcrumb replaces the overview. The ‹ and /
-	// glyphs are aria-hidden, so the breadcrumb's accessible name is just
-	// "family / member".
-	await expect(page.getByRole('button', { name: new RegExp(`${FAMILY_NAME} ${CHILD}`) })).toBeVisible();
-	await expect(page.getByRole('heading', { name: 'Family Overview' })).toHaveCount(0);
-
-	// Back to the dashboard view.
-	await page.getByRole('button', { name: new RegExp(`${FAMILY_NAME} ${CHILD}`) }).click();
-	await expect(page.getByRole('heading', { name: 'Family Overview' })).toBeVisible();
+	// Two members now: switch to the child using MemberSwitcher.
+	await page.getByRole('button', { name: 'Switch person' }).click();
+	await page.getByRole('listbox').getByText(CHILD).click();
+	await expect(page.getByRole('heading', { name: `Today for ${CHILD}` })).toBeVisible();
 });
 
 test('family page: the unified EditMemberModal renames a member', async ({ page }) => {
 	await page.goto('/family');
 
-	await page
-		.getByTestId('member-card')
-		.filter({ hasText: CHILD })
-		.getByRole('button', { name: 'Edit' })
-		.click();
+	await page.getByTestId('edit-selected-member').click();
 
 	// The stage-mode chrome the family page uses.
 	const dialog = page.getByRole('dialog');
@@ -152,7 +123,7 @@ test('family page: the unified EditMemberModal renames a member', async ({ page 
 
 	await expect(page.getByTestId('feedback-toast')).toContainText('Member updated.');
 	await expect(page.getByRole('dialog')).toHaveCount(0);
-	await expect(page.getByTestId('member-card').filter({ hasText: CHILD_RENAMED })).toBeVisible();
+	await expect(page.getByText(CHILD_RENAMED).first()).toBeVisible();
 });
 
 test('settings: every tab renders its panel; a non-admin sees no Admin tab', async ({ page }) => {
@@ -214,29 +185,27 @@ test('Family & tracking: changing the digest frequency saves with a toast', asyn
 
 test('dashboard and home render the family data without the setup empty states', async ({ page }) => {
 	await page.goto('/dashboard');
+	await page.waitForURL('**/family');
 
-	// The familyStore rehydrates on every page: the dashboard opens on the
+	// The familyStore rehydrates on every page: opens on the
 	// first trackable member — the child, not the owner — and never on the
 	// "set up your family" empty states.
 	await expect(page.getByRole('button', { name: 'Switch person' })).toBeVisible();
 	await expect(page.getByRole('heading', { name: `Today for ${CHILD_RENAMED}` })).toBeVisible();
 	await expect(page.getByRole('heading', { name: 'Activities' })).toBeVisible();
-	await expect(page.getByTestId('stock-glance')).toBeVisible();
 	await expect(page.getByText("You haven't set up a family yet.")).toHaveCount(0);
 	await expect(page.getByText('Your family has no members yet.')).toHaveCount(0);
 
-	// The home module's placeholder page reads the same session context: the
-	// "Homes" card only renders when the family has members.
+	// The home module's page reads the same session context:
 	await page.goto('/home');
-	// exact: the page also has a "Homes" section heading.
-	await expect(page.getByRole('heading', { name: 'Home', exact: true })).toBeVisible();
+	await expect(page.getByRole('heading', { name: 'Household' })).toBeVisible();
 	await expect(page.getByRole('heading', { name: 'Homes' })).toBeVisible();
-	await expect(page.getByRole('heading', { name: 'Property Assets' })).toBeVisible();
+	await expect(page.getByTestId('due-card')).toBeVisible();
 });
 
 test('sign out from the family page returns the onboarding empty state', async ({ page }) => {
 	await page.goto('/family');
-	await expect(page.getByRole('heading', { name: 'Family Overview' })).toBeVisible();
+	await expect(page.getByRole('heading', { name: 'Quick Actions' })).toBeVisible();
 
 	// The header's account menu is the sign-out surface on every page.
 	await page.getByRole('button', { name: ACCOUNT_INITIAL, exact: true }).click();

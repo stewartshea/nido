@@ -83,7 +83,7 @@ reportRoutes.get('/daily', async (c) => {
 		const since = new Date(new Date(`${dates[0]}T00:00:00.000Z`).getTime() - DAY_MS).toISOString();
 
 		const feedArgs: unknown[] = [since];
-		let feedSql = 'SELECT type, amount, amount_unit, start_time FROM feedings WHERE start_time >= ?';
+		let feedSql = 'SELECT type, amount, amount_unit, start_time, formula_item_id FROM feedings WHERE start_time >= ?';
 		if (subjectId !== null) {
 			feedSql += ' AND subject_id = ?';
 			feedArgs.push(subjectId);

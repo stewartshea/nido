@@ -1,33 +1,62 @@
 // One definition of the app's navigation.
 //
-// The header and the mobile bottom bar used to carry their own hardcoded lists,
-// so adding a destination meant editing two places and one of them was easy to
-// forget. Both surfaces read this instead.
-import { LayoutDashboard, Users, Package, Home, Bell, Wrench, ChartLine } from 'lucide-svelte';
+// The header and the mobile bottom bar read from this single 5-pillar list.
+// Order: Household -> Family -> Inventory -> Reports -> Notifications.
+import { Home, Users, Package, ChartLine, Bell } from 'lucide-svelte';
 
 export interface NavItem {
 	id: string;
 	label: string;
 	href: string;
-	icon: typeof LayoutDashboard;
+	matchPrefixes: string[];
+	icon: typeof Home;
 }
 
-/** Destinations reachable from both the header and the bottom bar. */
+/**
+ * Destinations reachable from both the header and the mobile bottom bar.
+ * Order: Household -> Family -> Inventory -> Reports -> Notifications.
+ */
 export const PRIMARY_NAV: NavItem[] = [
-	{ id: 'dashboard', label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
-	{ id: 'reports', label: 'Reports', href: '/reports', icon: ChartLine },
-	{ id: 'family', label: 'Family', href: '/family', icon: Users },
-	{ id: 'home', label: 'Home', href: '/home', icon: Home },
-	{ id: 'inventory', label: 'Inventory', href: '/inventory', icon: Package },
-	{ id: 'assets', label: 'Assets', href: '/assets', icon: Wrench },
-	{ id: 'notifications', label: 'Notifications', href: '/notifications', icon: Bell },
+	{
+		id: 'home',
+		label: 'Household',
+		href: '/home',
+		matchPrefixes: ['/home', '/assets'],
+		icon: Home,
+	},
+	{
+		id: 'family',
+		label: 'Family',
+		href: '/family',
+		matchPrefixes: ['/family', '/appointments', '/dashboard'],
+		icon: Users,
+	},
+	{
+		id: 'inventory',
+		label: 'Inventory',
+		href: '/inventory',
+		matchPrefixes: ['/inventory'],
+		icon: Package,
+	},
+	{
+		id: 'reports',
+		label: 'Reports',
+		href: '/reports',
+		matchPrefixes: ['/reports'],
+		icon: ChartLine,
+	},
+	{
+		id: 'notifications',
+		label: 'Notifications',
+		href: '/notifications',
+		matchPrefixes: ['/notifications'],
+		icon: Bell,
+	},
 ];
 
-/**
- * The bottom bar mirrors the header. Settings is deliberately not repeated
- * here: six items crowds a 390px bar, and the account menu in the header
- * already carries it on every screen size. Assets and Reports are header-only
- * for the same reason — one is a set-up surface, the other a look-back, and
- * neither is the daily loop the bar is for.
- */
-export const BOTTOM_NAV: NavItem[] = PRIMARY_NAV.filter((item) => item.id !== 'assets' && item.id !== 'reports');
+export const BOTTOM_NAV: NavItem[] = PRIMARY_NAV;
+
+export function isNavItemActive(item: NavItem, pathname: string): boolean {
+	if (!pathname) return false;
+	return item.matchPrefixes.some((prefix) => pathname.startsWith(prefix));
+}

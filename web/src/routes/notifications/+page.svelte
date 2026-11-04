@@ -109,16 +109,12 @@
 
 <svelte:head><title>Notifications · Nido</title></svelte:head>
 
-<div class="max-w-3xl mx-auto px-4 py-4 md:py-6">
-	<button type="button" on:click={() => history.back()} class="mb-2 text-ink-soft hover:text-ink text-sm font-semibold">&larr; Back</button>
-
+<div class="max-w-4xl mx-auto px-4 py-4 md:py-6">
 	<div class="mb-5">
 		<h1 class="text-2xl font-display font-semibold text-ink">Notifications</h1>
 		<p class="text-sm text-ink-soft mt-1">
-			Everything Nido watches, and what it is telling you right now.
-			Every rule here belongs to <strong class="font-semibold text-ink">your whole family</strong>, so every caregiver can see
-			every rule and every alert. What you choose is <strong class="font-semibold text-ink">who gets emailed</strong> — the
-			whole family, or just the people you name. Nothing is hidden from anyone in the family.
+			Everything Nido watches for your family, and what needs attention right now.
+			Rules are shared across the whole family; choose who receives email digests below.
 		</p>
 	</div>
 
@@ -153,12 +149,33 @@
 		</section>
 
 		<section class="bg-surface rounded-lg shadow-card border border-line-soft p-4 md:p-5 mb-4">
+			<h2 class="text-lg font-display font-semibold mb-1">Tracking rules</h2>
+			<p class="text-sm text-ink-soft mb-3">
+				Nudge everyone when something has not been logged for a while, or when a routine is due.
+			</p>
+			<ActivityRules on:changed={refresh} />
+		</section>
+
+		<section class="bg-surface rounded-lg shadow-card border border-line-soft p-4 md:p-5 mb-4">
+			<h2 class="text-lg font-display font-semibold mb-1">Inventory rules</h2>
+			<p class="text-sm text-ink-soft mb-3">
+				Nudge the family, or one named caregiver, when stock runs low, a date is outgrowing
+				its size, or an item expires.
+			</p>
+			<InventoryRules on:changed={refresh} />
+			<p class="text-xs text-ink-soft mt-3">
+				Inventory itself, including recounts and resetting a count, lives on the
+				<a href="/inventory" class="underline">inventory page</a>.
+			</p>
+		</section>
+
+		<section class="bg-surface rounded-lg shadow-card border border-line-soft p-4 md:p-5 mb-4">
 			<h2 class="text-lg font-display font-semibold mb-1">Email</h2>
 			<p class="text-sm text-ink-soft mb-3">
 				Emails each currently firing <strong class="font-semibold text-ink">inventory</strong> alert to whoever that
 				rule is addressed to — the whole family, or only the caregivers you picked. Only confirmed
 				addresses are emailed, so someone who never verified will not hear about it. Tracking
-				reminders below, and medication doses that come due, appear here and on the dashboard but
+				reminders above, and medication doses that come due, appear here and on the dashboard but
 				are not emailed yet. Upcoming appointments have their own weekly email, turned on under
 				<a href="/settings" class="underline">Settings</a>. You only hear about an item when it
 				first matches, so an unchanged item will not keep emailing you.
@@ -186,27 +203,6 @@
 				{:else}
 					Automatic digests are turned off on this server, so only the button above will send email.
 				{/if}
-			</p>
-		</section>
-
-		<section class="bg-surface rounded-lg shadow-card border border-line-soft p-4 md:p-5 mb-4">
-			<h2 class="text-lg font-display font-semibold mb-1">Tracking rules</h2>
-			<p class="text-sm text-ink-soft mb-3">
-				Nudge everyone when something has not been logged for a while, or when a routine is due.
-			</p>
-			<ActivityRules on:changed={refresh} />
-		</section>
-
-		<section class="bg-surface rounded-lg shadow-card border border-line-soft p-4 md:p-5 mb-4">
-			<h2 class="text-lg font-display font-semibold mb-1">Inventory rules</h2>
-			<p class="text-sm text-ink-soft mb-3">
-				Nudge the family, or one named caregiver, when stock runs low, a date is outgrowing
-				its size, or an item expires.
-			</p>
-			<InventoryRules on:changed={refresh} />
-			<p class="text-xs text-ink-soft mt-3">
-				Inventory itself, including recounts and resetting a count, lives on the
-				<a href="/inventory" class="underline">inventory page</a>.
 			</p>
 		</section>
 	{/if}

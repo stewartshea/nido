@@ -20,6 +20,7 @@
 	// would come to act on one, so it should not be somewhere else entirely.
 	let alerts: InventoryAlert[] = [];
 	let items: InventoryItem[] = [];
+	let activeFilter = 'all';
 
 	async function loadAlerts() {
 		try {
@@ -59,24 +60,24 @@
 
 <svelte:head><title>Inventory · Nido</title></svelte:head>
 
-<div class="max-w-3xl mx-auto px-4 py-4 md:py-6">
-	<button type="button" on:click={() => history.back()} class="mb-2 text-ink-soft hover:text-ink text-sm font-semibold">&larr; Back</button>
-
-	<div class="mb-4">
-		<h1 class="text-2xl font-display font-semibold text-ink">Inventory</h1>
-		<p class="text-sm text-ink-soft mt-1">
-			What you have on hand, what it is used up by, and when you will run out.
-			This is the whole family's stock, not one person's. Rules for when to be told
-			live on the <a href="/notifications" class="underline">notifications page</a>.
-		</p>
+<div class="max-w-4xl mx-auto px-4 py-4 md:py-6">
+	<div class="flex flex-wrap items-baseline justify-between gap-3 mb-4">
+		<div>
+			<h1 class="text-2xl font-display font-semibold text-ink">Inventory</h1>
+			<p class="text-sm text-ink-soft mt-1">
+				What you have on hand, what it is used up by, and when you will run out.
+			</p>
+		</div>
+		<div class="flex items-center gap-3">
+			<a href="/reports" class="text-sm font-semibold text-accent hover:underline">Usage reports &rarr;</a>
+			<a href="/notifications" class="text-sm font-semibold text-accent hover:underline">Notification rules &rarr;</a>
+		</div>
 	</div>
 
 	{#if notice}<p class="text-sm text-ink-soft mb-3" role="status">{notice}</p>{/if}
 	{#if error}<p class="text-sm text-danger-text mb-3">{error}</p>{/if}
 
 	{#if loaded}
-		<InventoryStats {items} {alerts} />
-
 		{#if alerts.length > 0}
 			<div class="bg-surface border border-line-soft rounded-lg px-4 py-3 mb-4" role="status" data-testid="page-alerts">
 				<p class="text-sm font-semibold text-ink mb-1">Needs attention</p>
@@ -88,6 +89,8 @@
 			</div>
 		{/if}
 
-		<InventoryPanel {members} on:refresh={() => { notice = ''; loadAlerts(); }} />
+		<InventoryStats {items} {alerts} bind:activeFilter />
+
+		<InventoryPanel {members} bind:activeFilter on:refresh={() => { notice = ''; loadAlerts(); }} />
 	{/if}
 </div>

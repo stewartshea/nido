@@ -8,6 +8,7 @@
 	import type { Asset, AssetCategoryId } from '$lib/api/types';
 	import AssetForm from '$lib/components/logging/AssetForm.svelte';
 	import AssetPicture from '$lib/components/AssetPicture.svelte';
+	import HouseholdNav from '$lib/components/HouseholdNav.svelte';
 
 	// The home asset registry (HOME module 1, issue #65): the car, the
 	// furnace, the house itself. Its own surface, like inventory — assets
@@ -156,17 +157,8 @@
 
 <svelte:head><title>Home assets · Nido</title></svelte:head>
 
-<div class="max-w-3xl mx-auto px-4 py-4 md:py-6">
-	<button type="button" on:click={() => history.back()} class="mb-2 text-ink-soft hover:text-ink text-sm font-semibold">&larr; Back</button>
-
-	<div class="mb-4">
-		<h1 class="text-2xl font-display font-semibold text-ink">Home assets</h1>
-		<p class="text-sm text-ink-soft mt-1">
-			The things you own and keep: the car, the furnace, the shed. Add an
-			asset here; maintenance, schedules, and manuals hang off it. The home
-			itself is on the <a href="/home" class="underline">Homes card</a>.
-		</p>
-	</div>
+<div class="max-w-4xl mx-auto px-4 py-4 md:py-6">
+	<HouseholdNav current="assets" />
 
 	{#if notice}<p class="text-sm text-ink-soft mb-3" role="status">{notice}</p>{/if}
 	{#if error}<p class="text-sm text-danger-text mb-3">{error}</p>{/if}

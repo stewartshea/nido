@@ -27,7 +27,7 @@ test('register for the care suite', async ({ page }) => {
 	await page.fill('#reg-email', testEmail());
 	await page.fill('#reg-password', PASSWORD);
 	await page.getByRole('button', { name: 'Register' }).click();
-	await page.waitForURL('**/dashboard');
+	await page.waitForURL('**/family');
 });
 
 test('care: add an asset and open its care page', async ({ page }) => {

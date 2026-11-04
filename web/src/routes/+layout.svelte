@@ -11,7 +11,8 @@
 	import ThemePicker from '$lib/components/ThemePicker.svelte';
 	import BottomNav from '$lib/components/BottomNav.svelte';
 	import NidoMark from '$lib/components/NidoMark.svelte';
-	import { PRIMARY_NAV } from '$lib/nav';
+	import { PRIMARY_NAV, isNavItemActive } from '$lib/nav';
+	import { startPageStore, setStartPage, isStartPagePath, type StartPagePath } from '$lib/startPage';
 	import { authStore, authActions } from '$lib/stores/authStore';
 	import { familiesAPI } from '$lib/api/family';
 	import { applyTimezone, loadFamilyTimezone } from '$lib/stores/timezoneStore';
@@ -111,7 +112,7 @@
 	<header class="sticky top-0 z-50 bg-primary border-b border-line">
 		<div class="mx-auto max-w-6xl px-4 py-2 md:py-3 flex items-center justify-between">
 			<div class="flex items-center gap-3">
-				<a href="/" class="flex items-center gap-2">
+				<a href={$authStore.isAuthenticated ? $startPageStore : '/'} class="flex items-center gap-2">
 					<span class="w-9 h-9 rounded-full border border-accent/50 text-accent flex items-center justify-center" aria-hidden="true"><NidoMark size={22} /></span>
 					<span class="text-xl md:text-2xl font-display text-on-primary tracking-wide">Nido</span>
 				</a>
@@ -121,11 +122,21 @@
 				{#if $authStore.isAuthenticated}
 					<nav aria-label="Main" class="hidden md:flex bg-surface2 rounded-md p-1">
 						{#each PRIMARY_NAV as item (item.id)}
+							{@const active = isNavItemActive(item, currentPath)}
+							{@const isPinned = item.href === $startPageStore}
 							<a
 								href={item.href}
-								aria-current={currentPath.startsWith(item.href) ? 'page' : undefined}
-								class="{item.href !== '/' && currentPath.startsWith(item.href) ? 'bg-primary text-on-primary shadow-sm' : 'text-ink-soft hover:text-ink'} relative px-4 py-1 rounded text-sm font-semibold transition-colors"
-							>{item.label}{#if item.id === 'notifications' && $notificationCount > 0}<span class="absolute -top-1.5 -right-1.5 min-w-[1.15rem] h-[1.15rem] px-1 rounded-full bg-danger text-danger-text text-[10px] font-bold flex items-center justify-center" aria-label="{$notificationCount} need attention">{$notificationCount > 9 ? '9+' : $notificationCount}</span>{/if}</a>
+								aria-current={active ? 'page' : undefined}
+								class="{active ? 'bg-primary text-on-primary shadow-sm' : 'text-ink-soft hover:text-ink'} relative px-3 py-1 rounded text-sm font-semibold transition-colors inline-flex items-center gap-1.5"
+							>
+								{#if isPinned}
+									<span class="w-1.5 h-1.5 rounded-full bg-accent shrink-0" title="Pinned as start page"></span>
+								{/if}
+								<span>{item.label}</span>
+								{#if item.id === 'notifications' && $notificationCount > 0}
+									<span class="min-w-[1.15rem] h-[1.15rem] px-1 rounded-full bg-danger text-danger-text text-[10px] font-bold flex items-center justify-center" aria-label="{$notificationCount} need attention">{$notificationCount > 9 ? '9+' : $notificationCount}</span>
+								{/if}
+							</a>
 						{/each}
 					</nav>
 				{/if}
@@ -136,7 +147,23 @@
 							{$authStore.user?.firstName?.[0] || 'U'}
 						</button>
 						{#if showAccountMenu}
-							<div class="absolute right-0 mt-2 w-48 bg-surface rounded-lg shadow-card border border-line-soft py-1 z-50">
+							<div class="absolute right-0 mt-2 w-52 bg-surface rounded-lg shadow-card border border-line-soft py-1 z-50">
+								{#if isStartPagePath(currentPath)}
+									{#if currentPath === $startPageStore}
+										<div class="px-4 py-2 text-xs font-semibold text-accent border-b border-line-soft flex items-center gap-1.5">
+											<span class="w-1.5 h-1.5 rounded-full bg-accent"></span>
+											Pinned as start page
+										</div>
+									{:else}
+										<button
+											type="button"
+											on:click={() => { setStartPage(currentPath); showAccountMenu = false; }}
+											class="w-full text-left px-4 py-2 text-xs text-ink-soft hover:text-ink hover:bg-surface2 border-b border-line-soft font-semibold"
+										>
+											📌 Pin this page as start
+										</button>
+									{/if}
+								{/if}
 								<a href="/settings" on:click={() => (showAccountMenu = false)} class="block w-full text-left px-4 py-2 text-base text-ink hover:bg-surface2">Settings</a>
 								<button type="button" on:click={handleLogout} class="w-full text-left px-4 py-2 text-base text-danger-text hover:bg-surface2">Sign Out</button>
 							</div>
