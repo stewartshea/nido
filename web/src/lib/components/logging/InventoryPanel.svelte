@@ -7,6 +7,21 @@
 	import UsageSparkline from '$lib/components/reports/UsageSparkline.svelte';
 
 	export let members: { id: number | string; name: string; trackable?: boolean }[] = [];
+	export let activeFilter = 'all';
+
+	const EXPIRY_WINDOW_DAYS = 30;
+
+	function matchesFilter(item: InventoryItem, filter: string): boolean {
+		if (!filter || filter === 'all') return true;
+		if (filter === 'alerts') return !!item.alerting;
+		if (filter === 'expiring') return item.daysToExpiry !== null && item.daysToExpiry <= EXPIRY_WINDOW_DAYS;
+		if (filter === 'drift') return item.drift !== null && item.drift !== 0;
+		if (filter === 'no-forecast') return item.quantity > 0 && item.daysOfCover === null;
+		if (filter === 'auto') return item.consumeIntervalDays !== null || item.eventCategory !== null;
+		return true;
+	}
+
+	$: visibleItems = items.filter((item) => matchesFilter(item, activeFilter));
 
 	let selectedMemberId: number | null = null;
 	$: if (selectedMemberId === null) selectedMemberId = defaultMemberId(members);
@@ -417,7 +432,7 @@
 
 	/** Most urgent first: needs attention, then least cover, unknown cover last. */
 	function byUrgency(list: InventoryItem[]): InventoryItem[] {
-		return [...list].sort((a, b) => {
+		return [...list].filter((i) => matchesFilter(i, activeFilter)).sort((a, b) => {
 			if (a.alerting !== b.alerting) return a.alerting ? -1 : 1;
 			const da = a.daysOfCover;
 			const db = b.daysOfCover;
@@ -430,7 +445,7 @@
 
 	const grouped = () => {
 		const byCategory = new Map<string, InventoryItem[]>();
-		for (const item of items) {
+		for (const item of visibleItems) {
 			const list = byCategory.get(item.category) ?? [];
 			list.push(item);
 			byCategory.set(item.category, list);
@@ -784,6 +799,38 @@
 	{:else if items.length === 0}
 		<p class="text-sm text-ink-soft py-4">Nothing tracked yet. Add diapers or a household item to see how long it will last.</p>
 	{:else}
+		{#if activeFilter !== 'all'}
+			{@const filterLabels = {
+				alerts: 'Needs attention',
+				expiring: 'Expiring soon',
+				drift: 'Counts disagree',
+				'no-forecast': 'No forecast yet',
+				auto: 'Auto-decrementing',
+			}}
+			<div class="mb-4 bg-surface2 border border-accent/40 rounded-lg px-3.5 py-2.5 flex items-center justify-between text-xs" data-testid="inventory-filter-callout">
+				<span class="text-ink">
+					Filtered by: <strong class="font-semibold text-ink">{filterLabels[activeFilter] ?? activeFilter}</strong>
+					<span class="text-ink-soft ml-1">({visibleItems.length} {visibleItems.length === 1 ? 'item' : 'items'})</span>
+				</span>
+				<button
+					type="button"
+					on:click={() => (activeFilter = 'all')}
+					class="text-accent hover:underline font-semibold"
+				>Show all items ✕</button>
+			</div>
+		{/if}
+
+		{#if visibleItems.length === 0}
+			<div class="bg-surface rounded-xl border border-dashed border-line-soft p-6 text-center my-2">
+				<p class="text-sm font-semibold text-ink">No items match this filter</p>
+				<p class="text-xs text-ink-soft mt-1">There are no items currently flagged for this metric.</p>
+				<button
+					type="button"
+					on:click={() => (activeFilter = 'all')}
+					class="mt-3 px-3 py-1.5 rounded-md bg-primary text-on-primary text-xs font-semibold"
+				>Show all items</button>
+			</div>
+		{/if}
 
 		{#if viewMode === 'table'}
 			<div class="overflow-x-auto -mx-1 px-1">

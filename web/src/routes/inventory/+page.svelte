@@ -20,6 +20,7 @@
 	// would come to act on one, so it should not be somewhere else entirely.
 	let alerts: InventoryAlert[] = [];
 	let items: InventoryItem[] = [];
+	let activeFilter = 'all';
 
 	async function loadAlerts() {
 		try {
@@ -88,8 +89,8 @@
 			</div>
 		{/if}
 
-		<InventoryStats {items} {alerts} />
+		<InventoryStats {items} {alerts} bind:activeFilter />
 
-		<InventoryPanel {members} on:refresh={() => { notice = ''; loadAlerts(); }} />
+		<InventoryPanel {members} bind:activeFilter on:refresh={() => { notice = ''; loadAlerts(); }} />
 	{/if}
 </div>
