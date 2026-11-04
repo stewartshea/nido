@@ -19,6 +19,8 @@
 - [x] Step 5: Remove the dead bottom placeholder cards (`Property Assets` and `Manuals & Routines`) from `web/src/routes/home/+page.svelte` and keep `<HouseholdNav>`'s `h1` as `Household`.
 - [x] Step 6: Redesign `web/src/lib/components/logging/InventoryPanel.svelte` so "Cards" mode renders real scannable Nido cards (`grid-cols-1 md:grid-cols-2 gap-3`) with prominent tabular quantities, a proportional 30-day cover bar + badge, a grouped `[ −1 | +1 | ⋯ ]` stepper bar, and an **inline** `manage-panel` drawer inside the clicked card (instead of detached at the bottom of the page), while collapsing `Diaper sizes` and `Categories` setup blocks behind compact toolbar buttons.
 - [x] Step 7: Update the Playwright E2E tests (`web/tests/e2e/smoke.spec.ts`, `web/tests/e2e/assets.spec.ts`, `web/tests/e2e/care.spec.ts`) to match the retired `/dashboard` redirect (`**/family`), the lean `/family` layout (`MemberSwitcher` + `Edit`), and the `Household` heading on `/home` & `/assets`.
+- [x] Step 8: Update the website documentation (`site/src/content/docs/guides/user-guide.md`, `site/src/content/docs/features.md`, and `site/src/content/docs/index.mdx`) to document the 5 unified pillars (`Household`, `Family`, `Inventory`, `Reports`, `Notifications`), configurable start page (`nido.startPage`), interactive Inventory stat filter cards & scannable item cards with inline recount/sparkline drawers, multi-formula + category line overlays in `/reports`, and the child Age tile showing the latest growth measurement.
+- [x] Step 9: Regenerate all mobile screenshots in `site/src/assets/screenshots/` (`390×844`, `deviceScaleFactor: 2`, `blush-light` and `blush-dark` themes) using Playwright against realistic seeded data (positive weight gain, visible scannable inventory cards, `<NidoMark />` egg-in-nest header, new 5-pillar `BottomNav`, and rules visible on `/notifications`), plus add `phone-reports-{light,dark}.jpg` and `phone-household-{light,dark}.jpg` slides to the landing page carousel in `site/src/content/docs/index.mdx` and verify `npm run build --workspace=site` (or `cd site && npm run build`).
 
 ---
 
@@ -178,3 +180,53 @@ Update the Playwright E2E tests so they test the new, clean architecture:
    - Test 4 (`family page: MemberSwitcher switches and stars a member`): Open `Switch person`, select `CHILD`, verify `Today for ${CHILD}` renders.
    - Test 5 (`family page: EditMemberModal renames a member`): Click `Edit ${CHILD}` (`getByTestId('edit-selected-member')`), rename to `CHILD_RENAMED`, verify toast and updated name in `Switch person` / `Today for ${CHILD_RENAMED}`.
    - Test 8 (`family and home render the family data without the setup empty states`): Check `/family` and `/home` (`Homes` heading, `What's due` heading) without checking for the deleted `Property Assets` placeholder card.
+
+---
+
+## 3. Website Documentation & Mobile Screenshots Specification (Steps 8 & 9)
+
+### 3.1 Audit of Outdated Website Content (`site/src/`)
+
+1. **`site/src/content/docs/guides/user-guide.md`:**
+   - **`## The five places` (lines 28–36):** Still describes the old 7-item split (`Dashboard`, `Family`, `Home`, `Inventory`, `Notifications` on mobile, with `Reports` and `Assets` desktop-only). Update to describe the unified 5 pillars shared across desktop and mobile in order: **Household** (Residences, Upkeep & Property Assets), **Family** (members, 2-tap logging, Today tiles, Trends, Stock glance, and WHO Growth curves), **Inventory** (stock cards, cover bars, interactive stat filters, and inline recounts), **Reports** (daily series, multi-formula breakdown, category overlays), and **Notifications** (firing alerts, tracking/inventory rules, and email digests). Document pinning any pillar as your default **Start page** from the account menu or **Settings → Profile**.
+   - **`## Inventory` (lines 165–218):** Document the interactive metric filter cards at the top of `/inventory` (clicking `Needs attention`, `Counts disagree`, `Expiring soon`, `No forecast yet`, or `Auto-decrementing` filters the items below in 1 tap), the scannable inventory cards with 30-day cover bars and `[ −1 | +1 | ⋯ ]` steppers, and the inline recount & 30-day usage sparkline drawer. Also mention the `📏 Diaper sizes` and `🏷️ Categories` toolbar toggles.
+   - **`## Reports` (lines 219–243):** Document the **Formula** row when a family uses two or more formula cans (`All combined` plus individual toggles for each formula item on the volume axis) alongside the `By category` inventory lines.
+   - **`## Home` → `## Household` (lines 276–308):** Update section heading and navigation references to **Household**, noting the `[ Residences & Upkeep | Property Assets ]` switcher and that **What's due** rises to the top whenever maintenance schedules are due or overdue.
+   - **`## Working offline` (line 313):** Update `Dashboard or Family page` to `Family page`.
+
+2. **`site/src/content/docs/features.md`:**
+   - **`## Today` (lines 121–133):** Note that the **Age** tile for a child now displays both their age in weeks/months and their **latest growth measurement** (weight/length and how long ago it was recorded) right on the tile, plus the **Upcoming** tile for booked appointments.
+   - **`## Inventory` (lines 161–204):** Mention the interactive stat filter tiles, scannable cards with proportional 30-day cover bars, formula cans linked directly to bottle feeds, and inline 30-day usage sparklines.
+   - **`## Reports` (lines 275–280):** Replace the outdated 4-line stub (which only mentioned 24h/30d rollups on Family) with the full `/reports` feature set: 7d / 30d / 90d / Custom date windows, whole-family or per-member filtering, overlaid daily series (`Pumped`, `Formula`, `Bottled milk`, `Inventory used`), per-formula breakdown when feeding multiple formulas (`All combined` + each formula can), `By category` inventory lines, interactive day drill-down, and the `What got used` ledger table.
+   - **`## Home` → `## Household` (lines 239–274):** Align heading and navigation references with **Household** (`Residences & Upkeep` and `Property Assets`).
+
+3. **Outdated Screenshots in `site/src/assets/screenshots/` & `site/src/content/docs/index.mdx`:**
+   - Every existing screenshot (`phone-feeds-{light,dark}.jpg`, `phone-pumping-{light,dark}.jpg`, `phone-trends-{light,dark}.jpg`, `phone-growth-{light,dark}.jpg`, `phone-inventory-{light,dark}.jpg`, `phone-family-members-{light,dark}.jpg`, `phone-notifications-{light,dark}.jpg`) was captured before the new product mark and navigation landed:
+     - Header still shows the old `巣` kanji instead of `<NidoMark />` (egg in a nest).
+     - Bottom bar still shows `Dashboard | Family | Home | Inventory | Notifications` instead of `Household | Family | Inventory | Reports | Notifications`.
+     - `phone-feeds` shows the retired `/dashboard` header and `Add measurement` on the Age tile instead of the latest weight.
+     - `phone-trends` shows negative weight gain (`-36 g / day`).
+     - `phone-inventory` shows `← Back` and the expanded `DIAPER SIZES` form pushing all stock cards off-screen.
+     - `phone-family-members` shows the deleted `Family Overview` with `152.5oz` average feed size.
+     - `phone-notifications` shows `← Back` and the `Email` essay above the rules.
+   - Furthermore, the landing page carousel in `site/src/content/docs/index.mdx` has **no slide for Reports** (`/reports`) and **no slide for Household** (`/home` & `/assets`).
+
+---
+
+### 3.2 Regenerating Mobile Screenshots (`site/src/assets/screenshots/`)
+
+Write a repeatable Playwright capture script (or spec) that boots or connects to the running app, seeds a realistic household (**The Carter Family**: baby **Wren** at 12 weeks with steady positive weight gain `+28 g/day`, realistic 3–5 oz feeds across two formula cans + breast/pumped sessions, active diaper/wipes/formula inventory with healthy & low-stock items, 2 active tracking/inventory rules, and a primary residence with a car & furnace schedule), and captures `390×844` (`deviceScaleFactor: 2`, JPEG quality `88`) screenshots in both `blush-light` and `blush-dark` themes (`localStorage.setItem('nido.theme', 'blush-light' | 'blush-dark')`):
+
+| Asset Pair (`light` & `dark`) | Route & Scroll Position | What Must Be Visible in Frame (`390×844`) |
+| :--- | :--- | :--- |
+| `phone-feeds-{light,dark}.jpg` | `/family` (top of page) | `<NidoMark />` header, `<MemberSwitcher>` (`Wren · infant ★`), `Edit Wren` / `Members →`, `Quick Actions` tiles, `Today for Wren` showing `AGE 12 weeks` **with latest weight (`5.8 kg`)** and `LAST FEED 45 min ago`, and the new 5-pillar `BottomNav` (`Household`, `Family`, `Inventory`, `Reports`, `Notifications`). |
+| `phone-pumping-{light,dark}.jpg` | `/family` (with Pump logger sheet or `LAST PUMP` tile + `Quick Actions`) | Pumping logger / session view in `blush-light` & `blush-dark`. |
+| `phone-trends-{light,dark}.jpg` | `/family` (scrolled to `Trends for Wren` & `Stock`) | `Trends for Wren` showing realistic positive weight gain (`+28 g / day`) and `Stock` glance cards below it. |
+| `phone-growth-{light,dark}.jpg` | `/family` (scrolled to `Growth for Wren`) | `Growth for Wren` WHO percentile chart with upward weight curve, plus new `BottomNav`. |
+| `phone-inventory-{light,dark}.jpg` | `/inventory` (top of page, with `📏 Diaper sizes` collapsed!) | Interactive `InventoryStats` filter tiles + the new scannable **Inventory Cards** with large tabular quantities, 30-day cover progress bars (`~4d left`, `~22d left`), and `[ −1 | +1 | ⋯ ]` steppers clearly visible above the fold. |
+| `phone-reports-{light,dark}.jpg` *(New)* | `/reports` | Range selector (`30d`), 4 KPI summary cards (`Pumped`, `Formula`, `Bottled milk`, `Inventory used`), multi-formula + `By category` toggles, and `<DailySeriesChart />`. |
+| `phone-household-{light,dark}.jpg` *(New)* | `/home` | `Household` header with `[ Residences & Upkeep | Property Assets ]` switcher, `What's due` maintenance items, and `Homes` residence card with photo & asset count. |
+| `phone-family-members-{light,dark}.jpg` | `/family` (with `<MemberSwitcher>` dropdown open or `/settings` Members view) | Multiple family members (`Wren · infant`, `Sam Carter · adult`, `Milo · pet`) with `★` favorite indicators and member management. |
+| `phone-notifications-{light,dark}.jpg` | `/notifications` | `Needs attention now` firing box followed immediately by `Tracking rules` and `Inventory rules` (with the `Email` section moved to the bottom). |
+
+Update `site/src/content/docs/index.mdx` to include the new **Reports** (`#slide-reports`) and **Household** (`#slide-household`) slides in the carousel and dot nav, then run `npm run build` in `site/` to verify all Astro image imports and links compile cleanly.
