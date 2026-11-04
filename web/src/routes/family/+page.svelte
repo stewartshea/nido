@@ -9,37 +9,29 @@
 	import { familyStore, familyActions } from '$lib/stores/family';
 	import { trackingListsStore, trackingListsActions } from '$lib/stores/trackingLists';
 	import { loadFamilySettings } from '$lib/stores/familySettings';
-	import Avatar from '$lib/components/Avatar.svelte';
 	import FeedbackToasts from '$lib/components/FeedbackToasts.svelte';
 	import EditMemberModal from '$lib/components/EditMemberModal.svelte';
 	import { startOutboxSync } from '$lib/logging/outbox';
-	import { loadReminders, loadUpcomingAppointments, overdueReminders, upcomingAppointments } from '$lib/stores/reminders';
+	import { loadReminders, overdueReminders } from '$lib/stores/reminders';
 	import MemberActivity from '$lib/components/logging/MemberActivity.svelte';
-	import GrowthChart from '$lib/components/logging/GrowthChart.svelte';
-	import Trends from '$lib/components/logging/Trends.svelte';
+	import MemberSwitcher from '$lib/components/logging/MemberSwitcher.svelte';
 	import LogDrawer from '$lib/components/logging/LogDrawer.svelte';
-	import StockGlance from '$lib/components/logging/StockGlance.svelte';
 	import { reminderNoun, reminderPhrase } from '$lib/shared';
 	import { zonedOptions } from '$lib/logging/format';
-	import { computeFeedReports, formatElapsed } from '$lib/logging/feedStats';
-	import { Baby, Star, Users, Mail, CalendarClock } from 'lucide-svelte';
+	import { Users } from 'lucide-svelte';
 
+	let sheetOpen = false;
 
-  let familyView: 'dashboard' | 'detail' = 'dashboard';
-  let sheetOpen = false;
-
-  $: if ($uiStore.accountPanelOpen) {
+	$: if ($uiStore.accountPanelOpen) {
 		uiActions.setSection('account');
-		uiStore.update(s => ({ ...s, accountPanelOpen: false }));
+		uiStore.update((s) => ({ ...s, accountPanelOpen: false }));
 	}
 
 	let isAuthenticated = false;
 
 	// The session context — families, the active family, its members, the
 	// selection and the summary — lives in $lib/stores/family; the nine
-	// tracking lists in $lib/stores/trackingLists. These aliases keep the
-	// template reading the names the page always used; every write goes
-	// through the stores' actions.
+	// tracking lists in $lib/stores/trackingLists.
 	$: families = $familyStore.families;
 	$: activeFamily = $familyStore.activeFamily;
 	$: activeFamilyId = $familyStore.activeFamilyId;
@@ -61,10 +53,6 @@
 	$: listTotals = $trackingListsStore.listTotals;
 	$: loadingMore = $trackingListsStore.loadingMore;
 
-		// Which logger the sheet is showing. Deliberately its own state: it was once
-	// shared with the activity tab and reset by a category-availability guard, so
-	// a background load finishing while the sheet was open would change the kind
-	// mid-entry and the form would vanish under the person typing into it.
 	let logKind = 'feeds';
 
 	$: selectedMember = profiles.find((b) => Number(b.id) === selectedMemberId) ?? null;
@@ -73,13 +61,6 @@
 	const refreshLists = trackingListsActions.refreshLists;
 	const loadMoreLists = trackingListsActions.loadMoreLists;
 	const refreshSummary = familyActions.refreshSummary;
-
-	$: feedReports = computeFeedReports(feedings);
-
-	// Reminders and what the family has booked ahead live in
-	// $lib/stores/reminders: the store owns the DATA_CHANGED refresh, so the
-	// page only triggers the initial loads (refreshUserProfile and
-	// loadFamilies) and renders from the stores.
 
 	let starredMemberId: number | null = null;
 
@@ -108,9 +89,7 @@
 	}
 
 	// The family/member loading core is familyActions.loadFamilies
-	// ($lib/stores/family); this wrapper runs this page's post-load extras in
-	// the order the page always ran them. Extras are skipped when the core
-	// load bails (the pre-store copies returned early on every error path).
+	// ($lib/stores/family); this wrapper runs this page's post-load extras.
 	async function loadFamilies() {
 		const loaded = await familyActions.loadFamilies(() => {
 			loadStarred();
@@ -121,7 +100,6 @@
 			loadFamilySettings({ applyTimezone: true }),
 			refreshLists(),
 			refreshSummary(),
-			loadUpcomingAppointments(),
 		]);
 	}
 
@@ -131,16 +109,10 @@
 		loadFamilies();
 	}
 
-	function setDefaultProfile(memberId: number) {
-		setStarred(memberId);
-	}
-
 	function handleLogout() {
 		familyActions.handleLogout();
 		isAuthenticated = false;
 	}
-
-
 
 	async function buildFamily(event: SubmitEvent) {
 		event.preventDefault();
@@ -204,9 +176,6 @@
 		}
 	}
 
-
-	// The signed-in user's own profile, and the entry point that loads the
-	// family's reminders; the DATA_CHANGED listener covers later refreshes.
 	async function refreshUserProfile() {
 		try {
 			const res = await userAPI.getMe();
@@ -222,25 +191,16 @@
 			}
 			loadReminders();
 		} catch {
-			// getMe failing is not worth a toast; reminders still refresh via
-			// the DATA_CHANGED listener on the next successful mutation.
+			// getMe failing is not worth a toast
 		}
 	}
 
-
-	/**
-	 * Selection itself is synchronous in the store, so the refreshes below
-	 * read the just-selected member immediately (reactive statements are
-	 * scheduled — see currentIsTrackable in $lib/stores/family). The refresh
-	 * order is this page's, and must stay lists first, then summary.
-	 */
 	async function selectMember(memberId: number) {
 		familyActions.selectMember(memberId);
 		await refreshLists();
 		await refreshSummary();
 	}
 
-	/** Pin or unpin a tile for the selected person; stored on the member. */
 	async function setQuickLink(kind: string, pin: boolean) {
 		if (!activeFamilyId || !selectedMember) return;
 		const current: string[] = selectedMember.quickLinks?.length ? selectedMember.quickLinks : activeCategories.slice(0, 4);
@@ -249,9 +209,6 @@
 			: current.filter((k) => k !== kind);
 		try {
 			await familiesAPI.updateMember(activeFamilyId, Number(selectedMember.id), { quickLinks: next });
-			// Reassign, don't mutate: selectedMember is derived from profiles, and
-			// mutating the object in place never re-runs the reactive statement, so
-			// the pinned set kept showing the old layout until a hard reload.
 			familyActions.patchProfile(Number(selectedMember.id), { quickLinks: next });
 		} catch (err: any) {
 			console.error('Failed to update quick links', err);
@@ -262,9 +219,6 @@
 		if (!activeFamilyId || !selectedMember) return;
 		try {
 			await familiesAPI.updateMember(activeFamilyId, Number(selectedMember.id), { dashboardTiles: tiles });
-			// Reassign, don't mutate: selectedMember is derived from profiles, and
-			// mutating the object in place never re-runs the reactive statement, so
-			// the panel kept showing the old layout until a hard reload.
 			familyActions.patchProfile(Number(selectedMember.id), { dashboardTiles: tiles });
 			notify('Dashboard panel saved.');
 		} catch (err: any) {
@@ -272,12 +226,8 @@
 		}
 	}
 
-
-	// Edit modal state — the shared EditMemberModal owns the form fields.
-
 	let editingMember: any = null;
 
-	// Family onboarding
 	let familyName = '';
 	let memberType = 'child';
 	let newMemberName = '';
@@ -341,7 +291,6 @@
 		}
 	}
 
-
 	let stopOutboxSync: (() => void) | undefined;
 
 	function openLog(kind: string) {
@@ -376,20 +325,14 @@
 			}
 			const token = localStorage.getItem('token');
 			isAuthenticated = !!token && !tokenExpired();
-			// The store outlives navigations; a fresh mount while signed out
-			// starts empty, like the page-local state this replaced.
 			if (!isAuthenticated) familyActions.reset();
 			if (isAuthenticated) {
 				await Promise.all([loadFamilies(), refreshUserProfile()]);
-				// Reconnect resilience: push anything queued while offline, then
-				// keep replaying every 60s until the page goes away.
 				stopOutboxSync = startOutboxSync(async () => {
 					await refreshLists();
 					await refreshSummary();
 				});
 			}
-			// Older builds kept one never-expiring timer blob per member; it is what
-			// made finished feeds reappear, so drop any that are still around.
 			for (let i = localStorage.length - 1; i >= 0; i--) {
 				const k = localStorage.key(i);
 				if (k && /^nido\.timer\.\d+$/.test(k)) localStorage.removeItem(k);
@@ -397,109 +340,113 @@
 		}
 	});
 
-
 	onDestroy(() => {
 		if (stopOutboxSync) stopOutboxSync();
 	});
 </script>
 
-		<FeedbackToasts />
-		{#if families.length === 0}
-			<!-- FAMILY ONBOARDING: build your family first -->
-			<div class="flex justify-end mb-4">
-				<button type="button" class="px-3 py-1 text-sm bg-surface2 text-ink-soft rounded-md hover:bg-line-soft" on:click={handleLogout}>Sign Out</button>
-			</div>
-			<div class="max-w-2xl mx-auto bg-surface rounded-lg shadow-card p-4 md:p-6">
-				<h2 class="text-2xl font-display font-semibold mb-2">Build your family</h2>
-				<p class="text-ink-soft mb-4">Nido is family-first. Start by naming your family — anyone you invite joins it.</p>
-				<form on:submit={buildFamily}>
-					<div class="mb-4">
-						<label for="family-name" class="block text-sm font-medium text-ink-soft mb-1">Family Name</label>
-						<input id="family-name" bind:value={familyName} required class="w-full px-3 py-2 border border-line rounded-md" placeholder="The Hollybrooks" />
-					</div>
+<svelte:head><title>Family · Nido</title></svelte:head>
 
-					<fieldset class="border border-line-soft rounded-lg p-4 mb-4">
-						<legend class="text-sm text-ink-soft px-2">Add your first family member (optional)</legend>
-						<div class="mb-3">
-							<label for="member-type" class="block text-sm font-medium text-ink-soft mb-1">Member Type</label>
-							<select id="member-type" bind:value={memberType} class="w-full px-3 py-2 border border-line rounded-md">
-								<option value="child" selected>Child</option>
-								<option value="adult">Adult</option>
-							</select>
-						</div>
-						<div class="mb-3">
-							<label for="member-name" class="block text-sm font-medium text-ink-soft mb-1">Name</label>
-							<input id="member-name" bind:value={newMemberName} class="w-full px-3 py-2 border border-line rounded-md" placeholder="Aiden" />
-						</div>
-						<div class="grid grid-cols-2 gap-3">
-							<div>
-								<label for="member-dob" class="block text-sm font-medium text-ink-soft mb-1">Birth Date</label>
-								<input id="member-dob" type="date" bind:value={newBabyBirthDate} class="w-full px-3 py-2 border border-line rounded-md" />
-							</div>
-							<div>
-								<label for="member-gender" class="block text-sm font-medium text-ink-soft mb-1">Sex</label>
-								<select id="member-gender" bind:value={newBabyGender} class="w-full px-3 py-2 border border-line rounded-md">
-									<option value="female" selected>Female</option>
-									<option value="male">Male</option>
-									<option value="other">Other</option>
-								</select>
-							</div>
-						</div>
-					</fieldset>
+<FeedbackToasts />
 
-					<button type="submit" disabled={creatingBaby} class="w-full bg-primary text-on-primary py-2 px-4 rounded-md hover:bg-primary disabled:opacity-50">
-						{creatingBaby ? 'Creating...' : 'Build Family'}
-					</button>
-				</form>
-			</div>
-		{:else if profiles.length === 0}
-			<!-- DASHBOARD (family exists, no members yet): add a member first -->
-			<div class="flex items-center justify-between mb-6">
-				<div>
-					<h2 class="text-2xl font-display font-semibold">{activeFamily?.name}
-						<span class="text-accent font-mono text-sm">({activeFamily?.familyCode})</span>
-					</h2>
+<div class="max-w-4xl mx-auto px-4 py-4 md:py-6">
+	{#if families.length === 0}
+		<!-- FAMILY ONBOARDING: build your family first -->
+		<div class="flex justify-end mb-4">
+			<button type="button" class="px-3 py-1 text-sm bg-surface2 text-ink-soft rounded-md hover:bg-line-soft" on:click={handleLogout}>Sign Out</button>
+		</div>
+		<div class="max-w-2xl mx-auto bg-surface rounded-lg shadow-card p-4 md:p-6">
+			<h2 class="text-2xl font-display font-semibold mb-2">Build your family</h2>
+			<p class="text-ink-soft mb-4">Nido is family-first. Start by naming your family — anyone you invite joins it.</p>
+			<form on:submit={buildFamily}>
+				<div class="mb-4">
+					<label for="family-name" class="block text-sm font-medium text-ink-soft mb-1">Family Name</label>
+					<input id="family-name" bind:value={familyName} required class="w-full px-3 py-2 border border-line rounded-md" placeholder="The Hollybrooks" />
 				</div>
-				<button type="button" class="px-4 py-2 bg-primary text-on-primary rounded-md hover:bg-primary" on:click={handleLogout}>Sign Out</button>
-			</div>
 
-			<div class="max-w-2xl mx-auto bg-surface rounded-lg shadow-card p-4 md:p-6">
-				<h3 class="text-xl font-display font-semibold mb-2">Add your first family member</h3>
-				<p class="text-ink-soft mb-4">Adding a Baby is the first supported member type.</p>
-				<form on:submit={addFamilyMember}>
+				<fieldset class="border border-line-soft rounded-lg p-4 mb-4">
+					<legend class="text-sm text-ink-soft px-2">Add your first family member (optional)</legend>
 					<div class="mb-3">
-						<label for="member-type-2" class="block text-sm font-medium text-ink-soft mb-1">Member Type</label>
-						<select id="member-type-2" bind:value={memberType} class="w-full px-3 py-2 border border-line rounded-md">
+						<label for="member-type" class="block text-sm font-medium text-ink-soft mb-1">Member Type</label>
+						<select id="member-type" bind:value={memberType} class="w-full px-3 py-2 border border-line rounded-md">
 							<option value="child" selected>Child</option>
 							<option value="adult">Adult</option>
 						</select>
 					</div>
 					<div class="mb-3">
-						<label for="member-name-2" class="block text-sm font-medium text-ink-soft mb-1">Name</label>
-						<input id="member-name-2" bind:value={newMemberName} required class="w-full px-3 py-2 border border-line rounded-md" placeholder="Aiden" />
+						<label for="member-name" class="block text-sm font-medium text-ink-soft mb-1">Name</label>
+						<input id="member-name" bind:value={newMemberName} class="w-full px-3 py-2 border border-line rounded-md" placeholder="Aiden" />
 					</div>
-					<div class="grid grid-cols-2 gap-3 mb-3">
+					<div class="grid grid-cols-2 gap-3">
 						<div>
-							<label for="member-dob-2" class="block text-sm font-medium text-ink-soft mb-1">Birth Date</label>
-							<input id="member-dob-2" type="date" bind:value={newBabyBirthDate} class="w-full px-3 py-2 border border-line rounded-md" />
+							<label for="member-dob" class="block text-sm font-medium text-ink-soft mb-1">Birth Date</label>
+							<input id="member-dob" type="date" bind:value={newBabyBirthDate} class="w-full px-3 py-2 border border-line rounded-md" />
 						</div>
 						<div>
-							<label for="member-gender-2" class="block text-sm font-medium text-ink-soft mb-1">Sex</label>
-							<select id="member-gender-2" bind:value={newBabyGender} class="w-full px-3 py-2 border border-line rounded-md">
+							<label for="member-gender" class="block text-sm font-medium text-ink-soft mb-1">Sex</label>
+							<select id="member-gender" bind:value={newBabyGender} class="w-full px-3 py-2 border border-line rounded-md">
 								<option value="female" selected>Female</option>
 								<option value="male">Male</option>
 								<option value="other">Other</option>
 							</select>
 						</div>
 					</div>
-					<button type="submit" disabled={creatingBaby} class="w-full bg-primary text-on-primary py-2 px-4 rounded-md hover:bg-primary disabled:opacity-50">
-						{creatingBaby ? 'Adding...' : 'Add Family Member'}
-					</button>
-				</form>
+				</fieldset>
+
+				<button type="submit" disabled={creatingBaby} class="w-full bg-primary text-on-primary py-2 px-4 rounded-md hover:bg-primary disabled:opacity-50">
+					{creatingBaby ? 'Creating...' : 'Build Family'}
+				</button>
+			</form>
+		</div>
+	{:else if profiles.length === 0}
+		<!-- Family exists, no members yet -->
+		<div class="flex items-center justify-between mb-6">
+			<div>
+				<h2 class="text-2xl font-display font-semibold">{activeFamily?.name}
+					<span class="text-accent font-mono text-sm">({activeFamily?.familyCode})</span>
+				</h2>
 			</div>
-		{:else}
-			<!-- Top control bar: Family switcher, Member pills, Favorite star, and [ Care & Log | Family Overview ] toggle -->
-			<div class="flex flex-col mb-5 gap-3">
+			<button type="button" class="px-4 py-2 bg-primary text-on-primary rounded-md hover:bg-primary" on:click={handleLogout}>Sign Out</button>
+		</div>
+
+		<div class="max-w-2xl mx-auto bg-surface rounded-lg shadow-card p-4 md:p-6">
+			<h3 class="text-xl font-display font-semibold mb-2">Add your first family member</h3>
+			<p class="text-ink-soft mb-4">Adding a Baby is the first supported member type.</p>
+			<form on:submit={addFamilyMember}>
+				<div class="mb-3">
+					<label for="member-type-2" class="block text-sm font-medium text-ink-soft mb-1">Member Type</label>
+					<select id="member-type-2" bind:value={memberType} class="w-full px-3 py-2 border border-line rounded-md">
+						<option value="child" selected>Child</option>
+						<option value="adult">Adult</option>
+					</select>
+				</div>
+				<div class="mb-3">
+					<label for="member-name-2" class="block text-sm font-medium text-ink-soft mb-1">Name</label>
+					<input id="member-name-2" bind:value={newMemberName} required class="w-full px-3 py-2 border border-line rounded-md" placeholder="Aiden" />
+				</div>
+				<div class="grid grid-cols-2 gap-3 mb-3">
+					<div>
+						<label for="member-dob-2" class="block text-sm font-medium text-ink-soft mb-1">Birth Date</label>
+						<input id="member-dob-2" type="date" bind:value={newBabyBirthDate} class="w-full px-3 py-2 border border-line rounded-md" />
+					</div>
+					<div>
+						<label for="member-gender-2" class="block text-sm font-medium text-ink-soft mb-1">Sex</label>
+						<select id="member-gender-2" bind:value={newBabyGender} class="w-full px-3 py-2 border border-line rounded-md">
+							<option value="female" selected>Female</option>
+							<option value="male">Male</option>
+							<option value="other">Other</option>
+						</select>
+					</div>
+				</div>
+				<button type="submit" disabled={creatingBaby} class="w-full bg-primary text-on-primary py-2 px-4 rounded-md hover:bg-primary disabled:opacity-50">
+					{creatingBaby ? 'Adding...' : 'Add Family Member'}
+				</button>
+			</form>
+		</div>
+	{:else}
+		<!-- Pure, fast 2-click care & logging interface -->
+		<div class="flex flex-wrap items-center justify-between gap-3 mb-6">
+			<div class="flex items-center gap-3">
 				{#if families.length > 1}
 					<div class="flex overflow-x-auto no-scrollbar">
 						<div class="flex gap-2">
@@ -511,259 +458,88 @@
 							{/each}
 						</div>
 					</div>
-				{:else}
-					<span class="text-sm font-semibold text-ink-soft flex items-center gap-1"><Users class="w-4 h-4" /> {activeFamily?.name}</span>
 				{/if}
 
-				<div class="flex flex-wrap items-center justify-between gap-3">
-					<div class="flex items-center gap-2 flex-1 min-w-0">
-						{#if familyView === 'detail'}
-							<button type="button" on:click={() => (familyView = 'dashboard')} class="text-ink-soft hover:text-ink flex items-center gap-1 text-sm font-semibold mr-1 shrink-0">
-								<span aria-hidden="true">‹</span> {activeFamily?.name || 'Family'} <span class="text-ink-soft" aria-hidden="true">/</span> <span class="text-ink">{profiles.find((b) => Number(b.id) === selectedMemberId)?.name || 'Baby'}</span>
-							</button>
-						{/if}
-
-						{#if profiles.length > 1}
-							<div class="flex-1 overflow-x-auto no-scrollbar">
-								<div class="flex gap-2">
-									{#each profiles as baby}
-										<button type="button" on:click={() => selectMember(Number(baby.id))} class="{selectedMemberId === Number(baby.id) ? 'bg-accent text-on-accent border-accent' : 'bg-surface2 text-ink-soft border-line-soft'} h-11 px-4 rounded-full text-sm border flex items-center gap-2 whitespace-nowrap font-semibold transition-colors">
-											<Avatar familyId={activeFamilyId} memberId={baby.id} avatar={baby.avatar} alt={baby.name} class="w-5 h-5 rounded-full object-cover">
-												<Baby class="w-4 h-4" />
-											</Avatar>
-											<span>{baby.name}</span>
-											{#if starredMemberId === Number(baby.id)}
-												<Star class="w-3.5 h-3.5 text-accent" fill="currentColor" aria-label="Favorite" />
-											{/if}
-										</button>
-									{/each}
-								</div>
-							</div>
-							<button
-								type="button"
-								title={starredMemberId === selectedMemberId ? 'Favorite person' : 'Set as favorite'}
-								class="h-11 px-3.5 rounded-full border border-line-soft bg-surface text-ink-soft hover:text-accent flex items-center gap-1.5 text-xs font-semibold shrink-0 transition-colors"
-								on:click={() => { if (selectedMemberId) setStarred(selectedMemberId); }}
-							>
-								<Star class="w-4 h-4 {starredMemberId === selectedMemberId ? 'text-accent' : 'text-ink-soft opacity-60'}" fill={starredMemberId === selectedMemberId ? 'currentColor' : 'none'} aria-hidden="true" />
-								<span>Favorite</span>
-							</button>
-						{:else if profiles.length === 1}
-							<div class="flex items-center gap-3">
-								<h2 class="text-xl md:text-2xl font-display font-semibold text-ink flex items-center gap-2">
-									<Avatar familyId={activeFamilyId} memberId={profiles[0].id} avatar={profiles[0].avatar} alt={profiles[0].name} class="w-8 h-8 rounded-full object-cover" />
-									{profiles[0].name}
-								</h2>
-								<button
-									type="button"
-									title={starredMemberId === Number(profiles[0].id) ? 'Favorite person' : 'Set as favorite'}
-									class="p-1.5 rounded-full text-accent hover:opacity-80"
-									on:click={() => setStarred(Number(profiles[0].id))}
-								>
-									<Star class="w-5 h-5" fill={starredMemberId === Number(profiles[0].id) ? 'currentColor' : 'none'} aria-hidden="true" />
-								</button>
-							</div>
-						{/if}
-					</div>
-
-					<!-- Segmented view toggle: [ Care & Log | Family Overview ] -->
-					<div class="inline-flex rounded-lg border border-line-soft bg-surface2 p-1 shrink-0" role="group" aria-label="Family view">
-						<button
-							type="button"
-							aria-pressed={familyView === 'detail'}
-							on:click={() => (familyView = 'detail')}
-							class="h-9 px-3 rounded-md text-sm font-semibold transition-colors {familyView === 'detail' ? 'bg-primary text-on-primary shadow-sm' : 'text-ink-soft hover:text-ink'}"
-						>Care &amp; Log</button>
-						<button
-							type="button"
-							aria-pressed={familyView === 'dashboard'}
-							on:click={() => (familyView = 'dashboard')}
-							class="h-9 px-3 rounded-md text-sm font-semibold transition-colors {familyView === 'dashboard' ? 'bg-primary text-on-primary shadow-sm' : 'text-ink-soft hover:text-ink'}"
-						>Family Overview</button>
-					</div>
-				</div>
+				<MemberSwitcher
+					members={profiles.map((b) => ({ id: Number(b.id), name: b.name, avatar: b.avatar, stage: b.stage }))}
+					selectedId={selectedMemberId}
+					starredId={starredMemberId}
+					familyId={activeFamilyId}
+					on:select={(e) => selectMember(e.detail.memberId)}
+					on:star={(e) => { setStarred(e.detail.memberId); selectMember(e.detail.memberId); }}
+				/>
 			</div>
 
-			{#if $overdueReminders.length > 0}
-				<div class="bg-danger border border-danger text-danger-text rounded-lg px-4 py-3 mb-4 flex items-center justify-between gap-3" data-testid="reminders-banner">
-					<div>
-						<p class="text-sm font-semibold">Reminders</p>
-						<p class="text-xs">
-							{#each $overdueReminders as o}
-								{#if o.kind === 'inactivity'}
-									{@const what = o.conditions?.length ? reminderPhrase(o.conditions, o.match) : reminderNoun(o.category)}
-									<span class="capitalize">no {what} in {o.hours}h{o.since ? ` (since ${new Date(o.since).toLocaleString(undefined, zonedOptions())})` : ' (never recorded)'}</span>
-								{:else}
-									<span>{o.label || o.category} — every {o.intervalDays}d{o.since ? ` (last {new Date(o.since).toLocaleString(undefined, zonedOptions())})` : ' (never done)'}</span>
-								{/if}{o !== $overdueReminders[$overdueReminders.length - 1] ? ' · ' : ''}
-							{/each}
-						</p>
-					</div>
-					<a href="/notifications" class="bg-danger text-danger-text px-3 py-2 rounded-md text-sm font-semibold shrink-0">View</a>
-				</div>
-			{/if}
+			<div class="flex items-center gap-2">
+				{#if selectedMember?.email}
+					<button type="button" on:click={() => inviteMemberEmail(selectedMember.email)} class="h-9 px-3 rounded-md bg-surface border border-line-soft text-xs font-semibold text-accent hover:bg-surface2">
+						Invite
+					</button>
+				{/if}
+				{#if selectedMember}
+					<button type="button" data-testid="edit-selected-member" on:click={() => openEditMember(selectedMember)} class="h-9 px-3 rounded-md bg-surface border border-line-soft text-xs font-semibold text-ink-soft hover:text-ink">
+						Edit {selectedMember.name}
+					</button>
+				{/if}
+				<a href="/settings" class="h-9 px-3 rounded-md bg-surface border border-line-soft text-xs font-semibold text-ink-soft hover:text-ink inline-flex items-center">
+					Members &rarr;
+				</a>
+			</div>
+		</div>
 
-			{#if familyView === 'dashboard'}
-				<!-- MODE 1: FAMILY OVERVIEW (Clean family-level hub — no MemberActivity duplicated below!) -->
-				<div class="mb-8">
-					<h2 class="text-2xl font-display font-semibold mb-4">Family Overview</h2>
-					
-					<div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-						{#each profiles as baby}
-							<div class="bg-surface rounded-lg shadow-card p-5 border border-line-soft flex items-center justify-between" data-testid="member-card">
-								<div class="flex items-center gap-4">
-									<div class="w-12 h-12 rounded-full bg-accent text-on-accent flex items-center justify-center font-display text-xl overflow-hidden">
-										<Avatar familyId={activeFamilyId} memberId={baby.id} avatar={baby.avatar} alt={baby.name} class="w-full h-full object-cover">
-											{baby.name[0]}
-										</Avatar>
-									</div>
-									<div>
-										<h3 class="font-display font-semibold text-lg">{baby.name}</h3>
-										<p class="text-sm text-ink-soft">Born {baby.birth_date.slice(0, 10)}</p>
-									</div>
-								</div>
-								<div class="flex items-center gap-2">
-									<button
-										type="button"
-										on:click={() => setStarred(Number(baby.id))}
-										title={starredMemberId === Number(baby.id) ? 'Favorite person' : 'Set as favorite'}
-										class="px-2.5 py-2 text-xs rounded-md border flex items-center gap-1 font-semibold transition-colors {starredMemberId === Number(baby.id) ? 'bg-accent-soft text-ink border-accent' : 'bg-surface2 text-ink-soft hover:text-ink border-line-soft'}"
-									>
-										<Star class="w-3.5 h-3.5 text-accent" fill={starredMemberId === Number(baby.id) ? 'currentColor' : 'none'} aria-hidden="true" />
-										<span>Favorite</span>
-									</button>
-									{#if baby.email}
-										<button type="button" on:click={() => inviteMemberEmail(baby.email)} title="Re-send invite" class="px-2 py-2 text-xs text-accent hover:underline"><Mail class="w-4 h-4 inline mr-1" /> Invite</button>
-									{/if}
-									<button type="button" on:click={() => openEditMember(baby)} class="px-3 py-2 text-xs bg-surface2 text-ink-soft hover:text-ink rounded-md">Edit</button>
-									<button type="button" on:click={() => { selectMember(baby.id); familyView = 'detail'; }} class="px-4 py-2 bg-primary text-on-primary rounded-md text-sm font-semibold hover:opacity-95 shadow-sm">
-										Log Activity &rarr;
-									</button>
-								</div>
-							</div>
+		{#if $overdueReminders.length > 0}
+			<div class="bg-danger border border-danger text-danger-text rounded-lg px-4 py-3 mb-4 flex items-center justify-between gap-3" data-testid="reminders-banner">
+				<div>
+					<p class="text-sm font-semibold">Reminders</p>
+					<p class="text-xs">
+						{#each $overdueReminders as o}
+							{#if o.kind === 'inactivity'}
+								{@const what = o.conditions?.length ? reminderPhrase(o.conditions, o.match) : reminderNoun(o.category)}
+								<span class="capitalize">no {what} in {o.hours}h{o.since ? ` (since ${new Date(o.since).toLocaleString(undefined, zonedOptions())})` : ' (never recorded)'}</span>
+							{:else}
+								<span>{o.label || o.category} — every {o.intervalDays}d{o.since ? ` (last {new Date(o.since).toLocaleString(undefined, zonedOptions())})` : ' (never done)'}</span>
+							{/if}{o !== $overdueReminders[$overdueReminders.length - 1] ? ' · ' : ''}
 						{/each}
-					</div>
-
-					<!-- Upcoming appointments card -->
-					<div class="bg-surface rounded-lg shadow-card p-5 border border-line-soft mb-6" data-testid="upcoming-appointments-card">
-						<div class="flex items-center justify-between mb-3">
-							<h3 class="text-lg font-display font-semibold flex items-center gap-2">
-								<CalendarClock class="w-5 h-5 text-accent" aria-hidden="true" />
-								Upcoming
-							</h3>
-							<a href="/appointments" class="text-sm font-semibold text-link hover:underline">See all &rarr;</a>
-						</div>
-						{#if $upcomingAppointments.length === 0}
-							<p class="text-sm text-ink-soft">
-								Nothing booked in the next 30 days. Log any activity with a future date and it appears here.
-							</p>
-						{:else}
-							<ul class="space-y-2">
-								{#each $upcomingAppointments as a (a.id)}
-									<li class="flex items-baseline gap-3 text-sm">
-										<span class="tabular-nums text-ink-soft shrink-0 w-28">
-											{new Date(a.date).toLocaleDateString(undefined, zonedOptions({ weekday: 'short', month: 'short', day: 'numeric' }))}
-										</span>
-										<span class="text-ink min-w-0">
-											{#if a.memberName}<span class="font-semibold">{a.memberName}</span> · {/if}{a.title}
-										</span>
-									</li>
-								{/each}
-							</ul>
-						{/if}
-					</div>
-
-					<!-- Quick reports card -->
-					<div class="bg-surface rounded-lg shadow-card p-5 border border-line-soft mb-6">
-						<div class="flex items-center justify-between mb-3">
-							<h3 class="text-lg font-display font-semibold">Quick reports <span class="text-xs text-ink-soft">· feeds</span></h3>
-							<a href={selectedMemberId ? `/reports?memberId=${selectedMemberId}` : '/reports'} class="text-sm font-semibold text-accent hover:underline">
-								Full reports &rarr;
-							</a>
-						</div>
-						<div class="grid grid-cols-2 md:grid-cols-4 gap-3">
-							<div>
-								<p class="text-xs text-ink-soft uppercase font-semibold">Feeds (24h)</p>
-								<p class="text-xl font-display font-semibold text-ink">{feedReports.count1d}</p>
-							</div>
-							<div>
-								<p class="text-xs text-ink-soft uppercase font-semibold">Avg size (24h)</p>
-								<p class="text-xl font-display font-semibold text-ink">{feedReports.avgSize1d != null ? `${feedReports.avgSize1d.toFixed(1)}oz` : '—'}</p>
-							</div>
-							<div>
-								<p class="text-xs text-ink-soft uppercase font-semibold">Avg size (30d)</p>
-								<p class="text-xl font-display font-semibold text-ink">{feedReports.avgSize30d != null ? `${feedReports.avgSize30d.toFixed(1)}oz` : '—'}</p>
-							</div>
-							<div>
-								<p class="text-xs text-ink-soft uppercase font-semibold">Feeds (30d)</p>
-								<p class="text-xl font-display font-semibold text-ink">{feedReports.count30d}</p>
-							</div>
-							<div>
-								<p class="text-xs text-ink-soft uppercase font-semibold">Avg length (24h)</p>
-								<p class="text-xl font-display font-semibold text-ink">{feedReports.avgDur1d != null ? formatElapsed(feedReports.avgDur1d) : '—'}</p>
-							</div>
-							<div>
-								<p class="text-xs text-ink-soft uppercase font-semibold">Avg length (30d)</p>
-								<p class="text-xl font-display font-semibold text-ink">{feedReports.avgDur30d != null ? formatElapsed(feedReports.avgDur30d) : '—'}</p>
-							</div>
-						</div>
-					</div>
-
-					<StockGlance />
+					</p>
 				</div>
-			{:else}
-				<!-- MODE 2: CARE & LOG (Clean 2-click recording — QuickActions directly at top!) -->
-				<MemberActivity
-					memberName={selectedMember?.name || 'Selected'}
-					memberId={selectedMemberId}
-					{summary}
-					{activeCategories}
-					quickLinks={selectedMember?.quickLinks ?? null}
-					dashboardTiles={selectedMember?.dashboardTiles ?? null}
-					stage={selectedMember?.stage ?? null}
-					{feedings} {diapers} {sleeps} {growths}
-					{milestones} {vaccinations} {moods} {journalEntries} {vitals}
-					totals={listTotals}
-					{loadingMore}
-					on:log={(e) => openLog(e.detail.kind)}
-					on:loadmore={loadMoreLists}
-					on:refresh={async () => { await refreshLists(); await refreshSummary(); }}
-					on:pin={(e) => setQuickLink(e.detail.kind, true)}
-					on:unpin={(e) => setQuickLink(e.detail.kind, false)}
-					on:saveTiles={(e) => saveDashboardTiles(e.detail.tiles)}
-				>
-					{#if selectedMember}
-						<div class="mt-6">
-							<Trends memberId={Number(selectedMember.id)} memberName={selectedMember.name} categories={activeCategories} />
-						</div>
-					{/if}
-
-					{#if selectedMember && selectedMember.type === 'child' && activeCategories.includes('growth')}
-						<div class="mt-6">
-							<GrowthChart memberId={Number(selectedMember.id)} memberName={selectedMember.name} />
-						</div>
-					{/if}
-
-					<div class="mt-6">
-						<StockGlance />
-					</div>
-				</MemberActivity>
-			{/if}
+				<a href="/notifications" class="bg-danger text-danger-text px-3 py-2 rounded-md text-sm font-semibold shrink-0">View</a>
+			</div>
 		{/if}
 
-		{#if editingMember}
-			<EditMemberModal
-				member={editingMember}
-				mode="stage"
-				familyId={activeFamilyId}
-				on:save={saveEditMember}
-				on:delete={deleteEditMember}
-				on:invite={(e) => inviteMemberEmail(e.detail.email)}
-				on:avatar={onMemberAvatarSelected}
-				on:close={closeEditMember}
-			/>
-		{/if}
+		<MemberActivity
+			memberName={selectedMember?.name || 'Selected'}
+			memberId={selectedMemberId}
+			{summary}
+			{activeCategories}
+			quickLinks={selectedMember?.quickLinks ?? null}
+			dashboardTiles={selectedMember?.dashboardTiles ?? null}
+			stage={selectedMember?.stage ?? null}
+			{feedings} {diapers} {sleeps} {growths}
+			{milestones} {vaccinations} {moods} {journalEntries} {vitals}
+			totals={listTotals}
+			{loadingMore}
+			on:log={(e) => openLog(e.detail.kind)}
+			on:loadmore={loadMoreLists}
+			on:refresh={async () => { await refreshLists(); await refreshSummary(); }}
+			on:pin={(e) => setQuickLink(e.detail.kind, true)}
+			on:unpin={(e) => setQuickLink(e.detail.kind, false)}
+			on:saveTiles={(e) => saveDashboardTiles(e.detail.tiles)}
+		/>
+	{/if}
 
+	{#if editingMember}
+		<EditMemberModal
+			member={editingMember}
+			mode="stage"
+			familyId={activeFamilyId}
+			on:save={saveEditMember}
+			on:delete={deleteEditMember}
+			on:invite={(e) => inviteMemberEmail(e.detail.email)}
+			on:avatar={onMemberAvatarSelected}
+			on:close={closeEditMember}
+		/>
+	{/if}
+</div>
 
 <LogDrawer
 	bind:open={sheetOpen}

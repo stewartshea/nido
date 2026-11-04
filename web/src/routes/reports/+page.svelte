@@ -8,13 +8,15 @@
 	import type { DailyReport } from '$lib/api/types';
 	import DailySeriesChart from '$lib/components/reports/DailySeriesChart.svelte';
 	import { categoryColorVar } from '$lib/components/reports/categoryColors';
+	import Trends from '$lib/components/logging/Trends.svelte';
+	import GrowthChart from '$lib/components/logging/GrowthChart.svelte';
 
 	// The overlay view the quick reports on Family Overview cannot be: the same
 	// numbers as per-day series, side by side, with a day openable into the rows
 	// behind it. Family-wide by default; picking a person narrows the feeding
 	// series (inventory stays the household's ledger).
 
-	let members: { id: number; name: string }[] = [];
+	let members: { id: number; name: string; type: string; categories: string[] }[] = [];
 	let loaded = false;
 	let loading = false;
 	let error = '';
@@ -79,7 +81,12 @@
 				const membersRes = await familiesAPI.members(familyId);
 				members = (membersRes.data.members ?? [])
 					.filter((m: any) => m.trackable !== false)
-					.map((m: any) => ({ id: Number(m.id), name: m.name }));
+					.map((m: any) => ({
+						id: Number(m.id),
+						name: m.name,
+						type: m.type ?? 'child',
+						categories: Array.isArray(m.categories) ? m.categories : [],
+					}));
 				const mParam = new URLSearchParams(window.location.search).get('memberId');
 				if (mParam && members.some((m) => m.id === Number(mParam))) {
 					memberId = Number(mParam);
@@ -331,6 +338,23 @@
 						</tbody>
 					</table>
 				</div>
+			</div>
+		{/if}
+
+		{@const targetMember = members.find((m) => m.id === memberId) ?? members[0]}
+		{#if targetMember}
+			<div class="mt-6 space-y-6">
+				<div class="border-t border-line-soft pt-6">
+					<h2 class="text-xl font-display font-semibold text-ink mb-1">Weekly rates · {targetMember.name}</h2>
+					<p class="text-xs text-ink-soft mb-3">Rate per day over the last week across categories {targetMember.name} tracks.</p>
+					<Trends memberId={targetMember.id} memberName={targetMember.name} categories={targetMember.categories} />
+				</div>
+
+				{#if targetMember.type === 'child' && targetMember.categories.includes('growth')}
+					<div class="border-t border-line-soft pt-6">
+						<GrowthChart memberId={targetMember.id} memberName={targetMember.name} />
+					</div>
+				{/if}
 			</div>
 		{/if}
 	{/if}

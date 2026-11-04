@@ -64,6 +64,7 @@
 	// quantity is typed rather than tapped or learned from a per-item constant.
 	let qtyDraft: Record<number, string> = {};
 	let showCategories = false;
+	let showDiaperSizes = false;
 	let newCategory = '';
 	let showAddSize = false;
 	let newSize = '';
@@ -479,22 +480,42 @@
 </script>
 
 <div class="bg-surface rounded-lg shadow-card p-4 md:p-5 border border-line-soft mb-4">
-	<div class="flex items-center justify-between mb-3">
+	<div class="flex flex-wrap items-center justify-between gap-3 mb-4">
 		<h3 class="text-lg font-display font-semibold">Inventory</h3>
-		<div class="flex items-center gap-2">
-			<div class="flex bg-surface2 rounded-md p-1">
+		<div class="flex flex-wrap items-center gap-2">
+			{#if selectedMemberId !== null}
+				<button
+					type="button"
+					on:click={() => (showDiaperSizes = !showDiaperSizes)}
+					data-testid="toggle-diaper-sizes"
+					class="{showDiaperSizes ? 'bg-primary text-on-primary' : 'bg-surface2 text-ink-soft hover:text-ink'} h-8 px-3 rounded-md text-xs font-semibold border border-line-soft transition-colors"
+				>
+					{showDiaperSizes ? 'Hide diaper sizes' : '📏 Diaper sizes'}
+				</button>
+			{/if}
+			<button
+				type="button"
+				on:click={() => (showCategories = !showCategories)}
+				data-testid="manage-categories"
+				class="{showCategories ? 'bg-primary text-on-primary' : 'bg-surface2 text-ink-soft hover:text-ink'} h-8 px-3 rounded-md text-xs font-semibold border border-line-soft transition-colors"
+			>
+				{showCategories ? 'Hide categories' : '🏷️ Categories'}
+			</button>
+			<div class="flex bg-surface2 rounded-md p-1 border border-line-soft">
 				<button
 					type="button"
 					on:click={() => (viewMode = 'cards')}
-					class="{viewMode === 'cards' ? 'bg-surface text-ink' : 'text-ink-soft hover:text-ink'} h-8 px-3 rounded-md text-sm font-semibold transition-colors"
+					class="{viewMode === 'cards' ? 'bg-surface text-ink shadow-sm' : 'text-ink-soft hover:text-ink'} h-7 px-3 rounded text-xs font-semibold transition-colors"
 				>Cards</button>
 				<button
 					type="button"
 					on:click={() => (viewMode = 'table')}
-					class="{viewMode === 'table' ? 'bg-surface text-ink' : 'text-ink-soft hover:text-ink'} h-8 px-3 rounded-md text-sm font-semibold transition-colors"
+					class="{viewMode === 'table' ? 'bg-surface text-ink shadow-sm' : 'text-ink-soft hover:text-ink'} h-7 px-3 rounded text-xs font-semibold transition-colors"
 				>Table</button>
 			</div>
-			<button type="button" on:click={openAdd} class="px-3 py-2 rounded-md bg-primary text-on-primary text-sm font-semibold">Add item</button>
+			<button type="button" on:click={openAdd} class="h-9 px-3.5 rounded-md bg-primary text-on-primary text-xs font-semibold hover:opacity-90">
+				+ Add item
+			</button>
 		</div>
 	</div>
 
@@ -620,7 +641,7 @@
 		</form>
 	{/if}
 
-	{#if selectedMemberId !== null}
+	{#if selectedMemberId !== null && showDiaperSizes}
 		<div class="border-t border-line-soft pt-4 mb-4">
 			<div class="flex items-center justify-between mb-2">
 				<div>
@@ -731,47 +752,32 @@
 		</div>
 	{/if}
 
-	<div class="border-b border-line-soft pb-3 mb-3">
-		<div class="flex items-center justify-between">
-			<div>
+	{#if showCategories}
+		<div class="border-t border-line-soft pt-3 mb-4 space-y-2">
+			<div class="flex items-center justify-between">
 				<p class="text-xs font-semibold text-ink-soft uppercase tracking-wider">Categories</p>
-				<p class="text-xs text-ink-soft mt-0.5">Pick one when adding an item, or add your own.</p>
+				<button type="button" on:click={() => (showCategories = false)} class="text-xs text-ink-soft hover:text-ink">Close</button>
 			</div>
-			<button type="button" on:click={() => (showCategories = !showCategories)} data-testid="manage-categories" class="px-2 py-1 rounded-md bg-surface2 text-ink-soft text-xs font-semibold">
-				{showCategories ? 'Close' : 'Manage'}
-			</button>
-		</div>
-
-		{#if showCategories}
-			<div class="mt-2 space-y-2">
-				<div class="flex flex-wrap gap-1.5" data-testid="category-chips">
-					{#each categories as cat}
-						<span class="inline-flex items-center gap-1 bg-surface2 text-ink-soft px-2 py-1 rounded text-sm">
-							{cat}
-							<button type="button" on:click={() => removeCategory(cat)} aria-label="Remove {cat} from the list" class="text-ink-soft hover:text-danger-text">&times;</button>
-						</span>
-					{/each}
-				</div>
-				<form on:submit={addCategory} class="flex gap-2">
-					<input
-						id="new-category"
-						type="text"
-						bind:value={newCategory}
-						placeholder="e.g. pet food"
-						class="flex-1 px-3 py-1.5 border border-line rounded-md text-sm"
-					/>
-					<button type="submit" class="px-3 py-1.5 rounded-md bg-primary text-on-primary text-sm font-semibold">Add</button>
-				</form>
-			</div>
-		{:else}
-			<div class="flex flex-wrap gap-1.5 mt-1.5">
-				{#each categories.slice(0, 6) as cat}
-					<span class="inline-block bg-surface2 text-ink-soft px-2 py-0.5 rounded text-xs">{cat}</span>
+			<div class="flex flex-wrap gap-1.5" data-testid="category-chips">
+				{#each categories as cat}
+					<span class="inline-flex items-center gap-1 bg-surface2 text-ink-soft px-2 py-1 rounded text-sm">
+						{cat}
+						<button type="button" on:click={() => removeCategory(cat)} aria-label="Remove {cat} from the list" class="text-ink-soft hover:text-danger-text">&times;</button>
+					</span>
 				{/each}
-				{#if categories.length > 6}<span class="text-xs text-ink-soft">+{categories.length - 6} more</span>{/if}
 			</div>
-		{/if}
-	</div>
+			<form on:submit={addCategory} class="flex gap-2">
+				<input
+					id="new-category"
+					type="text"
+					bind:value={newCategory}
+					placeholder="e.g. pet food"
+					class="flex-1 px-3 py-1.5 border border-line rounded-md text-sm"
+				/>
+				<button type="submit" class="px-3 py-1.5 rounded-md bg-primary text-on-primary text-sm font-semibold">Add</button>
+			</form>
+		</div>
+	{/if}
 
 	{#if loading}
 		<p class="text-sm text-ink-soft py-4">Loading inventory…</p>
@@ -843,89 +849,176 @@
 			</div>
 		{:else}
 		{#each grouped() as [cat, catItems]}
-			<div class="mb-4">
-				<p class="text-xs font-semibold text-ink-soft uppercase tracking-wider mb-2">{CATEGORY_LABELS[cat] ?? cat}</p>
-				<ul class="divide-y divide-line-soft">
+			<div class="mb-6">
+				<div class="flex items-center justify-between mb-2.5">
+					<p class="text-xs font-semibold text-ink-soft uppercase tracking-wider">{CATEGORY_LABELS[cat] ?? cat}</p>
+					<span class="text-xs text-ink-soft">{catItems.length} {catItems.length === 1 ? 'item' : 'items'}</span>
+				</div>
+				<div class="grid grid-cols-1 md:grid-cols-2 gap-3">
 					{#each catItems as item (item.id)}
-						<li class="py-2 flex items-center gap-3">
-							<div class="flex-1 min-w-0">
-								<p class="text-sm font-semibold text-ink">
-									{item.name}{item.variant ? ` · ${item.variant}` : ''}
-									{#if item.alerting}<span class="ml-2 text-xs font-semibold text-danger-text">needs attention</span>{/if}
-								</p>
-								<p class="text-xs text-ink-soft">
-									{item.quantity} {item.unit} · {cover(item)}
-									{#if item.lowConfidence} · based on very little usage{/if}
-									{#if item.consumeIntervalDays}
-										· uses {item.decrementPerEvent ?? 1} every {item.consumeIntervalDays} day{item.consumeIntervalDays === 1 ? '' : 's'}
-										{#if item.nextConsumptionAt}· next {new Date(item.nextConsumptionAt).toLocaleDateString(undefined, zonedOptions())}{/if}
-									{/if}
-									{#if item.eventCategory && !item.consumeIntervalDays}
-										· uses {linkRule(item)}
-									{/if}
-									{#if item.expiresAt} · expires {new Date(item.expiresAt).toLocaleDateString(undefined, zonedOptions())}{/if}
-								</p>
-								{#if item.drift}
-									<p class="text-xs text-danger-text">
-										Automatic tracking is {Math.abs(item.drift)} {Math.abs(item.drift) === 1 ? 'unit' : 'units'} off — recount to correct it.
+						{@const isUrgent = item.alerting || (item.daysOfCover !== null && item.daysOfCover <= 3)}
+						{@const isWarn = !isUrgent && item.daysOfCover !== null && item.daysOfCover <= 7}
+						{@const isOk = !isUrgent && !isWarn && item.daysOfCover !== null && item.daysOfCover > 7}
+						<div
+							class="bg-surface rounded-xl border border-line-soft p-4 flex flex-col justify-between gap-3 shadow-sm transition-shadow hover:shadow-card
+								{isUrgent ? 'border-l-4 border-l-danger' : isWarn ? 'border-l-4 border-l-accent' : isOk ? 'border-l-4 border-l-ok-line' : 'border-l-4 border-l-line-soft'}"
+							data-testid="inventory-card-{item.id}"
+						>
+							<!-- Top row: Name/Variant on left, Prominent Tabular Qty on right -->
+							<div class="flex items-start justify-between gap-3">
+								<div class="min-w-0 flex-1">
+									<p class="font-display font-semibold text-base text-ink leading-snug">
+										{item.name}
+										{#if item.variant}
+											<span class="ml-1.5 inline-block text-xs font-sans font-semibold bg-surface2 text-ink-soft border border-line-soft px-2 py-0.5 rounded-full">{item.variant}</span>
+										{/if}
 									</p>
-								{/if}
+									{#if item.alerting}
+										<p class="text-xs font-semibold text-danger-text mt-0.5">⚠️ Needs attention</p>
+									{/if}
+									{#if item.drift}
+										<p class="text-xs text-danger-text mt-0.5">
+											Automatic tracking is {Math.abs(item.drift)} {Math.abs(item.drift) === 1 ? 'unit' : 'units'} off — recount to correct
+										</p>
+									{/if}
+								</div>
+								<div class="text-right shrink-0">
+									<p class="text-2xl font-display font-semibold tabular-nums text-ink leading-none">{item.quantity}</p>
+									<p class="text-xs text-ink-soft mt-0.5">{item.unit}</p>
+								</div>
 							</div>
-							<div class="flex items-center gap-1 shrink-0">
-								<button
-									type="button"
-									on:click={() => adjust(item, -1, 'used')}
-									aria-label="Record using one {item.name}"
-									title="Record using one — this is what a cadence is checked against"
-									data-testid="record-use"
-									class="p-2 rounded-md text-ink-soft hover:bg-surface2"
-								>−1</button>
-								<button type="button" on:click={() => adjust(item, 1, 'purchase')} aria-label="Add one {item.name}" class="p-2 rounded-md text-accent hover:bg-surface2">+1</button>
-								<button
-									type="button"
-									on:click={() => openManage(item)}
-									aria-label="Manage {item.name}"
-									data-testid="manage-item"
-									class="p-2 rounded-md text-ink-soft hover:bg-surface2"
-								>⋯</button>
+
+							<!-- Cover progress bar & badge -->
+							<div class="flex items-center gap-2">
+								<div class="flex-1 h-1.5 rounded-full bg-surface2 overflow-hidden">
+									{#if item.daysOfCover !== null}
+										<div
+											class="h-full rounded-full transition-all {isUrgent ? 'bg-danger' : isWarn ? 'bg-accent' : 'bg-ok-text'}"
+											style="width: {Math.min(100, Math.max(6, Math.round(((item.daysOfCover ?? 0) / 30) * 100)))}%"
+										></div>
+									{/if}
+								</div>
+								<span
+									class="text-xs font-semibold px-2 py-0.5 rounded-full tabular-nums shrink-0
+										{isUrgent ? 'bg-danger/10 text-danger-text border border-danger/30' : isWarn ? 'bg-accent-soft text-ink border border-accent/40' : item.daysOfCover !== null ? 'bg-ok-bg text-ok-text border border-ok-line' : 'bg-surface2 text-ink-soft border border-line-soft'}"
+								>
+									{cover(item)}
+								</span>
 							</div>
-						</li>
+
+							<!-- Bottom row: Rule summary & Grouped Stepper -->
+							<div class="flex items-center justify-between gap-3 pt-2.5 border-t border-line-soft">
+								<div class="text-xs text-ink-soft min-w-0 truncate">
+									{#if item.consumeIntervalDays}
+										uses {item.decrementPerEvent ?? 1} every {item.consumeIntervalDays}d
+									{:else if item.eventCategory}
+										uses {linkRule(item)}
+									{:else if item.expiresAt}
+										expires {new Date(item.expiresAt).toLocaleDateString(undefined, zonedOptions())}
+									{:else}
+										manual stock
+									{/if}
+								</div>
+
+								<div class="inline-flex rounded-lg border border-line-soft bg-surface2 overflow-hidden shrink-0">
+									<button
+										type="button"
+										on:click={() => adjust(item, -1, 'used')}
+										aria-label="Record using one {item.name}"
+										title="Record using one"
+										data-testid="record-use"
+										class="h-8 px-2.5 text-xs font-semibold tabular-nums hover:bg-line-soft border-r border-line-soft text-ink-soft hover:text-ink transition-colors"
+									>−1</button>
+									<button
+										type="button"
+										on:click={() => adjust(item, 1, 'purchase')}
+										aria-label="Add one {item.name}"
+										title="Add one"
+										class="h-8 px-2.5 text-xs font-semibold text-accent tabular-nums hover:bg-line-soft border-r border-line-soft transition-colors"
+									>+1</button>
+									<button
+										type="button"
+										on:click={() => openManage(item)}
+										aria-label="Manage {item.name}"
+										title="Recount and history"
+										data-testid="manage-item"
+										class="h-8 px-2.5 text-xs font-semibold text-ink-soft hover:text-ink hover:bg-line-soft transition-colors"
+									>{managingId === item.id ? 'Close' : '⋯'}</button>
+								</div>
+							</div>
+
+							<!-- INLINE MANAGE DRAWER: Directly inside the clicked card! -->
+							{#if managingId === item.id && managing}
+								<div class="mt-2 p-3 bg-surface2 border border-line-soft rounded-lg space-y-3" data-testid="manage-panel">
+									<p class="text-xs text-ink-soft">
+										Counted amount{#if managing.ledgerQuantity !== null} · ledger says {managing.ledgerQuantity} {managing.unit}{/if}
+									</p>
+									<div class="flex flex-wrap items-end gap-2">
+										<div>
+											<label for="recount-onhand" class="block text-xs text-ink-soft mb-1">On hand</label>
+											<input id="recount-onhand" type="number" min="0" step="0.5" bind:value={recountValue} class="w-20 px-2 py-1.5 border border-line rounded-md bg-surface text-ink text-sm" />
+										</div>
+										<div class="flex-1 min-w-[8rem]">
+											<label for="recount-note" class="block text-xs text-ink-soft mb-1">Note</label>
+											<input id="recount-note" type="text" bind:value={recountNote} class="w-full px-2 py-1.5 border border-line rounded-md bg-surface text-ink text-sm" placeholder="Counted the cupboard" />
+										</div>
+									</div>
+									<div class="flex flex-wrap gap-2">
+										<button type="button" on:click={() => recount(managing)} class="px-2.5 py-1.5 rounded-md bg-primary text-on-primary text-xs font-semibold">Save count</button>
+										<button type="button" on:click={() => resetHistory(managing)} class="px-2.5 py-1.5 rounded-md bg-surface text-ink-soft text-xs border border-line-soft">Reset history</button>
+										<button type="button" on:click={() => hide(managing)} class="px-2.5 py-1.5 rounded-md bg-surface text-ink-soft text-xs border border-line-soft">Stop tracking</button>
+										<button type="button" on:click={() => (managingId = null)} class="px-2.5 py-1.5 rounded-md bg-surface text-ink-soft text-xs border border-line-soft">Close</button>
+									</div>
+									<div class="border-t border-line-soft pt-2">
+										<p class="text-xs text-ink-soft mb-1">Usage, last 30 days</p>
+										{#if manageLoading}
+											<p class="text-xs text-ink-soft">Loading…</p>
+										{:else if manageAdjustments.length}
+											<UsageSparkline adjustments={manageAdjustments} unit={managing.unit} />
+										{:else}
+											<p class="text-xs text-ink-soft">No usage recorded yet.</p>
+										{/if}
+									</div>
+								</div>
+							{/if}
+						</div>
 					{/each}
-				</ul>
+				</div>
 			</div>
 		{/each}
 		{/if}
-		{#if managing}
-			<div class="p-3 bg-surface2 border border-line-soft rounded-md space-y-2" data-testid="manage-panel">
-								<p class="text-xs text-ink-soft">
-									Counted amount{#if managing.ledgerQuantity !== null} · ledger says {managing.ledgerQuantity} {managing.unit}{/if}
-								</p>
-								<div class="flex flex-wrap items-end gap-2">
-									<div>
-										<label for="recount-onhand" class="block text-xs text-ink-soft mb-1">On hand</label>
-										<input id="recount-onhand" type="number" min="0" step="0.5" bind:value={recountValue} class="w-20 px-2 py-1.5 border border-line rounded-md" />
-									</div>
-									<div class="flex-1 min-w-[8rem]">
-										<label for="recount-note" class="block text-xs text-ink-soft mb-1">Note</label>
-										<input id="recount-note" type="text" bind:value={recountNote} class="w-full px-2 py-1.5 border border-line rounded-md" placeholder="Counted the cupboard" />
-									</div>
-								</div>
-								<div class="flex flex-wrap gap-2">
-									<button type="button" on:click={() => recount(managing)} class="px-2 py-1.5 rounded-md bg-primary text-on-primary text-xs font-semibold">Save count</button>
-									<button type="button" on:click={() => resetHistory(managing)} class="px-2 py-1.5 rounded-md bg-surface text-ink-soft text-xs">Reset history</button>
-									<button type="button" on:click={() => hide(managing)} class="px-2 py-1.5 rounded-md bg-surface text-ink-soft text-xs">Stop tracking</button>
-									<button type="button" on:click={() => (managingId = null)} class="px-2 py-1.5 rounded-md bg-surface text-ink-soft text-xs">Close</button>
-								</div>
-								<div class="border-t border-line-soft pt-2">
-									<p class="text-xs text-ink-soft mb-1">Usage, last 30 days</p>
-									{#if manageLoading}
-										<p class="text-xs text-ink-soft">Loading…</p>
-									{:else if manageAdjustments.length}
-										<UsageSparkline adjustments={manageAdjustments} unit={managing.unit} />
-									{:else}
-										<p class="text-xs text-ink-soft">No usage recorded yet.</p>
-									{/if}
-								</div>
+
+		{#if viewMode === 'table' && managing}
+			<div class="mt-4 p-3 bg-surface2 border border-line-soft rounded-lg space-y-3" data-testid="manage-panel">
+				<p class="text-xs text-ink-soft">
+					Managing {managing.name} · counted amount{#if managing.ledgerQuantity !== null} · ledger says {managing.ledgerQuantity} {managing.unit}{/if}
+				</p>
+				<div class="flex flex-wrap items-end gap-2">
+					<div>
+						<label for="recount-onhand-table" class="block text-xs text-ink-soft mb-1">On hand</label>
+						<input id="recount-onhand-table" type="number" min="0" step="0.5" bind:value={recountValue} class="w-20 px-2 py-1.5 border border-line rounded-md bg-surface text-ink text-sm" />
+					</div>
+					<div class="flex-1 min-w-[8rem]">
+						<label for="recount-note-table" class="block text-xs text-ink-soft mb-1">Note</label>
+						<input id="recount-note-table" type="text" bind:value={recountNote} class="w-full px-2 py-1.5 border border-line rounded-md bg-surface text-ink text-sm" placeholder="Counted the cupboard" />
+					</div>
+				</div>
+				<div class="flex flex-wrap gap-2">
+					<button type="button" on:click={() => recount(managing)} class="px-2.5 py-1.5 rounded-md bg-primary text-on-primary text-xs font-semibold">Save count</button>
+					<button type="button" on:click={() => resetHistory(managing)} class="px-2.5 py-1.5 rounded-md bg-surface text-ink-soft text-xs border border-line-soft">Reset history</button>
+					<button type="button" on:click={() => hide(managing)} class="px-2.5 py-1.5 rounded-md bg-surface text-ink-soft text-xs border border-line-soft">Stop tracking</button>
+					<button type="button" on:click={() => (managingId = null)} class="px-2.5 py-1.5 rounded-md bg-surface text-ink-soft text-xs border border-line-soft">Close</button>
+				</div>
+				<div class="border-t border-line-soft pt-2">
+					<p class="text-xs text-ink-soft mb-1">Usage, last 30 days</p>
+					{#if manageLoading}
+						<p class="text-xs text-ink-soft">Loading…</p>
+					{:else if manageAdjustments.length}
+						<UsageSparkline adjustments={manageAdjustments} unit={managing.unit} />
+					{:else}
+						<p class="text-xs text-ink-soft">No usage recorded yet.</p>
+					{/if}
+				</div>
 			</div>
 		{/if}
 

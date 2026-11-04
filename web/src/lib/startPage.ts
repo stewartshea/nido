@@ -1,14 +1,13 @@
 import { browser } from '$app/environment';
 import { writable } from 'svelte/store';
 
-export type StartPagePath = '/family' | '/home' | '/inventory' | '/reports' | '/dashboard';
+export type StartPagePath = '/family' | '/home' | '/inventory' | '/reports';
 
 export const ALLOWED_START_PAGES: { path: StartPagePath; label: string }[] = [
 	{ path: '/family', label: 'Family' },
 	{ path: '/home', label: 'Household' },
 	{ path: '/inventory', label: 'Inventory' },
 	{ path: '/reports', label: 'Reports' },
-	{ path: '/dashboard', label: 'Compact Dashboard' },
 ];
 
 const STORAGE_KEY = 'nido.startPage';

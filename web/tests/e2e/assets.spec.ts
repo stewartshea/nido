@@ -22,16 +22,16 @@ test('register for the asset suite', async ({ page }) => {
 	await page.fill('#reg-email', testEmail());
 	await page.fill('#reg-password', PASSWORD);
 	await page.getByRole('button', { name: 'Register' }).click();
-	await page.waitForURL('**/dashboard');
+	await page.waitForURL('**/family');
 });
 
 test('assets: empty state renders, and the nav carries the page', async ({ page }) => {
 	await page.goto('/assets');
-	await expect(page.getByRole('heading', { name: 'Home assets' })).toBeVisible();
+	await expect(page.getByRole('heading', { name: 'Household' })).toBeVisible();
 	await expect(page.getByText('No assets yet')).toBeVisible();
 	// Header nav carries it; the bottom bar deliberately does not (a registry
 	// is not a daily loop).
-	await expect(page.getByRole('link', { name: 'Assets' })).toBeVisible();
+	await expect(page.getByRole('link', { name: 'Property Assets' })).toBeVisible();
 });
 
 test('assets: add a car with its identity quartet, then edit it', async ({ page }) => {

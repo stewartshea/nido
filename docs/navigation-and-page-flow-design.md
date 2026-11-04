@@ -1,328 +1,180 @@
-# Navigation, Header, and Top-to-Bottom Page Flow Design
+# Navigation, Header, and Zero-Bloat Page Flow Design
 
-**Status:** Proposed · Ready for Agent Implementation  
+**Status:** Approved Architecture · Ready for Agent Implementation  
 **Target Workspace:** `web/` (SvelteKit + Svelte 4 + TypeScript)  
 **Primary Pillar Order:** `Household` → `Family` → `Inventory` → `Reports` → `Notifications`
 
 ## Steps
 
 - [x] Step 1: Update `web/src/lib/nav.ts` to the 5-pillar model (`Household` → `Family` → `Inventory` → `Reports` → `Notifications`) with `matchPrefixes` and `isNavItemActive()`, keeping existing `lucide-svelte` stroke icons (`Home`, `Users`, `Package`, `ChartLine`, `Bell`).
-- [x] Step 2: Create `web/src/lib/startPage.ts` (`nido.startPage`, defaulting to `'/family'`) and wire root redirect (`web/src/routes/+page.svelte`), header logo link + pin indicator + account menu action (`web/src/routes/+layout.svelte`), and Settings selector (`web/src/lib/components/settings/AccountPanel.svelte`).
-- [x] Step 3: Update `web/src/lib/components/BottomNav.svelte` to use `isNavItemActive()` so all 5 pillars (including `Reports`) are accessible on mobile and `Household` stays active on `/assets`.
-- [x] Step 4: Create `web/src/lib/components/HouseholdNav.svelte` (`[ Residences & Upkeep | Property Assets ]` 2-button segmented switcher) and apply top-to-bottom layout improvements to `web/src/routes/home/+page.svelte` and `web/src/routes/assets/+page.svelte` (plus remove dead baby-tracking fetches and static placeholder cards from `/home`).
-- [x] Step 5: Refactor `web/src/routes/family/+page.svelte` so `/family` cleanly separates `Care & Log` (fast 2-click logging at top with QuickActions, Timers, TodaySummary, and Activities) from `Family Overview` (member cards with Favorite toggle, Upcoming appointments, and Quick reports) via a top segmented toggle and member cards, with 1-click `★` favoriting.
-- [x] Step 6: Apply top-to-bottom layout cleanups to `web/src/routes/inventory/+page.svelte`, `web/src/routes/reports/+page.svelte`, and `web/src/routes/notifications/+page.svelte` (remove top-level `← Back` buttons, standardize `max-w-4xl`, elevate urgent alerts/rules above explanatory text, and wire `?memberId=` on `/reports`).
+- [x] Step 2: Retire `/dashboard` completely:
+  - In `web/src/lib/startPage.ts`, remove `'/dashboard'` from `ALLOWED_START_PAGES` (valid start pages: `'/family'`, `'/home'`, `'/inventory'`, `'/reports'`; default `'/family'`). If `localStorage` has `'nido.startPage' === '/dashboard'`, fall back to `'/family'`.
+  - In `web/src/routes/login/+page.svelte` (`nextPath()`), replace the hardcoded `'/dashboard'` fallback (lines 51 and 59) with `getStartPage()`.
+  - Replace `web/src/routes/dashboard/+page.svelte` with a lightweight redirect to `getStartPage()` (just like `web/src/routes/+page.svelte`).
+- [x] Step 3: Strip all bloat from `web/src/routes/family/+page.svelte` so `/family` is a pure, fast 2-click care & logging page:
+  - Replace the top pill row and `familyView` toggle with a single compact top bar: `<MemberSwitcher>` on the left (1-click `★` favorite + member dropdown) and `Edit {selectedMember.name}` (opens `EditMemberModal`) + `Manage members` (`/settings`) on the right.
+  - Remove the `Family Overview` card grid, the `Quick reports · feeds` card, `<StockGlance />`, `<Trends />`, and `<GrowthChart />` from `/family`.
+  - Render `<MemberActivity>` with **nothing** in its `<slot />` so the vertical stack on `/family` is strictly: `MemberSwitcher` → (conditional `reminders-banner`) → `QuickActions` → `RunningTimers` → `TodaySummary` → (conditional `MedicationsPanel`) → `ActivityHistory`.
+- [x] Step 4: Move `<Trends />` and `<GrowthChart />` to `web/src/routes/reports/+page.svelte` so all charts, rates, and percentiles live in **Reports**.
+- [x] Step 5: Remove the dead bottom placeholder cards (`Property Assets` and `Manuals & Routines`) from `web/src/routes/home/+page.svelte` and keep `<HouseholdNav>`'s `h1` as `Household`.
+- [x] Step 6: Redesign `web/src/lib/components/logging/InventoryPanel.svelte` so "Cards" mode renders real scannable Nido cards (`grid-cols-1 md:grid-cols-2 gap-3`) with prominent tabular quantities, a proportional 30-day cover bar + badge, a grouped `[ −1 | +1 | ⋯ ]` stepper bar, and an **inline** `manage-panel` drawer inside the clicked card (instead of detached at the bottom of the page), while collapsing `Diaper sizes` and `Categories` setup blocks behind compact toolbar buttons.
+- [x] Step 7: Update the Playwright E2E tests (`web/tests/e2e/smoke.spec.ts`, `web/tests/e2e/assets.spec.ts`, `web/tests/e2e/care.spec.ts`) to match the retired `/dashboard` redirect (`**/family`), the lean `/family` layout (`MemberSwitcher` + `Edit`), and the `Household` heading on `/home` & `/assets`.
 
 ---
 
-## 1. Problem Statement & Audit Findings
+## 1. Root Cause Diagnosis (Why Previous Iterations Failed)
 
-1. **Reports (`/reports`) is unreachable on mobile (`<768px`):**
-   - On `main`, `PRIMARY_NAV` has 7 items (`Dashboard`, `Reports`, `Family`, `Home`, `Inventory`, `Assets`, `Notifications`) while `BOTTOM_NAV` filters out `assets` and `reports` to fit a 5-column mobile bar (`grid-cols-5`).
-   - On `/family` (`web/src/routes/family/+page.svelte`, line 604), the **"Quick reports · feeds →"** header is wired to `<button on:click={() => { familyView = 'detail'; }}>` instead of linking to `/reports`. Mobile users have no primary or contextual path to `/reports`.
-
-2. **"Home" vs. "Dashboard" Terminology Collision:**
-   - Users expect **Home** to mean the landing/start page, whereas `/home` in Nido is the **Residences, Property Assets & Maintenance** domain (*"Your residences and what lives at them"*, `"What's due"`).
-   - Renaming the `/home` navigation pillar to **Household** (while keeping `/home` and `/assets` routes intact) removes the collision with the user's pinned start page.
-
-3. **Duplication Between `/dashboard` and `/family` & Buried Logging Controls:**
-   - `/dashboard` duplicates `/family`'s `<MemberSwitcher>`, `<MemberActivity>`, and `<StockGlance>`, followed by a stub "Home" section that links to `/home` and `/assets`.
-   - Meanwhile, on `/family`, `<MemberActivity>` (which holds the 1-tap `QuickActions` log tiles and `RunningTimers`) is buried ~800px down the page below a redundant `Family Overview` member directory card grid, `Upcoming Appointments`, `Quick reports`, and `StockGlance` — and `<GrowthChart>` is trapped at the very bottom below the entire paginated `<ActivityHistory>` list.
-   - Additionally, `web/src/routes/home/+page.svelte` still carries ~160 lines of dead copy-pasted baby-tracking state (`feedingAPI.getAll`, `diaperAPI.getAll`, etc.) that fires 8 unused API requests on mount.
-
-4. **Hardcoded Landing Page (`/` → `/dashboard`):**
-   - `web/src/routes/+page.svelte` hardcodes `goto('/dashboard')`. Users should be able to pin their preferred start page (`nido.startPage`), defaulting to **`/family`**.
+1. **`login/+page.svelte` still routed to `/dashboard`:**
+   - Lines 51 and 59 of `web/src/routes/login/+page.svelte` hardcoded `return '/dashboard'`. Signing in or registering dropped the user onto the old `/dashboard` god-page with its duplicate `Family` section and fake `Home` placeholder boxes (`Property Assets`, `Maintenance`, `Manuals & Routines`).
+2. **`/family` was carrying 4 other pages' content on its back:**
+   - Before `/inventory` and `/reports` existed as first-class navigation tabs, `StockGlance`, `Quick reports · feeds`, `Trends`, and `GrowthChart` were bolted onto `/family` and `/dashboard`.
+   - Now that **Inventory** (`/inventory`) and **Reports** (`/reports`) are primary tabs in both the desktop header and mobile bottom bar, keeping `StockGlance`, `Quick reports`, `Trends`, and `GrowthChart` on `/family` is pure duplication and visual bloat.
+   - Similarly, the giant `Family Overview` member card grid on `/family` only existed to click `Edit` or `Switch member` — which `<MemberSwitcher>` + an inline `Edit` button does in a single 44px bar.
+3. **E2E tests were dictating dead UI:**
+   - The previous agent put dead `Property Assets` and `Manuals & Routines` boxes back onto `/home` and kept the `Family Overview` mode on `/family` just to appease old assertions in `smoke.spec.ts`. **Fix the tests to match the clean UX, never bloat the UI to match legacy tests.**
 
 ---
 
-## 2. Guardrails from `AGENTS.md` (Mandatory)
+## 2. Exact Page-by-Page Specification
 
-- **No `$app/stores`:** Never import `$app/stores` (triggers Svelte 5 runes SSR crash with Rollup `4.63.4`). Always track `currentPath` via `afterNavigate`.
-- **No hardcoded colors:** Use only semantic Tailwind theme classes (`bg-page`, `bg-surface`, `bg-surface2`, `text-ink`, `text-ink-soft`, `bg-primary`, `text-on-primary`, `bg-accent`, `text-on-accent`, `bg-accent-soft`, `border-line`, `border-line-soft`, `bg-danger`, `text-danger-text`, `border-danger-line`, `bg-ok`, `text-ok-text`).
-- **Icon consistency:** Keep the existing `lucide-svelte` stroke icons (`Home`, `Users`, `Package`, `ChartLine`, `Bell`, `Star`, `CalendarClock`, `Wrench`) and `<NidoMark />`. Do not introduce custom or emoji icons.
-- **No wrapped pill rows for single-value selection:** Use native `<select>` for plain enums or compact 2–3 item segmented controls (`h-9` / `h-11`).
-- **Tap targets:** Minimum `h-11` (44px) for primary actions on mobile; `h-9` (36px) for secondary/segmented controls.
+### 2.1 Retiring `/dashboard` (`web/src/routes/dashboard/+page.svelte` & `web/src/routes/login/+page.svelte`)
 
----
+- **`web/src/lib/startPage.ts`:**
+  ```ts
+  export type StartPagePath = '/family' | '/home' | '/inventory' | '/reports';
 
-## 3. Navigation Model (`web/src/lib/nav.ts`)
-
-Both the desktop top header (`+layout.svelte`) and mobile bottom bar (`BottomNav.svelte`) render the exact same 5 pillars in this order:
-
-**`Household` → `Family` → `Inventory` → `Reports` → `Notifications`**
-
-```ts
-import { Users, Package, Home, Bell, ChartLine } from 'lucide-svelte';
-
-export interface NavItem {
-	id: string;
-	label: string;
-	href: string;
-	matchPrefixes: string[];
-	icon: typeof Users;
-}
-
-/**
- * Destinations reachable from both the header and the mobile bottom bar.
- * Order: Household -> Family -> Inventory -> Reports -> Notifications.
- */
-export const PRIMARY_NAV: NavItem[] = [
-	{
-		id: 'home',
-		label: 'Household',
-		href: '/home',
-		matchPrefixes: ['/home', '/assets'],
-		icon: Home,
-	},
-	{
-		id: 'family',
-		label: 'Family',
-		href: '/family',
-		matchPrefixes: ['/family', '/appointments', '/dashboard'],
-		icon: Users,
-	},
-	{
-		id: 'inventory',
-		label: 'Inventory',
-		href: '/inventory',
-		matchPrefixes: ['/inventory'],
-		icon: Package,
-	},
-	{
-		id: 'reports',
-		label: 'Reports',
-		href: '/reports',
-		matchPrefixes: ['/reports'],
-		icon: ChartLine,
-	},
-	{
-		id: 'notifications',
-		label: 'Notifications',
-		href: '/notifications',
-		matchPrefixes: ['/notifications'],
-		icon: Bell,
-	},
-];
-
-export const BOTTOM_NAV: NavItem[] = PRIMARY_NAV;
-
-export function isNavItemActive(item: NavItem, pathname: string): boolean {
-	if (!pathname) return false;
-	return item.matchPrefixes.some((prefix) => pathname.startsWith(prefix));
-}
-```
+  export const ALLOWED_START_PAGES: { path: StartPagePath; label: string }[] = [
+  	{ path: '/family', label: 'Family' },
+  	{ path: '/home', label: 'Household' },
+  	{ path: '/inventory', label: 'Inventory' },
+  	{ path: '/reports', label: 'Reports' },
+  ];
+  ```
+- **`web/src/routes/login/+page.svelte`:**
+  - Import `getStartPage` from `$lib/startPage`.
+  - In `nextPath()`, replace both `return '/dashboard'` fallbacks with `return getStartPage()`.
+- **`web/src/routes/dashboard/+page.svelte`:**
+  - Replace the entire 403-line file with a simple client redirect to `getStartPage()` (identical in shape to `web/src/routes/+page.svelte`) so old bookmarks to `/dashboard` land cleanly on `/family` (or the user's pinned start page).
 
 ---
 
-## 4. Pinned Start Page (`web/src/lib/startPage.ts`)
+### 2.2 The Lean `/family` Page (`web/src/routes/family/+page.svelte`)
 
-Create `web/src/lib/startPage.ts`:
+When a family and its members exist, `/family` has **one unified view** (delete `let familyView` completely).
 
-```ts
-import { browser } from '$app/environment';
-import { writable } from 'svelte/store';
+#### Top-to-Bottom Anatomy of `/family`:
+1. **Row 1 — Compact Member Bar (`flex flex-wrap items-center justify-between gap-3 mb-6`):**
+   - **Left:**
+     - If `families.length > 1`, show the compact family switcher pills.
+     - `<MemberSwitcher>` (`import MemberSwitcher from '$lib/components/logging/MemberSwitcher.svelte'`):
+       ```svelte
+       <MemberSwitcher
+       	members={profiles.map((b) => ({ id: Number(b.id), name: b.name, avatar: b.avatar, stage: b.stage }))}
+       	selectedId={selectedMemberId}
+       	starredId={starredMemberId}
+       	familyId={activeFamilyId}
+       	on:select={(e) => selectMember(e.detail.memberId)}
+       	on:star={(e) => { setStarred(e.detail.memberId); selectMember(e.detail.memberId); }}
+       />
+       ```
+   - **Right:**
+     - If `selectedMember` is present:
+       - If `selectedMember.email`: `<button type="button" on:click={() => inviteMemberEmail(selectedMember.email)} class="h-9 px-3 rounded-md bg-surface border border-line-soft text-xs font-semibold text-accent hover:bg-surface2">Invite</button>`
+       - `<button type="button" data-testid="edit-selected-member" on:click={() => openEditMember(selectedMember)} class="h-9 px-3 rounded-md bg-surface border border-line-soft text-xs font-semibold text-ink-soft hover:text-ink">Edit {selectedMember.name}</button>`
+       - `<a href="/settings" class="h-9 px-3 rounded-md bg-surface border border-line-soft text-xs font-semibold text-ink-soft hover:text-ink inline-flex items-center">Members &rarr;</a>`
+2. **Row 2 — Conditional Overdue Reminders Banner (`#if $overdueReminders.length > 0`):**
+   - Renders `data-testid="reminders-banner"` with link to `/notifications`. Takes 0px when no reminders are overdue.
+3. **Row 3 — `<MemberActivity>` (with NO slot children!):**
+   - Renders:
+     1. `<QuickActions>` (1-tap category tiles + `+ Log activity` button)
+     2. `<RunningTimers>` (0px when no timer is running)
+     3. `<TodaySummary>` (`Today for {selectedMember.name}` — Last Feed, Last Diaper, Last Sleep, Upcoming tile linking to `/appointments`, etc.)
+     4. `<MedicationsPanel>` (only when `activeCategories.includes('medication')`)
+     5. `<ActivityHistory>` (`#activities` — directly below `TodaySummary`!)
 
-export type StartPagePath = '/family' | '/home' | '/inventory' | '/reports' | '/dashboard';
-
-export const ALLOWED_START_PAGES: { path: StartPagePath; label: string }[] = [
-	{ path: '/family', label: 'Family' },
-	{ path: '/home', label: 'Household' },
-	{ path: '/inventory', label: 'Inventory' },
-	{ path: '/reports', label: 'Reports' },
-	{ path: '/dashboard', label: 'Compact Dashboard' },
-];
-
-const STORAGE_KEY = 'nido.startPage';
-export const DEFAULT_START_PAGE: StartPagePath = '/family';
-
-export function isStartPagePath(path: string): path is StartPagePath {
-	return ALLOWED_START_PAGES.some((p) => p.path === path);
-}
-
-export function getStartPage(): StartPagePath {
-	if (!browser) return DEFAULT_START_PAGE;
-	try {
-		const raw = localStorage.getItem(STORAGE_KEY);
-		if (raw && isStartPagePath(raw)) return raw;
-	} catch {
-		// Private browsing fallback
-	}
-	return DEFAULT_START_PAGE;
-}
-
-export const startPageStore = writable<StartPagePath>(getStartPage());
-
-export function setStartPage(path: StartPagePath): void {
-	startPageStore.set(path);
-	if (!browser) return;
-	try {
-		localStorage.setItem(STORAGE_KEY, path);
-	} catch {
-		// Ignore quota/private mode errors
-	}
-}
-```
-
-### Wiring Details
-1. **`web/src/routes/+page.svelte`:** Replace `goto('/dashboard')` with `goto(getStartPage())`.
-2. **`web/src/routes/+layout.svelte`:**
-   - Brand link: `<a href={$authStore.isAuthenticated ? $startPageStore : '/'} class="flex items-center gap-2">`.
-   - Nav items: Use `isNavItemActive(item, currentPath)` for `aria-current="page"` and active classes. Render a `w-1.5 h-1.5 rounded-full bg-accent` indicator dot inside the nav link when `item.href === $startPageStore`.
-   - Account dropdown (`showAccountMenu`): If `isStartPagePath(currentPath)`, show a button to pin `currentPath` as the start page (or a muted `Pinned as start page` indicator if `currentPath === $startPageStore`).
-3. **`web/src/lib/components/settings/AccountPanel.svelte`:**
-   - Add a **Start page** section with a native `<select class="w-full max-w-sm px-3 py-2 border border-line rounded-md">` bound to `$startPageStore` calling `setStartPage(...)` and `notify('Start page updated.')`.
+#### What Must Be Removed from `web/src/routes/family/+page.svelte`:
+- Remove `let familyView`.
+- Remove the `Family Overview` heading and `member-card` grid.
+- Remove the `upcoming-appointments-card` block (`TodaySummary` already includes the `Upcoming` tile linking to `/appointments`).
+- Remove the `Quick reports · feeds` card (`computeFeedReports` moves to `/reports`).
+- Remove `<StockGlance />`, `<Trends />`, and `<GrowthChart />` imports and usage from `/family`.
 
 ---
 
-## 5. Top-to-Bottom Page Layout Specifications
+### 2.3 Consolidating Analytics on `/reports` (`web/src/routes/reports/+page.svelte`)
 
-### Global Page Container Standards
-- Standardize the main page container width across all primary pillars to `max-w-4xl mx-auto` (currently `/inventory`, `/assets`, and `/notifications` use `max-w-3xl` while `/home` and `/dashboard` use `max-w-4xl`, causing horizontal layout shifts when navigating).
-- Remove `<button type="button" on:click={() => history.back()}>&larr; Back</button>` from top-level pillar pages (`inventory/+page.svelte` line 63, `notifications/+page.svelte` line 113, `assets/+page.svelte` line 160).
-
----
-
-### 5.1 Pillar 1: Household (`web/src/routes/home/+page.svelte` & `web/src/routes/assets/+page.svelte`)
-
-Create `web/src/lib/components/HouseholdNav.svelte` to unify `/home` and `/assets` on both desktop and mobile:
-
-```svelte
-<script lang="ts">
-	import { Home } from 'lucide-svelte';
-	export let current: 'home' | 'assets' = 'home';
-</script>
-
-<div class="flex flex-wrap items-center justify-between gap-3 mb-6">
-	<div class="flex items-center gap-3">
-		<span class="w-11 h-11 rounded-full border-2 border-accent text-accent flex items-center justify-center shrink-0" aria-hidden="true">
-			<Home class="w-5 h-5" />
-		</span>
-		<div>
-			<h1 class="text-2xl font-display font-semibold text-ink">Household</h1>
-			<p class="text-ink-soft text-sm">Residences, property assets, and upkeep schedules.</p>
-		</div>
-	</div>
-
-	<div class="inline-flex rounded-lg border border-line-soft bg-surface2 p-1" role="group" aria-label="Household view">
-		<a
-			href="/home"
-			aria-current={current === 'home' ? 'page' : undefined}
-			class="h-9 px-3 rounded-md text-sm font-semibold inline-flex items-center transition-colors {current === 'home' ? 'bg-primary text-on-primary shadow-sm' : 'text-ink-soft hover:text-ink'}"
-		>Residences &amp; Upkeep</a>
-		<a
-			href="/assets"
-			aria-current={current === 'assets' ? 'page' : undefined}
-			class="h-9 px-3 rounded-md text-sm font-semibold inline-flex items-center transition-colors {current === 'assets' ? 'bg-primary text-on-primary shadow-sm' : 'text-ink-soft hover:text-ink'}"
-		>Property Assets</a>
-	</div>
-</div>
-```
-
-#### Top → Bottom Stack on `/home`:
-1. **`<HouseholdNav current="home" />`**
-2. **Urgent Upkeep First:** When `dueItems.length > 0`, render the **`What's due` card (`data-testid="due-card"`) above the `Homes` card (`data-testid="homes-card"`)** so overdue maintenance is visible above the fold. When `dueItems.length === 0`, render `homes-card` first and `due-card` second.
-3. **Residences Card (`data-testid="homes-card"`):** Homes list, `+ Add home`, per-residence asset count links (`/assets?homeId={home.id}`), and `Family-wide` assets.
-4. **Dead Code Removal in `home/+page.svelte`:**
-   - Remove the bottom static placeholder grid (`Property Assets` + unclickable `Manuals & Routines` `<div>`, lines 397–406).
-   - Remove unused baby-tracking API imports and state (`feedingAPI`, `diaperAPI`, `sleepAPI`, `growthAPI`, `milestoneAPI`, `vaccinationAPI`, `moodAPI`, `journalAPI`, `computeFeedReports`, `refreshLists()`, and unused timer variables).
-
-#### Top → Bottom Stack on `/assets`:
-1. **`<HouseholdNav current="assets" />`** (replaces the old `← Back` button + `Home assets` header; container widened from `max-w-3xl` to `max-w-4xl`).
-2. **Scoped Home Filter Banner** (`#if filterHomeId !== null`: `Showing assets at {homeName(filterHomeId)} · Show all`).
-3. **Action Bar:** `+ Add asset` primary button + `Show archived` checkbox.
-4. **Asset Form** (when `showForm` is open) + **Asset Cards List** (`data-testid="asset-{asset.id}"`).
+Move the look-back components that were cluttering `/family` into `/reports`:
+1. Keep the top filter bar (`[ 7d | 30d | 90d | Custom ]` + `For: [ Whole family | Member ]` `<select>`).
+2. Keep the 4 KPI summary cards (`Pumped`, `Formula`, `Bottled milk`, `Inventory used`) and `<DailySeriesChart />` (with `By category` toggles below the chart).
+3. Below the `What got used` table (or when a specific member is selected / for the active child):
+   - Render `<Trends memberId={effectiveMemberId} memberName={effectiveMemberName} categories={effectiveCategories} />`.
+   - If the member is a child (`type === 'child'`) and tracks `growth`, render `<GrowthChart memberId={effectiveMemberId} memberName={effectiveMemberName} />`.
 
 ---
 
-### 5.2 Pillar 2: Family (`web/src/routes/family/+page.svelte`) — Redesigned Clean 2-Mode Architecture
+### 2.4 Cleaning Up `/home` (`Household`) (`web/src/routes/home/+page.svelte` & `HouseholdNav.svelte`)
 
-#### Why the Previous Implementation Was Rejected (Anti-Pattern Warning)
-Do **not** stuff `Family Overview` (member directory cards, family-wide `Upcoming` card, `Quick reports`) inside `<MemberActivity>`'s `<slot />` between `TodaySummary` and `Activities`, and do **not** keep the old horizontal member pill row + bolted-on "Favorite" button. That created a cluttered Franken-page where `Today for {name}` was separated from `Activities` by 1,200px of family-wide overview cards.
-
-#### Core Design Principle
-`/dashboard` was fast because it used `<MemberSwitcher>` (a single compact pill with inline + dropdown `★` favoriting) followed immediately by `<MemberActivity>` (`QuickActions` → `RunningTimers` → `TodaySummary` → `Activities`).
-`/family` must **be** that exact clean, 2-click recording experience by default (`familyView === 'care'`), with a compact 2-option segmented switcher in the top bar to switch to **`Family Overview`** (`familyView === 'overview'`) when the user wants to manage members, resend invites, or view family-wide cards.
-
-#### Required Top Bar on `/family` (When Family & Members Exist):
-Render a single `flex flex-wrap items-center justify-between gap-3 mb-6` top bar:
-1. **Left — `<MemberSwitcher>` (imported from `$lib/components/logging/MemberSwitcher.svelte`):**
-   - Pass `members={profiles.map((b) => ({ id: Number(b.id), name: b.name, avatar: b.avatar, stage: b.stage }))}`, `selectedId={selectedMemberId}`, `starredId={starredMemberId}`, `familyId={activeFamilyId}`.
-   - Wire `on:select={(e) => selectMember(e.detail.memberId)}` and `on:star={(e) => { setStarred(e.detail.memberId); selectMember(e.detail.memberId); }}`.
-   - `MemberSwitcher` already provides:
-     - Inline avatar, name, stage badge, and `★` Star button (`Make {name} the default`) on the main pill.
-     - Dropdown listbox (`aria-label="Switch person"`) where **every** member has their own `★` Star button + name/stage option + `"Opens on {starred.name}"` footer.
-   - If `families.length > 1`, render a compact family selector beside it.
-2. **Right — 2-Option Segmented View Toggle (`role="group" aria-label="Family view"`):**
-   - `Care & Log` (`familyView = 'care'`, **default on load**)
-   - `Family Overview` (`familyView = 'overview'`)
-
-#### Mode A: `familyView === 'care'` (Default — Clean 2-Click Recording)
-Nothing sits between the top bar and `<QuickActions>` except the conditional overdue-reminders banner (`#if $overdueReminders.length > 0`).
-The vertical stack in `Care & Log` mode is:
-1. **Conditional Overdue Reminders Banner** (`data-testid="reminders-banner"`).
-2. **`<MemberActivity>`** (which renders `<QuickActions>` → `<RunningTimers>` → `<TodaySummary>` → `<MedicationsPanel>` → `<slot />` → `<ActivityHistory>`):
-   - Keep `<MemberActivity>`'s `<slot />` **empty** (or only `<Trends>`), and place `<Trends>` and `<GrowthChart>` in a clean section **below** `<MemberActivity>` (or inside the slot *without* any Family Overview cards) so `QuickActions` → `Today for {name}` → `Activities` flows uninterrupted!
-   - Add a `Full reports →` link (`href={selectedMemberId ? `/reports?memberId=${selectedMemberId}` : '/reports'}`) in the header above `<Trends>` / `<GrowthChart>`.
-
-#### Mode B: `familyView === 'overview'` (Secondary — Family Roster & Household Overview)
-When the user clicks **`Family Overview`** in the top segmented bar, render the family-level overview cards cleanly without `<MemberActivity>` duplicated underneath:
-1. **Family Roster (`grid-cols-1 md:grid-cols-2 gap-4 mb-6`):**
-   - Each member card (`data-testid="member-card"`) shows:
-     - `<Avatar>`, Name (with a filled `<Star />` badge if `starredMemberId === Number(baby.id)`), and `Born YYYY-MM-DD` / stage.
-     - Actions: `★` Star toggle button (`on:click={() => setStarred(Number(baby.id))}`), `Invite` (if `baby.email`), `Edit` (`openEditMember(baby)`), and `Log Activity` (`on:click={() => { selectMember(Number(baby.id)); familyView = 'care'; }}`).
-2. **Upcoming Appointments Card (`data-testid="upcoming-appointments-card"`):**
-   - Next 30 days of family-wide booked plans + `See all →` (`href="/appointments"`).
-3. **Quick Reports Card (`feeds`):**
-   - 24h and 30d feed counts/averages + `Full reports →` (`href={selectedMemberId ? `/reports?memberId=${selectedMemberId}` : '/reports'}`).
-4. **Household Stock Glance (`<StockGlance />`):**
-   - At-risk stock items + links to `/inventory` and `/notifications`.
+1. In `web/src/lib/components/HouseholdNav.svelte`, set the heading to `Household` (or `Household` on `/home` and `Property Assets` on `/assets`).
+2. In `web/src/routes/home/+page.svelte`, delete the bottom 2-column placeholder grid (`Property Assets` and `Manuals & Routines`, lines 269–278).
 
 ---
 
-### 5.3 Pillar 3: Inventory (`web/src/routes/inventory/+page.svelte`)
+### 2.5 Redesigning Inventory Cards & Panel (`web/src/lib/components/logging/InventoryPanel.svelte`)
 
-#### Top → Bottom Stack on `/inventory`:
-1. **Row 1 — Header (`max-w-4xl mx-auto`):**
-   - Remove the `← Back` button.
-   - Title `h1` **Inventory** + subtitle on the left; cross-links on the right:
-     - `<a href="/reports" class="text-sm font-semibold text-accent hover:underline">Usage reports &rarr;</a>`
-     - `<a href="/notifications" class="text-sm font-semibold text-accent hover:underline">Notification rules &rarr;</a>`
-2. **Row 2 — Firing Alerts First (`#if alerts.length > 0`, `data-testid="page-alerts"`):**
-   - Placed **above** `<InventoryStats {items} {alerts} />` so low-stock warnings appear immediately at the top.
-3. **Row 3 — `<InventoryStats {items} {alerts} />`**
-4. **Row 4 — `<InventoryPanel {members} />`**
+#### Audit of Current Friction in `InventoryPanel.svelte`
+1. **Setup sections push items below the fold (lines 623–774):** The `Diaper sizes` weight-band preset checklist (`data-testid="size-presets"`) and the `Categories` chip manager (`data-testid="manage-categories"`) sit permanently expanded above the stock list.
+2. **"Cards" mode is not cards (lines 845–896):** It renders a flat `divide-y` `<ul>` where the two most important numbers (`item.quantity` and `item.daysOfCover`) are buried inside a 12px `text-xs text-ink-soft` run-on sentence.
+3. **Detached Manage Drawer (lines 898–930):** Clicking `⋯` (`data-testid="manage-item"`) opens `data-testid="manage-panel"` at the very bottom of the entire component (outside the `{#each}` loop!) rather than on the item that was clicked.
+
+#### Required Redesign in `InventoryPanel.svelte`
+1. **Top Toolbar (Collapse Setup Sections by Default):**
+   - Introduce `let showDiaperSizes = false;` alongside existing `let showCategories = false;`.
+   - In the top header bar of `InventoryPanel.svelte`, provide compact secondary toggle buttons:
+     - `Diaper sizes` (`on:click={() => (showDiaperSizes = !showDiaperSizes)}`)
+     - `Categories` (`data-testid="manage-categories"`, `on:click={() => (showCategories = !showCategories)}`)
+     - `[ Cards | Table ]` segmented toggle + `+ Add item` primary button (`on:click={openAdd}`).
+   - Render the Diaper Sizes panel only when `showDiaperSizes` is true, and the Categories panel only when `showCategories` is true.
+2. **True Scannable Inventory Cards (`viewMode === 'cards'`):**
+   - Group by category (`#each grouped() as [cat, catItems]`), and render `catItems` inside `<div class="grid grid-cols-1 md:grid-cols-2 gap-3">`.
+   - Each card uses the standard Nido card shell with a semantic left-border accent indicating health:
+     - `border-l-4 border-danger` if `item.alerting || (item.daysOfCover !== null && item.daysOfCover <= 3)`
+     - `border-l-4 border-accent` if `item.daysOfCover !== null && item.daysOfCover <= 7`
+     - `border-l-4 border-ok-line` if `item.daysOfCover !== null && item.daysOfCover > 7`
+     - `border-l-4 border-line` if `item.daysOfCover === null`
+   - **Card Top Row:**
+     - Left: `<p class="font-display font-semibold text-base text-ink">` with `{item.name}` and, if `item.variant`, a `<span class="ml-1.5 text-xs font-sans font-semibold bg-surface2 text-ink-soft border border-line-soft px-2 py-0.5 rounded-full">{item.variant}</span>`. Below the title, show `needs attention` (`#if item.alerting`) or drift warning (`#if item.drift`).
+     - Right: Prominent tabular quantity display:
+       ```svelte
+       <div class="text-right shrink-0">
+       	<p class="text-xl font-display font-semibold tabular-nums text-ink leading-tight">{item.quantity}</p>
+       	<p class="text-xs text-ink-soft leading-tight">{item.unit}</p>
+       </div>
+       ```
+   - **Card Middle Row (Proportional 30-Day Cover Bar + Cover Pill):**
+     - Horizontal progress track (`h-1.5 flex-1 rounded-full bg-surface2 overflow-hidden`) with fill width `Math.min(100, Math.max(6, Math.round(((item.daysOfCover ?? 0) / 30) * 100)))%` when `item.daysOfCover !== null`.
+     - Cover badge (`text-xs font-semibold px-2 py-0.5 rounded-full tabular-nums`): shows `{cover(item)}` (`~14d left`, `runs out today`, or `no forecast yet`).
+   - **Card Bottom Row (Rule Summary + Grouped Stepper Controls):**
+     - Left: Concise rule & expiry metadata (`uses {linkRule(item)}`, `expires ...`).
+     - Right: Tactile grouped stepper (`inline-flex rounded-lg border border-line-soft bg-surface2 overflow-hidden shrink-0`):
+       - `−1` button (`data-testid="record-use"`, `aria-label="Record using one {item.name}"`, `h-8 px-2.5 text-xs font-semibold tabular-nums hover:bg-line-soft border-r border-line-soft`)
+       - `+1` button (`aria-label="Add one {item.name}"`, `h-8 px-2.5 text-xs font-semibold text-accent tabular-nums hover:bg-line-soft border-r border-line-soft`)
+       - `⋯` / `Recount` button (`data-testid="manage-item"`, `aria-label="Manage {item.name}"`, `h-8 px-2.5 text-xs font-semibold text-ink-soft hover:text-ink hover:bg-line-soft`)
+   - **Inline Manage Drawer (`#if managingId === item.id`):**
+     - Render `data-testid="manage-panel"` **directly inside the card** (and in Table mode, right below the table or active row) so recounting, viewing `<UsageSparkline />`, resetting history, or stopping tracking happens in-place on the item you clicked!
 
 ---
 
-### 5.4 Pillar 4: Reports (`web/src/routes/reports/+page.svelte`)
+### 2.6 Updating E2E Tests (`web/tests/e2e/`)
 
-#### Top → Bottom Stack on `/reports`:
-1. **Row 1 — Header & Filter Bar (`max-w-4xl mx-auto`):**
-   - Title `h1` **Reports** + subtitle.
-   - Range segmented control (`[ 7d | 30d | 90d | Custom ]`, `h-9`) + `For` member `<select>`.
-   - **Deep-link support:** In `onMount`, read `new URLSearchParams(window.location.search).get('memberId')`; if present and matching a trackable member, set `memberId = Number(param)` before calling `loadReport()`.
-2. **Row 2 — 4 Summary KPI Cards (`grid-cols-2 sm:grid-cols-4 gap-2 mb-4`):**
-   - `Pumped`, `Formula`, `Bottled milk`, `Inventory used`.
-3. **Row 3 — Daily Series Chart Card:**
-   - Top of card: Primary 4 series toggle pills (`Pumped`, `Formula`, `Bottled milk`, `Inventory used`).
-   - Middle: `<DailySeriesChart />` + axis note.
-   - Bottom of card (below chart): `By category` inventory line toggles (`report.categories`), acting as an interactive legend so two wrapped rows of chips don't push the chart down on mobile screens.
-4. **Row 4 — Selected Day Detail Card (`#if selected`, `data-testid="day-detail"`)**
-5. **Row 5 — "What got used" Table** (with header link `<a href="/inventory">Manage inventory &rarr;</a>`).
-
----
-
-### 5.5 Pillar 5: Notifications (`web/src/routes/notifications/+page.svelte`)
-
-#### Top → Bottom Stack on `/notifications`:
-1. **Row 1 — Header (`max-w-4xl mx-auto`):**
-   - Remove the `← Back` button.
-   - Title `h1` **Notifications** + concise subtitle.
-2. **Row 2 — "Needs attention now" Card (`data-testid="firing-list"` / `data-testid="all-quiet"`):**
-   - Immediately shows firing activity reminders, inventory alerts, and due medications (with inline `Mark taken` action).
-3. **Row 3 — "Tracking rules" Card (`<ActivityRules on:changed={refresh} />`):**
-   - Elevated above the Email explanation card so rule management is near the top of the page.
-4. **Row 4 — "Inventory rules" Card (`<InventoryRules on:changed={refresh} />`):**
-   - Directly below Tracking rules.
-5. **Row 5 — "Email" Digest & Schedule Card (`data-testid="send-digest"`, `data-testid="schedule-note"`):**
-   - Moved to the bottom of the page so its 8-line explanatory paragraph and server schedule status don't push rule editors below the fold.
+Update the Playwright E2E tests so they test the new, clean architecture:
+1. **`web/tests/e2e/assets.spec.ts`:**
+   - Line 25: Change `await page.waitForURL('**/dashboard')` to `await page.waitForURL('**/family')`.
+   - Line 30: Match the heading in `HouseholdNav.svelte`.
+2. **`web/tests/e2e/care.spec.ts`:**
+   - Line 30: Change `await page.waitForURL('**/dashboard')` to `await page.waitForURL('**/family')`.
+3. **`web/tests/e2e/smoke.spec.ts`:**
+   - Test 1 (`register lands on the family page...`): `await page.waitForURL('**/family')`, assert `Switch person` (`MemberSwitcher`) and `Activities` heading are visible.
+   - Test 2 (`family page...`): Assert `Switch person`, `Quick Actions`, and no `reminders-banner`.
+   - Test 4 (`family page: MemberSwitcher switches and stars a member`): Open `Switch person`, select `CHILD`, verify `Today for ${CHILD}` renders.
+   - Test 5 (`family page: EditMemberModal renames a member`): Click `Edit ${CHILD}` (`getByTestId('edit-selected-member')`), rename to `CHILD_RENAMED`, verify toast and updated name in `Switch person` / `Today for ${CHILD_RENAMED}`.
+   - Test 8 (`family and home render the family data without the setup empty states`): Check `/family` and `/home` (`Homes` heading, `What's due` heading) without checking for the deleted `Property Assets` placeholder card.

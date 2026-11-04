@@ -5,6 +5,7 @@
 	import { tokenExpired } from '$lib/api/client';
 	import { authAPI } from '$lib/api/family';
 	import { authStore, authActions } from '$lib/stores/authStore';
+	import { getStartPage } from '$lib/startPage';
 	import { AlertCircle, Check } from 'lucide-svelte';
 	import NidoMark from '$lib/components/NidoMark.svelte';
 
@@ -48,7 +49,7 @@
 	}
 
 	function nextPath(): string {
-		if (!browser) return '/dashboard';
+		if (!browser) return getStartPage();
 		const direct = safeNext(new URLSearchParams(window.location.search).get('next'));
 		if (direct) return direct;
 		const stashed = safeNext(localStorage.getItem(PENDING_NEXT_KEY));
@@ -56,7 +57,7 @@
 			localStorage.removeItem(PENDING_NEXT_KEY);
 			return stashed;
 		}
-		return '/dashboard';
+		return getStartPage();
 	}
 
 	async function handleLogin(event: SubmitEvent) {
