@@ -15,6 +15,7 @@
 	import { loadReminders, overdueReminders } from '$lib/stores/reminders';
 	import MemberActivity from '$lib/components/logging/MemberActivity.svelte';
 	import MemberSwitcher from '$lib/components/logging/MemberSwitcher.svelte';
+	import GrowthChart from '$lib/components/logging/GrowthChart.svelte';
 	import LogDrawer from '$lib/components/logging/LogDrawer.svelte';
 	import { reminderNoun, reminderPhrase } from '$lib/shared';
 	import { zonedOptions } from '$lib/logging/format';
@@ -524,7 +525,13 @@
 			on:pin={(e) => setQuickLink(e.detail.kind, true)}
 			on:unpin={(e) => setQuickLink(e.detail.kind, false)}
 			on:saveTiles={(e) => saveDashboardTiles(e.detail.tiles)}
-		/>
+		>
+			{#if selectedMember && selectedMember.type === 'child' && activeCategories.includes('growth')}
+				<div class="mt-6">
+					<GrowthChart memberId={Number(selectedMember.id)} memberName={selectedMember.name} />
+				</div>
+			{/if}
+		</MemberActivity>
 	{/if}
 
 	{#if editingMember}

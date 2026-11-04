@@ -53,10 +53,18 @@ export interface CategorySeries {
 	daily: Record<string, number>;
 }
 
+export interface FormulaSeries {
+	itemId: number;
+	name: string;
+	unit: string;
+	daily: Record<string, number>;
+}
+
 export interface DailyReport {
 	days: DailyBucket[];
 	items: ItemSeries[];
 	categories: CategorySeries[];
+	formulas: FormulaSeries[];
 }
 
 export interface ItemMeta {
@@ -90,6 +98,8 @@ export function buildDailyReport(params: {
 		buckets.set(date, { date, pumpedOz: 0, formulaOz: 0, bottleOz: 0, bottleFedOz: 0, used: 0, corrected: 0 });
 	}
 
+	const formulaDaily = new Map<number, Map<string, number>>();
+
 	// One timestamp formatter for both tables; an unparseable instant is
 	// dropped rather than bucketed into "today" by accident.
 	const dayOf = (value: unknown): string | null => {
@@ -111,6 +121,13 @@ export function buildDailyReport(params: {
 		} else if (f?.type === 'formula') {
 			bucket.formulaOz += oz;
 			bucket.bottleFedOz += oz;
+
+			const fid = Number(f?.formula_item_id);
+			if (Number.isFinite(fid) && fid > 0) {
+				let d = formulaDaily.get(fid);
+				if (!d) { d = new Map(); formulaDaily.set(fid, d); }
+				d.set(day, (d.get(day) ?? 0) + oz);
+			}
 		} else if (f?.type === 'bottle') {
 			bucket.bottleOz += oz;
 			bucket.bottleFedOz += oz;
@@ -196,5 +213,17 @@ export function buildDailyReport(params: {
 	}
 	categoryList.sort((a, b) => totalOf(b.daily) - totalOf(a.daily) || a.category.localeCompare(b.category));
 
-	return { days: dates.map((d) => buckets.get(d)!), items: itemList, categories: categoryList };
+	const formulaList: FormulaSeries[] = [];
+	for (const [itemId, daily] of formulaDaily) {
+		const meta = items.get(itemId);
+		formulaList.push({
+			itemId,
+			name: meta?.name ?? `Formula ${itemId}`,
+			unit: 'oz',
+			daily: toSeries(daily),
+		});
+	}
+	formulaList.sort((a, b) => totalOf(b.daily) - totalOf(a.daily) || a.name.localeCompare(b.name));
+
+	return { days: dates.map((d) => buckets.get(d)!), items: itemList, categories: categoryList, formulas: formulaList };
 }

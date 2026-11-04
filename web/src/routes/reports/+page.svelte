@@ -34,6 +34,7 @@
 	// Category lines start off: a busy household should not open onto six
 	// lines it did not ask for. Turned on from the "By category" row.
 	let enabledCategories: Record<string, boolean> = {};
+	let enabledFormulas: Record<number, boolean> = {};
 
 	const RANGES = [7, 30, 90];
 	const SERIES_LABELS: [string, string][] = [
@@ -249,41 +250,63 @@
 		{/if}
 
 		<div class="bg-surface rounded-xl shadow-sm border border-line-soft p-4 mb-4">
-			<div class="flex flex-wrap items-center gap-2 mb-3" role="group" aria-label="Series">
-				{#each SERIES_LABELS as [key, label] (key)}
-					<button
-						type="button"
-						aria-pressed={enabled[key]}
-						class="h-8 px-3 rounded-full text-xs font-semibold border {enabled[key] ? 'bg-accent-soft border-accent text-ink' : 'bg-surface2 border-line-soft text-ink-soft'}"
-						on:click={() => (enabled = { ...enabled, [key]: !enabled[key] })}
-					>{label}</button>
-				{/each}
+			<div class="space-y-3 mb-3">
+				<div class="flex flex-wrap items-center gap-2" role="group" aria-label="Series">
+					{#each SERIES_LABELS as [key, label] (key)}
+						<button
+							type="button"
+							aria-pressed={enabled[key]}
+							class="h-8 px-3 rounded-full text-xs font-semibold border {enabled[key] ? 'bg-accent-soft border-accent text-ink' : 'bg-surface2 border-line-soft text-ink-soft'}"
+							on:click={() => (enabled = { ...enabled, [key]: !enabled[key] })}
+						>{label}</button>
+					{/each}
+				</div>
+
+				{#if report?.formulas && report.formulas.length > 1}
+					<div class="flex flex-wrap items-center gap-2 pt-2 border-t border-line-soft" role="group" aria-label="Formula types">
+						<span class="text-xs font-semibold text-ink-soft uppercase tracking-wider">Formula</span>
+						<button
+							type="button"
+							aria-pressed={enabled.formulaOz}
+							class="h-8 px-3 rounded-full text-xs font-semibold border {enabled.formulaOz ? 'bg-accent-soft border-accent text-ink' : 'bg-surface2 border-line-soft text-ink-soft'}"
+							on:click={() => (enabled = { ...enabled, formulaOz: !enabled.formulaOz })}
+						>All combined</button>
+						{#each report.formulas as f (f.itemId)}
+							<button
+								type="button"
+								aria-pressed={!!enabledFormulas[f.itemId]}
+								class="h-8 px-3 rounded-full text-xs font-semibold border {enabledFormulas[f.itemId] ? 'bg-surface border-line text-ink' : 'bg-surface2 border-line-soft text-ink-soft'}"
+								on:click={() => (enabledFormulas = { ...enabledFormulas, [f.itemId]: !enabledFormulas[f.itemId] })}
+							>{f.name}</button>
+						{/each}
+					</div>
+				{/if}
+
+				{#if report && report.categories.length}
+					<div class="flex flex-wrap items-center gap-2 pt-2 border-t border-line-soft" role="group" aria-label="Categories">
+						<span class="text-xs font-semibold text-ink-soft uppercase tracking-wider">By category</span>
+						{#each report.categories as cat (cat.category)}
+							<button
+								type="button"
+								aria-pressed={!!enabledCategories[cat.category]}
+								class="h-8 px-3 rounded-full text-xs font-semibold border inline-flex items-center gap-1.5 {enabledCategories[cat.category] ? 'bg-surface border-line text-ink' : 'bg-surface2 border-line-soft text-ink-soft'}"
+								on:click={() => (enabledCategories = { ...enabledCategories, [cat.category]: !enabledCategories[cat.category] })}
+							>
+								<span class="w-2 h-2 rounded-full shrink-0" style="background: rgb(var({categoryColorVar(report.categories, cat.category)}))"></span>
+								{cat.category}
+							</button>
+						{/each}
+					</div>
+				{/if}
 			</div>
 
 			{#if loading}
 				<p class="text-sm text-ink-soft py-8">Loading…</p>
 			{:else if report && report.days.some((d) => d.pumpedOz || d.formulaOz || d.bottleOz || d.used)}
-				<DailySeriesChart {report} {enabled} {enabledCategories} onSelectDay={(date) => (selectedDate = date)} />
-				<p class="text-xs text-ink-soft mt-2 mb-3">Volume is on the left axis (oz); inventory units on the right. Dashed is inventory.</p>
+				<DailySeriesChart {report} {enabled} {enabledCategories} {enabledFormulas} onSelectDay={(date) => (selectedDate = date)} />
+				<p class="text-xs text-ink-soft mt-2 mb-1">Volume is on the left axis (oz); inventory units on the right. Dashed is inventory.</p>
 			{:else if report}
 				<p class="text-sm text-ink-soft py-8">Nothing recorded in this window yet.</p>
-			{/if}
-
-			{#if report && report.categories.length}
-				<div class="flex flex-wrap items-center gap-2 pt-3 border-t border-line-soft" role="group" aria-label="Categories">
-					<span class="text-xs font-semibold text-ink-soft uppercase tracking-wider">By category</span>
-					{#each report.categories as cat (cat.category)}
-						<button
-							type="button"
-							aria-pressed={!!enabledCategories[cat.category]}
-							class="h-8 px-3 rounded-full text-xs font-semibold border inline-flex items-center gap-1.5 {enabledCategories[cat.category] ? 'bg-surface border-line text-ink' : 'bg-surface2 border-line-soft text-ink-soft'}"
-							on:click={() => (enabledCategories = { ...enabledCategories, [cat.category]: !enabledCategories[cat.category] })}
-						>
-							<span class="w-2 h-2 rounded-full shrink-0" style="background: rgb(var({categoryColorVar(report.categories, cat.category)}))"></span>
-							{cat.category}
-						</button>
-					{/each}
-				</div>
 			{/if}
 		</div>
 

@@ -552,10 +552,18 @@ export interface ReportCategorySeries {
 	daily: Record<string, number>;
 }
 
+export interface ReportFormulaSeries {
+	itemId: number;
+	name: string;
+	unit: string;
+	daily: Record<string, number>;
+}
+
 export interface DailyReport {
 	days: ReportDay[];
 	items: ReportItemSeries[];
 	categories: ReportCategorySeries[];
+	formulas?: ReportFormulaSeries[];
 	timezone: string;
 	windowDays: number;
 	from: string;

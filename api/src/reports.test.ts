@@ -119,6 +119,37 @@ describe('buildDailyReport buckets a family clock, not the server clock', () => 
 		expect(report.days[0]!.pumpedOz).toBe(0);
 		expect(report.days[0]!.used).toBe(0);
 	});
+
+	it('breaks formula down per formula item id and provides individual series', () => {
+		const report = buildDailyReport({
+			dates: ['2026-11-01', '2026-11-02'],
+			timeZone: 'UTC',
+			feedings: [
+				{ type: 'formula', amount: 4, amount_unit: 'oz', formula_item_id: 10, start_time: '2026-11-01T10:00:00.000Z' },
+				{ type: 'formula', amount: 6, amount_unit: 'oz', formula_item_id: 20, start_time: '2026-11-01T14:00:00.000Z' },
+				{ type: 'formula', amount: 5, amount_unit: 'oz', formula_item_id: 10, start_time: '2026-11-02T10:00:00.000Z' },
+			],
+			adjustments: [],
+			items: items([
+				[10, { name: 'Similac 360', category: 'formula', unit: 'oz' }],
+				[20, { name: 'Enfamil NeuroPro', category: 'formula', unit: 'oz' }],
+			]),
+		});
+
+		expect(report.days[0]!.formulaOz).toBe(10);
+		expect(report.days[1]!.formulaOz).toBe(5);
+		expect(report.formulas).toHaveLength(2);
+		expect(report.formulas.find((f) => f.itemId === 10)).toMatchObject({
+			itemId: 10,
+			name: 'Similac 360',
+			daily: { '2026-11-01': 4, '2026-11-02': 5 },
+		});
+		expect(report.formulas.find((f) => f.itemId === 20)).toMatchObject({
+			itemId: 20,
+			name: 'Enfamil NeuroPro',
+			daily: { '2026-11-01': 6 },
+		});
+	});
 });
 
 const DAY = 86_400_000;

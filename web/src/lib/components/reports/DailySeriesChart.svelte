@@ -23,6 +23,8 @@
 	export let enabled: Record<string, boolean> = { pumpedOz: true, formulaOz: true, used: true };
 	/** Inventory categories to overlay, by category name. Off unless asked for. */
 	export let enabledCategories: Record<string, boolean> = {};
+	/** Individual formula items to overlay, by formula item id. */
+	export let enabledFormulas: Record<number, boolean> = {};
 	/** Fired with the tapped day's date, or null when the tap missed a point. */
 	export let onSelectDay: ((date: string | null) => void) | undefined = undefined;
 
@@ -71,6 +73,26 @@
 		spanGaps: true,
 	}));
 
+	// Individual formula type lines (on the volume/oz axis).
+	$: formulaDatasets = (report.formulas ?? [])
+		.filter((f) => enabledFormulas[f.itemId])
+		.map((f, i) => {
+			const colors = ['--c-accent', '--c-ok-text', '--c-primary', '--c-danger-text', '--c-ink-soft'];
+			const color = colors[i % colors.length] ?? '--c-accent';
+			return {
+				label: `${f.name} (oz)`,
+				data: report.days.map((d) => f.daily[d.date] ?? 0),
+				borderColor: themeColor(color, '#666'),
+				backgroundColor: themeColor(color, '#666'),
+				yAxisID: 'y' as const,
+				borderWidth: 2,
+				pointRadius: pointSize(),
+				pointHoverRadius: 5,
+				tension: 0.25,
+				spanGaps: true,
+			};
+		});
+
 	// One line per category, on the inventory (units) axis beside the totals.
 	// A day a category does not appear in is a real zero, not a gap, because
 	// usage is a per-day count.
@@ -91,7 +113,7 @@
 
 	$: chartData = {
 		labels: report.days.map((d) => shortDate(d.date)),
-		datasets: [...baseDatasets, ...categoryDatasets],
+		datasets: [...baseDatasets, ...formulaDatasets, ...categoryDatasets],
 	};
 
 	$: chartOptions = {
