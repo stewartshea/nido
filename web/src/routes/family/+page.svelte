@@ -15,6 +15,8 @@
 	import { loadReminders, overdueReminders } from '$lib/stores/reminders';
 	import MemberActivity from '$lib/components/logging/MemberActivity.svelte';
 	import MemberSwitcher from '$lib/components/logging/MemberSwitcher.svelte';
+	import Trends from '$lib/components/logging/Trends.svelte';
+	import StockGlance from '$lib/components/logging/StockGlance.svelte';
 	import GrowthChart from '$lib/components/logging/GrowthChart.svelte';
 	import LogDrawer from '$lib/components/logging/LogDrawer.svelte';
 	import { reminderNoun, reminderPhrase } from '$lib/shared';
@@ -526,12 +528,24 @@
 			on:unpin={(e) => setQuickLink(e.detail.kind, false)}
 			on:saveTiles={(e) => saveDashboardTiles(e.detail.tiles)}
 		>
-			{#if selectedMember && selectedMember.type === 'child' && activeCategories.includes('growth')}
+			<!-- Rates over the last week, next to the last-seen tiles: the
+			     tiles say "how long ago", this says "how often". -->
+			{#if selectedMember}
 				<div class="mt-6">
-					<GrowthChart memberId={Number(selectedMember.id)} memberName={selectedMember.name} />
+					<Trends memberId={Number(selectedMember.id)} memberName={selectedMember.name} categories={activeCategories} />
 				</div>
 			{/if}
+
+			<div class="mt-6">
+				<StockGlance />
+			</div>
 		</MemberActivity>
+
+		{#if selectedMember && selectedMember.type === 'child' && activeCategories.includes('growth')}
+			<div class="mt-6">
+				<GrowthChart memberId={Number(selectedMember.id)} memberName={selectedMember.name} />
+			</div>
+		{/if}
 	{/if}
 
 	{#if editingMember}
