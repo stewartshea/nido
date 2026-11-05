@@ -34,6 +34,18 @@ spec:
           name: nido-preview-api
           port: 3000
           weight: 1
+    # MCP agent tool server (issue #83): same treatment as /api — straight to
+    # the api Service, so a preview exercises the path production uses.
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /mcp
+      backendRefs:
+        - group: ""
+          kind: Service
+          name: nido-preview-api
+          port: 3000
+          weight: 1
     - matches:
         - path:
             type: PathPrefix
