@@ -6,6 +6,7 @@
 		emptyBreastTimer, toggleSide, timerHasTime, timerIsRunning, sideTotals,
 		loadBreastTimer, saveBreastTimer, clearBreastTimer, notifyTimersChanged, type BreastTimerState, type Side,
 	} from '$lib/logging/timers';
+	import { holdWakeLock, releaseWakeLock, WAKE_LOCK_MAX_MS } from '$lib/logging/wakeLock';
 	import { buildTimerFeed, type TimerFeedPayload } from '$lib/breast';
 	import { formatElapsed } from '$lib/logging/format';
 
@@ -46,6 +47,14 @@
 	$: rightRunning = state.rightStartedAt !== null;
 	$: if (browser) { if (running) startTick(); else stopTick(); }
 
+	// A running timer is the one thing that must outlive the screen locking.
+	// Ref-counted with the "In progress" strip, which is mounted behind the
+	// sheet and holds the same lock while a timer is parked. Bounded, so a
+	// forgotten timer does not keep the display on all day.
+	const wakeHolder = {};
+	$: keepAwake = running && totals.totalMs < WAKE_LOCK_MAX_MS;
+	$: if (browser) { if (keepAwake) holdWakeLock(wakeHolder); else releaseWakeLock(wakeHolder); }
+
 	function startTick() {
 		if (tick) return;
 		tick = setInterval(() => { now = Date.now(); }, 1000);
@@ -78,8 +87,19 @@
 		reset();
 	}
 
+	/**
+	 * iOS freezes a backgrounded page and restores it from the back/forward
+	 * cache without remounting. The interval that drives the clock does not
+	 * catch up on its own, so the elapsed time can read stale (or look like it
+	 * went backwards). Re-read the wall clock on every return path, and flush
+	 * the state one last time as the page is hidden.
+	 */
 	function resync() {
-		if (document.visibilityState === 'visible') now = Date.now();
+		if (document.visibilityState !== 'visible') {
+			saveBreastTimer(localStorage, storageKey, state);
+			return;
+		}
+		now = Date.now();
 	}
 
 	onMount(() => {
@@ -90,10 +110,19 @@
 		}
 	});
 
-	if (browser) document.addEventListener('visibilitychange', resync);
+	if (browser) {
+		document.addEventListener('visibilitychange', resync);
+		window.addEventListener('pageshow', resync);
+		window.addEventListener('focus', resync);
+	}
 	onDestroy(() => {
 		stopTick();
-		if (browser) document.removeEventListener('visibilitychange', resync);
+		releaseWakeLock(wakeHolder);
+		if (browser) {
+			document.removeEventListener('visibilitychange', resync);
+			window.removeEventListener('pageshow', resync);
+			window.removeEventListener('focus', resync);
+		}
 	});
 </script>
 

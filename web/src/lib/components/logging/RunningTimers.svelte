@@ -4,6 +4,7 @@
 	import { ChevronRight, Milk, Moon } from 'lucide-svelte';
 	import { formatElapsed } from '$lib/logging/format';
 	import { storedTimers, TIMERS_CHANGED_EVENT, type StoredTimer, type TimerKind } from '$lib/logging/timers';
+	import { holdWakeLock, releaseWakeLock, WAKE_LOCK_MAX_MS } from '$lib/logging/wakeLock';
 
 	export let memberId: number | null = null;
 
@@ -14,6 +15,7 @@
 	let timers: StoredTimer[] = [];
 	let lastMember: number | null | undefined;
 	let tick: ReturnType<typeof setInterval> | null = null;
+	let anyRunning = false;
 
 	function refresh() {
 		timers = browser ? storedTimers(localStorage, memberId, Date.now()) : [];
@@ -40,16 +42,32 @@
 	// Tick only while something is parked, so an idle page does no work.
 	$: if (browser) { if (timers.length > 0) startTick(); else stopTick(); }
 
+	// This strip stays mounted while the log sheet is open or closed, so it is
+	// the one place that can keep the screen awake for a parked timer. iOS
+	// locking the screen is what suspends (and can reload) the PWA mid-feed.
+	// Sleep is excluded — it runs for hours, and the phone must be allowed to
+	// sleep — and the hold is bounded for the same reason (WAKE_LOCK_MAX_MS).
+	const wakeHolder = {};
+	$: keepAwake = timers.some((t) => t.running && t.kind !== 'sleep' && t.elapsedMs < WAKE_LOCK_MAX_MS);
+	$: if (browser) { if (keepAwake) holdWakeLock(wakeHolder); else releaseWakeLock(wakeHolder); }
+
 	onMount(() => {
 		refresh();
 		document.addEventListener('visibilitychange', onVisibilityChange);
 		// A timer started inside the sheet changes storage, not this component,
 		// so the sheet tells the page when there is something new to show.
 		window.addEventListener(TIMERS_CHANGED_EVENT, refresh);
+		// `pageshow` covers a bfcache restore that never remounts; `focus`
+		// covers returning to the app without a visibilitychange on iOS.
+		window.addEventListener('pageshow', refresh);
+		window.addEventListener('focus', refresh);
 		return () => {
 			stopTick();
+			releaseWakeLock(wakeHolder);
 			document.removeEventListener('visibilitychange', onVisibilityChange);
 			window.removeEventListener(TIMERS_CHANGED_EVENT, refresh);
+			window.removeEventListener('pageshow', refresh);
+			window.removeEventListener('focus', refresh);
 		};
 	});
 </script>

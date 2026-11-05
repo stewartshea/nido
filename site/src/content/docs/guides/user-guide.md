@@ -52,7 +52,9 @@ Pick **breast**, **bottle**, or **formula**.
 - A **breast** session has a timer. Start it, do the other thing, come back
   and stop it. Side is tracked per breast. While a timer is still running, an
   **In progress** strip on the page keeps the elapsed time and takes you
-  straight back to it.
+  straight back to it. The screen is kept awake while a timer runs, and the
+  timer is stored on the device, so locking the phone or reloading the app
+  does not lose the session.
 - A **bottle** or **formula** takes an amount and unit.
 
 A formula bottle picks its can from **Inventory**, not a catalog. Add what you
