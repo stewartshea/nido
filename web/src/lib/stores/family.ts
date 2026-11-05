@@ -73,10 +73,12 @@ function currentIsTrackable(): boolean {
  * its Promise.all of refreshes only on the paths that fell through to the
  * end of the try block, and skipped them on every early return and error.
  *
- * `preferred` is dashboard's starred-member hook: it is invoked right after
- * the active family is resolved (so a per-family localStorage key can be
- * read) and its answer wins over the saved default. The other pages don't
- * pass one.
+ * The member order is: the one last selected on this device, then `preferred`
+ * (dashboard's starred-member hook, invoked right after the active family is
+ * resolved so a per-family localStorage key can be read), then the saved
+ * default, then whoever sorts first. Resuming the last selection matters for
+ * timers: they are stored per member, so a reload that lands on someone else
+ * makes a running timer look lost.
  */
 async function loadFamilies(preferred?: (familyId: string | null) => number | null): Promise<boolean> {
 	try {
@@ -125,11 +127,17 @@ async function loadFamilies(preferred?: (familyId: string | null) => number | nu
 		if (profiles.length > 0) {
 			// Starred first (dashboard): it is the person this household records
 			// against most, so the page should open there rather than on whoever
-			// happens to sort first.
+			// happens to sort first. But a device that has already been used has
+			// a better answer — the member last selected — and that wins, so a
+			// reload mid-feed comes back to the same person (and their timer).
+			const lastMemberId = readLastMemberId(activeFamilyId);
+			const lastMember = lastMemberId ? profiles.find((b) => Number(b.id) === lastMemberId) : null;
 			const starred = preferredId ? profiles.find((b) => Number(b.id) === preferredId) : null;
 			const savedDefault = get(familyStore).defaultProfileId ?? null;
 			const match = savedDefault ? profiles.find((b) => Number(b.id) === savedDefault) : null;
-			const selectedMemberId = starred ? Number(starred.id) : match ? Number(match.id) : defaultMemberId(profiles);
+			const selectedMemberId = lastMember
+				? Number(lastMember.id)
+				: starred ? Number(starred.id) : match ? Number(match.id) : defaultMemberId(profiles);
 			const selected = profiles.find((b) => Number(b.id) === selectedMemberId);
 			// The API resolves this to the member's own set, constrained by their
 			// stage. An empty list is a real answer, not a prompt to show everything.
@@ -167,19 +175,41 @@ function setDefaultProfile(memberId: number): void {
 	notify('Default profile updated.');
 }
 
+function lastMemberKey(familyId: string | null): string {
+	return `nido.memberId.${familyId ?? 'none'}`;
+}
+
+function readLastMemberId(familyId: string | null): number | null {
+	if (!browser) return null;
+	try {
+		const raw = localStorage.getItem(lastMemberKey(familyId));
+		const id = raw ? Number(raw) : NaN;
+		return Number.isFinite(id) ? id : null;
+	} catch {
+		return null;
+	}
+}
+
 /**
  * Select a member. Synchronous on purpose, and deliberately NOT followed by
  * the refreshes here: the selection must be a plain store write that callers
  * can read back immediately (see currentIsTrackable). Pages own the refresh
  * order after this — refreshLists() then refreshSummary(), nothing between.
+ *
+ * The choice is remembered per family so a reload (or an iOS relaunch) opens
+ * on the same person, which is also where their running timers live.
  */
 function selectMember(memberId: number): void {
+	const familyId = get(familyStore).activeFamilyId;
 	familyStore.update((s) => {
 		const selected = s.profiles.find((b) => Number(b.id) === memberId);
 		// The API resolves this to the member's own set, constrained by their
 		// stage. An empty list is a real answer, not a prompt to show everything.
 		return { ...s, selectedMemberId: memberId, activeCategories: selected?.categories ?? [] };
 	});
+	if (browser) {
+		try { localStorage.setItem(lastMemberKey(familyId), String(memberId)); } catch { /* private mode */ }
+	}
 }
 
 async function refreshSummary(): Promise<void> {

@@ -71,14 +71,20 @@ function lastActivityAt(s: BreastTimerState): number | null {
 }
 
 /**
- * A feed timer nobody touched for hours (or a side left running that long) is
- * an abandoned one, not a feed in progress. Reviving it is what made old
- * timings reappear at the next feed.
+ * A *paused* feed timer nobody touched for hours is an abandoned one, not a
+ * feed in progress. Reviving it is what made old timings reappear at the next
+ * feed.
+ *
+ * A timer that is still running is never stale, however old its start looks.
+ * The phone can be parked mid-feed for a long time — a nap, a night wake-up,
+ * a screen that locked and came back hours later — and deleting the one timer
+ * that was genuinely running is exactly how a caregiver loses the feed they
+ * were recording. An abandoned running timer stays on screen and can be
+ * cancelled; a silently discarded one cannot be recovered.
  */
 export function isStaleTimer(s: BreastTimerState, now: number, maxMs = BREAST_TIMER_STALE_MS): boolean {
 	if (!timerHasTime(s)) return false;
-	if (s.leftStartedAt !== null && now - s.leftStartedAt > maxMs) return true;
-	if (s.rightStartedAt !== null && now - s.rightStartedAt > maxMs) return true;
+	if (timerIsRunning(s)) return false;
 	const last = lastActivityAt(s);
 	return last !== null && now - last > maxMs;
 }
@@ -91,28 +97,39 @@ function numOrNull(v: unknown): number | null {
 	return isFiniteNumber(v) && v > 0 ? v : null;
 }
 
+/**
+ * Parse a stored breast/pump timer without judging it.
+ *
+ * Reads must not mutate: the "In progress" strip re-reads these keys every
+ * second, and a listing that deletes is a listing that can lose a timer the
+ * caregiver never opened. Staleness is applied by the callers that own the
+ * decision — `loadBreastTimer` (opening the logger) and `storedTimers`
+ * (filtering the list, read-only).
+ */
+export function readBreastTimer(store: KeyValueStore, key: string): BreastTimerState {
+	try {
+		const raw = store.getItem(key);
+		if (!raw) return emptyBreastTimer();
+		const p = JSON.parse(raw);
+		return {
+			leftElapsed: isFiniteNumber(p.leftElapsed) && p.leftElapsed > 0 ? p.leftElapsed : 0,
+			rightElapsed: isFiniteNumber(p.rightElapsed) && p.rightElapsed > 0 ? p.rightElapsed : 0,
+			leftStartedAt: numOrNull(p.leftStartedAt),
+			rightStartedAt: numOrNull(p.rightStartedAt),
+			leftLastAt: numOrNull(p.leftLastAt),
+			rightLastAt: numOrNull(p.rightLastAt),
+		};
+	} catch {
+		return emptyBreastTimer();
+	}
+}
+
 export function loadBreastTimer(
 	store: KeyValueStore,
 	key: string,
 	now: number,
 ): { state: BreastTimerState; discarded: boolean } {
-	let state = emptyBreastTimer();
-	try {
-		const raw = store.getItem(key);
-		if (raw) {
-			const p = JSON.parse(raw);
-			state = {
-				leftElapsed: isFiniteNumber(p.leftElapsed) && p.leftElapsed > 0 ? p.leftElapsed : 0,
-				rightElapsed: isFiniteNumber(p.rightElapsed) && p.rightElapsed > 0 ? p.rightElapsed : 0,
-				leftStartedAt: numOrNull(p.leftStartedAt),
-				rightStartedAt: numOrNull(p.rightStartedAt),
-				leftLastAt: numOrNull(p.leftLastAt),
-				rightLastAt: numOrNull(p.rightLastAt),
-			};
-		}
-	} catch {
-		state = emptyBreastTimer();
-	}
+	const state = readBreastTimer(store, key);
 	if (isStaleTimer(state, now)) {
 		try { store.removeItem(key); } catch { /* storage unavailable */ }
 		return { state: emptyBreastTimer(), discarded: true };
@@ -169,27 +186,24 @@ export interface StoredTimer {
  * sheet is away — without it a parked feed timer is invisible until you open
  * Feeds and happen to pick the right kind.
  *
- * Stale breast/pump timers are discarded by `loadBreastTimer`, the same rule
- * the loggers apply, so an abandoned timer does not reappear as a running one.
+ * This is a pure read. It used to go through `loadBreastTimer`, which deletes
+ * a stale timer — so simply rendering the strip could destroy one. Paused
+ * timers past the stale limit are filtered out here instead, and cleaned up
+ * the next time their logger is opened.
  */
 export function storedTimers(store: KeyValueStore, memberId: number | null, now: number): StoredTimer[] {
 	const timers: StoredTimer[] = [];
 
-	const feed = loadBreastTimer(store, feedTimerKey(memberId), now);
-	if (timerHasTime(feed.state)) {
+	for (const [kind, key] of [
+		['feeds', feedTimerKey(memberId)],
+		['pumping', pumpTimerKey(memberId)],
+	] as const) {
+		const state = readBreastTimer(store, key);
+		if (!timerHasTime(state) || isStaleTimer(state, now)) continue;
 		timers.push({
-			kind: 'feeds',
-			elapsedMs: sideTotals(feed.state, now).totalMs,
-			running: timerIsRunning(feed.state),
-		});
-	}
-
-	const pump = loadBreastTimer(store, pumpTimerKey(memberId), now);
-	if (timerHasTime(pump.state)) {
-		timers.push({
-			kind: 'pumping',
-			elapsedMs: sideTotals(pump.state, now).totalMs,
-			running: timerIsRunning(pump.state),
+			kind,
+			elapsedMs: sideTotals(state, now).totalMs,
+			running: timerIsRunning(state),
 		});
 	}
 

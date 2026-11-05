@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { createEventDispatcher, onDestroy, onMount } from 'svelte';
+	import { browser } from '$app/environment';
 	import { PenLine, Timer, Moon } from 'lucide-svelte';
 	import { sleepAPI } from '$lib/api/records';
 	import { enqueueRecord } from '$lib/logging/outbox';
@@ -23,6 +24,17 @@
 	let loadedFor: number | null = null;
 
 	$: if (memberId !== loadedFor) { loadedFor = memberId; restore(); }
+
+	/**
+	 * A bfcache restore does not remount, so re-read the clock on return.
+	 *
+	 * No screen wake lock here on purpose: a sleep session runs for hours, and
+	 * the phone must be allowed to sleep. The session is stored on the device,
+	 * so locking the screen does not lose it.
+	 */
+	function resync() {
+		if (document.visibilityState === 'visible') now = Date.now();
+	}
 
 	function restore() {
 		startedAt = null;
@@ -101,8 +113,18 @@
 		}
 	}
 
-	onMount(() => { startValue = toLocalInput(); });
-	onDestroy(stopTick);
+	onMount(() => {
+		startValue = toLocalInput();
+		document.addEventListener('visibilitychange', resync);
+		window.addEventListener('pageshow', resync);
+		window.addEventListener('focus', resync);
+	});
+	onDestroy(() => {
+		stopTick();
+		document.removeEventListener('visibilitychange', resync);
+		window.removeEventListener('pageshow', resync);
+		window.removeEventListener('focus', resync);
+	});
 </script>
 
 <div class="flex items-center justify-between mb-4">

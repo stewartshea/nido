@@ -61,12 +61,13 @@ describe('isStaleTimer', () => {
 		expect(isStaleTimer(s, T0 + 8 * MIN + BREAST_TIMER_STALE_MS - 1)).toBe(false);
 	});
 
-	it('treats a side left running for hours as abandoned even if the other side was touched recently', () => {
+	it('never treats a running timer as abandoned, however long the screen was locked', () => {
 		let s = toggleSide(emptyBreastTimer(), 'right', T0);
 		const now = T0 + BREAST_TIMER_STALE_MS + 10 * MIN;
 		s = toggleSide(s, 'left', now - MIN);
-		s = toggleSide(s, 'left', now);
-		expect(isStaleTimer(s, now)).toBe(true);
+		// `right` is still running: the caregiver parked the phone mid-feed.
+		expect(isStaleTimer(s, now)).toBe(false);
+		expect(isStaleTimer(s, T0 + 99 * BREAST_TIMER_STALE_MS)).toBe(false);
 	});
 
 	it('an empty timer is never stale', () => {
@@ -94,6 +95,15 @@ describe('persistence', () => {
 		expect(loaded.discarded).toBe(true);
 		expect(loaded.state).toEqual(emptyBreastTimer());
 		expect(store.getItem('k')).toBeNull();
+	});
+
+	it('never discards a running timer, however old it looks', () => {
+		const store = memoryStore();
+		saveBreastTimer(store, 'k', toggleSide(emptyBreastTimer(), 'left', T0));
+		const loaded = loadBreastTimer(store, 'k', T0 + 12 * 60 * MIN);
+		expect(loaded.discarded).toBe(false);
+		expect(loaded.state.leftStartedAt).toBe(T0);
+		expect(store.getItem('k')).not.toBeNull();
 	});
 
 	it('saving an empty timer clears the key', () => {
@@ -135,14 +145,28 @@ describe('storedTimers', () => {
 		expect(storedTimers(store, 99, T0 + MIN)).toEqual([]);
 	});
 
-	it('drops a stale feed timer instead of showing it as parked', () => {
+	it('hides a stale paused feed timer without deleting it', () => {
 		const store = memoryStore();
 		let s = toggleSide(emptyBreastTimer(), 'left', T0);
 		s = toggleSide(s, 'left', T0 + MIN);
 		saveBreastTimer(store, feedTimerKey(7), s);
 
 		expect(storedTimers(store, 7, T0 + MIN + BREAST_TIMER_STALE_MS + 1)).toEqual([]);
-		expect(store.getItem(feedTimerKey(7))).toBeNull();
+		// Reading the list must not destroy the timer: the logger still owns
+		// the cleanup decision, and a listing that deletes can lose one.
+		expect(store.getItem(feedTimerKey(7))).not.toBeNull();
+	});
+
+	it('keeps showing a running timer past the stale limit', () => {
+		const store = memoryStore();
+		const startedAt = T0;
+		saveBreastTimer(store, feedTimerKey(7), toggleSide(emptyBreastTimer(), 'left', startedAt));
+
+		const now = startedAt + BREAST_TIMER_STALE_MS + 30 * MIN;
+		expect(storedTimers(store, 7, now)).toEqual([
+			{ kind: 'feeds', elapsedMs: now - startedAt, running: true },
+		]);
+		expect(store.getItem(feedTimerKey(7))).not.toBeNull();
 	});
 
 	it('ignores a malformed sleep timer', () => {
