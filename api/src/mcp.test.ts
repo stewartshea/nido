@@ -56,6 +56,20 @@ async function mintToken(jwtToken: string, label?: string): Promise<{ plaintext:
   return { plaintext: body.token, id: body.mcpToken.id };
 }
 
+/** Create a fixture through the ordinary API, as the web app would. */
+async function authedPost(path: string, body: unknown, jwt: string): Promise<any> {
+  const res = await app.fetch(
+    new Request(`http://localhost${path}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${jwt}` },
+      body: JSON.stringify(body),
+    }),
+  );
+  const text = await res.text();
+  if (!res.ok) throw new Error(`${path} -> ${res.status} ${text}`);
+  return text ? JSON.parse(text) : null;
+}
+
 async function mcp(token: string | null, message: unknown) {
   const res = await app.fetch(
     new Request('http://localhost/mcp', {
@@ -300,5 +314,88 @@ describe('mcp endpoint', () => {
       }
     }
     expect(sawLimit).toBe(true);
+  });
+});
+
+describe('mcp read catalog', () => {
+  it('reads growth, milestones, vaccinations and journal for a child', async () => {
+    const fam = await registerFamily('mcp-reads-baby@example.com');
+    const childId = await addChild(fam.token, 'Sprout');
+    await authedPost('/api/v1/growth', { memberId: childId, measurementDate: '2026-01-02T00:00:00.000Z', weight: 12, height: 24, unitSystem: 'imperial' }, fam.token);
+    await authedPost('/api/v1/milestones', { memberId: childId, title: 'First smile', achievedDate: '2026-01-03T00:00:00.000Z' }, fam.token);
+    await authedPost('/api/v1/vaccinations', { memberId: childId, name: 'DTaP', dateGiven: '2026-01-04T00:00:00.000Z' }, fam.token);
+    await authedPost('/api/v1/journal', { memberId: childId, title: 'Day one', body: 'Slept well', entryDate: '2026-01-05T00:00:00.000Z' }, fam.token);
+    const { plaintext } = await mintToken(fam.token);
+
+    const growth = await callTool(plaintext, 'get_growth', { memberId: childId });
+    const growthRows = (growth.body.result.structuredContent as any).growth;
+    expect(growthRows).toHaveLength(1);
+    expect(growthRows[0].weight).toBe(12);
+    // The route computes the WHO/CDC percentile; the tool returns it, not the raw row.
+    expect(growthRows[0]).toHaveProperty('weight_percentile');
+
+    const milestones = await callTool(plaintext, 'get_milestones', { memberId: childId });
+    const milestoneRows = (milestones.body.result.structuredContent as any).milestones;
+    expect(milestoneRows).toHaveLength(1);
+    expect(milestoneRows[0].title).toBe('First smile');
+
+    const vacc = await callTool(plaintext, 'get_vaccinations', { memberId: childId, includeSchedule: true });
+    const vaccBody = vacc.body.result.structuredContent as any;
+    expect(vaccBody.vaccinations).toHaveLength(1);
+    expect(Array.isArray(vaccBody.schedule)).toBe(true);
+
+    const journal = await callTool(plaintext, 'get_journal', { memberId: childId });
+    expect((journal.body.result.structuredContent as any).entries).toHaveLength(1);
+  });
+
+  it('reads the home surface: homes, assets, meters, due, maintenance and inventory', async () => {
+    const fam = await registerFamily('mcp-reads-home@example.com');
+    const asset = await authedPost('/api/v1/home-assets', { name: 'Furnace', category: 'hvac' }, fam.token);
+    const assetId = asset.asset.id;
+    await authedPost(`/api/v1/home-assets/${assetId}/meters`, { kind: 'time', unit: 'h', label: 'Runtime' }, fam.token);
+    await authedPost(`/api/v1/home-assets/${assetId}/maintenance`, { task: 'Filter change', performedAt: '2026-01-06' }, fam.token);
+    await authedPost('/api/v1/inventory', { name: 'Furnace filter', category: 'home filter', quantity: 3, unit: 'count' }, fam.token);
+    const { plaintext } = await mintToken(fam.token);
+
+    const homes = await callTool(plaintext, 'list_homes', {});
+    expect(((homes.body.result.structuredContent as any).homes ?? []).length).toBeGreaterThanOrEqual(1);
+
+    const assets = await callTool(plaintext, 'list_assets', {});
+    expect(((assets.body.result.structuredContent as any).assets ?? []).map((a: any) => a.name)).toContain('Furnace');
+
+    const meters = await callTool(plaintext, 'list_meters', {});
+    const meterRows = (meters.body.result.structuredContent as any).meters;
+    expect(meterRows).toHaveLength(1);
+    expect(meterRows[0].assetName).toBe('Furnace');
+
+    const due = await callTool(plaintext, 'whats_due', {});
+    const dueBody = due.body.result.structuredContent as any;
+    expect(typeof dueBody.today).toBe('string');
+    expect(Array.isArray(dueBody.items)).toBe(true);
+
+    const maintenance = await callTool(plaintext, 'get_maintenance_log', {});
+    const entries = (maintenance.body.result.structuredContent as any).entries;
+    expect(entries.map((e: any) => e.task)).toContain('Filter change');
+
+    const inventory = await callTool(plaintext, 'list_inventory', {});
+    const invItems = (inventory.body.result.structuredContent as any).items;
+    expect(invItems.map((i: any) => i.name)).toContain('Furnace filter');
+  });
+
+  it('returns scheduled and booked appointments', async () => {
+    const fam = await registerFamily('mcp-reads-appt@example.com');
+    const childId = await addChild(fam.token, 'Pea');
+    await authedPost(
+      '/api/v1/plans',
+      { memberId: childId, category: 'appointments', scheduledAt: '2026-03-01T09:00:00.000Z', title: 'Well visit', data: { type: 'checkup' } },
+      fam.token,
+    );
+    const { plaintext } = await mintToken(fam.token);
+
+    const res = await callTool(plaintext, 'get_appointments', {});
+    const body = res.body.result.structuredContent as any;
+    expect(Array.isArray(body.upcoming)).toBe(true);
+    expect(Array.isArray(body.booked)).toBe(true);
+    expect(body.booked.length).toBeGreaterThanOrEqual(1);
   });
 });
