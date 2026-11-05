@@ -197,17 +197,21 @@ An agent write is a normal write, attributed like any other.
 MCP resource, so an agent can pull the whole family in one call. Not a parallel
 export. (Owner/admin only, since the underlying route is.)
 
-### MVP slice (this change)
+### Shipped so far
 
-The first slice proves the shape end to end rather than shipping all 27 tools at
-once:
+**MVP** (proved the shape end to end): token auth, `POST /mcp` with the SDK,
+`list_children`, `get_feedings`, `get_diapers`, `get_sleep`,
+`get_family_summary`, `log_feed`, and `nido://family/export`.
 
-- **Read**: `list_children`, `get_feedings`, `get_diapers`, `get_sleep`,
-  `get_family_summary`.
-- **Write**: `log_feed`.
-- **Resource**: `nido://family/export`.
+**Read catalog** (the full read surface): `get_growth` (with the route's WHO/CDC
+percentiles), `get_milestones`, `get_vaccinations` (records + optional
+schedule), `get_appointments` (schedule-derived upcoming + booked plans),
+`get_journal`, `list_homes`, `list_assets`, `list_meters`, `whats_due`,
+`get_maintenance_log`, `list_inventory`.
 
-Everything else is added tool-by-tool against the same registration helper.
+The reads live in `mcp/tools-baby.ts` and `mcp/tools-home.ts`, both built on
+`mcp/tool-kit.ts` (the result shape, date-window filtering, and the thin
+fetchers). Still to come: the remaining writes, then record-level provenance.
 
 ## Attribution
 
@@ -256,13 +260,17 @@ limit is deliberately generous — it is a runaway guard, not a billing meter.
 
 ## Phasing
 
-1. **MVP (this change)** — registry `mcp_tokens` table, token mint/list/revoke
-   routes, `POST /mcp` with the SDK, the six MVP tools + export resource,
-   Settings → Agent access, tests.
-2. **Catalog fill-in** — the remaining read and write tools, one registration
-   each.
-3. **Provenance** — a record-level `via` marker and richer logging.
-4. **Scale-out** — registry-backed rate limiting and, if needed, a dedicated
+1. **MVP** — registry `mcp_tokens` table, token mint/list/revoke routes,
+   `POST /mcp` with the SDK, a first handful of tools + the export resource,
+   Settings → Agent access, tests. **Done.**
+2. **Read catalog** — the full read surface (`tools-baby.ts`, `tools-home.ts`).
+   **Done.**
+3. **Write catalog** — the remaining writes (`log_diaper`, `log_sleep`,
+   `log_growth`, `log_milestone`, `log_vaccination`, `create_appointment`,
+   `add_journal_entry`, `adjust_inventory`, `log_maintenance`,
+   `add_meter_reading`), one registration each.
+4. **Provenance** — a record-level `via` marker and richer logging.
+5. **Scale-out** — registry-backed rate limiting and, if needed, a dedicated
    process.
 
 ## Testing
