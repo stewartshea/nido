@@ -26,3 +26,13 @@ spec:
                 name: nido-api
                 port:
                   number: 3000
+          # MCP agent tool server (issue #83). It lives on the api service like
+          # /api, so it bypasses the web proxy the same way. The MCP config a
+          # user copies from Settings → Agent access points at /mcp on this host.
+          - path: /mcp
+            pathType: Prefix
+            backend:
+              service:
+                name: nido-api
+                port:
+                  number: 3000

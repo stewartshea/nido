@@ -35,7 +35,9 @@ so this compose files points `build.context` at the corresponding subfolder.
 - `JWT_SECRET` must be changed from the placeholder in production.
 - `API_PROXY_TARGET` is where the web server forwards `/api`
   requests (compose default `http://api:3000`; behind a split reverse proxy,
-  set it to the proxied API hostname).
+  set it to the proxied API hostname). The web server forwards `/mcp` (the MCP
+  agent endpoint, issue #83) the same way, so pointing a reverse proxy at the
+  `web` service alone keeps both surfaces working same-origin.
 - The browser calls the API same-origin (`/api/v1`) — no CORS involved. To point
   the browser at an explicit API origin instead, set `PUBLIC_API_URL`.
 - Back up the `nido-data` volume with the backup CLI rather than a plain
