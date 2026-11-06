@@ -37,7 +37,7 @@ repository.
 | --- | --- |
 | `registry.db` | SQLCipher, keyed by a `nido:registry` subkey |
 | `db/<familyId>.db` | SQLCipher, keyed by an HKDF subkey **derived from that family id as salt** |
-| Session tokens | Signed JWTs, 24h expiry |
+| Session tokens | Signed JWTs, 30-day expiry |
 | **Photos** | **Not encrypted on disk** |
 
 The encrypted file *is* the tenant boundary. There is no `WHERE family_id = ?`
@@ -75,6 +75,19 @@ the gap until the limit lands.
 | SQL | Parameterized only. No request-derived string is ever concatenated into SQL. |
 | Request bodies | Validated with `zod` before any database access. |
 | Files | MIME-validated and scoped by `blobs.family_id`. Client-supplied filenames and paths are never trusted. |
+
+## Agent access tokens
+
+**Settings → Agent access** mints opaque tokens (`nido_mcp_…`) that connect an AI
+agent you run to one family over [MCP](./agent-access/). The registry stores only
+a **SHA-256 hash** with the family id and a label — the plaintext is shown once
+and never persisted or logged.
+
+A token resolves to exactly one family, so every request opens only that
+family's database; a tool cannot widen its scope. Unknown and revoked tokens get
+the same answer, so there is nothing to probe. Tokens carry no scopes and never
+expire — revoking is the control, and access ends at the next request. Requests
+are rate-limited per token.
 
 ## Deployment checklist
 

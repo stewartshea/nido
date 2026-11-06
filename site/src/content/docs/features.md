@@ -315,6 +315,22 @@ alongside ordinary members; settings that affect everyone — which categories
 are tracked, the value lists, and anonymized sharing — are owner/admin
 changes.
 
+## Agent access (MCP)
+
+Nido can hand its own operations to an AI agent you run — over the **Model
+Context Protocol** — so the agent can answer "how much did the baby sleep this
+week?" or log three feeds at once, without Nido running a model of its own.
+
+Under **Settings → Agent access** you mint an opaque token (shown once, stored
+only as a hash, revocable at any time) and paste the generated MCP config into
+your agent. From there the agent can read the household and log against it
+through the same validated routes the app uses; there is no second way into the
+data, and nothing runs inside Nido when no agent is attached. Writes are
+ordinary writes — they carry who made them — and can be corrected, not deleted.
+
+See [Agent access (MCP) →](reference/agent-access/) for the endpoint, the config,
+and the full tool list.
+
 ## Bringing your history, and taking it with you
 
 **Import** history from a **NaraBaby CSV export** under **Settings → Data**.
@@ -334,6 +350,10 @@ data volume **and** the master key together.
   interpret them.
 - **No accounts-within-accounts, no social feed, no sharing by default.**
   People are added to your family deliberately.
+- **No model inside Nido.** Agent access (MCP) lets an agent *you* run read and
+  log through Nido; Nido itself runs no model, generates no summaries, and does
+  nothing when no agent is attached. See
+  [Agent access (MCP) →](reference/agent-access/).
 - **No telemetry, and no analytics.** Nido does not phone home. The one
   opt-in that reads as outbound — *anonymized daily sharing* under
   **Settings → Household** — is currently a stored preference with a 24-hour

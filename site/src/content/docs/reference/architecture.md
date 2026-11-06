@@ -71,11 +71,12 @@ belongs in the family namespace and must never be written to the registry.
 
 | Concern | Rule |
 | --- | --- |
-| Auth | JWT with a 24h expiry, carrying `userId`, `email`, `familyId`, `role`. Never mint a token without an expiry; never trust a `familyId` from anywhere but a verified JWT. |
+| Auth | JWT with a 30-day expiry, carrying `userId`, `email`, `familyId`, `role`. Never mint a token without an expiry; never trust a `familyId` from anywhere but a verified JWT. |
 | Query construction | Parameterized only. Every route uses `execute({ sql: '…', args: [...] })`. |
 | Body validation | Every mutating request body goes through `zod` before it touches the database. |
 | Uploads | MIME-validated (`mime.startsWith('image/')`) and scoped by `blobs.family_id`. Never trust a client-supplied filename or path. |
 | Bulk movement | `GET /families/:id/export` and `POST /families/:id/restore`, owner/admin-gated. Extend these rather than adding a parallel import path. |
+| Agent access | `POST /mcp` presents an opaque per-family token (not a JWT) and calls these same routes. See [Agent access (MCP)](./agent-access/). |
 
 ## Client-side
 

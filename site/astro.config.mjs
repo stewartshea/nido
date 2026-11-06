@@ -20,6 +20,29 @@ import { baseRelativeLinks } from './src/satteri-base-links.mjs';
 const ORIGIN =
 	process.env.SITE_URL ?? `https://${REPO.split('/')[0]}.github.io${SITE_BASE === '/' ? '' : SITE_BASE}`;
 
+/**
+ * Site-wide structured data (JSON-LD). Answer engines and agents read this to
+ * place the project without parsing prose: what it is, that it is free and open
+ * source, and where the source lives. Injected on every page by Starlight's
+ * `head` option below.
+ */
+const STRUCTURED_DATA = JSON.stringify({
+	'@context': 'https://schema.org',
+	'@type': 'SoftwareApplication',
+	name: 'Nido',
+	alternateName: '巣',
+	applicationCategory: 'HealthApplication',
+	operatingSystem: 'Docker, Linux, macOS',
+	description:
+		'A free, open source tracker for the things you care for and keep — starting with your baby, and growing to cover the whole home. Self-host it, or use My Nido, hosted in Canada.',
+	url: ORIGIN,
+	license: 'https://www.apache.org/licenses/LICENSE-2.0',
+	isAccessibleForFree: true,
+	offers: { '@type': 'Offer', price: '0', priceCurrency: 'CAD' },
+	codeRepository: `https://github.com/${REPO}`,
+	sameAs: [`https://github.com/${REPO}`],
+});
+
 export default defineConfig({
 	site: ORIGIN,
 	base: SITE_BASE,
@@ -44,6 +67,10 @@ export default defineConfig({
 				alt: 'Nido nest mark',
 			},
 			customCss: ['./src/styles/global.css'],
+			head: [
+				// Structured data for answer engines and agents — see STRUCTURED_DATA above.
+				{ tag: 'script', attrs: { type: 'application/ld+json' }, content: STRUCTURED_DATA },
+			],
 			components: {
 				// Starlight's icon set has no Ko-fi mark, so the social row is
 				// overridden to draw one for any link pointing at ko-fi.com.
@@ -104,6 +131,7 @@ export default defineConfig({
 						{ label: 'Configuration', slug: 'reference/configuration' },
 						{ label: 'Architecture', slug: 'reference/architecture' },
 						{ label: 'Security model', slug: 'reference/security' },
+						{ label: 'Agent access (MCP)', slug: 'reference/agent-access' },
 						{ label: 'Containers & volumes', slug: 'reference/containers' },
 					],
 				},
