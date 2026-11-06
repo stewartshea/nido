@@ -18,7 +18,12 @@ const STRIP_FROM_RESPONSE = new Set(['content-encoding', 'content-length', 'tran
 
 export const handle: Handle = async ({ event, resolve }) => {
 	const { pathname, search } = event.url;
-	if (!pathname.startsWith('/api/')) return resolve(event);
+	// /api/* is the app's REST surface; /mcp is the agent tool server (issue
+	// #83). Both live on the api service, so the web server proxies them
+	// same-origin and the MCP config a user copies points at the host they
+	// already reach the app on.
+	const isMcp = pathname === '/mcp';
+	if (!pathname.startsWith('/api/') && !isMcp) return resolve(event);
 
 	const headers = new Headers();
 	for (const [key, value] of event.request.headers) {

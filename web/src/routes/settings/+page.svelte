@@ -14,9 +14,10 @@
 	import BackupPanel from '$lib/components/settings/BackupPanel.svelte';
 	import AdminPanel from '$lib/components/settings/AdminPanel.svelte';
 	import FamilyTrackingPanel from '$lib/components/settings/FamilyTrackingPanel.svelte';
+	import AgentAccessPanel from '$lib/components/settings/AgentAccessPanel.svelte';
 	import EditMemberModal from '$lib/components/EditMemberModal.svelte';
 	import FeedbackToasts from '$lib/components/FeedbackToasts.svelte';
-	import { Users, Home, Settings, ChevronRight, User, Shield, Upload, Download } from 'lucide-svelte';
+	import { Users, Home, Settings, ChevronRight, User, Shield, Upload, Download, Bot } from 'lucide-svelte';
 
 
 
@@ -34,7 +35,7 @@
 	$: activeFamily = $familyStore.activeFamily;
 	$: activeFamilyId = $familyStore.activeFamilyId;
 
-	let settingsTab: 'profile' | 'family' | 'import' | 'members' | 'backup' | 'admin' | null = null;
+	let settingsTab: 'profile' | 'family' | 'agents' | 'import' | 'members' | 'backup' | 'admin' | null = null;
 
 	// Family onboarding
 	let memberType = 'child';
@@ -348,6 +349,20 @@
 							</div>
 						</section>
 
+						<!-- Agents Group -->
+						<section>
+							<h3 class="text-xs font-semibold text-ink-soft uppercase tracking-wider mb-2 px-4">Agents</h3>
+							<div class="bg-surface rounded-xl border border-line-soft overflow-hidden">
+								<button type="button" on:click={() => (settingsTab = 'agents')} class="w-full flex items-center justify-between px-4 py-3 min-h-[44px] hover:bg-surface2 transition-colors text-left">
+									<div class="flex items-center gap-3">
+										<Bot class="w-5 h-5 text-ink-soft" />
+										<span class="text-ink font-medium">Agent access</span>
+									</div>
+									<ChevronRight class="w-5 h-5 text-ink-soft" />
+								</button>
+							</div>
+						</section>
+
 						<!-- Data Group -->
 						<section>
 							<h3 class="text-xs font-semibold text-ink-soft uppercase tracking-wider mb-2 px-4">Data</h3>
@@ -396,6 +411,8 @@
 							<AccountPanel {activeFamily} {activeFamilyId} {exportFamily} dataChanged={loadFamilies} />
 							{:else if settingsTab === 'family'}
 							<FamilyTrackingPanel {activeFamily} {activeFamilyId} />
+							{:else if settingsTab === 'agents'}
+							<AgentAccessPanel {activeFamily} {activeFamilyId} />
 							{:else if settingsTab === 'members'}
 							<div class="bg-surface rounded-lg shadow-card p-4 md:p-6 border border-line-soft mb-4">
 								<h3 class="text-lg font-display font-semibold mb-3">Invite someone to {activeFamily?.name}</h3>

@@ -84,6 +84,11 @@ image: ghcr.io/<owner>/<repo>/api:v<date>
   - multi pod → `API_PROXY_TARGET=http://nido-api:3000` (api Service).
   Only set `PUBLIC_API_URL` on the web container when the API is served from a
   different origin than the web app.
+- **MCP agent endpoint**: `/mcp` (issue #83) also lives on the api Service
+  (port 3000) and is routed the same way as `/api` — the Ingress sends it
+  straight to `nido-api`, and the web server forwards it otherwise. Agents
+  connect to `https://<public-origin>/mcp` with a token minted under
+  **Settings → Agent access**.
 - **Logging**: `LOG_LEVEL` (`info` by default) and `LOG_FORMAT` (`json` by
   default) are already set on the api container. Keep the format `json` here —
   that is what makes the lines parseable by `kubectl logs` pipelines and log

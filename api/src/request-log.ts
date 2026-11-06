@@ -99,6 +99,9 @@ export function requestLogger() {
           userAgent: c.req.header('user-agent') ?? undefined,
           userId: c.get('userId'),
           familyId: c.get('familyId'),
+          // Set only by the MCP tool layer's internal dispatch (mcp/caller.ts),
+          // so an agent-initiated call is distinguishable from a browser one.
+          ...(c.req.header('x-nido-via') ? { via: c.req.header('x-nido-via') } : {}),
           ...(failure ? { err: failure } : {}),
         });
       }
