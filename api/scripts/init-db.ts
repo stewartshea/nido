@@ -1,5 +1,5 @@
 // scripts/init-db.ts
-import { ensureRegistry } from '../src/db-namespaces';
+import { ensureRegistry } from '../src/namespaces';
 
 async function initDatabase() {
   console.log('Initializing database...');
