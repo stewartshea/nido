@@ -37,6 +37,9 @@ import { medicationRoutes } from './routes/medications';
 import { vitalRoutes } from './routes/vitals';
 import { notificationStatusRoutes } from './routes/notification-status';
 import { reportRoutes } from './routes/reports';
+import mcpRoutes from './routes/mcp';
+import { createMcpEndpoint } from './mcp/handler';
+import { setInternalFetch } from './mcp/caller';
 import { startScheduler, stopScheduler } from './scheduler';
 import { bootstrapAdmin } from './authz';
 
@@ -97,6 +100,15 @@ app.route('/api/v1/journal', journalRoutes);
 app.route('/api/v1/reminders', reminderRoutes);
 app.route('/api/v1/medications', medicationRoutes);
 app.route('/api/v1/vitals', vitalRoutes);
+app.route('/api/v1/mcp', mcpRoutes);
+
+// MCP tool server (issue #83). Deliberately outside /api/v1: it authenticates
+// itself with an opaque agent token, not a JWT, and turns Streamable HTTP
+// JSON-RPC into calls against the same routes the web app uses.
+app.all('/mcp', createMcpEndpoint());
+// Let MCP tools dispatch through this same app (see mcp/caller.ts), so a tool
+// call is an ordinary route call with the same validation and authorization.
+setInternalFetch((req) => Promise.resolve(app.fetch(req)));
 
 // Root endpoint
 app.get('/', (c) => {

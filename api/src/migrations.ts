@@ -101,6 +101,29 @@ export const REGISTRY_MIGRATIONS: Migration[] = [
     name: 'registry-mark-orphaned-families',
     sql: MARK_ORPHANED_FAMILIES_SQL,
   },
+  {
+    // MCP agent access tokens (issue #83). These live in the registry, not a
+    // family database, because the table is auth routing — token -> familyId —
+    // the same kind of thing as email -> familyId already stored here. A token
+    // resolves to exactly one family and is never read across families.
+    //
+    // Only the SHA-256 hash is stored; the plaintext (`nido_mcp_…`) is shown
+    // once at creation and never persisted or logged.
+    version: 4,
+    name: 'registry-mcp-tokens',
+    sql: `
+      CREATE TABLE IF NOT EXISTS mcp_tokens (
+        id                 TEXT PRIMARY KEY,
+        family_id          TEXT NOT NULL REFERENCES families(family_id),
+        token_hash         TEXT NOT NULL UNIQUE,
+        label              TEXT,
+        created_by_user_id TEXT,
+        created_at         TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        last_used_at       TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_mcp_tokens_family ON mcp_tokens(family_id);
+    `,
+  },
 ];
 
 // ---------------------------------------------------------------------------
