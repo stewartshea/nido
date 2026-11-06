@@ -190,6 +190,12 @@ An agent write is a normal write, attributed like any other.
 | `adjust_inventory` | inventory adjust (with reason) |
 | `log_maintenance` | maintenance entry (#68) |
 | `add_meter_reading` | meter reading (#66) |
+| `add_asset` | home asset registry (#65) |
+| `recount_inventory` | inventory recount (absolute quantity) |
+
+Each record category above also ships an `update_*` (e.g. `update_feed`,
+`update_diaper`), so an agent can correct what it logged. There is deliberately
+no `delete_*`: see "No delete tool" above.
 
 ### Resource
 
@@ -209,9 +215,27 @@ schedule), `get_appointments` (schedule-derived upcoming + booked plans),
 `get_journal`, `list_homes`, `list_assets`, `list_meters`, `whats_due`,
 `get_maintenance_log`, `list_inventory`.
 
-The reads live in `mcp/tools-baby.ts` and `mcp/tools-home.ts`, both built on
-`mcp/tool-kit.ts` (the result shape, date-window filtering, and the thin
-fetchers). Still to come: the remaining writes, then record-level provenance.
+**Write catalog** (creates + updates): `log_feed` / `update_feed`, `log_diaper`
+/ `update_diaper`, `log_sleep` / `update_sleep`, `log_growth` / `update_growth`,
+`log_milestone` / `update_milestone`, `log_vaccination` / `update_vaccination`,
+`add_journal_entry` / `update_journal_entry`, `create_appointment` /
+`reschedule_appointment`, `add_asset` / `update_asset`, `adjust_inventory`,
+`recount_inventory`, `add_meter_reading`, `log_maintenance` /
+`update_maintenance`.
+
+The record categories share one registration helper (`registerRecordWrites` in
+`mcp/tools-write.ts`) because they are the same create-then-update shape over
+`category-routes.ts`; the rest are bespoke tools over bespoke routes.
+
+**No delete tool.** A delete is destructive and irreversible, and it earns its
+own design — provenance, confirmation, and what an agent may undo — rather than
+riding in on the logging surface. Creates and updates are additive and
+reversible; deletes are neither.
+
+The reads live in `mcp/tools-baby.ts` and `mcp/tools-home.ts`, the writes in
+`mcp/tools-write.ts`, all built on `mcp/tool-kit.ts` (the result shape,
+date-window filtering, and the thin fetchers). Still to come: record-level
+provenance, then scale-out.
 
 ## Attribution
 
@@ -265,10 +289,8 @@ limit is deliberately generous — it is a runaway guard, not a billing meter.
    Settings → Agent access, tests. **Done.**
 2. **Read catalog** — the full read surface (`tools-baby.ts`, `tools-home.ts`).
    **Done.**
-3. **Write catalog** — the remaining writes (`log_diaper`, `log_sleep`,
-   `log_growth`, `log_milestone`, `log_vaccination`, `create_appointment`,
-   `add_journal_entry`, `adjust_inventory`, `log_maintenance`,
-   `add_meter_reading`), one registration each.
+3. **Write catalog** — the creates and updates (`tools-write.ts`). **Done.**
+   Deletes are deliberately out of scope and were not added.
 4. **Provenance** — a record-level `via` marker and richer logging.
 5. **Scale-out** — registry-backed rate limiting and, if needed, a dedicated
    process.
@@ -283,3 +305,6 @@ limit is deliberately generous — it is a runaway guard, not a billing meter.
   malformed and revoked tokens get `401`.
 - A write through `log_feed` lands in the family's database and appears in the
   normal feed read.
+- Every create in the write catalog lands a real record visible through the
+  matching read; every update corrects it; and a token for family A cannot
+  write into family B.

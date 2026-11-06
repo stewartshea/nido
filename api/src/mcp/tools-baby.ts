@@ -19,7 +19,6 @@ import {
   sumAmountOz,
   toolError,
 } from './tool-kit';
-import { callFamilyRoute } from './caller';
 
 export function registerBabyTools(server: McpServer, ctx: ToolContext): void {
   // ── Members ───────────────────────────────────────────────────────────────
@@ -252,38 +251,6 @@ export function registerBabyTools(server: McpServer, ctx: ToolContext): void {
   );
 
   // ── Write ─────────────────────────────────────────────────────────────────
-  server.registerTool(
-    'log_feed',
-    {
-      title: 'Log a feeding',
-      description:
-        'Record a feeding (breast, bottle, formula, pump or solid) for one child. Appears in the log like any other entry.',
-      inputSchema: {
-        memberId: z.number().int().positive().describe('The child id from list_children'),
-        type: z.enum(['breast', 'bottle', 'formula', 'pump', 'solid']).describe('Feeding type'),
-        startTime: z.string().optional().describe('ISO 8601 start (default: now)'),
-        endTime: z.string().optional().describe('ISO 8601 end'),
-        amount: z.number().positive().optional().describe('Amount, for bottle/formula/pump'),
-        amountUnit: z.enum(['ml', 'oz']).optional().describe('Unit for `amount` (default oz)'),
-        side: z.enum(['left', 'right', 'both']).optional().describe('Breast side, for a breast feed'),
-        notes: z.string().optional(),
-      },
-      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
-    },
-    async (args) => {
-      try {
-        const payload = { ...args, startTime: args.startTime ?? new Date().toISOString() };
-        const data = await callFamilyRoute<{ message: string; feeding: RouteRecord }>({
-          ...ctx,
-          path: '/api/v1/feedings',
-          method: 'POST',
-          body: payload,
-          tool: 'log_feed',
-        });
-        return jsonResult({ message: data.message, feeding: data.feeding });
-      } catch (err) {
-        return toolError(err);
-      }
-    },
-  );
+  // The write tools (log_feed, log_diaper, ...) live in tools-write.ts, where
+  // every create and update of the record categories is registered together.
 }

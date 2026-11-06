@@ -219,9 +219,9 @@ describe('mcp endpoint', () => {
 
     const logRes = await callTool(plaintext, 'log_feed', { memberId: childId, type: 'bottle', amount: 40, amountUnit: 'ml' });
     expect(logRes.body.result.isError).toBeFalsy();
-    const created = logRes.body.result.structuredContent as { feeding: { amount: number; amount_unit: string } };
-    expect(created.feeding.amount).toBe(40);
-    expect(created.feeding.amount_unit).toBe('ml');
+    const created = logRes.body.result.structuredContent as { record: { amount: number; amount_unit: string } };
+    expect(created.record.amount).toBe(40);
+    expect(created.record.amount_unit).toBe('ml');
 
     const readRes = await callTool(plaintext, 'get_feedings', { memberId: childId });
     const feedings = (readRes.body.result.structuredContent as { feedings: Array<{ amount: number }> }).feedings;
@@ -397,5 +397,154 @@ describe('mcp read catalog', () => {
     expect(Array.isArray(body.upcoming)).toBe(true);
     expect(Array.isArray(body.booked)).toBe(true);
     expect(body.booked.length).toBeGreaterThanOrEqual(1);
+  });
+});
+
+describe('mcp write catalog', () => {
+  it('creates and updates every child record type', async () => {
+    const fam = await registerFamily('mcp-writes-baby@example.com');
+    const childId = await addChild(fam.token, 'Pip');
+    const { plaintext } = await mintToken(fam.token);
+
+    const sc = (res: any) => res.body.result.structuredContent as any;
+
+    // Feeding — created with a default start time, corrected after.
+    const feed = await callTool(plaintext, 'log_feed', { memberId: childId, type: 'bottle', amount: 30 });
+    const feedRec = sc(feed).record;
+    expect(feedRec.amount).toBe(30);
+    expect(typeof feedRec.start_time).toBe('string'); // defaulted to now
+    const feedUpd = await callTool(plaintext, 'update_feed', { id: feedRec.id, amount: 35, notes: 'topped up' });
+    expect(sc(feedUpd).record.amount).toBe(35);
+    expect(sc(feedUpd).record.notes).toBe('topped up');
+
+    // Diaper — the time is defaulted by the tool.
+    const diaper = await callTool(plaintext, 'log_diaper', { memberId: childId, type: 'wet' });
+    const diaperRec = sc(diaper).record;
+    expect(diaperRec.type).toBe('wet');
+    expect(typeof diaperRec.change_time).toBe('string');
+    const diaperUpd = await callTool(plaintext, 'update_diaper', { id: diaperRec.id, type: 'both' });
+    expect(sc(diaperUpd).record.type).toBe('both');
+
+    // Sleep — update sets the end and the route derives the duration.
+    const sleep = await callTool(plaintext, 'log_sleep', { memberId: childId, startTime: '2026-01-01T10:00:00.000Z' });
+    const sleepRec = sc(sleep).record;
+    const sleepUpd = await callTool(plaintext, 'update_sleep', { id: sleepRec.id, endTime: '2026-01-01T11:30:00.000Z' });
+    expect(sc(sleepUpd).record.end_time).toBe('2026-01-01T11:30:00.000Z');
+    expect(Number(sc(sleepUpd).record.duration)).toBe(90 * 60 * 1000);
+
+    // Growth — the update returns the recomputed record.
+    const growth = await callTool(plaintext, 'log_growth', { memberId: childId, weight: 10, height: 22, unitSystem: 'imperial' });
+    const growthRec = sc(growth).record;
+    expect(growthRec.weight).toBe(10);
+    const growthUpd = await callTool(plaintext, 'update_growth', { id: growthRec.id, weight: 11 });
+    expect(sc(growthUpd).record.weight).toBe(11);
+
+    // Milestone — achievedDate is defaulted to now.
+    const milestone = await callTool(plaintext, 'log_milestone', { memberId: childId, title: 'First wave' });
+    const milestoneRec = sc(milestone).record;
+    expect(milestoneRec.title).toBe('First wave');
+    const milestoneUpd = await callTool(plaintext, 'update_milestone', { id: milestoneRec.id, title: 'Waves hello' });
+    expect(sc(milestoneUpd).record.title).toBe('Waves hello');
+
+    // Vaccination
+    const vacc = await callTool(plaintext, 'log_vaccination', { memberId: childId, name: 'HepB' });
+    const vaccRec = sc(vacc).record;
+    expect(vaccRec.name).toBe('HepB');
+    const vaccUpd = await callTool(plaintext, 'update_vaccination', { id: vaccRec.id, name: 'HepB dose 2' });
+    expect(sc(vaccUpd).record.name).toBe('HepB dose 2');
+
+    // Journal
+    const journal = await callTool(plaintext, 'add_journal_entry', { memberId: childId, title: 'Day one', body: 'good' });
+    const journalRec = sc(journal).record;
+    expect(journalRec.title).toBe('Day one');
+    const journalUpd = await callTool(plaintext, 'update_journal_entry', { id: journalRec.id, title: 'Day one (edited)' });
+    // Journal is a camel-mode category: its update returns only a message, so read it back.
+    expect(sc(journalUpd)).toBeTruthy();
+    const journalRead = await callTool(plaintext, 'get_journal', { memberId: childId });
+    expect(sc(journalRead).entries[0].title).toBe('Day one (edited)');
+
+    // Every write is a real record: the reads see them.
+    const diapers = await callTool(plaintext, 'get_diapers', { memberId: childId });
+    expect(sc(diapers).diapers).toHaveLength(1);
+    const milestones = await callTool(plaintext, 'get_milestones', { memberId: childId });
+    expect(sc(milestones).milestones[0].title).toBe('Waves hello');
+  });
+
+  it('creates and updates the home, inventory and appointment records', async () => {
+    const fam = await registerFamily('mcp-writes-home@example.com');
+    const childId = await addChild(fam.token, 'Fig');
+    const { plaintext } = await mintToken(fam.token);
+    const sc = (res: any) => res.body.result.structuredContent as any;
+
+    // Asset
+    const asset = await callTool(plaintext, 'add_asset', { name: 'Car', category: 'vehicle', identity: { model: 'Civic' } });
+    const assetRec = sc(asset).asset;
+    expect(assetRec.name).toBe('Car');
+    const assetUpd = await callTool(plaintext, 'update_asset', { id: assetRec.id, name: 'Blue Car' });
+    expect(sc(assetUpd).asset.name).toBe('Blue Car');
+
+    // Meter + reading (a meter itself is created through the ordinary API).
+    const meter = await authedPost(`/api/v1/home-assets/${assetRec.id}/meters`, { kind: 'distance', unit: 'km', label: 'Odometer' }, fam.token);
+    const reading = await callTool(plaintext, 'add_meter_reading', { meterId: meter.meter.id, value: 12345 });
+    expect(sc(reading).meter).toBeTruthy();
+
+    // Maintenance
+    const entry = await callTool(plaintext, 'log_maintenance', { assetId: assetRec.id, task: 'Oil change', performedAt: '2026-02-01', cost: 5000 });
+    const entryRec = sc(entry).entry;
+    expect(entryRec.task).toBe('Oil change');
+    const entryUpd = await callTool(plaintext, 'update_maintenance', { entryId: entryRec.id, notes: 'synthetic' });
+    expect(sc(entryUpd).entry.notes).toBe('synthetic');
+
+    // Inventory: a delta, then an absolute recount.
+    const item = await authedPost('/api/v1/inventory', { name: 'Filters', category: 'home filter', quantity: 0, unit: 'count' }, fam.token);
+    const itemId = item.item.id ?? item.item?.id;
+    const adjusted = await callTool(plaintext, 'adjust_inventory', { itemId, change: 5, reason: 'purchase' });
+    expect(sc(adjusted).item.quantity).toBe(5);
+    const recounted = await callTool(plaintext, 'recount_inventory', { itemId, quantity: 2, note: 'used two' });
+    expect(sc(recounted).item.quantity).toBe(2);
+
+    // Appointment: book, then reschedule.
+    const appt = await callTool(plaintext, 'create_appointment', {
+      memberId: childId,
+      category: 'appointments',
+      scheduledAt: '2026-03-01T09:00:00.000Z',
+      data: { type: 'checkup' },
+    });
+    const apptRec = sc(appt).appointment;
+    expect(apptRec.id).toBeTruthy();
+    const rescheduled = await callTool(plaintext, 'reschedule_appointment', { id: apptRec.id, scheduledAt: '2026-03-08T09:00:00.000Z' });
+    expect(sc(rescheduled).appointment.scheduled_at).toBe('2026-03-08T09:00:00.000Z');
+  });
+
+  it('refuses a write into another family', async () => {
+    const a = await registerFamily('mcp-writes-iso-a@example.com');
+    const b = await registerFamily('mcp-writes-iso-b@example.com');
+    const childB = await addChild(b.token, 'Not Yours');
+    const tokenA = (await mintToken(a.token)).plaintext;
+
+    const res = await callTool(tokenA, 'log_diaper', { memberId: childB, type: 'wet' });
+    expect(res.body.result.isError).toBe(true);
+
+    const dbB = getFamilyClient(b.familyId);
+    const count = await dbB.execute({ sql: 'SELECT COUNT(*) AS n FROM diapers' });
+    expect(Number((count.rows[0] as { n: number }).n)).toBe(0);
+  });
+
+  it('lists the write tools alongside the reads', async () => {
+    const fam = await registerFamily('mcp-writes-list@example.com');
+    const { plaintext } = await mintToken(fam.token);
+    const list = await mcp(plaintext, { jsonrpc: '2.0', id: 1, method: 'tools/list' });
+    const names = (list.body.result.tools as Array<{ name: string }>).map((t) => t.name);
+    expect(names).toEqual(
+      expect.arrayContaining([
+        'log_feed', 'log_diaper', 'log_sleep', 'log_growth', 'log_milestone', 'log_vaccination',
+        'add_journal_entry', 'create_appointment', 'add_asset', 'adjust_inventory', 'recount_inventory',
+        'add_meter_reading', 'log_maintenance',
+        'update_feed', 'update_diaper', 'update_sleep', 'update_growth', 'update_milestone',
+        'update_vaccination', 'update_journal_entry', 'update_asset', 'update_maintenance', 'reschedule_appointment',
+      ]),
+    );
+    // No delete tool in this pass.
+    expect(names.some((n) => n.startsWith('delete'))).toBe(false);
   });
 });
