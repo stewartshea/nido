@@ -351,14 +351,27 @@ connection fails rather than waiting, so enter it again once you are back.
 
 ## Settings
 
-**Settings** is grouped four ways:
+**Settings** is grouped five ways:
 
 - **Account** — profile, change password, delete account.
 - **Household** — family and tracking: categories, value lists, anonymized
   sharing, invitations, people, mobile quick links.
+- **Agents** — agent access: mint and revoke the MCP tokens an AI agent uses.
 - **Data** — import history, download a backup, restore from one.
 - **Admin** — registration toggle, SMTP, and a live system status panel, for
   the platform admin.
+
+### Agent access (MCP)
+
+**Settings → Agents → Agent access** mints an opaque token an AI agent uses to
+read your family and log against it over the **Model Context Protocol**. A token
+is shown **once** — Nido stores only its hash — can be labelled, and is
+**revoked** at any time, with access ending at the next request. The panel also
+produces a ready-to-paste MCP config. Only an owner or admin can create or
+revoke a token, and Nido runs no model of its own.
+
+See [Agent access (MCP) →](../reference/agent-access/) for the endpoint and the
+full tool list.
 
 ### System status (platform admin)
 
