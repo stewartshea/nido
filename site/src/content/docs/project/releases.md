@@ -16,7 +16,7 @@ A release is a tag on `main`, cut by hand from the `Release` workflow in the
 schedule: a release is a claim that this commit is safe against someone's
 family data, and that is not a judgement a cron should make unattended.
 
-Cutting one does four things, in order:
+Cutting one does five things, in order:
 
 1. Tags the commit `v<date>` and creates a GitHub Release whose notes are
    generated from the pull requests merged since the previous tag.
@@ -26,6 +26,9 @@ Cutting one does four things, in order:
 4. Pins the hosted instance's manifests to the tag, in a separate
    infrastructure repository. Flux reconciles that repository into the cluster,
    so the release — not a pod restart — is what rolls production.
+5. Prints the release's merged pull requests and the docs feature-update
+   checklist in the run summary, so the highlight is written from the release
+   rather than from memory.
 
 Step 4 is deliberate, and it is the part that is easy to get wrong. A floating
 tag on a Deployment looks automatic and is not: the tag is resolved when a pod
@@ -74,11 +77,35 @@ merged pull-request titles, deliberately: a hand-kept changelog drifts the
 moment someone forgets, and a stale changelog looks authoritative while being
 wrong.
 
-The trade is that generated notes list changes rather than explain them. If a
-release's pull requests touch the schema, treat the upgrade as a
-**data-format change**: read the migration itself in `api/src/db-namespaces.ts`
-and take a backup before you upgrade, rather than reading the note as a feature
-list.
+The trade is that generated notes list changes rather than explain them. That
+is why the docs carry a feature-update highlight: the notes stay the complete
+list, and the highlight explains one change. If a release's pull requests touch
+the schema, treat the upgrade as a **data-format change**: read the migration
+itself in `api/src/db-namespaces.ts` and take a backup before you upgrade,
+rather than reading the note as a feature list.
+
+## Docs feature update
+
+A release that ships a user-visible feature gets one short highlight at the top
+of the docs page it changes. It is not a changelog: what changed, why the app
+can do it now, and one thing to try. The format and the removal rule live in
+`.agents/skills/feature-update/SKILL.md`.
+
+The release workflow prints the merged pull requests, the highlights that are
+live, and this checklist in the run summary. After the release:
+
+1. Pick the change a reader would act on from the notes.
+2. Add a `<!-- feature-update: v<date> -->` block to the page it changes.
+3. Replace the old block on that page; fold durable detail into the body.
+4. Update the latest-release card in `site/src/content/docs/index.mdx`.
+5. Run `npm run docs:check`, then open the docs PR.
+
+`npm run docs:check` fails on a marker with no close, a title that disagrees
+with its marker, or a tag that does not exist. It warns when a highlight is
+older than 60 days. The docs site workflow runs the same check on every docs
+change, so a broken highlight cannot reach `main`.
+
+`npm run docs:release` prints the same checklist locally.
 
 ## The hosted instance
 

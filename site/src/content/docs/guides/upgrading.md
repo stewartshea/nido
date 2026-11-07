@@ -10,11 +10,11 @@ upgrading the images does not touch your data.
 
 ```bash
 # 1. back up the volume and confirm the key is safe
-./backup.sh
+#    See ../guides/backup-and-restore/ for the command and a script to keep.
+#    Do not continue until you have a copy of NIDO_MASTER_KEY.
 
 # 2. note what you're on
 docker compose ps
-docker inspect nido-api-1 --format '{{.Config.Image}}'
 ```
 
 A backup is not optional before an upgrade. It is the only thing standing
@@ -67,11 +67,21 @@ The data format is treated as a compatibility boundary:
 
 ## Roll back
 
-Rolling the images back is safe, because the old version reads the same files:
+Rolling the images back is safe, because the old version reads the same files.
+
+If you build from source:
 
 ```bash
 git checkout <previous-sha>
 docker compose up -d --build
+```
+
+If you run the published images, set both image tags in the Compose file to the
+previous `v<date>` or `sha-<commit>`, then pull:
+
+```bash
+docker compose pull
+docker compose up -d
 ```
 
 This works only as long as the newer version did not change the data format or

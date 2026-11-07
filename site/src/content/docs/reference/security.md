@@ -78,7 +78,7 @@ the gap until the limit lands.
 
 ## Agent access tokens
 
-**Settings → Agent access** mints opaque tokens (`nido_mcp_…`) that connect an AI
+**Settings → Agents → Agent access** mints opaque tokens (`nido_mcp_…`) that connect an AI
 agent you run to one family over [MCP](./agent-access/). The registry stores only
 a **SHA-256 hash** with the family id and a label — the plaintext is shown once
 and never persisted or logged.

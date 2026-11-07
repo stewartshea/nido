@@ -10,7 +10,7 @@ can try it.
 ## Requirements
 
 - **Docker** with Compose v2 (`docker compose`, not `docker-compose`)
-- Node.js 18+ — only if you plan to run the services outside containers
+- Node.js 22+ — only if you plan to run the services outside containers
 - Roughly 1 GB of free disk for the images, plus whatever your family's data needs
 
 You do not need a domain, a public IP, or a TLS certificate to get started.

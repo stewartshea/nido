@@ -254,12 +254,22 @@ h6,
 
 /* The landing page opens on a bare, centered tagline — no title, no
    buttons. The carousel below it does the product's heavy lifting. */
+[data-has-hero] .content-panel:first-of-type {
+	padding-block: 1rem 0.25rem;
+	border-bottom: 0;
+}
+
+[data-has-hero] .content-panel + .content-panel {
+	padding-top: 0.25rem;
+}
+
 .hero {
-	padding-block: 2.5rem 0.5rem;
+	padding-block: 0.75rem 0.25rem;
 	text-align: center;
 }
 
 .hero .tagline {
+	margin: 0;
 	max-width: 44rem;
 	margin-inline: auto;
 	font-size: clamp(1.4rem, 3vw, 2rem);
@@ -301,11 +311,87 @@ h6,
 /* Feature carousel — Apple-style horizontal slides.                  */
 /* Each slide is a full feature highlight: eyebrow, headline,          */
 /* description, and a phone screenshot. Scroll-snap horizontal,        */
-/* one slide at a time, with anchor-link dots below.                  */
+/* one slide at a time, with Baby / Family / Household track tabs      */
+/* and interactive slide pills below.                                 */
 /* ---------------------------------------------------------------- */
 
 .nido-carousel {
-	margin: 2rem 0 1rem;
+	margin: 0.75rem 0 1.5rem;
+}
+
+.nido-carousel__header {
+	display: flex;
+	justify-content: center;
+	margin-bottom: 0.85rem;
+}
+
+/* Segmented track switcher: Baby | Family | Household */
+.nido-carousel__tabs {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.25rem;
+	padding: 0.25rem;
+	background: var(--sl-color-gray-6);
+	border: 1px solid var(--sl-color-gray-5);
+	border-radius: 999px;
+	box-shadow: var(--nido-card-shadow);
+}
+
+.nido-carousel__tab {
+	appearance: none;
+	margin: 0;
+	border: 0;
+	border-radius: 999px;
+	padding: 0.45rem 1.25rem;
+	font-family: var(--sl-font);
+	font-size: 0.9rem;
+	font-weight: 600;
+	line-height: 1.2;
+	background: transparent;
+	color: var(--sl-color-gray-2);
+	cursor: pointer;
+	transition: background-color 150ms ease, color 150ms ease, box-shadow 150ms ease;
+}
+
+.nido-carousel__tab:hover {
+	color: var(--sl-color-gray-1);
+}
+
+.nido-carousel__tab[aria-selected='true'] {
+	background: var(--sl-color-accent-high);
+	color: var(--sl-color-black);
+	box-shadow: 0 1px 4px rgb(0 0 0 / 0.18);
+}
+
+/* Hide slides and slide pills that belong to inactive tracks. */
+.nido-carousel[data-track] .nido-slide {
+	display: none;
+}
+
+.nido-carousel[data-track='baby'] .nido-slide[data-track-slide='baby'],
+.nido-carousel[data-track='family'] .nido-slide[data-track-slide='family'],
+.nido-carousel[data-track='household'] .nido-slide[data-track-slide='household'] {
+	display: grid;
+}
+
+.nido-carousel[data-track] .nido-carousel__dot {
+	display: none;
+}
+
+.nido-carousel[data-track='baby'] .nido-carousel__dot[data-track-dot='baby'],
+.nido-carousel[data-track='family'] .nido-carousel__dot[data-track-dot='family'],
+.nido-carousel[data-track='household'] .nido-carousel__dot[data-track-dot='household'] {
+	display: inline-flex;
+}
+
+.nido-carousel[data-track] .nido-carousel__also {
+	display: none;
+}
+
+.nido-carousel[data-track='baby'] .nido-carousel__also[data-track-also='baby'],
+.nido-carousel[data-track='family'] .nido-carousel__also[data-track-also='family'],
+.nido-carousel[data-track='household'] .nido-carousel__also[data-track-also='household'] {
+	display: flex;
 }
 
 .nido-carousel__track {
@@ -325,31 +411,28 @@ h6,
 	display: none;
 }
 
-/* Each slide: full-width, text on the left, phone on the right.
-   Generous padding and a max-width keep it feeling like a product
-   section, not a cramped card. */
+/* Each slide: full-width, text on the left, phone on the right. */
 .nido-slide {
 	flex: 0 0 100%;
 	scroll-snap-align: center;
 	display: grid;
 	grid-template-columns: minmax(0, 1fr) auto;
-	gap: 3rem 4rem;
+	gap: 1.75rem 3rem;
 	align-items: center;
-	max-width: 64rem;
+	max-width: 56rem;
 	margin-inline: auto;
-	padding: 2rem 1.5rem 1rem;
+	padding: 0.75rem 1.25rem 0.5rem;
 }
 
-/* Text block: eyebrow, headline, description. Apple-style hierarchy —
-   small colored eyebrow, big bold headline, muted description. */
+/* Text block: eyebrow, headline, description. */
 .nido-slide__text {
 	display: flex;
 	flex-direction: column;
-	gap: 0.75rem;
+	gap: 0.6rem;
 }
 
 .nido-slide__eyebrow {
-	font-size: 0.8rem;
+	font-size: 0.78rem;
 	font-weight: 600;
 	letter-spacing: 0.08em;
 	text-transform: uppercase;
@@ -358,7 +441,7 @@ h6,
 
 .nido-slide__text h3 {
 	margin: 0;
-	font-size: clamp(1.75rem, 4vw, 2.75rem);
+	font-size: clamp(1.5rem, 3.2vw, 2.25rem);
 	font-weight: 600;
 	letter-spacing: -0.02em;
 	line-height: 1.15;
@@ -367,16 +450,16 @@ h6,
 
 .nido-slide__text p {
 	margin: 0;
-	font-size: 1.1rem;
-	line-height: 1.6;
+	font-size: 1.05rem;
+	line-height: 1.55;
 	color: var(--sl-color-gray-2);
-	max-width: 32rem;
+	max-width: 30rem;
 }
 
 /* Phone screenshot: rounded, subtle shadow, fixed width so it doesn't
    stretch. Sits to the right of the text on desktop. */
 .nido-slide__phone {
-	width: 15rem;
+	width: 14rem;
 }
 
 .nido-slide__phone img {
@@ -385,16 +468,13 @@ h6,
 	height: auto;
 	background: var(--nido-card);
 	border: 1px solid var(--sl-color-gray-5);
-	border-radius: 2rem;
+	border-radius: 1.85rem;
 	box-shadow: 0 8px 32px rgb(50 36 38 / 0.12), 0 2px 8px rgb(50 36 38 / 0.08);
 }
 
 /* Each slide carries the app in two themes (blush-light, blush-dark) and
    shows whichever one contrasts with the site theme: a light phone on a dark
-   page and a dark phone on a light page. Starlight's own `sl-hidden`
-   utilities live in a @layer that unlayered rules here would beat, so the
-   swap is spelled out explicitly and tracks the theme picker, not the OS
-   preference. */
+   page and a dark phone on a light page. */
 [data-theme='light'] .light\:sl-hidden {
 	display: none;
 }
@@ -403,36 +483,128 @@ h6,
 	display: none;
 }
 
-/* Navigation dots below the carousel. */
+/* Slide controls below the carousel: prev/next arrows + named slide pills. */
+.nido-carousel__controls {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: 0.5rem;
+	margin-top: 0.85rem;
+	padding-bottom: 0.35rem;
+}
+
 .nido-carousel__dots {
 	display: flex;
+	flex-wrap: wrap;
 	justify-content: center;
-	gap: 0.6rem;
-	margin-top: 1.5rem;
-	padding-bottom: 1rem;
+	gap: 0.35rem;
 }
 
-.nido-carousel__dots a {
-	width: 0.55rem;
-	height: 0.55rem;
-	background: var(--sl-color-gray-5);
+.nido-carousel__dot {
+	appearance: none;
+	margin: 0;
+	align-items: center;
+	justify-content: center;
+	padding: 0.28rem 0.75rem;
+	border-radius: 999px;
+	border: 1px solid var(--sl-color-gray-5);
+	background: var(--nido-card);
+	color: var(--sl-color-gray-2);
+	font-family: var(--sl-font);
+	font-size: 0.78rem;
+	font-weight: 500;
+	line-height: 1.2;
+	cursor: pointer;
+	transition: background-color 150ms ease, color 150ms ease, border-color 150ms ease;
+}
+
+.nido-carousel__dot:hover {
+	color: var(--sl-color-gray-1);
+	border-color: var(--sl-color-gray-4);
+}
+
+.nido-carousel__dot[aria-current='true'] {
+	background: var(--nido-accent-soft);
+	border-color: var(--nido-accent);
+	color: var(--sl-color-gray-1);
+	font-weight: 600;
+}
+
+.nido-carousel__arrow {
+	appearance: none;
+	margin: 0;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 1.9rem;
+	height: 1.9rem;
 	border-radius: 50%;
-	transition: background-color 150ms ease, transform 150ms ease;
+	border: 1px solid var(--sl-color-gray-5);
+	background: var(--nido-card);
+	color: var(--sl-color-gray-1);
+	font-size: 1.1rem;
+	line-height: 1;
+	cursor: pointer;
+	transition: background-color 150ms ease, border-color 150ms ease, opacity 150ms ease;
 }
 
-.nido-carousel__dots a:hover,
-.nido-carousel__dots a:focus-visible {
-	background: var(--nido-link);
-	transform: scale(1.2);
+.nido-carousel__arrow:hover:not(:disabled) {
+	border-color: var(--nido-accent);
+	background: var(--nido-accent-soft);
+}
+
+.nido-carousel__arrow:disabled {
+	opacity: 0.35;
+	cursor: default;
+}
+
+/* Per-track capability strip below the slide controls. */
+.nido-carousel__also {
+	flex-wrap: wrap;
+	align-items: center;
+	justify-content: center;
+	gap: 0.35rem 0.5rem;
+	margin-top: 0.45rem;
+	padding-top: 0.5rem;
+	border-top: 1px solid var(--sl-color-gray-5);
+	font-size: 0.82rem;
+	color: var(--sl-color-gray-2);
+}
+
+.nido-carousel__also-label {
+	font-weight: 600;
+	color: var(--sl-color-gray-1);
+	margin-right: 0.15rem;
+}
+
+.nido-carousel__also-list {
+	display: flex;
+	flex-wrap: wrap;
+	justify-content: center;
+	gap: 0.3rem 0.45rem;
+	list-style: none;
+	margin: 0;
+	padding: 0;
+}
+
+.nido-carousel__also-list li {
+	margin: 0;
+	padding: 0.15rem 0.55rem;
+	border-radius: 999px;
+	background: var(--sl-color-gray-6);
+	border: 1px solid var(--sl-color-gray-5);
+	color: var(--sl-color-gray-2);
+	font-size: 0.78rem;
+	white-space: nowrap;
 }
 
 /* Mobile: stack text above phone, center everything, shrink the phone. */
 @media (max-width: 50rem) {
 	.nido-slide {
 		grid-template-columns: 1fr;
-		gap: 1.5rem;
+		gap: 1rem;
 		text-align: center;
-		padding: 1.5rem 1rem 0.5rem;
+		padding: 0.75rem 0.75rem 0.25rem;
 	}
 
 	.nido-slide__text {
@@ -444,40 +616,46 @@ h6,
 	}
 
 	.nido-slide__phone {
-		width: 11rem;
+		width: 10.5rem;
 		margin-inline: auto;
 	}
 }
 
-/* ------------------------------------------------ coming soon --- */
+/* ------------------------------------------------ release highlight --- */
 
-/* Newly shipped module card: a solid card so it reads as shipped rather than
-   in-progress. Sits after the carousel, before the two ways to run it. When
-   the next module ships, the copy in index.mdx changes; the class name is
-   generic on purpose. */
+/* Newly shipped release card: sits below the fold under "What's new". */
 .nido-new {
 	display: flex;
 	gap: 1.5rem;
 	align-items: flex-start;
 	background: var(--nido-card);
-	border: 1px solid var(--sl-color-gray-4);
+	border: 1px solid var(--sl-color-gray-5);
+	border-inline-start: 3px solid var(--nido-accent);
 	border-radius: var(--nido-card-radius);
 	box-shadow: var(--nido-card-shadow);
-	padding: 1.5rem 1.75rem;
-	margin: 1.5rem 0;
+	padding: 1.35rem 1.6rem;
+	margin: 1rem 0 1.5rem;
 }
 
 .nido-new__body {
 	display: flex;
 	flex-direction: column;
-	gap: 0.6rem;
+	gap: 0.55rem;
+	width: 100%;
+}
+
+.nido-new__top {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 0.5rem 0.65rem;
 }
 
 .nido-new__chip {
 	align-self: flex-start;
 	font-family: var(--sl-font);
 	font-size: 0.72rem;
-	font-weight: 600;
+	font-weight: 700;
 	letter-spacing: 0.04em;
 	text-transform: uppercase;
 	color: var(--nido-accent);
@@ -489,7 +667,7 @@ h6,
 
 .nido-new h3 {
 	margin: 0;
-	font-size: 1.35rem;
+	font-size: 1.25rem;
 	font-weight: 600;
 	letter-spacing: -0.02em;
 	color: var(--sl-color-gray-1);
@@ -497,12 +675,30 @@ h6,
 
 .nido-new p {
 	margin: 0;
-	max-width: 38rem;
+	max-width: 42rem;
+	font-size: 0.96rem;
+	line-height: 1.6;
 	color: var(--sl-color-gray-2);
 }
 
 .nido-new__link {
-	margin-top: 0.25rem;
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 0.35rem 0.5rem;
+	margin-top: 0.2rem;
+	font-size: 0.9rem;
+}
+
+.nido-new__link a {
+	color: var(--nido-link);
+	font-weight: 500;
+	text-decoration: none;
+}
+
+.nido-new__link a:hover {
+	color: var(--nido-link-hover);
+	text-decoration: underline;
 }
 
 @media (max-width: 36rem) {

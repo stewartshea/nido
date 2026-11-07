@@ -64,8 +64,9 @@ failure to diagnose.
 ## Registry vs family data
 
 `registry.db` only maps email → family id and holds instance-wide settings
-(`app_settings`). Per-family application data — records, blobs, settings —
-belongs in the family namespace and must never be written to the registry.
+(`app_settings`). Per-family application data — records, blob metadata,
+settings — belongs in the family namespace and must never be written to the
+registry. Blob contents live as files under `blobs/`, outside the database.
 
 ## API conventions
 
@@ -80,10 +81,11 @@ belongs in the family namespace and must never be written to the registry.
 
 ## Client-side
 
-Client writes that might fail offline are queued in `localStorage` under
-`nido.outbox`, capped at the most recent 200 entries, and flushed on page mount
-and every 60 seconds. That is what lets you log a 3am feed in a basement and
-watch it sync later.
+Feed, pump, and sleep writes that might fail offline are queued in
+`localStorage` under `nido.outbox`, capped at the most recent 200 entries. The
+queue flushes when the **Family** page mounts and every 60 seconds while it is
+open; other categories fail fast rather than queueing. That is what lets you
+log a 3am feed in a basement and watch it sync later.
 
 ## Growth tracking
 
@@ -121,7 +123,8 @@ Two details worth knowing:
   not stop the others being told.
 - Reading the page never consumes a notification — only delivery records it.
 - The digest covers **inventory alerts only**. Tracking reminders appear in the
-  app but are not emailed yet.
+  app but are not emailed yet. A separate weekly email lists upcoming
+  appointments, visits, and routines when a family opts in.
 
 **Running more than one API replica?** Set `NOTIFY_ENABLED=false` on all but one.
 Replicas sharing a volume also coordinate through a lease in `registry.db`, but
@@ -140,7 +143,7 @@ seam a future queue would slot into, is in
 ├── registry.db              # email → family routing, app settings
 ├── db/
 │   └── <familyId>.db        # one encrypted file per family
-└── blobs/                  # encrypted uploads (avatars + attachments)
+└── blobs/                  # uploads (avatars + attachments; not encrypted)
 ```
 
 The databases are never part of an image, so image builds and pulls carry no

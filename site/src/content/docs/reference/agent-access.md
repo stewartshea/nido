@@ -8,10 +8,19 @@ head:
     content: |
       {"@context":"https://schema.org","@type":"FAQPage","mainEntity":[
         {"@type":"Question","name":"Does Nido include an AI model?","acceptedAnswer":{"@type":"Answer","text":"No. Nido exposes its own operations as MCP tools but runs no model, generates no summaries, and adds no AI. The agent is a client you run; Nido is the tool server."}},
-        {"@type":"Question","name":"How do I connect an AI agent to Nido?","acceptedAnswer":{"@type":"Answer","text":"Generate a token under Settings, Agent access, then point an MCP client at POST /mcp on your Nido host, using the token as a Bearer credential. The page produces a ready-to-paste MCP config."}},
+        {"@type":"Question","name":"How do I connect an AI agent to Nido?","acceptedAnswer":{"@type":"Answer","text":"Generate a token under Settings, Agents, Agent access, then point an MCP client at POST /mcp on your Nido host, using the token as a Bearer credential. The page produces a ready-to-paste MCP config."}},
         {"@type":"Question","name":"What can an agent do to my data?","acceptedAnswer":{"@type":"Answer","text":"It can read the family and log or correct records through the same validated routes the app uses, opening only that family's database. There is no delete tool, and every write carries who made it."}}
       ]}
 ---
+
+<!-- feature-update: v2026.11.06 -->
+:::note[New in v2026.11.06: an agent can read and log for your family]
+Nido now exposes its own operations over MCP. Every tool calls the same
+validated route as the web app and opens only the family database named in its
+token. Generate a token under **Settings → Agents → Agent access**, paste the
+config into your client, then ask it to list today's feeds.
+:::
+<!-- /feature-update -->
 
 Nido exposes its own operations as **MCP (Model Context Protocol)** tools. Point
 an agent at Nido's MCP endpoint and it can read a family's records and log
@@ -23,7 +32,7 @@ is a client you run, wherever you already run it; Nido is the tool server.
 
 ## Turning it on
 
-1. Open **Settings → Agent access**.
+1. Open **Settings → Agents → Agent access**.
 2. Press **Generate token**. The token is shown **once** — copy it then. Nido
    stores only its SHA-256 hash. A label is optional, for telling tokens apart.
 3. Copy the MCP config the page generates, or use the template below.

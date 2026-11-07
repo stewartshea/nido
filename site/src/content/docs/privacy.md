@@ -41,12 +41,15 @@ whole list rather than a summary:
   family
 - **A confirmation** if your account is deleted
 
-**Because of rules you set:**
+**Because of rules your family set:**
 
-- **A notification digest** — when a tracking rule or inventory rule you
-  configured fires (for example, "diapers down to three days of cover"), the
-  people that rule is addressed to can get **one email** about it. It is about
-  your own family's records, and an unchanged item will not keep emailing you.
+- **An inventory digest** — when an inventory rule your family configured
+  fires (for example, "diapers down to three days of cover"), the people that
+  rule is addressed to can get **one email** about it. It is about your own
+  family's records, and an unchanged item will not keep emailing you.
+- **A weekly upcoming reminder** — if your family opts in, one email a week
+  listing appointments, visits, and routines coming up in the next two weeks,
+  plus any that are already overdue. It stays quiet when nothing is booked.
 
 That is the complete list. **No marketing emails, no newsletters, no "we miss
 you" nudges, no product announcements.** If you get an email from My Nido,

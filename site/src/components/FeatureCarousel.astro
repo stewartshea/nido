@@ -1,0 +1,406 @@
+---
+import phoneFeedsLight from '../assets/screenshots/phone-feeds-light.jpg';
+import phoneFeedsDark from '../assets/screenshots/phone-feeds-dark.jpg';
+import phonePumpingLight from '../assets/screenshots/phone-pumping-light.jpg';
+import phonePumpingDark from '../assets/screenshots/phone-pumping-dark.jpg';
+import phoneTrendsLight from '../assets/screenshots/phone-trends-light.jpg';
+import phoneTrendsDark from '../assets/screenshots/phone-trends-dark.jpg';
+import phoneGrowthLight from '../assets/screenshots/phone-growth-light.jpg';
+import phoneGrowthDark from '../assets/screenshots/phone-growth-dark.jpg';
+import phoneFamilyLight from '../assets/screenshots/phone-family-members-light.jpg';
+import phoneFamilyDark from '../assets/screenshots/phone-family-members-dark.jpg';
+import phoneNotificationsLight from '../assets/screenshots/phone-notifications-light.jpg';
+import phoneNotificationsDark from '../assets/screenshots/phone-notifications-dark.jpg';
+import phoneReportsLight from '../assets/screenshots/phone-reports-light.jpg';
+import phoneReportsDark from '../assets/screenshots/phone-reports-dark.jpg';
+import phoneHouseholdLight from '../assets/screenshots/phone-household-light.jpg';
+import phoneHouseholdDark from '../assets/screenshots/phone-household-dark.jpg';
+import phoneInventoryLight from '../assets/screenshots/phone-inventory-light.jpg';
+import phoneInventoryDark from '../assets/screenshots/phone-inventory-dark.jpg';
+
+const tracks = [
+	{
+		id: 'baby',
+		label: 'Baby',
+		also: [
+			'Medications & dose timers',
+			'Diaper & formula stock runway',
+			'Sleep & nap timers',
+			'Temperatures & vitals',
+			'Milestones & vaccinations',
+			'Photos & daily journal',
+		],
+	},
+	{
+		id: 'family',
+		label: 'Family',
+		also: [
+			'Medications & due-dose alerts',
+			'Temperatures, weight & vitals',
+			'Doctor, dentist & vet visits',
+			'Shared family inventory',
+			'Babies, kids, adults & pets',
+			'Multi-caregiver attribution',
+		],
+	},
+	{
+		id: 'household',
+		label: 'Household',
+		also: [
+			'Filter & supply inventory',
+			'Residences & property assets',
+			'Odometer & usage meters',
+			'Seasonal upkeep checklists',
+			'Maintenance logs with receipts',
+			'Manuals & warranty files',
+		],
+	},
+] as const;
+
+const slides = [
+	{
+		id: 'slide-feeds',
+		track: 'baby',
+		shortLabel: 'Feeds',
+		eyebrow: 'Baby tracking',
+		title: 'Every feed, logged in two taps',
+		body: 'Breast, bottle, or formula — with timers, amounts, a live "last feed" tile for 3am, and formula bottles that subtract straight from your open can in inventory.',
+		light: phoneFeedsLight.src,
+		dark: phoneFeedsDark.src,
+		alt: 'Nido on a phone: logging a feed with quick action tiles',
+		eager: true,
+	},
+	{
+		id: 'slide-baby-inventory',
+		track: 'baby',
+		shortLabel: 'Diaper & formula stock',
+		eyebrow: 'Inventory runway',
+		title: 'Always know how many diapers are left',
+		body: 'Every logged diaper and formula bottle counts down your open stock automatically. See 30-day cover bars at a glance, get low-stock alerts before 2am, and forecast when your baby will outgrow the current diaper size.',
+		light: phoneInventoryLight.src,
+		dark: phoneInventoryDark.src,
+		alt: 'Nido on a phone: inventory cards with days-of-cover progress bars and interactive stat filters',
+	},
+	{
+		id: 'slide-trends',
+		track: 'baby',
+		shortLabel: 'Trends & meds',
+		eyebrow: 'Daily rhythm & care',
+		title: 'Feeds, sleep, diapers, and medications',
+		body: 'Log sleep timers, diaper changes, active medications with dose intervals, temperatures, and milestones — and see the week’s patterns and rates at a glance.',
+		light: phoneTrendsLight.src,
+		dark: phoneTrendsDark.src,
+		alt: 'Nido on a phone: weekly trends for feeds and sleep',
+	},
+	{
+		id: 'slide-pumping',
+		track: 'baby',
+		shortLabel: 'Pumping',
+		eyebrow: 'Baby tracking',
+		title: 'Pumping, tracked on its own',
+		body: "Every session with amount and duration — separable from feeds, so you can see exactly what you're producing.",
+		light: phonePumpingLight.src,
+		dark: phonePumpingDark.src,
+		alt: 'Nido on a phone: logging a pumping session',
+	},
+	{
+		id: 'slide-growth',
+		track: 'baby',
+		shortLabel: 'Growth',
+		eyebrow: 'Baby tracking',
+		title: 'Growth against WHO curves',
+		body: 'Weight, height, and head circumference plotted against standard percentiles — no interpretation, just the record.',
+		light: phoneGrowthLight.src,
+		dark: phoneGrowthDark.src,
+		alt: 'Nido on a phone: growth chart with WHO percentiles',
+	},
+	{
+		id: 'slide-family',
+		track: 'family',
+		shortLabel: 'Members & meds',
+		eyebrow: 'Family care',
+		title: 'Everyone in the family — and what they take',
+		body: 'Babies, children, adults, and pets each get their own tracked categories: active medication courses with dose intervals, temperatures and vitals, doctor or vet appointments, routines, and journals.',
+		light: phoneFamilyLight.src,
+		dark: phoneFamilyDark.src,
+		alt: 'Nido on a phone: compact member switcher with favorite stars',
+	},
+	{
+		id: 'slide-notifications',
+		track: 'family',
+		shortLabel: 'Reminders & alerts',
+		eyebrow: 'Notifications',
+		title: 'Medications due, feeds, and low stock',
+		body: 'Overdue medication doses, time-since-last-feed reminders, interval checklists, and low-inventory warnings — in the app, or as an email digest to your family.',
+		light: phoneNotificationsLight.src,
+		dark: phoneNotificationsDark.src,
+		alt: 'Nido on a phone: notifications page with active reminders and rules',
+	},
+	{
+		id: 'slide-family-inventory',
+		track: 'family',
+		shortLabel: 'Shared inventory',
+		eyebrow: 'Inventory',
+		title: 'One stock ledger for the whole family',
+		body: 'Track diapers, wipes, formula cans, and family supplies in one place. Stock counts down as caregivers log, shows days of cover left, and lets anyone recount in place.',
+		light: phoneInventoryLight.src,
+		dark: phoneInventoryDark.src,
+		alt: 'Nido on a phone: inventory cards with days-of-cover progress bars',
+	},
+	{
+		id: 'slide-reports',
+		track: 'family',
+		shortLabel: 'Reports',
+		eyebrow: 'Reports',
+		title: 'Daily series, by formula and category',
+		body: 'Overlay pumped volume, individual formula cans, and inventory usage on one chart — and tap any day to see what made it up.',
+		light: phoneReportsLight.src,
+		dark: phoneReportsDark.src,
+		alt: 'Nido on a phone: reports page with daily volume series, per-formula breakdown, and category lines',
+	},
+	{
+		id: 'slide-household',
+		track: 'household',
+		shortLabel: 'Homes & assets',
+		eyebrow: 'Household',
+		title: 'Tend to every place you call home',
+		body: 'Residences, property assets, odometer and usage meters, receipts, and seasonal upkeep schedules in one household record.',
+		light: phoneHouseholdLight.src,
+		dark: phoneHouseholdDark.src,
+		alt: 'Nido on a phone: household page with residences, property assets, and upkeep schedules',
+	},
+	{
+		id: 'slide-household-inventory',
+		track: 'household',
+		shortLabel: 'Parts & supply stock',
+		eyebrow: 'Inventory',
+		title: 'Stock that connects to home upkeep',
+		body: 'Keep furnace filters, salt bags, diapers, and household consumables on the same 30-day runway — and subtract stock straight from a maintenance log entry.',
+		light: phoneInventoryLight.src,
+		dark: phoneInventoryDark.src,
+		alt: 'Nido on a phone: inventory cards with days-of-cover progress bars and interactive stat filters',
+	},
+];
+---
+
+<section class="nido-carousel not-content" data-carousel data-track="baby" aria-label="Feature highlights">
+	<div class="nido-carousel__header">
+		<div class="nido-carousel__tabs" role="tablist" aria-label="Feature category">
+			{
+				tracks.map((t, idx) => (
+					<button
+						type="button"
+						role="tab"
+						class="nido-carousel__tab"
+						aria-selected={idx === 0 ? 'true' : 'false'}
+						data-track-tab={t.id}
+					>
+						{t.label}
+					</button>
+				))
+			}
+		</div>
+	</div>
+
+	<ul class="nido-carousel__track" data-carousel-track>
+		{
+			slides.map((s) => (
+				<li class="nido-slide" id={s.id} data-track-slide={s.track}>
+					<div class="nido-slide__text">
+						<span class="nido-slide__eyebrow">{s.eyebrow}</span>
+						<h3>{s.title}</h3>
+						<p>{s.body}</p>
+					</div>
+					<div class="nido-slide__phone">
+						<picture>
+							<img
+								src={s.light}
+								class="light:sl-hidden"
+								width="390"
+								height="844"
+								alt={s.alt}
+								loading={s.eager ? undefined : 'lazy'}
+								decoding="async"
+							/>
+							<img
+								src={s.dark}
+								class="dark:sl-hidden"
+								width="390"
+								height="844"
+								alt=""
+								loading="lazy"
+								decoding="async"
+							/>
+						</picture>
+					</div>
+				</li>
+			))
+		}
+	</ul>
+
+	<div class="nido-carousel__controls">
+		<button type="button" class="nido-carousel__arrow" data-carousel-prev aria-label="Previous slide">
+			‹
+		</button>
+		<div class="nido-carousel__dots" role="tablist" aria-label="Slides in this category">
+			{
+				slides.map((s, idx) => (
+					<button
+						type="button"
+						class="nido-carousel__dot"
+						data-track-dot={s.track}
+						data-slide-target={s.id}
+						aria-label={s.shortLabel}
+						aria-current={idx === 0 ? 'true' : 'false'}
+					>
+						<span>{s.shortLabel}</span>
+					</button>
+				))
+			}
+		</div>
+		<button type="button" class="nido-carousel__arrow" data-carousel-next aria-label="Next slide">
+			›
+		</button>
+	</div>
+
+	{
+		tracks.map((t) => (
+			<div class="nido-carousel__also" data-track-also={t.id}>
+				<span class="nido-carousel__also-label">Included in {t.label}:</span>
+				<ul class="nido-carousel__also-list">
+					{t.also.map((item) => (
+						<li>{item}</li>
+					))}
+				</ul>
+			</div>
+		))
+	}
+</section>
+
+<script is:inline>
+	(function () {
+		function initCarousels() {
+			document.querySelectorAll('[data-carousel]').forEach(function (root) {
+				if (root.dataset.ready === 'true') return;
+				root.dataset.ready = 'true';
+
+				var trackEl = root.querySelector('[data-carousel-track]');
+				var tabs = Array.from(root.querySelectorAll('[data-track-tab]'));
+				var slides = Array.from(root.querySelectorAll('[data-track-slide]'));
+				var dots = Array.from(root.querySelectorAll('[data-track-dot]'));
+				var prevBtn = root.querySelector('[data-carousel-prev]');
+				var nextBtn = root.querySelector('[data-carousel-next]');
+
+				if (!trackEl) return;
+
+				function visibleSlides() {
+					var activeTrack = root.getAttribute('data-track') || 'baby';
+					return slides.filter(function (s) {
+						return s.getAttribute('data-track-slide') === activeTrack;
+					});
+				}
+
+				function visibleDots() {
+					var activeTrack = root.getAttribute('data-track') || 'baby';
+					return dots.filter(function (d) {
+						return d.getAttribute('data-track-dot') === activeTrack;
+					});
+				}
+
+				var currentIndex = 0;
+
+				function syncControls(index) {
+					var vSlides = visibleSlides();
+					var vDots = visibleDots();
+					if (vSlides.length === 0) return;
+					currentIndex = Math.max(0, Math.min(index, vSlides.length - 1));
+
+					dots.forEach(function (d) {
+						d.setAttribute('aria-current', 'false');
+					});
+					if (vDots[currentIndex]) {
+						vDots[currentIndex].setAttribute('aria-current', 'true');
+					}
+					if (prevBtn) prevBtn.disabled = currentIndex === 0;
+					if (nextBtn) nextBtn.disabled = currentIndex >= vSlides.length - 1;
+				}
+
+				function goToSlide(index, smooth) {
+					var vSlides = visibleSlides();
+					if (!trackEl || vSlides.length === 0) return;
+					var clamped = Math.max(0, Math.min(index, vSlides.length - 1));
+					var target = vSlides[clamped];
+					syncControls(clamped);
+					trackEl.scrollTo({
+						left: target.offsetLeft - trackEl.offsetLeft,
+						behavior: smooth ? 'smooth' : 'instant',
+					});
+				}
+
+				function setTrack(track) {
+					root.setAttribute('data-track', track);
+					tabs.forEach(function (t) {
+						var active = t.getAttribute('data-track-tab') === track;
+						t.setAttribute('aria-selected', active ? 'true' : 'false');
+					});
+					goToSlide(0, false);
+				}
+
+				tabs.forEach(function (tab) {
+					tab.addEventListener('click', function () {
+						var nextTrack = tab.getAttribute('data-track-tab');
+						if (nextTrack) setTrack(nextTrack);
+					});
+				});
+
+				dots.forEach(function (dot) {
+					dot.addEventListener('click', function () {
+						var vDots = visibleDots();
+						var idx = vDots.indexOf(dot);
+						if (idx !== -1) goToSlide(idx, true);
+					});
+				});
+
+				if (prevBtn) {
+					prevBtn.addEventListener('click', function () {
+						goToSlide(currentIndex - 1, true);
+					});
+				}
+				if (nextBtn) {
+					nextBtn.addEventListener('click', function () {
+						goToSlide(currentIndex + 1, true);
+					});
+				}
+
+				var scrollTimer;
+				trackEl.addEventListener(
+					'scroll',
+					function () {
+						if (scrollTimer) window.clearTimeout(scrollTimer);
+						scrollTimer = window.setTimeout(function () {
+							var vSlides = visibleSlides();
+							if (vSlides.length === 0) return;
+							var scrollLeft = trackEl.scrollLeft;
+							var bestIdx = 0;
+							var bestDist = Infinity;
+							vSlides.forEach(function (s, idx) {
+								var dist = Math.abs(s.offsetLeft - trackEl.offsetLeft - scrollLeft);
+								if (dist < bestDist) {
+									bestDist = dist;
+									bestIdx = idx;
+								}
+							});
+							syncControls(bestIdx);
+						}, 40);
+					},
+					{ passive: true },
+				);
+
+				syncControls(0);
+			});
+		}
+
+		initCarousels();
+		document.addEventListener('astro:page-load', initCarousels);
+	})();
+</script>

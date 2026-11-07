@@ -6,159 +6,9 @@ hero:
   tagline: An app for helping tend to your family and home.
 ---
 
-import phoneFeedsLight from '../../assets/screenshots/phone-feeds-light.jpg';
-import phoneFeedsDark from '../../assets/screenshots/phone-feeds-dark.jpg';
-import phonePumpingLight from '../../assets/screenshots/phone-pumping-light.jpg';
-import phonePumpingDark from '../../assets/screenshots/phone-pumping-dark.jpg';
-import phoneTrendsLight from '../../assets/screenshots/phone-trends-light.jpg';
-import phoneTrendsDark from '../../assets/screenshots/phone-trends-dark.jpg';
-import phoneGrowthLight from '../../assets/screenshots/phone-growth-light.jpg';
-import phoneGrowthDark from '../../assets/screenshots/phone-growth-dark.jpg';
-import phoneInventoryLight from '../../assets/screenshots/phone-inventory-light.jpg';
-import phoneInventoryDark from '../../assets/screenshots/phone-inventory-dark.jpg';
-import phoneReportsLight from '../../assets/screenshots/phone-reports-light.jpg';
-import phoneReportsDark from '../../assets/screenshots/phone-reports-dark.jpg';
-import phoneHouseholdLight from '../../assets/screenshots/phone-household-light.jpg';
-import phoneHouseholdDark from '../../assets/screenshots/phone-household-dark.jpg';
-import phoneFamilyLight from '../../assets/screenshots/phone-family-members-light.jpg';
-import phoneFamilyDark from '../../assets/screenshots/phone-family-members-dark.jpg';
-import phoneNotificationsLight from '../../assets/screenshots/phone-notifications-light.jpg';
-import phoneNotificationsDark from '../../assets/screenshots/phone-notifications-dark.jpg';
+import FeatureCarousel from '../../components/FeatureCarousel.astro';
 
-<div class="nido-carousel">
-	<ul class="nido-carousel__track">
-		<li class="nido-slide" id="slide-feeds">
-			<div class="nido-slide__text">
-				<span class="nido-slide__eyebrow">Baby tracking</span>
-				<h3>Every feed, logged in two taps</h3>
-				<p>Breast, bottle, or formula — with amounts, timers, and a live "last feed" tile that answers the 3am question.</p>
-			</div>
-			<div class="nido-slide__phone">
-				<picture>
-					<img src={phoneFeedsLight.src} class="light:sl-hidden" width="390" height="844" alt="Nido on a phone: logging a feed with quick action tiles" />
-					<img src={phoneFeedsDark.src} class="dark:sl-hidden" width="390" height="844" alt="" loading="lazy" decoding="async" />
-				</picture>
-			</div>
-		</li>
-		<li class="nido-slide" id="slide-pumping">
-			<div class="nido-slide__text">
-				<span class="nido-slide__eyebrow">Baby tracking</span>
-				<h3>Pumping, tracked on its own</h3>
-				<p>Every session with amount and duration — separable from feeds, so you can see exactly what you're producing.</p>
-			</div>
-			<div class="nido-slide__phone">
-				<picture>
-					<img src={phonePumpingLight.src} class="light:sl-hidden" width="390" height="844" alt="Nido on a phone: logging a pumping session" loading="lazy" decoding="async" />
-					<img src={phonePumpingDark.src} class="dark:sl-hidden" width="390" height="844" alt="" loading="lazy" decoding="async" />
-				</picture>
-			</div>
-		</li>
-		<li class="nido-slide" id="slide-trends">
-			<div class="nido-slide__text">
-				<span class="nido-slide__eyebrow">Baby tracking</span>
-				<h3>See the patterns emerge</h3>
-				<p>Feeds, sleep, and diapers over the last week — rates and rhythms at a glance, not buried in a list.</p>
-			</div>
-			<div class="nido-slide__phone">
-				<picture>
-					<img src={phoneTrendsLight.src} class="light:sl-hidden" width="390" height="844" alt="Nido on a phone: weekly trends for feeds and sleep" loading="lazy" decoding="async" />
-					<img src={phoneTrendsDark.src} class="dark:sl-hidden" width="390" height="844" alt="" loading="lazy" decoding="async" />
-				</picture>
-			</div>
-		</li>
-		<li class="nido-slide" id="slide-growth">
-			<div class="nido-slide__text">
-				<span class="nido-slide__eyebrow">Baby tracking</span>
-				<h3>Growth against WHO curves</h3>
-				<p>Weight, height, and head circumference plotted against standard percentiles — no interpretation, just the record.</p>
-			</div>
-			<div class="nido-slide__phone">
-				<picture>
-					<img src={phoneGrowthLight.src} class="light:sl-hidden" width="390" height="844" alt="Nido on a phone: growth chart with WHO percentiles" loading="lazy" decoding="async" />
-					<img src={phoneGrowthDark.src} class="dark:sl-hidden" width="390" height="844" alt="" loading="lazy" decoding="async" />
-				</picture>
-			</div>
-		</li>
-		<li class="nido-slide" id="slide-inventory">
-			<div class="nido-slide__text">
-				<span class="nido-slide__eyebrow">Inventory</span>
-				<h3>Know your diaper runway</h3>
-				<p>Stock counts itself as you log. Tap any metric card to filter, see 30-day cover bars at a glance, and recount in place.</p>
-			</div>
-			<div class="nido-slide__phone">
-				<picture>
-					<img src={phoneInventoryLight.src} class="light:sl-hidden" width="390" height="844" alt="Nido on a phone: inventory cards with days-of-cover progress bars and interactive stat filters" loading="lazy" decoding="async" />
-					<img src={phoneInventoryDark.src} class="dark:sl-hidden" width="390" height="844" alt="" loading="lazy" decoding="async" />
-				</picture>
-			</div>
-		</li>
-		<li class="nido-slide" id="slide-reports">
-			<div class="nido-slide__text">
-				<span class="nido-slide__eyebrow">Reports</span>
-				<h3>Daily series, by formula and category</h3>
-				<p>Overlay pumped volume, individual formula cans, and inventory usage on one chart — and tap any day to see what made it up.</p>
-			</div>
-			<div class="nido-slide__phone">
-				<picture>
-					<img src={phoneReportsLight.src} class="light:sl-hidden" width="390" height="844" alt="Nido on a phone: reports page with daily volume series, per-formula breakdown, and category lines" loading="lazy" decoding="async" />
-					<img src={phoneReportsDark.src} class="dark:sl-hidden" width="390" height="844" alt="" loading="lazy" decoding="async" />
-				</picture>
-			</div>
-		</li>
-		<li class="nido-slide" id="slide-household">
-			<div class="nido-slide__text">
-				<span class="nido-slide__eyebrow">Household</span>
-				<h3>Tend to every place you call home</h3>
-				<p>Residences, property assets, odometer and usage meters, and seasonal upkeep schedules in one household record.</p>
-			</div>
-			<div class="nido-slide__phone">
-				<picture>
-					<img src={phoneHouseholdLight.src} class="light:sl-hidden" width="390" height="844" alt="Nido on a phone: household page with residences, property assets, and upkeep schedules" loading="lazy" decoding="async" />
-					<img src={phoneHouseholdDark.src} class="dark:sl-hidden" width="390" height="844" alt="" loading="lazy" decoding="async" />
-				</picture>
-			</div>
-		</li>
-		<li class="nido-slide" id="slide-family">
-			<div class="nido-slide__text">
-				<span class="nido-slide__eyebrow">Family</span>
-				<h3>Everyone in the family</h3>
-				<p>Babies, children, adults, pets — star your default person and switch between family members in a single tap.</p>
-			</div>
-			<div class="nido-slide__phone">
-				<picture>
-					<img src={phoneFamilyLight.src} class="light:sl-hidden" width="390" height="844" alt="Nido on a phone: compact member switcher with favorite stars" loading="lazy" decoding="async" />
-					<img src={phoneFamilyDark.src} class="dark:sl-hidden" width="390" height="844" alt="" loading="lazy" decoding="async" />
-				</picture>
-			</div>
-		</li>
-		<li class="nido-slide" id="slide-notifications">
-			<div class="nido-slide__text">
-				<span class="nido-slide__eyebrow">Notifications</span>
-				<h3>Reminders that matter</h3>
-				<p>Inactivity alerts, interval checklists, and stock warnings — in the app, or as an email digest to your family.</p>
-			</div>
-			<div class="nido-slide__phone">
-				<picture>
-					<img src={phoneNotificationsLight.src} class="light:sl-hidden" width="390" height="844" alt="Nido on a phone: notifications page with active reminders and rules" loading="lazy" decoding="async" />
-					<img src={phoneNotificationsDark.src} class="dark:sl-hidden" width="390" height="844" alt="" loading="lazy" decoding="async" />
-				</picture>
-			</div>
-		</li>
-	</ul>
-	<nav class="nido-carousel__dots" aria-label="Feature slides">
-		<a href="#slide-feeds" aria-label="Feeds"></a>
-		<a href="#slide-pumping" aria-label="Pumping"></a>
-		<a href="#slide-trends" aria-label="Trends"></a>
-		<a href="#slide-growth" aria-label="Growth"></a>
-		<a href="#slide-inventory" aria-label="Inventory"></a>
-		<a href="#slide-reports" aria-label="Reports"></a>
-		<a href="#slide-household" aria-label="Household"></a>
-		<a href="#slide-family" aria-label="Family"></a>
-		<a href="#slide-notifications" aria-label="Notifications"></a>
-	</nav>
-</div>
-
-Also included: milestones, vaccinations, photos, a daily journal, and sleep tracking.
+<FeatureCarousel />
 
 ## Two ways to run it
 
@@ -193,21 +43,22 @@ Same software, same features. Pick whichever fits your household.
 	<strong>Install</strong> (Android) for an app-sized shortcut.
 </p>
 
-## New: the home itself
+## What's new
 
-<div class="nido-new">
+<div class="nido-new not-content">
 	<div class="nido-new__body">
-		<span class="nido-new__chip">Now in the app</span>
-		<h3>Home management</h3>
-		<p>
-			The care loop, pointed at the house: the homes themselves, the assets
-			in them, odometer and usage meters, seasonal schedules, and a
-			maintenance log that carries its own receipts — with seasonal
-			checklists derived from the log, never a stored checkbox that could
-			disagree with it. The same calm record that started with your baby,
-			for the place you live.
+		<div class="nido-new__top">
+			<span class="nido-new__chip">New in v2026.11.06</span>
+			<h3>An agent can read and log for your family</h3>
+		</div>
+		<p>Nido now exposes its operations over MCP, so an agent you run can read the household and log against it through the same validated routes as the web app — opening only your family's database, with no model running inside Nido. Mint a token under <strong>Settings → Agents → Agent access</strong> and paste the config into your client.</p>
+		<p class="nido-new__link">
+			<a href="./reference/agent-access/">Connect an agent →</a>
+			<span aria-hidden="true">·</span>
+			<a href="./guides/user-guide/">5-place nav &amp; start page (v2026.11.04) →</a>
+			<span aria-hidden="true">·</span>
+			<a href="./features/#reports">Reports daily series (v2026.11.03) →</a>
 		</p>
-		<p class="nido-new__link"><a href="./features/#home">What shipped →</a> · <a href="./project/roadmap/">What's next →</a></p>
 	</div>
 </div>
 
