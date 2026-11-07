@@ -3,6 +3,16 @@ title: Features
 description: What Nido actually does — logging, people, blobs, inventory, reminders, and the home inventory that comes after the baby stage.
 ---
 
+<!-- feature-update: v2026.11.03 -->
+:::note[New in v2026.11.03: daily series in Reports]
+**Reports** now draws pumped volume, formula, bottled milk, and inventory use as
+daily series over the same window. That works because every feed and inventory
+change is already a dated ledger entry, so the chart groups records by day
+instead of keeping a second set of totals. Open **Reports**, leave the default
+**30d** window, and tap a day to see what made it up.
+:::
+<!-- /feature-update -->
+
 Nido is a private record of the things you care for and keep. It starts as a
 baby log and grows into a household record: the same app, tracking more
 members and more kinds of thing.
@@ -17,7 +27,7 @@ The features are identical in both. Only who runs the server differs.
 
 | | Self-hosted | My Nido |
 | --- | --- | --- |
-| Who runs the API and web | You | RunWhen |
+| Who runs the API and web | You | The maintainer |
 | Where the data lives | Your hardware | Canada |
 | Your account | Yours alone | Yours, in a shared Nido |
 | Cost | Free | Free to use |
@@ -38,9 +48,9 @@ the same form.
 Each member can be tracked separately, so one baby can be logged while a
 sibling's categories stay quiet until you need them.
 
-## Twelve kinds of record
+## The kinds of record
 
-These are the log categories. Your family can turn any of them off — see
+These are the log categories. Each member can turn any of them off — see
 [What your family tracks →](guides/user-guide/#what-your-family-tracks).
 
 ### Feeds
@@ -116,7 +126,7 @@ edited or deleted like any other record, and "no blood pressure in a week" is a
 reminder you can set.
 
 Both arrive with the adult stage, and either can be turned on for any member
-under **Settings → Household**.
+under **Settings → Members**.
 
 ## Today
 
@@ -138,9 +148,9 @@ what order for each member.
 
 ## Quick Actions
 
-The things you log most often get their own tiles. You choose which — the
-**Mobile quick links** setting pins any subset of the twelve categories to the
-front of the screen.
+The things you log most often get their own tiles. You choose which — pin any
+subset of a member's categories to the front of **Quick Actions**, and leave
+the rest under **Other**.
 
 Two escape hatches sit next to the pinned tiles:
 
@@ -202,10 +212,10 @@ one is a different question:
 A rule's notification lands on [Notifications →](#notifications) under
 **Needs attention now**, alongside anything else firing.
 
-The last one earns its place. Give each diaper size a **weight band** and Nido
-fits a trend through your recorded weights — it needs at least two — then
-projects the day the next size is needed, instead of telling you at 2am that
-size 3 is gone.
+The size forecast is the one worth setting up. Give each diaper size a
+**weight band** and Nido fits a trend through your recorded weights — it needs
+at least two — then projects the day the next size is needed, instead of
+telling you at 2am that size 3 is gone.
 
 The "days since you recorded using this" signal deliberately **ignores**
 automated cadence rows, so it only rises when a person has not logged
@@ -236,17 +246,23 @@ been.
 
 ### Email
 
-Notifications can arrive as one email instead of being watched for in-app.
-**Send
-digest now** runs it on demand and reports how many went out.
+**Inventory alerts** can arrive as one email instead of being watched for
+in-app. **Send digest now** runs it on demand and reports how many went out.
+The digest is inventory only; tracking reminders stay in the app.
 
 Automatic digests run on a server-wide interval — `NOTIFY_ENABLED` (on by
 default) and `NOTIFY_INTERVAL_MINUTES`, which defaults to 60. It is an
 instance-level timer that sweeps every family rather than a per-family cron,
 so with more than one API replica it is switched on for one of them only.
-When it is off, the page says so plainly instead of leaving you to wire up
-your own scheduler. See [Configuration →](../reference/configuration/) and
+Each family chooses **How often** and **Send at** under **Settings → Family &
+tracking → Digest email**. When the timer is off, the page says so plainly
+instead of leaving you to wire up your own scheduler. See
+[Configuration →](../reference/configuration/) and
 [Architecture →](../reference/architecture/#notifications).
+
+A separate weekly email lists **upcoming appointments, visits, and routines**.
+It is off by default and opted into per family under **Settings → Family &
+tracking → Weekly upcoming reminders**.
 
 ## Home
 
@@ -269,14 +285,15 @@ The same care loop, past the baby stage — the HOME modules, built in the open
   row to maintain, and "past the close and unsatisfied" shows as overdue.
 - **Maintenance log** — what was done, when, what it cost, who did it. An
   entry can **consume inventory stock** ("one furnace filter from the shelf")
-  and carries its own receipts and photos, encrypted like every other
-  attachment. A seasonal checklist card checks off only when an entry exists
-  in the window — or an explicit skip with a reason — never a stored checkbox
-  that could disagree with the log.
-- **What's due** — one view across every asset, overdue first, feeding the
-  same digest as feeds and filters. One email, not two systems to check.
+  and carries its own receipts and photos. Attachments are stored as files
+  beside the encrypted database, not inside it. A seasonal checklist card
+  checks off only when an entry exists in the window — or an explicit skip
+  with a reason — never a stored checkbox that could disagree with the log.
+- **What's due** — one view across every asset, overdue first, so the house
+  has a single list to check. Home schedules are not part of the notification
+  email.
 
-The asset page is the drawer, made real: the cover photo, the meters, the
+The asset page brings the drawer together: the cover photo, the meters, the
 schedules, the history with costs, and every file — the manuals and the
 receipts — in one place.
 
@@ -290,8 +307,8 @@ family address book), and per-category schedule templates — see
 overlaid time series — accessible as a primary destination in both the desktop
 header and the mobile bottom bar:
 
-- **Flexible windows** — 7, 30, or 90 days, or a **Custom** date range up to a
-  full year, bucketed on the family's timezone.
+- **Flexible windows** — **7d**, **30d**, or **90d**, or a **Custom** date
+  range up to a full year, bucketed on the family's timezone.
 - **Volume and stock on one chart** — toggle **Pumped**, **Formula**,
   **Bottled milk** (left axis, in ounces) and **Inventory used** (right axis,
   dashed units).
@@ -311,9 +328,9 @@ Several people can log to the same family. Every record stores **who logged
 it**, shown on the Today tiles, so attribution is visible without asking.
 
 Invite by email, or add a member directly. Roles are `owner` and `admin`
-alongside ordinary members; settings that affect everyone — which categories
-are tracked, the value lists, and anonymized sharing — are owner/admin
-changes.
+alongside ordinary members. Invitations, export and restore, and the
+anonymized-sharing opt-in are owner/admin actions; the logging values and
+stage defaults are open to any member.
 
 ## Agent access (MCP)
 
@@ -321,8 +338,9 @@ Nido can hand its own operations to an AI agent you run — over the **Model
 Context Protocol** — so the agent can answer "how much did the baby sleep this
 week?" or log three feeds at once, without Nido running a model of its own.
 
-Under **Settings → Agent access** you mint an opaque token (shown once, stored
-only as a hash, revocable at any time) and paste the generated MCP config into
+Under **Settings → Agents → Agent access** you mint an opaque token (shown
+once, stored only as a hash, revocable at any time) and paste the generated
+MCP config into
 your agent. From there the agent can read the household and log against it
 through the same validated routes the app uses; there is no second way into the
 data, and nothing runs inside Nido when no agent is attached. Writes are
@@ -333,10 +351,10 @@ and the full tool list.
 
 ## Bringing your history, and taking it with you
 
-**Import** history from a **NaraBaby CSV export** under **Settings → Data**.
+**Import** history from a **NaraBaby CSV export** under **Settings → Import**.
 
-**Export** by downloading a backup — a file you can read without Nido
-running, with no account and no Nido involvement.
+**Export** by downloading a backup under **Settings → Backup** — a file you
+can read without Nido running, with no account and no Nido involvement.
 
 Moving a whole instance to new hardware is a different job: it needs the
 data volume **and** the master key together.
@@ -356,6 +374,6 @@ data volume **and** the master key together.
   [Agent access (MCP) →](reference/agent-access/).
 - **No telemetry, and no analytics.** Nido does not phone home. The one
   opt-in that reads as outbound — *anonymized daily sharing* under
-  **Settings → Household** — is currently a stored preference with a 24-hour
-  totals preview, not a published feed, and only an owner or admin can set
-  it. See [Security model →](../reference/security/).
+  **Settings → Family & tracking** — is currently a stored preference with a
+  24-hour totals preview, not a published feed, and only an owner or admin can
+  set it. See [Security model →](../reference/security/).

@@ -14,6 +14,8 @@
     "test": "npm run test --workspaces --if-present",
     "vocab:generate": "tsx scripts/generate-vocabulary.ts",
     "vocab:check": "tsx scripts/generate-vocabulary.ts --check",
+    "docs:check": "node scripts/docs-release.mjs --check",
+    "docs:release": "node scripts/docs-release.mjs --release",
     "prepare": "node scripts/setup-git-hooks.mjs",
     "task": "task",
     "seed:test": "task seed:test",

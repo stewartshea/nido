@@ -14,6 +14,8 @@ something was already got wrong once.
 
 ## Local setup
 
+You need Node.js 22+ and Docker with Compose v2.
+
 ```bash
 git clone https://github.com/stewartshea/nido.git
 cd nido

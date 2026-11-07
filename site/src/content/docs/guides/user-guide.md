@@ -3,6 +3,16 @@ title: User guide
 description: Day-to-day use of Nido — signing in, logging, correcting mistakes, adding people, inventory, reminders, and settings.
 ---
 
+<!-- feature-update: v2026.11.04 -->
+:::note[New in v2026.11.04: five places and a start page you choose]
+The app now has five destinations — **Household**, **Family**, **Inventory**,
+**Reports**, and **Notifications** — and Nido opens on the page you pin. That
+works because each one is a top-level route with its own URL, not a tile inside
+a single home screen. Open **Settings → Profile**, choose a **Default start
+page**, then reopen Nido to land there.
+:::
+<!-- /feature-update -->
+
 This is the app walkthrough. [Features →](../features/) is what exists;
 this is what you do with it. If you have not run Nido yet, start with
 [Installation →](../getting-started/installation/) and
@@ -100,8 +110,9 @@ A dose with a date; a mood from your value list; a free-text entry.
 
 ## Finding the category you need
 
-The pinned tiles are yours to choose (**Settings → Mobile quick links**).
-Two controls cover the rest:
+The pinned tiles are yours to choose on the **Family** page: remove one with
+**−**, and add another with **+** under **Other**. Two controls cover the
+rest:
 
 - **Log activity** opens every category at once.
 - **Other** expands only the categories you have not pinned.
@@ -147,26 +158,30 @@ work a little differently:
 
 Settings are split by who they affect:
 
-- **Any member** can change what the family tracks and the value lists in
-  the log forms, and their own mobile quick links.
+- **Any member** can change the family's logging values and stage defaults,
+  and their own categories and quick links.
 - **Owners and admins** can invite people, change the anonymized sharing
-  opt-in, and reach the admin panel.
+  opt-in, export or restore a family, and reach the admin panel.
 
 ## What your family tracks
 
-Under **Settings → Household**, toggles turn categories on and off. A
-category switched off disappears from the log forms for **every member** in
-the family — useful for keeping a toddler's quiet months away from a
-newborn's log without deleting anything.
+Open **Settings → Members**, press **edit** on a person, and choose their
+categories. A category switched off disappears from that person's log forms;
+everyone else keeps theirs. That is useful for keeping a toddler's quiet
+months away from a newborn's log without deleting anything.
 
-Under **Choices when logging**, the values offered for each kind of record —
-routine types, visit types, mood words, diaper consistency and colour. They
-appear in the log forms for everyone, so agree on them before the first
-2am diaper rather than during.
+The stage defaults for new profiles are separate, under **Settings → Family &
+tracking → Categories by stage**. Changing a stage does not rewrite existing
+people; it sets what the next profile of that stage starts with.
+
+Under **Settings → Family & tracking → Choices when logging**, you set the
+values offered for each kind of record — routine types, visit types, mood
+words, diaper consistency and colour. They appear in the log forms for
+everyone, so agree on them before the first 2am diaper rather than during.
 
 :::tip[Set these before you need them]
-Both are family-wide, so any member can change what everyone else sees.
-A quick conversation beats a surprise.
+The logging values are family-wide, so any member can change what everyone
+else sees. A quick conversation beats a surprise.
 :::
 
 ## Inventory
@@ -294,14 +309,21 @@ reminder **done** resets its clock.
 
 ### Email
 
-Notifications can arrive as one email rather than being watched for. **Send
-digest
-now** delivers it immediately and tells you how many went out.
+**Inventory alerts** can arrive as one email instead of being watched for in
+the app. **Send digest now** delivers the next one immediately and tells you
+how many went out.
 
-Automatic digests are a server setting, not a per-family one — your operator
-controls them. If they are off, this section says so rather than leaving you
-guessing. Self-hosters: see
+The digest is inventory only; tracking reminders stay in the app. The family
+chooses **How often** and **Send at** under **Settings → Family & tracking →
+Digest email**. The timer that runs the sweep is an instance setting, so your
+operator can switch it off entirely. If it is off, this section says so rather
+than leaving you guessing. Self-hosters: see
 [Configuration →](../reference/configuration/).
+
+A second, separate email lists **upcoming appointments, visits, and routines**
+once a week. It is off by default; turn on **Email a weekly list of what's
+coming up** under **Settings → Family & tracking → Weekly upcoming
+reminders**.
 
 ## Household
 
@@ -326,12 +348,13 @@ Then the durable things get their own pages:
   *any* (whichever comes first) or *all*.
 - **Log maintenance** when care happens: what was done, when, what it cost,
   and who did it. An entry can **use inventory stock** — pick the furnace
-  filter and the count — and attach the receipt, encrypted like every other
-  file in Nido.
+  filter and the count — and attach the receipt. Attachments are stored as
+  files beside the encrypted database, not inside it; the
+  [security model](../reference/security/) says exactly what is protected.
 
 The **What's due** card on the Household page rises to the top whenever an
-asset's maintenance schedule is due or overdue across the house, and feeds the
-same [email digest](#email) as everything else.
+asset's maintenance schedule is due or overdue across the house. It is the
+house's own list; home schedules are not part of the notification email.
 
 A seasonal schedule shows as a **checklist** — "Winter 2026" — and a card
 checks off when an entry is logged inside the window. Nothing is checked that
@@ -354,8 +377,9 @@ connection fails rather than waiting, so enter it again once you are back.
 **Settings** is grouped five ways:
 
 - **Account** — profile, change password, delete account.
-- **Household** — family and tracking: categories, value lists, anonymized
-  sharing, invitations, people, mobile quick links.
+- **Household** — **Family & tracking** holds the stage defaults, timezone,
+  digest, logging values, and anonymized sharing; **Members** holds people,
+  invitations, and each person's categories.
 - **Agents** — agent access: mint and revoke the MCP tokens an AI agent uses.
 - **Data** — import history, download a backup, restore from one.
 - **Admin** — registration toggle, SMTP, and a live system status panel, for
@@ -403,8 +427,8 @@ no flash of the default palette on load.
 
 ## Bringing your history with you
 
-Under **Data**, Nido imports a **NaraBaby CSV export**, and restores from a
-backup file or a restore point.
+Under **Settings → Import**, Nido imports a **NaraBaby CSV export**;
+**Settings → Backup** restores from a backup file or a restore point.
 
 For a complete copy of your own data, download the backup. It is a file you
 can read without Nido running.

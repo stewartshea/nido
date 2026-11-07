@@ -28,8 +28,8 @@ Open <http://localhost:3001> and register.
 - If it is left empty, **the first account to register becomes the platform
   admin**. Register yourself first on a fresh instance.
 
-Only the platform admin can reach **Account Settings → Admin**, which is where
-the registration toggle lives.
+Only the platform admin can reach **Settings → Admin**, which is where the
+registration toggle lives.
 
 :::caution[Close registration once the family is set up]
 Leaving `SIGNUP_ENABLED` at its default means anyone who can reach your instance
@@ -42,12 +42,12 @@ people — the env var is authoritative and locks the Admin panel toggle.
 Sign in and add a family member: name, birth date, and a member type. Each
 member gets their own avatar, and every record — feed, diaper, sleep, growth
 entry, milestone — is attached to a member rather than to "the baby". That
-matters if you ever track a sibling or a pet-level daily log.
+matters if you ever track a sibling or a pet's daily log.
 
 ## Invite the other caregivers
 
-**Settings → Family** (or the invite flow) generates a link. Accepting it adds a
-user to the same family with a role:
+**Settings → Members** (or the invite flow) generates a link. Accepting it adds
+a user to the same family with a role:
 
 | Role | Can do |
 | --- | --- |
@@ -61,16 +61,17 @@ and is not recommended, because it destroys the audit trail of who logged what.
 
 ## Try the offline queue
 
-Turn off your phone's Wi-Fi and log a diaper. It appears immediately and is
-queued under the `nido.outbox` localStorage key (capped to the most recent 200
-entries), then replayed on reconnect. This is what makes logging work in a
-basement or a hospital corridor.
+Turn off your phone's Wi-Fi and log a feed. The form says **Feeding saved
+locally — will sync when connected** and holds the record under the
+`nido.outbox` localStorage key (capped to the most recent 200 entries), then
+replays it on reconnect. This is what makes logging work in a basement or a
+hospital corridor.
 
 ## Pick a theme
 
-**Settings → Appearance** offers 7 palettes × light and dark, plus a custom
-theme editor. The default is *forest* — and *blush* is there too, which is the
-palette the documentation you're reading is themed in.
+The theme picker in the header — the palette button — offers 7 palettes ×
+light and dark, plus a custom theme editor. The default is *forest*; *blush* is
+there too, and it is the palette this documentation is themed in.
 
 ## What to do next
 

@@ -7,12 +7,13 @@ description: What lives inside each image, and where the data actually is.
 
 | Image | Base | Exposes | Starts |
 | --- | --- | --- | --- |
-| `api` | Node 20 Alpine | `3000` | `npm start` |
-| `web` | Node 20 Alpine | `3001` | `npm run dev -- --host` |
+| `api` | Node 22 Alpine | `3000` | `npm start` |
+| `web` | Node 22 Alpine | `3001` | `node build` |
 
-The `web` image runs the Vite dev server as its production entrypoint, which
-means it proxies `/api` to the API service. That is deliberate: it keeps the
-browser same-origin, so there is no CORS configuration anywhere in the stack.
+The `web` image builds the SvelteKit app during the image build and runs
+`node build` as its production entrypoint. Its `hooks.server.ts` proxies `/api`
+to the API service, which keeps the browser same-origin — so there is no CORS
+configuration anywhere in the stack.
 
 ## Databases are never in an image
 
@@ -25,7 +26,7 @@ what makes `docker compose up -d` a safe upgrade.
 /data
 ├── registry.db            # email → family routing, app settings
 ├── db/<familyId>.db        # one encrypted file per family
-└── blobs/                # uploads
+└── blobs/                # uploads (not encrypted at rest)
 ```
 
 `api/Dockerfile` copies only source (`src`, `tsconfig.json`, manifests) and

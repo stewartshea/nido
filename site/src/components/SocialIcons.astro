@@ -12,6 +12,7 @@ const HOSTED_LOGIN_URL = `${HOSTED_URL}/login`;
 // so the header is the reliable way to reach the documentation itself — point
 // "Docs" at the features page, the richest single survey of the product.
 const DOCS_URL = withBase('/features/');
+const WHATS_NEW_URL = `${withBase('/')}#whats-new`;
 
 const links = config.social || [];
 ---
@@ -31,6 +32,10 @@ const links = config.social || [];
 					)}
 				</a>
 			))}
+			<a class="header-whats-new" href={WHATS_NEW_URL}>
+				<span class="header-whats-new__dot" aria-hidden="true"></span>
+				What's new
+			</a>
 			<a class="header-docs" href={DOCS_URL}>
 				Docs
 			</a>
@@ -52,21 +57,33 @@ const links = config.social || [];
 			color: var(--sl-color-white);
 		}
 
-		/* "Docs" text link in the header, before the login button. */
+		/* "What's new" and "Docs" text links in the header, before the login button. */
+		.header-whats-new,
 		.header-docs {
 			display: inline-flex;
 			align-items: center;
-			margin: 0 0 0 0.5rem;
-			padding: 0.35rem 0.6rem;
+			gap: 0.35rem;
+			margin: 0 0 0 0.35rem;
+			padding: 0.35rem 0.55rem;
 			font-size: 0.85rem;
 			font-weight: 600;
 			line-height: 1;
 			color: var(--sl-color-text-accent);
 			text-decoration: none;
+			white-space: nowrap;
 		}
 
+		.header-whats-new:hover,
 		.header-docs:hover {
 			color: var(--sl-color-white);
+		}
+
+		.header-whats-new__dot {
+			width: 0.42rem;
+			height: 0.42rem;
+			border-radius: 50%;
+			background: var(--nido-accent);
+			flex-shrink: 0;
 		}
 
 		/* Compact "Log in" button in the header, right of the social icons. */
