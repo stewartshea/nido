@@ -2,6 +2,7 @@
 // (category-routes.ts) holds the behavior; this declares the category.
 import { z } from 'zod';
 import { type CategorySheet, categoryRoutes } from './category-routes';
+import { diaperBilledItemId } from '../diaper-size';
 
 const selectColumns = ['id', 'subject_id', 'change_time', 'type', 'color', 'consistency', 'notes', 'created_at', 'created_by'];
 
@@ -61,7 +62,18 @@ const diaperSheet: CategorySheet = {
     deleted: 'Diaper deleted successfully',
     createdStatus: 200,
   },
-  emit: { category: 'diapers', attrs: (d) => ({ type: d.type as string }) },
+  emit: {
+    category: 'diapers',
+    attrs: (d) => ({ type: d.type as string }),
+    // A change bills the size being worn, not every size in the cupboard.
+    // The ladder's current band names that stock item; with fewer than two
+    // linked sizes there is nothing to choose, so this returns null and the
+    // older behaviour stands.
+    pin: async ({ db, subjectId }) => {
+      const itemId = await diaperBilledItemId(db, subjectId);
+      return itemId === undefined ? null : { itemId, pinCategory: 'diapers' };
+    },
+  },
 };
 
 export const diaperRoutes = categoryRoutes(diaperSheet);

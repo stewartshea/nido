@@ -173,6 +173,17 @@ bills nothing ("we don't know which can you fed" beats every can draining at
 once). Whole-use rules keep matching any member's events regardless; the pin
 is a fact about distribution, not about matching.
 
+The diaper size ladder is the same problem with a different source. A change
+carries only a type (wet/dirty/both/dry), so a whole-use rule on each linked
+pack would empty two packs on one change. The route resolves the size the child
+is wearing from the latest growth weight and the ladder's bands, then sets
+`pinCategory: 'diapers'` with `billedItem` naming that size's stock item. The
+pin is scoped to a category: only diaper items other than the one in use are
+suppressed, so the wipes tub (3 per change) still bills. With fewer than two
+linked sizes there is nothing to disambiguate and the route does not pin,
+leaving the older behavior; a ladder whose size in use has no linked item bills
+no diaper stock rather than guessing at an older size.
+
 ### 4.4 Conditions
 
 ```jsonc
@@ -207,14 +218,18 @@ of a `kind:category` string hack.
 2. Candidate rules: `active = 1 AND source_table = source AND (subject_id =
    subjectId OR subject_id IS NULL)`.
 3. Per rule: conditions evaluated against `attrs`; no match → skip.
-4. Idempotency: insert the gate row (`UNIQUE (rule_id, ref, ref)`) — a hit
+4. A `pinCategory` on the emit narrows whole-use rules to one container:
+   within that category only `billedItem` may fire, so the other diaper sizes
+   stay on the shelf. A null `billedItem` bills none of that category; items in
+   other categories are untouched.
+5. Idempotency: insert the gate row (`UNIQUE (rule_id, ref, ref)`) — a hit
    means already applied. For rows written before Phase 2, a ledger row with
    the same `(item_id, ref_table, ref_id)` and `rule_id` backfilled reads as
    "already applied", exactly as Phase 1 handles pre-gate diaper rows.
-5. `carry += units`; `whole = floor(carry / N)`; if `whole > 0`, write one
+6. `carry += units`; `whole = floor(carry / N)`; if `whole > 0`, write one
    ledger row of `−whole × X`, subtract it from `quantity`, `carry −= whole × N`.
    Otherwise only `carry` updates.
-6. Route behavior is unchanged: the record is already stored, so a consumption
+7. Route behavior is unchanged: the record is already stored, so a consumption
    failure warns and never fails the request.
 
 ### 4.6 What deliberately does not change

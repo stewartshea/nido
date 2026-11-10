@@ -28,6 +28,13 @@ import { resolveTrackableMember, attachCreatedBy } from '../member-scope';
 import { parsePaging, countMatching } from '../paging';
 import { emitActivity } from '../inventory-consume';
 
+/** What a sheet's pin resolver gets: the stored row's scope, and the body. */
+export interface EmitContext {
+	db: any;
+	subjectId: number;
+	data: Record<string, unknown>;
+}
+
 /** Everything the factory needs to stamp out one category's routes. */
 export interface CategorySheet {
 	/** The table records land in today (registry: storage.table). */
@@ -129,11 +136,20 @@ export interface CategorySheet {
 	 * Consumption: category id + how the body's attrs are derived, or null to not bill.
 	 * `billedItem` names the stock container the record drew from — what makes a
 	 * direct-amount rule (`amount_attr`) this record's own, and nothing to any other.
+	 * `pin` names a container that narrows whole-use rules too: a diaper change
+	 * bills the size being worn, not every size in the cupboard.
 	 */
 	emit: {
 		category: string;
 		attrs: (data: Record<string, unknown>) => Record<string, string | null>;
 		billedItem?: (data: Record<string, unknown>) => number | null;
+		/**
+		 * Resolve the pin after the row is stored. Null means "do not pin"
+		 * (the ladder does not identify a container); a result pins the
+		 * category to `itemId`, and `itemId: null` says the record named a
+		 * container whose stock is not tracked, so none of that category bills.
+		 */
+		pin?: (ctx: EmitContext) => Promise<{ itemId: number | null; pinCategory: string } | null>;
 	} | null;
 	/**
 	 * vaccinations needs this: a static, DB-less sub-endpoint (GET
@@ -283,6 +299,7 @@ export function categoryRoutes(sheet: CategorySheet): Hono<AuthEnv> {
 				if (sheet.emit) {
 					try {
 						const billed = sheet.emit.billedItem?.(data);
+						const pin = sheet.emit.pin ? await sheet.emit.pin({ db, subjectId, data }) : null;
 						await emitActivity(db, {
 							category: sheet.emit.category,
 							refTable: sheet.table,
@@ -290,6 +307,7 @@ export function categoryRoutes(sheet: CategorySheet): Hono<AuthEnv> {
 							subjectId,
 							attrs: sheet.emit.attrs(data),
 							...(billed != null ? { billedItem: billed } : {}),
+							...(pin ? { billedItem: pin.itemId, pinCategory: pin.pinCategory } : {}),
 							createdBy: userId,
 						});
 					} catch (err: unknown) {
