@@ -11,6 +11,7 @@
 // code change at all.
 
 import { consumptionRate, coverForecast, cadenceRate, weightTrendPerDay, MS_PER_DAY } from './inventory';
+import { sizeForWeight, weightKg } from './diaper-size';
 
 export type Comparator = 'lt' | 'lte' | 'gt' | 'gte';
 
@@ -30,7 +31,12 @@ export interface DiaperSizeLike {
 	/** Weight at which the child grows out of it — the number the forecast wants. */
 	weightBandMaxKg: number | null;
 }
-export interface GrowthLike { date: string; weight: number | null }
+export interface GrowthLike {
+	date: string;
+	weight: number | null;
+	/** The unit the weight was typed in; bands are kilograms. */
+	unitSystem?: string | null;
+}
 
 export interface SignalContext {
 	item: any;
@@ -126,30 +132,25 @@ export const SIGNALS: SignalDefinition[] = [
 			const sizes = ctx.diaperSizes ?? [];
 			const growth = ctx.growth ?? [];
 			if (sizes.length < 2) return null;
-			const trend = weightTrendPerDay(growth.map((g) => ({ date: g.date, weight: g.weight })));
+			// Bands are kilograms; records keep the unit they were typed in.
+			const kilograms = growth
+				.filter((g) => g.weight !== null && Number.isFinite(Number(g.weight)))
+				.map((g) => ({ date: g.date, weight: weightKg(Number(g.weight), g.unitSystem) }));
+			const trend = weightTrendPerDay(kilograms);
 			if (!trend) return null;
-			const weights = growth
-				.map((g) => (g.weight === null ? null : Number(g.weight)))
-				.filter((w): w is number => w !== null && Number.isFinite(w))
-				.sort((a, b) => a - b);
-			const weight = weights.pop();
+			const weight = kilograms.map((g) => g.weight).sort((a, b) => a - b).pop();
 			if (weight === undefined) return null;
 
-			const sorted = [...sizes]
+			const sorted = sizes
 				.filter((s) => s.weightBandMinKg !== null)
 				.sort((a, b) => a.weightBandMinKg! - b.weightBandMinKg!);
-			if (sorted.length === 0) return null;
-
 			// The size in use is the last one whose floor the child has reached, not
 			// the next one up. Below every floor — a very small baby — they are in
-			// the smallest size available.
-			let index = -1;
-			for (const [i, s] of sorted.entries()) {
-				if (s.weightBandMinKg! <= weight) index = i;
-			}
-			if (index === -1) index = 0;
-			const current = sorted[index];
+			// the smallest size available. Shared with the diaper route, so a
+			// change bills the same size this forecast is talking about.
+			const current = sizeForWeight(sorted, weight);
 			if (!current) return null;
+			const index = sorted.indexOf(current);
 
 			// Growing out of a size means reaching its ceiling. A ladder recorded
 			// before ceilings existed has none, so fall back to the next size's

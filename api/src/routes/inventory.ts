@@ -14,6 +14,7 @@ import {
 } from '../category-registry';
 import { familyOptionValues } from '../reminder-conditions';
 import { SIGNALS, signalByName } from '../inventory-signals';
+import { STANDARD_DIAPER_SIZES } from '../diaper-size';
 import {
 	applyScheduledConsumption, evaluateAlerts, loadRulesForFamily, signalContext,
 } from '../inventory-eval';
@@ -806,27 +807,8 @@ inventoryRoutes.get('/:id{[0-9]+}/adjustments', async (c) => {
  * values a household can override per size rather than truth. NB is newborn.
  * Exposed so the size picker never asks someone to type a weight band by hand.
  */
-// Weight ranges for a conventional diaper ladder.
-//
-// The ceiling is the number that matters: a child sizes out of Size 1 at 6.5kg,
-// not at the 3.5kg where they entered it. A single number per size cannot answer
-// "when do they grow out of this", which is why a floor and a ceiling are both
-// stored. Brands differ, so this is a starting point the family can edit.
-//
-// 5, 6 and 7 are open-ended on the charts this came from, so their ceiling is left
-// null rather than guessed — there is nothing to outgrow into at that point.
-const STANDARD_DIAPER_SIZES: { size: string; weightBandMinKg: number | null; weightBandMaxKg: number | null }[] = [
-	{ size: 'P', weightBandMinKg: 0, weightBandMaxKg: 2.7 },
-	{ size: 'NB', weightBandMinKg: 2.7, weightBandMaxKg: 4.5 },
-	{ size: '1', weightBandMinKg: 3.5, weightBandMaxKg: 6.5 },
-	{ size: '2', weightBandMinKg: 5.5, weightBandMaxKg: 8.2 },
-	{ size: '3', weightBandMinKg: 7.3, weightBandMaxKg: 12.7 },
-	{ size: '4', weightBandMinKg: 10.0, weightBandMaxKg: 16.8 },
-	{ size: '5', weightBandMinKg: 12.2, weightBandMaxKg: null },
-	{ size: '6', weightBandMinKg: 15.9, weightBandMaxKg: null },
-	{ size: '7', weightBandMinKg: 18.6, weightBandMaxKg: null },
-];
-
+// The conventional ladder lives in diaper-size.ts: the size-up forecast, the
+// diaper route's billing pin and this preload endpoint all read one chart.
 inventoryRoutes.get('/diaper-size-presets', (c) => c.json({ presets: STANDARD_DIAPER_SIZES }));
 
 // Diaper sizes: the records themselves. The size-change forecast is no longer

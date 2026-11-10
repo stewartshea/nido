@@ -91,6 +91,25 @@ describe('signal registry', () => {
 		expect(value).toBe(Math.round((7.0 - 6.3) / perDay));
 	});
 
+	it('reads growth weights in the unit they were recorded in', () => {
+		const value = SIGNALS.find((s) => s.name === 'size_up_in_days')!.compute(ctx({
+			// The same measurements in pounds. Treated as kilograms, 14 would be
+			// past both bands and the forecast would collapse to zero days.
+			diaperSizes: [
+				{ size: '3', itemId: 10, active: true, weightBandMinKg: 5.5, weightBandMaxKg: 7.0 },
+				{ size: '4', itemId: null, active: false, weightBandMinKg: 7.0, weightBandMaxKg: 9.0 },
+			],
+			growth: [
+				{ date: daysAgo(60), weight: 13, unitSystem: 'imperial' },
+				{ date: daysAgo(3), weight: 14, unitSystem: 'imperial' },
+			],
+		}));
+		const first = 13 * 0.453592;
+		const last = 14 * 0.453592;
+		const perDay = (last - first) / 57;
+		expect(value).toBe(Math.round((7.0 - last) / perDay));
+	});
+
 	it('reports nothing when the top size has no ceiling and nothing above it', () => {
 		const value = SIGNALS.find((s) => s.name === 'size_up_in_days')!.compute(ctx({
 			diaperSizes: [

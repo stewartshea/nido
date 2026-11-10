@@ -44,15 +44,26 @@ export interface ActivityEmit {
 	attrs?: Record<string, string | null>;
 	/**
 	 * The container this event drew from, when the record names one — a
-	 * bottle feed's `formula_item_id`. Rules that bill a whole-use ratio
-	 * fire on any record their conditions match, but a direct-amount rule
-	 * (`amount_attr`) tracks one container's distribution: it fires only
-	 * when the event says the use was theirs. An event that names no
-	 * container bills no amount rule — a family logging from before the
-	 * picker loses tracking until they log from it again, which beats every
-	 * open can silently draining at once.
+	 * bottle feed's `formula_item_id` or a diaper change's current size.
+	 * A direct-amount rule (`amount_attr`) tracks one container's
+	 * distribution: it fires only when the event says the use was theirs.
+	 * An event that names no container bills no amount rule — a family
+	 * logging from before the picker loses tracking until they log from it
+	 * again, which beats every open can silently draining at once.
+	 *
+	 * `null` means the event named a container whose stock is not tracked;
+	 * see `pinCategory` for how a whole-use rule reads that.
 	 */
-	billedItem?: number;
+	billedItem?: number | null;
+	/**
+	 * A category this event pins to `billedItem`. When set, only items in
+	 * that category whose id is `billedItem` bill; a null `billedItem` bills
+	 * none of them. Items in other categories are untouched, so a wipes tub
+	 * still comes down with every change while the other diaper sizes stay
+	 * on the shelf. Unset means the older behaviour: every matching rule
+	 * bills, and `billedItem` only addresses direct-amount rules.
+	 */
+	pinCategory?: string;
 	createdBy?: string | null;
 }
 
@@ -125,6 +136,12 @@ export function matchesConditions(
  * is the same idempotency — one row per (rule, record) — so a retried event
  * never subtracts twice.
  *
+ * `pinCategory` narrows a whole-use rule the same way when the record names
+ * a concrete container: a diaper change bills the size being worn, and the
+ * other sizes in the same category stay on the shelf. The pin is scoped to
+ * one category so unrelated stock — the wipes tub linked to the same change —
+ * still bills.
+ *
  * A ledger row for this exact (rule, event) — or one with no rule, written
  * before rules existed — is also read as "already applied", so rows the
  * migration grandfathered are never counted again.
@@ -147,14 +164,23 @@ export async function emitActivity(db: any, emit: ActivityEmit): Promise<string[
 	const applied: string[] = [];
 	for (const rule of rules) {
 		const item = (await db.execute({
-			sql: 'SELECT name FROM inventory_items WHERE id = ? AND active = 1',
+			sql: 'SELECT name, category FROM inventory_items WHERE id = ? AND active = 1',
 			args: [rule.item_id],
 		})).rows[0];
 		if (!item) continue;
 
+		// A pinned category has one billable container per event. The pin is
+		// scoped to that category so household items (the wipes tub) keep
+		// billing on every change.
+		if (emit.pinCategory && String(item.category) === emit.pinCategory) {
+			if (emit.billedItem === undefined || emit.billedItem === null || Number(rule.item_id) !== Number(emit.billedItem)) {
+				continue;
+			}
+		}
+
 		// A direct-amount rule is pinned to its container's own use: without
 		// this event naming the rule's item, the amount has no address.
-		if (rule.amount_attr && (emit.billedItem === undefined || Number(rule.item_id) !== emit.billedItem)) {
+		if (rule.amount_attr && (emit.billedItem === undefined || emit.billedItem === null || Number(rule.item_id) !== Number(emit.billedItem))) {
 			continue;
 		}
 

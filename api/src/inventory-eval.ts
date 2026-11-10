@@ -107,9 +107,13 @@ export async function signalContext(db: any, row: any, nowMs: number): Promise<S
 			weightBandMaxKg: s.weight_band_max_kg === null || s.weight_band_max_kg === undefined ? null : Number(s.weight_band_max_kg),
 		}));
 		growth = (await db.execute({
-			sql: 'SELECT measurement_date, weight FROM growth WHERE subject_id = ? AND weight IS NOT NULL ORDER BY measurement_date',
+			sql: 'SELECT measurement_date, weight, unit_system FROM growth WHERE subject_id = ? AND weight IS NOT NULL ORDER BY measurement_date',
 			args: [row.subject_id],
-		})).rows.map((g: any) => ({ date: String(g.measurement_date), weight: Number(g.weight) }));
+		})).rows.map((g: any) => ({
+			date: String(g.measurement_date),
+			weight: Number(g.weight),
+			unitSystem: g.unit_system === null || g.unit_system === undefined ? null : String(g.unit_system),
+		}));
 	}
 	return { item: row, adjustments, nowMs, diaperSizes, growth };
 }

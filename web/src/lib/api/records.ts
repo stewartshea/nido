@@ -27,12 +27,25 @@ export const feedingAPI = {
 };
 
 // Diaper API functions
+
+/** A billable diaper pack the log form can choose between. */
+export interface DiaperPack {
+  id: number;
+  name: string;
+  variant: string | null;
+  quantity: number | null;
+}
+
 export const diaperAPI = {
   getAll: (memberId: number) => api.get(`/diapers?memberId=${memberId}`),
   getPage: (memberId: number, opts?: PageOptions) =>
     api.get(`/diapers?memberId=${memberId}${pageQuery(opts)}`),
   getById: (id: number) => api.get(`/diapers/${id}`),
-  create: (diaperData: { memberId: number; changeTime: string; type: 'wet' | 'dirty' | 'both' | 'dry'; color?: string; consistency?: string; notes?: string }) => 
+  // The packs a change can bill, plus the one it should default to. The
+  // default follows the last pack a change used, then the weight ladder.
+  packs: (memberId: number) =>
+    api.get<{ packs: DiaperPack[]; currentItemId: number | null }>(`/diapers/packs?memberId=${memberId}`),
+  create: (diaperData: { memberId: number; changeTime: string; type: 'wet' | 'dirty' | 'both' | 'dry'; itemId?: number | null; color?: string; consistency?: string; notes?: string }) => 
     api.post('/diapers', diaperData),
   update: (id: number, diaperData: Partial<{ changeTime: string; type: 'wet' | 'dirty' | 'both' | 'dry'; color?: string; consistency?: string; notes?: string }>) => 
     api.put(`/diapers/${id}`, diaperData),

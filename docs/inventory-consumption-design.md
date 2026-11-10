@@ -173,6 +173,38 @@ bills nothing ("we don't know which can you fed" beats every can draining at
 once). Whole-use rules keep matching any member's events regardless; the pin
 is a fact about distribution, not about matching.
 
+The diaper pack is the same problem with a different source. A change carries
+only a type (wet/dirty/both/dry), so a whole-use rule on each linked pack would
+empty two packs on one change. The log form asks which pack was used — a picker
+appears when the member has more than one billable diaper pack — and the change
+stores that `item_id`. The route then sets `pinCategory: 'diapers'` with
+`billedItem` naming the chosen pack. The pin is scoped to a category: only
+diaper items other than the chosen one are suppressed, so the wipes tub (3 per
+change) still bills.
+
+The picker is the source of truth. Only the person changing the diaper knows
+which pack they opened; the size ladder and the growth weight forecast, they do
+not observe. So the ladder and the weight choose only the picker's default:
+
+- The last pack a change used comes first — the most recent recorded `item_id`
+  for the member, while it is still an active billable diaper pack. Switching
+  packs is a choice that sticks; the next change defaults to the new pack.
+- Before the first change, the default reads the member's size ladder: the
+  latest growth weight against its bands, or the active size when there is no
+  weight. A family that names its packs by size — "Diapers (1)" and
+  "Diapers (2)" — but never opens the size-ladder form gets the same default
+  from the packs' standard-size variants. Two distinct standard labels are
+  required; a variant that is not a size label ("day", "night", a brand name)
+  is left alone.
+- With one billable pack there is nothing to choose and the form shows no
+  picker, but the change still records the pack so the default holds.
+
+A client that sends no pack (an older offline queue replaying) still falls back
+to the weight ladder, and the picker's default matches it; the app always sends
+one. Because each change stores its pack, history stays correct — a later
+switch from size 2 to size 3 does not rewrite which pack an earlier change drew
+from.
+
 ### 4.4 Conditions
 
 ```jsonc
@@ -207,14 +239,18 @@ of a `kind:category` string hack.
 2. Candidate rules: `active = 1 AND source_table = source AND (subject_id =
    subjectId OR subject_id IS NULL)`.
 3. Per rule: conditions evaluated against `attrs`; no match → skip.
-4. Idempotency: insert the gate row (`UNIQUE (rule_id, ref, ref)`) — a hit
+4. A `pinCategory` on the emit narrows whole-use rules to one container:
+   within that category only `billedItem` may fire, so the other diaper sizes
+   stay on the shelf. A null `billedItem` bills none of that category; items in
+   other categories are untouched.
+5. Idempotency: insert the gate row (`UNIQUE (rule_id, ref, ref)`) — a hit
    means already applied. For rows written before Phase 2, a ledger row with
    the same `(item_id, ref_table, ref_id)` and `rule_id` backfilled reads as
    "already applied", exactly as Phase 1 handles pre-gate diaper rows.
-5. `carry += units`; `whole = floor(carry / N)`; if `whole > 0`, write one
+6. `carry += units`; `whole = floor(carry / N)`; if `whole > 0`, write one
    ledger row of `−whole × X`, subtract it from `quantity`, `carry −= whole × N`.
    Otherwise only `carry` updates.
-6. Route behavior is unchanged: the record is already stored, so a consumption
+7. Route behavior is unchanged: the record is already stored, so a consumption
    failure warns and never fails the request.
 
 ### 4.6 What deliberately does not change

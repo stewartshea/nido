@@ -28,6 +28,13 @@ import { resolveTrackableMember, attachCreatedBy } from '../member-scope';
 import { parsePaging, countMatching } from '../paging';
 import { emitActivity } from '../inventory-consume';
 
+/** What a sheet's pin resolver gets: the stored row's scope, and the body. */
+export interface EmitContext {
+	db: any;
+	subjectId: number;
+	data: Record<string, unknown>;
+}
+
 /** Everything the factory needs to stamp out one category's routes. */
 export interface CategorySheet {
 	/** The table records land in today (registry: storage.table). */
@@ -54,6 +61,19 @@ export interface CategorySheet {
 	 * member scope check, before the insert; a message is a 400.
 	 */
 	validateCreate?: (data: Record<string, unknown>) => string | null;
+	/**
+	 * A check that needs the database, run after validateCreate and before
+	 * the insert. Returning a message is a 400. The hook may fill a default
+	 * into `data`; that value is what the insert stores.
+	 *
+	 * Diapers use this to reject a pack that is not a billable diaper pack
+	 * for this member before the change is recorded.
+	 */
+	beforeCreate?: (ctx: {
+		db: any;
+		subjectId: number;
+		data: Record<string, unknown>;
+	}) => Promise<string | null>;
 	/** camelCase body key -> snake_case SET column, for the dynamic update ladder. */
 	columns: Record<string, string>;
 	insert: {
@@ -129,11 +149,20 @@ export interface CategorySheet {
 	 * Consumption: category id + how the body's attrs are derived, or null to not bill.
 	 * `billedItem` names the stock container the record drew from — what makes a
 	 * direct-amount rule (`amount_attr`) this record's own, and nothing to any other.
+	 * `pin` names a container that narrows whole-use rules too: a diaper change
+	 * bills the size being worn, not every size in the cupboard.
 	 */
 	emit: {
 		category: string;
 		attrs: (data: Record<string, unknown>) => Record<string, string | null>;
 		billedItem?: (data: Record<string, unknown>) => number | null;
+		/**
+		 * Resolve the pin after the row is stored. Null means "do not pin"
+		 * (the ladder does not identify a container); a result pins the
+		 * category to `itemId`, and `itemId: null` says the record named a
+		 * container whose stock is not tracked, so none of that category bills.
+		 */
+		pin?: (ctx: EmitContext) => Promise<{ itemId: number | null; pinCategory: string } | null>;
 	} | null;
 	/**
 	 * vaccinations needs this: a static, DB-less sub-endpoint (GET
@@ -266,6 +295,12 @@ export function categoryRoutes(sheet: CategorySheet): Hono<AuthEnv> {
 					const problem = sheet.validateCreate(data);
 					if (problem) return c.json({ error: problem }, 400);
 				}
+				// A check that needs the stored family data (a diaper pack the
+				// member can actually bill) runs here, before the row exists.
+				if (sheet.beforeCreate) {
+					const problem = await sheet.beforeCreate({ db, subjectId, data });
+					if (problem) return c.json({ error: problem }, 400);
+				}
 
 				const now = new Date().toISOString();
 				const cols = sheet.insert.columns;
@@ -283,6 +318,7 @@ export function categoryRoutes(sheet: CategorySheet): Hono<AuthEnv> {
 				if (sheet.emit) {
 					try {
 						const billed = sheet.emit.billedItem?.(data);
+						const pin = sheet.emit.pin ? await sheet.emit.pin({ db, subjectId, data }) : null;
 						await emitActivity(db, {
 							category: sheet.emit.category,
 							refTable: sheet.table,
@@ -290,6 +326,7 @@ export function categoryRoutes(sheet: CategorySheet): Hono<AuthEnv> {
 							subjectId,
 							attrs: sheet.emit.attrs(data),
 							...(billed != null ? { billedItem: billed } : {}),
+							...(pin ? { billedItem: pin.itemId, pinCategory: pin.pinCategory } : {}),
 							createdBy: userId,
 						});
 					} catch (err: unknown) {
