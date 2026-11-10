@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { createEventDispatcher, onMount } from 'svelte';
 	import { Droplet, AlertCircle, Activity } from 'lucide-svelte';
-	import { diaperAPI } from '$lib/api/records';
+	import { diaperAPI, type DiaperPack } from '$lib/api/records';
 	import { loadLoggingOptions, type LoggingOptions } from '$lib/logging/options';
 	import { localInputToIso, toLocalInput } from '$lib/logging/format';
 	import { apiError } from '$lib/logging/recent';
@@ -26,8 +26,31 @@
 	let color = '';
 	let notes = '';
 	let busy = false;
+	// The diaper packs this change can come out of, and the one it will. With
+	// one pack there is nothing to choose and the form keeps it out of the way,
+	// but the id is still sent so the change records what it drew from.
+	let packs: DiaperPack[] = [];
+	let itemId: number | null = null;
 
-	onMount(async () => { options = await loadLoggingOptions(familyId); });
+	function packLabel(pack: DiaperPack): string {
+		const size = pack.variant ? `${pack.name} · ${pack.variant}` : pack.name;
+		return pack.quantity === null ? size : `${size} (${pack.quantity} left)`;
+	}
+
+	onMount(async () => {
+		options = await loadLoggingOptions(familyId);
+		try {
+			const res = await diaperAPI.packs(memberId);
+			packs = res.data.packs ?? [];
+			const current = res.data.currentItemId;
+			itemId = packs.some((p) => p.id === current) ? current : (packs[0]?.id ?? null);
+		} catch {
+			// The pack picker is a billing nicety; a failure must not stop a
+			// change from being logged, so fall back to no selection.
+			packs = [];
+			itemId = null;
+		}
+	});
 
 	async function save(event: SubmitEvent) {
 		event.preventDefault();
@@ -37,6 +60,7 @@
 				memberId,
 				changeTime: localInputToIso(when),
 				type,
+				itemId: itemId ?? undefined,
 				consistency: consistency || undefined,
 				color: color || undefined,
 				notes: notes || undefined,
@@ -62,6 +86,17 @@
 			{/each}
 		</div>
 	</div>
+	{#if packs.length > 1}
+		<div>
+			<label for="diaper-pack" class="block text-sm font-medium text-ink-soft mb-1">Diaper pack</label>
+			<select id="diaper-pack" bind:value={itemId} class="w-full px-3 py-2 border border-line rounded-md bg-surface">
+				{#each packs as pack}
+					<option value={pack.id}>{packLabel(pack)}</option>
+				{/each}
+			</select>
+			<p class="text-xs text-ink-soft mt-1">This change subtracts one from the pack you pick.</p>
+		</div>
+	{/if}
 	<div class="grid grid-cols-2 gap-3">
 		<div>
 			<label for="diaper-time" class="block text-sm font-medium text-ink-soft mb-1">Date &amp; time</label>

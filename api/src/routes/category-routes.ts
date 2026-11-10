@@ -61,6 +61,19 @@ export interface CategorySheet {
 	 * member scope check, before the insert; a message is a 400.
 	 */
 	validateCreate?: (data: Record<string, unknown>) => string | null;
+	/**
+	 * A check that needs the database, run after validateCreate and before
+	 * the insert. Returning a message is a 400. The hook may fill a default
+	 * into `data`; that value is what the insert stores.
+	 *
+	 * Diapers use this to reject a pack that is not a billable diaper pack
+	 * for this member before the change is recorded.
+	 */
+	beforeCreate?: (ctx: {
+		db: any;
+		subjectId: number;
+		data: Record<string, unknown>;
+	}) => Promise<string | null>;
 	/** camelCase body key -> snake_case SET column, for the dynamic update ladder. */
 	columns: Record<string, string>;
 	insert: {
@@ -280,6 +293,12 @@ export function categoryRoutes(sheet: CategorySheet): Hono<AuthEnv> {
 				// vitals: the numbers must fit the kind before anything is stored.
 				if (sheet.validateCreate) {
 					const problem = sheet.validateCreate(data);
+					if (problem) return c.json({ error: problem }, 400);
+				}
+				// A check that needs the stored family data (a diaper pack the
+				// member can actually bill) runs here, before the row exists.
+				if (sheet.beforeCreate) {
+					const problem = await sheet.beforeCreate({ db, subjectId, data });
 					if (problem) return c.json({ error: problem }, 400);
 				}
 

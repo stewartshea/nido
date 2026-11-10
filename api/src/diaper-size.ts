@@ -229,3 +229,31 @@ export async function diaperBilledItemId(db: any, subjectId: number): Promise<nu
 	const chosen = sizeWithoutWeight(linked);
 	return chosen ? chosen.stockId ?? null : null;
 }
+
+/**
+ * The pack the last recorded change used, when it is still a billable diaper
+ * pack. This is observed use, not a forecast: a family that switched at a
+ * different weight than the chart predicts is still right about what they
+ * opened. The log form uses it to prefill the picker, so the default follows
+ * the last choice rather than the weight.
+ */
+export async function lastDiaperItemId(db: any, subjectId: number): Promise<number | null> {
+	const row = (await db.execute({
+		sql: `SELECT d.item_id
+		      FROM diapers d
+		      JOIN inventory_items i
+		        ON i.id = d.item_id AND i.active = 1 AND i.category = 'diapers'
+		      WHERE d.subject_id = ?
+		        AND d.item_id IS NOT NULL
+		        AND (i.subject_id = ? OR i.subject_id IS NULL)
+		        AND EXISTS (
+		          SELECT 1 FROM inventory_consumption_rules r
+		          WHERE r.item_id = i.id AND r.active = 1 AND r.source_category = 'diapers'
+		        )
+		      ORDER BY d.created_at DESC, d.id DESC
+		      LIMIT 1`,
+		args: [subjectId, subjectId],
+	})).rows[0] as any | undefined;
+	if (!row || row.item_id === null || row.item_id === undefined) return null;
+	return Number(row.item_id);
+}

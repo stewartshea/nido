@@ -1503,6 +1503,21 @@ ALTER TABLE inventory_adjustments ADD COLUMN source TEXT DEFAULT 'manual';
       migrateToFormulaInventoryItems(raw, itemCol);
     },
   },
+  {
+    version: 49,
+    name: 'diaper-pack',
+    // A diaper change names the pack it drew from. The pack picker on the log
+    // form is the observed answer; the weight ladder only suggests a default
+    // when there is no earlier change to remember. Storing the pack on the
+    // record also keeps history correct when the family switches sizes later.
+    run: (raw) => {
+      const cols = raw.pragma('table_info(diapers)') as Array<{ name: string }>;
+      if (cols.length && !cols.some((c) => c.name === 'item_id')) {
+        raw.exec('ALTER TABLE diapers ADD COLUMN item_id INTEGER');
+      }
+      raw.exec('CREATE INDEX IF NOT EXISTS idx_diapers_item ON diapers(item_id)');
+    },
+  },
 ];
 
 /**

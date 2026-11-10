@@ -173,28 +173,37 @@ bills nothing ("we don't know which can you fed" beats every can draining at
 once). Whole-use rules keep matching any member's events regardless; the pin
 is a fact about distribution, not about matching.
 
-The diaper size ladder is the same problem with a different source. A change
-carries only a type (wet/dirty/both/dry), so a whole-use rule on each linked
-pack would empty two packs on one change. The route resolves the size the child
-is wearing from the latest growth weight and the ladder's bands, then sets
-`pinCategory: 'diapers'` with `billedItem` naming that size's stock item. The
-pin is scoped to a category: only diaper items other than the one in use are
-suppressed, so the wipes tub (3 per change) still bills. With fewer than two
-linked sizes there is nothing to disambiguate and the route does not pin,
-leaving the older behavior; a ladder whose size in use has no linked item bills
-no diaper stock rather than guessing at an older size.
+The diaper pack is the same problem with a different source. A change carries
+only a type (wet/dirty/both/dry), so a whole-use rule on each linked pack would
+empty two packs on one change. The log form asks which pack was used — a picker
+appears when the member has more than one billable diaper pack — and the change
+stores that `item_id`. The route then sets `pinCategory: 'diapers'` with
+`billedItem` naming the chosen pack. The pin is scoped to a category: only
+diaper items other than the chosen one are suppressed, so the wipes tub (3 per
+change) still bills.
 
-A family that names its packs by size — "Diapers (1)" and "Diapers (2)" — but
-never opens the size-ladder form still gets the same pin. The route reads the
-member's active diaper packs whose variants are standard size labels, places
-them on the conventional chart, and resolves the current size the same way an
-explicit ladder would. Two distinct standard labels are required, because one
-pack has nothing to choose between and two packs of the same size cannot be
-told apart by weight. An explicit ladder always wins over this inferred one;
-without a recorded weight, the most recently added pack is treated as the one
-in use. A variant that is not a size label ("day", "night", a brand name) is
-left alone, so the older billing behavior survives rather than draining a pack
-the app only guessed at.
+The picker is the source of truth. Only the person changing the diaper knows
+which pack they opened; the size ladder and the growth weight forecast, they do
+not observe. So the ladder and the weight choose only the picker's default:
+
+- The last pack a change used comes first — the most recent recorded `item_id`
+  for the member, while it is still an active billable diaper pack. Switching
+  packs is a choice that sticks; the next change defaults to the new pack.
+- Before the first change, the default reads the member's size ladder: the
+  latest growth weight against its bands, or the active size when there is no
+  weight. A family that names its packs by size — "Diapers (1)" and
+  "Diapers (2)" — but never opens the size-ladder form gets the same default
+  from the packs' standard-size variants. Two distinct standard labels are
+  required; a variant that is not a size label ("day", "night", a brand name)
+  is left alone.
+- With one billable pack there is nothing to choose and the form shows no
+  picker, but the change still records the pack so the default holds.
+
+A client that sends no pack (an older offline queue replaying) still falls back
+to the weight ladder, and the picker's default matches it; the app always sends
+one. Because each change stores its pack, history stays correct — a later
+switch from size 2 to size 3 does not rewrite which pack an earlier change drew
+from.
 
 ### 4.4 Conditions
 

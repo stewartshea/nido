@@ -3,7 +3,8 @@
 // A diaper change bills the size the child is wearing. The event itself has
 // only a type (wet/dirty/both/dry), so without a pin every size linked to the
 // member came down together: two open packs, two decrements, one change.
-// The ladder's current band decides which one was actually used.
+// The pack the family picks on the log form decides which one was used; the
+// ladder and the weight only offer a default when nothing was picked.
 import { describe, it, expect, beforeAll } from 'vitest';
 import jwt from 'jsonwebtoken';
 import app from './server';
@@ -65,6 +66,18 @@ describe('inventory: a diaper change bills one size', () => {
 			memberId, changeTime: new Date().toISOString(), type: 'wet',
 		});
 		expect(res.status).toBe(200);
+	}
+
+	async function changeWithItem(memberId: number, itemId: number | null) {
+		return call('POST', token, '/api/v1/diapers', {
+			memberId, changeTime: new Date().toISOString(), type: 'wet', itemId,
+		});
+	}
+
+	async function packs(memberId: number) {
+		const res = await call('GET', token, `/api/v1/diapers/packs?memberId=${memberId}`);
+		expect(res.status).toBe(200);
+		return res.body as { packs: any[]; currentItemId: number | null };
 	}
 
 	async function quantity(id: number): Promise<number> {
@@ -278,5 +291,63 @@ describe('inventory: a diaper change bills one size', () => {
 		await change(memberId);
 		expect(await quantity(small.id)).toBe(39);
 		expect(await quantity(large.id)).toBe(40);
+	});
+
+	it('lists the billable packs and defaults to the weight ladder before any change', async () => {
+		const memberId = await child('Pack Picker Baby');
+		const small = await diaperStock(memberId, { variant: '3' });
+		const large = await diaperStock(memberId, { variant: '4' });
+		await sizeBand(memberId, '3', small.id, 5.5, 7.0);
+		await sizeBand(memberId, '4', large.id, 7.0, 9.0);
+		await weigh(memberId, 6.3, '2026-01-01T00:00:00.000Z');
+
+		const res = await packs(memberId);
+		expect(res.packs.map((p) => p.id).sort()).toEqual([small.id, large.id].sort());
+		expect(res.currentItemId).toBe(small.id);
+	});
+
+	it('bills the chosen pack even when the weight points at another', async () => {
+		// The weight says Size 3, but the family selected the opened Size 4 pack.
+		// Observed use wins: only the chosen pack comes down.
+		const memberId = await child('Chosen Pack Baby');
+		const small = await diaperStock(memberId, { variant: '3' });
+		const large = await diaperStock(memberId, { variant: '4' });
+		const wipeStock = await wipes(memberId);
+		await sizeBand(memberId, '3', small.id, 5.5, 7.0);
+		await sizeBand(memberId, '4', large.id, 7.0, 9.0);
+		await weigh(memberId, 6.3, '2026-01-01T00:00:00.000Z');
+
+		const res = await changeWithItem(memberId, large.id);
+		expect(res.status).toBe(200);
+		expect(await quantity(small.id)).toBe(40);
+		expect(await quantity(large.id)).toBe(39);
+		// The pin is still scoped to diapers, so wipes keep billing.
+		expect(await quantity(wipeStock.id)).toBe(87);
+	});
+
+	it('remembers the last pack a change used as the next default', async () => {
+		const memberId = await child('Remember Pack Baby');
+		const small = await diaperStock(memberId, { variant: '3' });
+		const large = await diaperStock(memberId, { variant: '4' });
+		await sizeBand(memberId, '3', small.id, 5.5, 7.0);
+		await sizeBand(memberId, '4', large.id, 7.0, 9.0);
+		// The weight points at Size 3, but the family switched early and the
+		// default must follow that choice, not the chart.
+		await weigh(memberId, 6.3, '2026-01-01T00:00:00.000Z');
+
+		await changeWithItem(memberId, large.id);
+		expect((await packs(memberId)).currentItemId).toBe(large.id);
+
+		await changeWithItem(memberId, small.id);
+		expect((await packs(memberId)).currentItemId).toBe(small.id);
+	});
+
+	it('refuses a pack that is not billable diaper stock', async () => {
+		const memberId = await child('Bad Pack Baby');
+		const wipeStock = await wipes(memberId);
+
+		const res = await changeWithItem(memberId, wipeStock.id);
+		expect(res.status).toBe(400);
+		expect(await quantity(wipeStock.id)).toBe(90);
 	});
 });

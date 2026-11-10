@@ -157,6 +157,10 @@ Each of these exposes the same five routes:
 - `PUT /api/v1/{feedings|diapers|sleep}/:id` — update
 - `DELETE /api/v1/{feedings|diapers|sleep}/:id` — delete
 
+A diaper change also accepts an optional `itemId` naming the pack it drew from.
+`GET /api/v1/diapers/packs?memberId=` lists the packs the member can bill and
+the one the log form should preselect.
+
 ### Growth
 - `GET /api/v1/growth` — list
 - `GET /api/v1/growth/:id` — fetch one
