@@ -184,6 +184,18 @@ linked sizes there is nothing to disambiguate and the route does not pin,
 leaving the older behavior; a ladder whose size in use has no linked item bills
 no diaper stock rather than guessing at an older size.
 
+A family that names its packs by size — "Diapers (1)" and "Diapers (2)" — but
+never opens the size-ladder form still gets the same pin. The route reads the
+member's active diaper packs whose variants are standard size labels, places
+them on the conventional chart, and resolves the current size the same way an
+explicit ladder would. Two distinct standard labels are required, because one
+pack has nothing to choose between and two packs of the same size cannot be
+told apart by weight. An explicit ladder always wins over this inferred one;
+without a recorded weight, the most recently added pack is treated as the one
+in use. A variant that is not a size label ("day", "night", a brand name) is
+left alone, so the older billing behavior survives rather than draining a pack
+the app only guessed at.
+
 ### 4.4 Conditions
 
 ```jsonc

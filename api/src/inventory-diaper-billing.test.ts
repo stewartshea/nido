@@ -211,4 +211,72 @@ describe('inventory: a diaper change bills one size', () => {
 		expect(await quantity(small.id)).toBe(39);
 		expect(await quantity(large.id)).toBe(40);
 	});
+
+	it('reads size-labelled packs as a ladder when none was built', async () => {
+		// The common setup: two packs named "1" and "2", each linked to diaper
+		// changes, and no trip through the size-ladder form. The variants are
+		// the size chart, so the change knows which pack it used.
+		const memberId = await child('Variant Baby');
+		const small = await diaperStock(memberId, { variant: '1' });
+		const large = await diaperStock(memberId, { variant: '2' });
+		// 6.0kg sits in standard Size 2 (5.5-8.2kg).
+		await weigh(memberId, 6.0, '2026-01-01T00:00:00.000Z');
+
+		await change(memberId);
+		expect(await quantity(small.id)).toBe(40);
+		expect(await quantity(large.id)).toBe(39);
+	});
+
+	it('uses the most recently added pack when no weight or ladder says which', async () => {
+		// Without a weight there is no band to compare, but the family added
+		// the pack they are using last. One of them must come down, not both.
+		const memberId = await child('No Weight Variant Baby');
+		const small = await diaperStock(memberId, { variant: '1' });
+		await new Promise((resolve) => setTimeout(resolve, 5));
+		const large = await diaperStock(memberId, { variant: '2' });
+
+		await change(memberId);
+		expect(await quantity(small.id)).toBe(40);
+		expect(await quantity(large.id)).toBe(39);
+	});
+
+	it('does not infer a size from a variant that is not a size label', async () => {
+		// "day" and "night" are not on the chart, so guessing would drain the
+		// wrong pack. The older behaviour is safer than a bad guess.
+		const memberId = await child('Unlabelled Variant Baby');
+		const day = await diaperStock(memberId, { variant: 'day' });
+		const night = await diaperStock(memberId, { variant: 'night' });
+
+		await change(memberId);
+		expect(await quantity(day.id)).toBe(39);
+		expect(await quantity(night.id)).toBe(39);
+	});
+
+	it('bills no diaper stock when the variant ladder outgrew its packs', async () => {
+		// 10kg is standard Size 4. Only sizes 1 and 2 are stocked, so there is
+		// no honest pack to bill — an older size would be a guess.
+		const memberId = await child('Outgrown Variant Baby');
+		const small = await diaperStock(memberId, { variant: '1' });
+		const large = await diaperStock(memberId, { variant: '2' });
+		await weigh(memberId, 10.0, '2026-01-01T00:00:00.000Z');
+
+		await change(memberId);
+		expect(await quantity(small.id)).toBe(40);
+		expect(await quantity(large.id)).toBe(40);
+	});
+
+	it('lets an explicit ladder override the pack variants', async () => {
+		// The family's own bands win: their "Size 1" is 5.5-7.0kg, which holds
+		// this child even though the standard chart would call them Size 2.
+		const memberId = await child('Ladder Over Variant Baby');
+		const small = await diaperStock(memberId, { variant: '1' });
+		const large = await diaperStock(memberId, { variant: '2' });
+		await sizeBand(memberId, '1', small.id, 5.5, 7.0);
+		await sizeBand(memberId, '2', large.id, 7.0, 9.0);
+		await weigh(memberId, 6.0, '2026-01-01T00:00:00.000Z');
+
+		await change(memberId);
+		expect(await quantity(small.id)).toBe(39);
+		expect(await quantity(large.id)).toBe(40);
+	});
 });

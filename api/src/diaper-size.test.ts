@@ -3,7 +3,9 @@
 // "Which size is the child wearing" is answered in one place, because the
 // size-up forecast and the stock the change bills must not disagree.
 import { describe, it, expect } from 'vitest';
-import { sizeForWeight, sizeWithoutWeight, weightKg, type DiaperSizeBands } from './diaper-size';
+import {
+	sizeForWeight, sizeWithoutWeight, weightKg, standardSizeForVariant, type DiaperSizeBands,
+} from './diaper-size';
 
 const size = (over: Partial<DiaperSizeBands> = {}) => ({
 	size: '3',
@@ -20,6 +22,24 @@ describe('weightKg', () => {
 		expect(weightKg(12, 'imperial')).toBeCloseTo(5.443, 3);
 		expect(weightKg(6.8, 'metric')).toBe(6.8);
 		expect(weightKg(6.8, null)).toBe(6.8);
+	});
+});
+
+describe('standardSizeForVariant', () => {
+	it('reads the labels a family types for a pack', () => {
+		expect(standardSizeForVariant('4')?.size).toBe('4');
+		expect(standardSizeForVariant(' size 4 ')?.size).toBe('4');
+		expect(standardSizeForVariant('NB')?.size).toBe('NB');
+		expect(standardSizeForVariant('newborn')?.size).toBe('NB');
+		expect(standardSizeForVariant('preemie')?.size).toBe('P');
+	});
+
+	it('does not turn an unrelated variant into a size', () => {
+		expect(standardSizeForVariant('night')).toBeNull();
+		expect(standardSizeForVariant('big box')).toBeNull();
+		expect(standardSizeForVariant('')).toBeNull();
+		expect(standardSizeForVariant(null)).toBeNull();
+		expect(standardSizeForVariant('8')).toBeNull();
 	});
 });
 
