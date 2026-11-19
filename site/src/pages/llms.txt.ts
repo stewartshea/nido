@@ -12,7 +12,7 @@ const url = (route: string) => `${site}${base}/${route.replace(/^\//, '')}`;
 
 const BODY = `# Nido
 
-> Nido (巣, "nest") is a free, open source, self-hosted tracker for a family and a home. It starts as an infant log — feeds, diapers, sleep, growth, milestones, vaccinations, appointments, journal — and grows to cover the household: inventory, homes, home assets, meters, schedules, and a maintenance log. It runs no model, has no telemetry, and can connect to an AI agent you run over MCP. Self-host it with Docker, or use My Nido, hosted in Canada.
+> Nido (巣, "nest") is a free, open source, self-hosted tracker for a family and a home. It starts as an infant log — feeds, diapers, sleep, growth, milestones, vaccinations, appointments, journal — and grows to cover the household: inventory, homes, home assets, meters, schedules, a maintenance log, and searchable manuals and receipt OCR text. It runs no model, has no telemetry, and can connect to an AI agent you run over MCP. Self-host it with Docker, or use My Nido, hosted in Canada.
 
 - License: Apache-2.0. Free forever, self-hosted or hosted, with no feature withheld.
 - Data: one SQLCipher-encrypted SQLite file per family; the file is the tenant boundary.

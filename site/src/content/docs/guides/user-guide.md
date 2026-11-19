@@ -360,6 +360,41 @@ A seasonal schedule shows as a **checklist** — "Winter 2026" — and a card
 checks off when an entry is logged inside the window. Nothing is checked that
 is not backed by a record; skipping a season takes a reason.
 
+### Manuals and files on an asset
+
+An asset keeps its own reference material. When you create or edit an asset, add
+the manufacturer's **Manual link (URL)** so a manual hosted elsewhere is one tap
+away. To keep the document itself, open the asset on **Property Assets**
+(`/assets/[id]`) and add PDF or image manuals — and a photo of the model plate —
+under **Photos, manuals & files**.
+
+### Logging maintenance from a receipt (single or multi-page)
+
+There are two ways to turn a receipt into a maintenance entry:
+
+1. **One-step `+ Log from receipt`** — on an asset's page under **History**, tap
+   **+ Log from receipt** and select one or more receipt photos or PDFs. Nido
+   extracts the text across all pages, matches the work against the asset's
+   active schedules or common tasks (like brake service or oil change), reads
+   the date and total cost, saves the entry with every page attached, and opens
+   the entry so you can review or tweak any field.
+2. **Smart prefill inside `+ Log maintenance`** — open **+ Log maintenance** and
+   select your receipt photo(s) at the top of the form; Nido previews the OCR
+   hints and fills in any blank task, date, cost, and notes fields before you
+   press **Save entry**.
+
+### Checking OCR text and searching records
+
+- Every uploaded file shows a **Searchable** badge (tap it to inspect the
+  extracted text or open the original scan) or **Not searchable** if no text
+  could be read.
+- On **Property Assets** (`/assets`), use the **Search everything** bar (and
+  optional category filter, e.g. `Vehicle`) to search across asset names,
+  maintenance tasks, notes, manuals, and receipt OCR text — or use the
+  **Filter history & receipt OCR** input on a single asset's page
+  (`/assets/[id]`). Search results always display the scanned file right
+  alongside the matched text excerpt.
+
 ## Working offline
 
 Feed and sleep records — including pump sessions — are queued on the device

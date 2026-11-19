@@ -83,7 +83,8 @@ the log with its provenance.
 | `list_homes`, `list_assets` | residences and the durable things in them |
 | `list_meters` | odometer/usage meters and their schedule status |
 | `whats_due` | everything due across assets, overdue first |
-| `get_maintenance_log` | what was done, when, what it cost |
+| `get_maintenance_log` | what was done, when, what it cost, and attached receipt OCR text — filterable by asset, category, or keyword query |
+| `search_home_assets` | search across home assets, maintenance history, schedules, manuals, and OCR text from uploaded receipts and documents (for example, finding every vehicle brake job from scanned shop invoices) |
 | `list_inventory` | consumable stock with low-stock alerts |
 
 ### Write

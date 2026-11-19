@@ -274,7 +274,8 @@ The same care loop, past the baby stage — the HOME modules, built in the open
 - **Assets** — the durable things a family owns and cares for: the car, the
   furnace, the lawnmower. Category, manufacturer/model/serial, purchase
   details. Archived, never deleted — sold things keep their history, and an
-  asset can scope to one home.
+  asset can scope to one home. An asset also carries a direct **manual link**
+  (`manualUrl`) alongside any uploaded manual files.
 - **Meters** — odometer, hours, cycles on an asset. Nobody reads their
   odometer daily, so readings are dated and **interpolated**: a schedule can
   say "every 8,000 km *or* six months, whichever comes first" and be evaluated
@@ -283,12 +284,26 @@ The same care loop, past the baby stage — the HOME modules, built in the open
 - **Schedules** — interval, meter, and **seasonal-window** conditions (`any`
   or `all`), with lead time. A window recurs every year without a year-anchored
   row to maintain, and "past the close and unsatisfied" shows as overdue.
-- **Maintenance log** — what was done, when, what it cost, who did it. An
+- **Maintenance log** — what was done, when, what it cost, who did it. Log it
+  by hand, drop receipt photos at the top of the form to **auto-fill** the
+  task, date, and cost from OCR, or use **+ Log from receipt** to upload a
+  single- or multi-page receipt and create the entry in one step. An
   entry can **consume inventory stock** ("one furnace filter from the shelf")
   and carries its own receipts and photos. Attachments are stored as files
   beside the encrypted database, not inside it. A seasonal checklist card
   checks off only when an entry exists in the window — or an explicit skip
   with a reason — never a stored checkbox that could disagree with the log.
+- **Documents, manuals, and best-effort OCR** — PDFs and photos attached to an
+  asset or a maintenance entry are encrypted in the family's blob store and run
+  through best-effort server-side text extraction at upload (combining block and
+  row-wise OCR passes so tabular invoice rows survive). An upload never fails
+  when OCR is unavailable — the file simply carries a **Not searchable** badge
+  instead of **Searchable** (which expands to preview the extracted text right
+  beside the scan).
+- **Cross-asset and receipt search** — search across assets, maintenance
+  history, schedules, manuals, and receipt OCR text from `/assets` (or filter a
+  single asset's history on `/assets/[id]`). Matches always show the original
+  scan alongside the extracted snippet so a bad read is visible, never silent.
 - **What's due** — one view across every asset, overdue first, so the house
   has a single list to check. Home schedules are not part of the notification
   email.
@@ -297,8 +312,8 @@ The asset page brings the drawer together: the cover photo, the meters, the
 schedules, the history with costs, and every file — the manuals and the
 receipts — in one place.
 
-Still ahead: best-effort OCR on scanned documents, service providers (a small
-family address book), and per-category schedule templates — see
+Still ahead: service providers (a small family address book) and per-category
+schedule templates — see
 [the roadmap](project/roadmap/).
 
 ## Reports
