@@ -46,6 +46,62 @@ export type OcrExtractor = (input: OcrInput) => Promise<OcrResult>;
 const MAX_TEXT = 100_000;
 
 /**
+ * The content type a buffer actually is.
+ *
+ * Browsers are inconsistent about `File.type`: a photo picked on some Android
+ * and iOS builds arrives as `application/octet-stream`, and a WebKit clone can
+ * lose the type entirely. Sniffing the magic bytes keeps OCR working — and the
+ * stored content type honest — no matter what the client claimed. The claimed
+ * type still wins when it is specific (a `.heic` the sniffers do not know),
+ * and the filename is the last, weakest hint.
+ */
+export function sniffContentType(
+	buffer: Buffer,
+	claimedType?: string | null,
+	filename?: string | null,
+): string {
+	if (buffer.length >= 4 && buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4e && buffer[3] === 0x47) {
+		return 'image/png';
+	}
+	if (buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) {
+		return 'image/jpeg';
+	}
+	if (buffer.length >= 6) {
+		const header = buffer.toString('ascii', 0, 6);
+		if (header === 'GIF87a' || header === 'GIF89a') return 'image/gif';
+	}
+	if (
+		buffer.length >= 12 &&
+		buffer.toString('ascii', 0, 4) === 'RIFF' &&
+		buffer.toString('ascii', 8, 12) === 'WEBP'
+	) {
+		return 'image/webp';
+	}
+	if (buffer.length >= 5 && buffer.toString('ascii', 0, 5) === '%PDF-') {
+		return 'application/pdf';
+	}
+	if (claimedType && claimedType !== 'application/octet-stream') return claimedType;
+	const ext = (filename ?? '').toLowerCase().match(/\.([a-z0-9]+)$/)?.[1] ?? '';
+	switch (ext) {
+		case 'jpg':
+		case 'jpeg':
+			return 'image/jpeg';
+		case 'png':
+			return 'image/png';
+		case 'webp':
+			return 'image/webp';
+		case 'gif':
+			return 'image/gif';
+		case 'pdf':
+			return 'application/pdf';
+		case 'txt':
+			return 'text/plain';
+		default:
+			return 'application/octet-stream';
+	}
+}
+
+/**
  * A test seam: when set, extraction is delegated entirely to the override, so
  * a test can assert the 'unavailable' and 'failed' branches deterministically
  * without depending on which binaries happen to be installed on the runner.
@@ -74,7 +130,10 @@ export async function extractAttachmentText(input: OcrInput): Promise<OcrResult>
 
 async function extract(input: OcrInput): Promise<OcrResult> {
 	const buffer = Buffer.isBuffer(input.buffer) ? input.buffer : Buffer.from(input.buffer);
-	const contentType = (input.contentType ?? '').toLowerCase();
+	// Sniff first: a browser that sends `application/octet-stream` for a JPEG
+	// (common on mobile) must still reach the image path, not fall through to
+	// 'unavailable'. The claimed type is only consulted after the magic bytes.
+	const contentType = sniffContentType(buffer, input.contentType, input.filename).toLowerCase();
 	const filename = (input.filename ?? '').toLowerCase();
 
 	if (contentType.startsWith('text/') || filename.endsWith('.txt')) {
@@ -86,10 +145,24 @@ async function extract(input: OcrInput): Promise<OcrResult> {
 	}
 
 	if (contentType.startsWith('image/')) {
-		return extractImage(buffer);
+		return extractImage(buffer, imageExtension(contentType));
 	}
 
 	return { status: 'unavailable', text: null };
+}
+
+/** The file extension tesseract wants for this image type. */
+function imageExtension(contentType: string): string {
+	switch (contentType) {
+		case 'image/jpeg':
+			return 'jpg';
+		case 'image/webp':
+			return 'webp';
+		case 'image/gif':
+			return 'gif';
+		default:
+			return 'png';
+	}
 }
 
 /** Normalize raw text and decide done vs empty. */
@@ -646,9 +719,9 @@ async function ocrPdfPages(buffer: Buffer): Promise<string> {
 // Images
 // ---------------------------------------------------------------------------
 
-async function extractImage(buffer: Buffer): Promise<OcrResult> {
+async function extractImage(buffer: Buffer, extension = 'png'): Promise<OcrResult> {
 	const embedded = isPng(buffer) ? normalizeText(extractPngTextChunks(buffer)) : '';
-	const tesseract = await runTesseract(buffer);
+	const tesseract = await runTesseract(buffer, extension);
 
 	// tesseract not installed — an embedded chunk is still a real answer.
 	if (!tesseract.ok && tesseract.missing) {
@@ -668,9 +741,9 @@ type RunResult =
 	| { ok: true; stdout: string }
 	| { ok: false; missing: boolean };
 
-function runTesseract(buffer: Buffer): Promise<RunResult> {
+function runTesseract(buffer: Buffer, extension = 'png'): Promise<RunResult> {
 	return (async () => {
-		const file = join(tmpdir(), `nido-ocr-${randomBytes(8).toString('hex')}.png`);
+		const file = join(tmpdir(), `nido-ocr-${randomBytes(8).toString('hex')}.${extension}`);
 		try {
 			await fs.writeFile(file, buffer);
 			const psm3 = await run('tesseract', [file, 'stdout', '-l', 'eng', '--psm', '3'], { timeout: 15_000 });

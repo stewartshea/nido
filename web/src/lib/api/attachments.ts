@@ -4,11 +4,25 @@ import api from './client';
 import type { AttachmentMeta } from './types';
 
 export const attachmentsAPI = {
-  upload: (refType: string, refId: number, file: File) => {
+  /**
+   * Attach a file to a record. `ocr` carries the text already read off the
+   * file by a preview pass, so the API does not have to run tesseract again on
+   * the same bytes just to store the row.
+   */
+  upload: (
+    refType: string,
+    refId: number,
+    file: File,
+    ocr?: { ocrStatus?: string | null; ocrText?: string | null },
+  ) => {
     const form = new FormData();
     form.set('refType', refType);
     form.set('refId', String(refId));
     form.set('file', file);
+    if (ocr?.ocrStatus) {
+      form.set('ocrStatus', ocr.ocrStatus);
+      if (ocr.ocrText) form.set('ocrText', ocr.ocrText);
+    }
     // Content-Type must be unset so the browser adds the multipart boundary;
     // the instance default of application/json makes the API reject the body.
     return api.post<{ attachment: AttachmentMeta }>(

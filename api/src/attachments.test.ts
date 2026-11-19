@@ -131,6 +131,40 @@ describe('the boundary holds', () => {
 		expect(res.status).toBe(404);
 	});
 
+	it('sniffs a real image type when the client claims octet-stream', async () => {
+		const form = new FormData();
+		form.set('refType', 'event');
+		form.set('refId', String(appointmentId));
+		// JPEG magic bytes, but the browser labelled the part generically.
+		form.set('file', new File([new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10])], 'IMG_0001', { type: 'application/octet-stream' }));
+		const res = await app.fetch(new Request('http://localhost/api/v1/attachments', {
+			method: 'POST',
+			headers: { Authorization: `Bearer ${token}` },
+			body: form,
+		}));
+		expect(res.status).toBe(201);
+		const body = await res.json() as Record<string, any>;
+		expect(body.attachment.contentType).toBe('image/jpeg');
+	});
+
+	it('reuses the OCR the client already ran instead of re-reading the bytes', async () => {
+		const form = new FormData();
+		form.set('refType', 'event');
+		form.set('refId', String(appointmentId));
+		form.set('file', new File([new Uint8Array([0xff, 0xd8, 0xff, 0xe0])], 'receipt.jpg', { type: 'image/jpeg' }));
+		form.set('ocrStatus', 'done');
+		form.set('ocrText', 'Oil change $89.00');
+		const res = await app.fetch(new Request('http://localhost/api/v1/attachments', {
+			method: 'POST',
+			headers: { Authorization: `Bearer ${token}` },
+			body: form,
+		}));
+		expect(res.status).toBe(201);
+		const body = await res.json() as Record<string, any>;
+		expect(body.attachment.ocrStatus).toBe('done');
+		expect(body.attachment.ocrText).toBe('Oil change $89.00');
+	});
+
 	it('will not let another family read the file', async () => {
 		const up = await upload(token, 'event', appointmentId, 'private.pdf', 'PRIVATE');
 		const id = up.body.attachment.id;

@@ -33,7 +33,7 @@ import { datePart } from '../dates';
 import { DEFAULT_TIMEZONE, effectiveTimezone } from '../timezone';
 import { NAMESPACE_HOUSEHOLD_ID } from '../db-core';
 import { EncryptedBlobStore } from '../blob-store';
-import { extractAttachmentText, parseReceiptHints, type OcrResult } from '../ocr';
+import { extractAttachmentText, parseReceiptHints, sniffContentType, type OcrResult } from '../ocr';
 import { shapeAttachment } from './attachments';
 
 const careRoutes = new Hono<AuthEnv>();
@@ -904,8 +904,10 @@ careRoutes.post('/:id{[0-9]+}/maintenance/ocr-preview', async (c) => {
 		if (file.size > MAX_RECEIPT_BYTES) {
 			return c.json({ error: `File exceeds the ${MAX_RECEIPT_BYTES} byte limit` }, 413);
 		}
-		const contentType = file.type || 'application/octet-stream';
 		const bytes = Buffer.from(await file.arrayBuffer());
+		// Sniff the real type so a mobile capture claiming
+		// `application/octet-stream` still OCRs and stores correctly.
+		const contentType = sniffContentType(bytes, file.type, file.name);
 		const ocr = await extractAttachmentText({ buffer: bytes, contentType, filename: file.name || null });
 		pages.push({
 			filename: file.name || null,
@@ -949,16 +951,19 @@ careRoutes.post('/:id{[0-9]+}/maintenance/from-receipt', async (c) => {
 	if (files.length > MAX_RECEIPT_FILES) return c.json({ error: 'Too many files (max 20)' }, 400);
 
 	const buffers: Buffer[] = [];
+	const contentTypes: string[] = [];
 	const ocrResults: OcrResult[] = [];
 	for (const file of files) {
 		if (file.size > MAX_RECEIPT_BYTES) {
 			return c.json({ error: `File exceeds the ${MAX_RECEIPT_BYTES} byte limit` }, 413);
 		}
 		const bytes = Buffer.from(await file.arrayBuffer());
+		const contentType = sniffContentType(bytes, file.type, file.name);
 		buffers.push(bytes);
+		contentTypes.push(contentType);
 		ocrResults.push(await extractAttachmentText({
 			buffer: bytes,
-			contentType: file.type || 'application/octet-stream',
+			contentType,
 			filename: file.name || null,
 		}));
 	}
@@ -1024,6 +1029,9 @@ careRoutes.post('/:id{[0-9]+}/maintenance/from-receipt', async (c) => {
 		const ocr = ocrResults[i];
 		if (!file || !bytes || !ocr) continue;
 		try {
+			// The bytes live in the family's encrypted blob store, keyed by the
+			// same familyId the request authenticated with — never a value from
+			// the body.
 			const put = await blobStore().put(c.get('familyId'), Readable.from(bytes), { maxBytes: MAX_RECEIPT_BYTES });
 			await ctx.db.execute({
 				sql: `INSERT INTO attachments
@@ -1031,13 +1039,14 @@ careRoutes.post('/:id{[0-9]+}/maintenance/from-receipt', async (c) => {
 				      VALUES (NULL, 'maintenance', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 				args: [
 					entryId, put.blobId, put.storageKey, file.name || null,
-					file.type || 'application/octet-stream', put.size, ocr.text, ocr.status,
+					contentTypes[i] || 'application/octet-stream', put.size, ocr.text, ocr.status,
 					new Date().toISOString(), c.get('userId'),
 				],
 			});
 		} catch (err) {
 			// The entry is already the truth; a page that could not be stored is
-			// skipped rather than losing the whole log with it.
+			// logged rather than losing the whole log with it. `entryFor` below
+			// re-reads the rows, so whatever did store comes back on the entry.
 			c.get('log').error('receipt attachment store failed', { err });
 		}
 	}

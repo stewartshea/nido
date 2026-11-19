@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, tick } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { tokenExpired, currentFamilyId } from '$lib/api/client';
 	import { userAPI, familiesAPI } from '$lib/api/family';
@@ -36,6 +36,9 @@
 	let showEntryForm = false;
 	let entrySchedule: Schedule | null = null;
 	let editingEntry: MaintenanceEntry | null = null;
+	// The form lives in the History section, so an action in "Needs attention"
+	// or the schedule list has to bring it into view when it opens.
+	let entryFormEl: HTMLDivElement | null = null;
 	let uploadingReceipt = false;
 	let showMeterForm = false;
 	let readingMeterId: number | null = null;
@@ -175,11 +178,40 @@
 		load();
 	}
 
+	/** Bring the (History-mounted) entry form into view once it has rendered. */
+	async function revealEntryForm() {
+		await tick();
+		entryFormEl?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+	}
+
 	function logIt(schedule: Schedule) {
 		entrySchedule = schedule;
 		editingEntry = null;
 		showEntryForm = true;
 		showScheduleForm = false;
+		revealEntryForm();
+	}
+
+	/** "+ Log maintenance" — a blank entry, opened in place in History. */
+	function toggleEntryForm() {
+		if (showEntryForm) {
+			showEntryForm = false;
+			entrySchedule = null;
+			editingEntry = null;
+			return;
+		}
+		entrySchedule = null;
+		editingEntry = null;
+		showEntryForm = true;
+		revealEntryForm();
+	}
+
+	/** Edit one history row in place, with its existing receipt already shown. */
+	function editEntry(entry: MaintenanceEntry) {
+		editingEntry = entry;
+		entrySchedule = null;
+		showEntryForm = true;
+		revealEntryForm();
 	}
 
 	async function archiveSchedule(schedule: Schedule) {
@@ -236,9 +268,17 @@
 	 */
 	async function onReceiptQuickUpload(event: Event) {
 		const input = event.currentTarget as HTMLInputElement;
-		const files = Array.from(input.files ?? []);
+		const rawFiles = Array.from(input.files ?? []);
 		input.value = '';
-		if (!files.length) return;
+		if (!rawFiles.length) return;
+		// Clone into memory before uploading: WebKit/Safari invalidates the
+		// picked File blobs once the input is reset, so reading the raw list
+		// later would upload an empty receipt that attaches to nothing.
+		const files: File[] = [];
+		for (const raw of rawFiles) {
+			const buf = await raw.arrayBuffer();
+			files.push(new File([buf], raw.name || 'receipt.jpg', { type: raw.type || 'image/jpeg' }));
+		}
 		uploadingReceipt = true;
 		error = '';
 		try {
@@ -248,6 +288,7 @@
 			entrySchedule = null;
 			showEntryForm = true;
 			notice = `Logged "${res.data.entry.task}" from ${files.length} receipt ${files.length === 1 ? 'file' : 'pages'}. Review or edit details below.`;
+			revealEntryForm();
 		} catch (e: any) {
 			error = e?.response?.data?.error || 'Could not read that receipt.';
 		} finally {
@@ -392,19 +433,6 @@
 					{/each}
 				</ul>
 			</div>
-		{/if}
-
-		{#if showEntryForm}
-			<MaintenanceForm
-				assetId={assetId}
-				meters={care.meters}
-				inventory={inventory}
-				schedule={entrySchedule}
-				editing={editingEntry}
-				today={care.today}
-				on:save={onEntrySaved}
-				on:cancel={() => { showEntryForm = false; entrySchedule = null; editingEntry = null; }}
-			/>
 		{/if}
 
 		{#if showScheduleForm}
@@ -610,11 +638,32 @@
 							on:change={onReceiptQuickUpload}
 						/>
 					</label>
-					<button type="button" class="text-sm underline text-accent" on:click={() => { entrySchedule = null; editingEntry = null; showEntryForm = !showEntryForm; }}>
+					<button type="button" class="text-sm underline text-accent" on:click={toggleEntryForm}>
 						{showEntryForm ? 'Cancel' : '+ Log maintenance'}
 					</button>
 				</div>
 			</div>
+
+			<!-- The log form lives here, at the top of History: a receipt logged
+			     from a photo (or an entry opened for edit) shows up right where
+			     the user is looking, photo and all. `{#key}` rebuilds it when a
+			     different entry or schedule is opened. -->
+			{#if showEntryForm}
+				<div bind:this={entryFormEl}>
+					{#key editingEntry?.id ?? (entrySchedule?.id ? `sched-${entrySchedule.id}` : 'new')}
+						<MaintenanceForm
+							assetId={assetId}
+							meters={care.meters}
+							inventory={inventory}
+							schedule={entrySchedule}
+							editing={editingEntry}
+							today={care.today}
+							on:save={onEntrySaved}
+							on:cancel={() => { showEntryForm = false; entrySchedule = null; editingEntry = null; }}
+						/>
+					{/key}
+				</div>
+			{/if}
 
 			{#if care.entries.length > 0}
 				<input
@@ -668,7 +717,7 @@
 										<AttachmentGallery
 											refType="maintenance"
 											refId={entry.id}
-											attachments={care.attachments.filter((a) => a.refType === 'maintenance' && a.refId === entry.id)}
+											attachments={entry.attachments?.length ? entry.attachments : care.attachments.filter((a) => a.refType === 'maintenance' && a.refId === entry.id)}
 											title="Receipts & photos"
 											accept="image/*,application/pdf"
 											compact
@@ -677,7 +726,7 @@
 									</div>
 								</div>
 								<div class="flex items-center gap-2 shrink-0">
-									<button type="button" class="text-xs underline text-ink-soft hover:text-ink" data-testid={`edit-entry-${entry.id}`} on:click={() => { editingEntry = entry; entrySchedule = null; showEntryForm = true; }}>Edit</button>
+									<button type="button" class="text-xs underline text-ink-soft hover:text-ink" data-testid={`edit-entry-${entry.id}`} on:click={() => editEntry(entry)}>Edit</button>
 									<button type="button" class="text-xs underline text-ink-soft hover:text-danger-text" on:click={() => deleteEntry(entry)}>Delete</button>
 								</div>
 							</div>

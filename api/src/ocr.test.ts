@@ -16,6 +16,7 @@ import {
 	mergeOcrPasses,
 	parseReceiptHints,
 	setOcrExtractor,
+	sniffContentType,
 } from './ocr';
 
 /** A minimal, structurally valid single-page PDF with one text operator. */
@@ -359,5 +360,42 @@ describe('ocr: an upload is never failed by extraction', () => {
 		expect(up.status).toBe(201);
 		expect(up.body.attachment.ocrStatus).toBe('failed');
 		expect(up.body.attachment.ocrText).toBeNull();
+	});
+});
+
+describe('ocr: content-type sniffing', () => {
+	it('reads the magic bytes rather than trusting a vague claim', () => {
+		const jpeg = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]);
+		expect(sniffContentType(jpeg, 'application/octet-stream', 'IMG_4821.jpg')).toBe('image/jpeg');
+
+		const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+		expect(sniffContentType(png, null, null)).toBe('image/png');
+
+		const gif = Buffer.from('GIF89a------', 'ascii');
+		expect(sniffContentType(gif, 'application/octet-stream', null)).toBe('image/gif');
+
+		const webp = Buffer.concat([Buffer.from('RIFF'), Buffer.alloc(4), Buffer.from('WEBP')]);
+		expect(sniffContentType(webp, 'application/octet-stream', null)).toBe('image/webp');
+
+		const pdf = Buffer.from('%PDF-1.7\n', 'ascii');
+		expect(sniffContentType(pdf, 'application/octet-stream', null)).toBe('application/pdf');
+	});
+
+	it('keeps a specific claim and falls back to the filename', () => {
+		expect(sniffContentType(Buffer.from([0x00, 0x01]), 'image/heic', 'x.heic')).toBe('image/heic');
+		expect(sniffContentType(Buffer.from([0x00, 0x01]), 'application/octet-stream', 'receipt.JPEG')).toBe('image/jpeg');
+		expect(sniffContentType(Buffer.from([0x00, 0x01]), null, 'notes.txt')).toBe('text/plain');
+		expect(sniffContentType(Buffer.from([0x00, 0x01]), null, 'mystery.bin')).toBe('application/octet-stream');
+	});
+
+	it('still OCRs an image that arrives mislabelled as octet-stream', async () => {
+		const png = embedPngText(PNG_BYTES, 'Cabin air filter replaced');
+		const result = await extractAttachmentText({
+			buffer: png,
+			contentType: 'application/octet-stream',
+			filename: 'IMG_0001.jpg',
+		});
+		expect(result.status).toBe('done');
+		expect(result.text).toContain('Cabin air filter replaced');
 	});
 });

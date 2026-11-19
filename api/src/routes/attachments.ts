@@ -18,7 +18,7 @@ import type { SqliteFacade } from '../db-core';
 import { type AuthEnv } from '../auth';
 import { EncryptedBlobStore } from '../blob-store';
 import { resolveTrackableMember } from '../member-scope';
-import { extractAttachmentText } from '../ocr';
+import { extractAttachmentText, sniffContentType, type OcrResult, type OcrStatus } from '../ocr';
 
 const attachmentRoutes = new Hono<AuthEnv>();
 
@@ -137,16 +137,30 @@ attachmentRoutes.post('/', async (c) => {
 
 	try {
 		const bytes = Buffer.from(await file.arrayBuffer());
-		const contentType = file.type || 'application/octet-stream';
+		// Sniff the real type: a mobile capture often arrives as
+		// `application/octet-stream`, which would both mangle the stored type
+		// and stop OCR from ever running.
+		const contentType = sniffContentType(bytes, file.type, file.name);
 		const put = await blobStore().put(familyId, Readable.from(bytes), { maxBytes: MAX_BYTES });
 		// Best-effort text extraction: the upload must never fail because a
 		// receipt could not be read. The status rides back on the row so the UI
 		// can show "Not searchable" instead of pretending it worked.
-		const ocr = await extractAttachmentText({
-			buffer: bytes,
-			contentType,
-			filename: file.name || null,
-		});
+		//
+		// When the client already ran `/ocr-preview`, it sends the status and
+		// text back with the upload: reuse that instead of paying tesseract a
+		// second time on the same bytes.
+		const suppliedStatus = form.get('ocrStatus');
+		const ocr: OcrResult =
+			suppliedStatus && ['done', 'empty', 'unavailable', 'failed'].includes(String(suppliedStatus))
+				? {
+					status: String(suppliedStatus) as OcrStatus,
+					text: form.get('ocrText') ? String(form.get('ocrText')) : null,
+				}
+				: await extractAttachmentText({
+					buffer: bytes,
+					contentType,
+					filename: file.name || null,
+				});
 		const ins = await db.execute({
 			sql: `INSERT INTO attachments (subject_id, ref_type, ref_id, blob_id, storage_key, filename, content_type, size, ocr_text, ocr_status, created_at, created_by)
 			      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
