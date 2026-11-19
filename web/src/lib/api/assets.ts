@@ -4,7 +4,7 @@
 // maintenance log (#68) hang off these rows.
 import api from './client';
 import type {
-	Asset, AssetCare, AssetCategoryId, DueItem, MaintenanceEntry, Meter, Schedule, ScheduleCondition,
+	Asset, AssetCare, AssetCategoryId, DueItem, HomeAssetSearchResult, MaintenanceEntry, Meter, ReceiptHints, ReceiptOcrPreviewPage, Schedule, ScheduleCondition,
 } from './types';
 
 export const assetsAPI = {
@@ -25,6 +25,7 @@ export const assetsAPI = {
 		identity?: Partial<{ manufacturer: string | null; model: string | null; modelYear: number | null; serial: string | null }>;
 		acquiredAt?: string | null;
 		purchasePrice?: number | null;
+		manualUrl?: string | null;
 		notes?: string | null;
 	}) => api.post<{ asset: Asset }>('/home-assets', data),
 	update: (id: number, data: Partial<{
@@ -34,10 +35,28 @@ export const assetsAPI = {
 		identity?: Partial<{ manufacturer: string | null; model: string | null; modelYear: number | null; serial: string | null }>;
 		acquiredAt?: string | null;
 		purchasePrice?: number | null;
+		manualUrl?: string | null;
 		notes?: string | null;
 	}>) => api.put<{ asset: Asset }>(`/home-assets/${id}`, data),
 	archive: (id: number) => api.post<{ asset: Asset }>(`/home-assets/${id}/archive`),
 	unarchive: (id: number) => api.post<{ asset: Asset }>(`/home-assets/${id}/unarchive`),
+
+	/** Search across assets, maintenance entries, schedules, manuals, and OCR text. */
+	search: (params: {
+		q: string;
+		assetId?: number | null;
+		category?: AssetCategoryId | null;
+		homeId?: number | null;
+		includeArchived?: boolean;
+	}) => {
+		const qs = new URLSearchParams();
+		qs.set('q', params.q);
+		if (params.assetId != null) qs.set('assetId', String(params.assetId));
+		if (params.category) qs.set('category', params.category);
+		if (params.homeId != null) qs.set('homeId', String(params.homeId));
+		if (params.includeArchived) qs.set('includeArchived', 'true');
+		return api.get<{ query: string; results: HomeAssetSearchResult[] }>(`/home-assets/search?${qs.toString()}`);
+	},
 
 	// --- The care loop (#66, #67, #68) ---
 
@@ -88,6 +107,33 @@ export const assetsAPI = {
 		notes: string | null;
 	}>) => api.put<{ entry: MaintenanceEntry }>(`/home-assets/maintenance/${entryId}`, data),
 	deleteEntry: (entryId: number) => api.delete<{ deleted: boolean }>(`/home-assets/maintenance/${entryId}`),
+
+	/**
+	 * Upload 1+ receipt photos/PDF pages to automatically OCR, extract task/date/cost,
+	 * create the maintenance entry, and attach all pages in one step.
+	 */
+	logMaintenanceFromReceipt: (assetId: number, files: File[]) => {
+		const form = new FormData();
+		for (const file of files) form.append('files', file);
+		return api.post<{ entry: MaintenanceEntry; hints: ReceiptHints }>(
+			`/home-assets/${assetId}/maintenance/from-receipt`,
+			form,
+			{ headers: { 'Content-Type': undefined }, timeout: 60000 },
+		);
+	},
+	/**
+	 * Preview OCR hints across 1+ receipt files without saving an entry yet,
+	 * used to pre-populate the maintenance form.
+	 */
+	previewMaintenanceReceipt: (assetId: number, files: File[]) => {
+		const form = new FormData();
+		for (const file of files) form.append('files', file);
+		return api.post<{ hints: ReceiptHints; pages: ReceiptOcrPreviewPage[] }>(
+			`/home-assets/${assetId}/maintenance/ocr-preview`,
+			form,
+			{ headers: { 'Content-Type': undefined }, timeout: 60000 },
+		);
+	},
 
 	/** Across every asset: overdue first, then due. */
 	due: () => api.get<{ today: string; items: DueItem[] }>('/home-assets/due'),

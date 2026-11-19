@@ -70,6 +70,24 @@ async function authedPost(path: string, body: unknown, jwt: string): Promise<any
   return text ? JSON.parse(text) : null;
 }
 
+/** Upload an attachment whose bytes are real, OCR-able text. */
+async function authedUpload(jwt: string, refType: string, refId: number, name: string, content: string): Promise<any> {
+  const form = new FormData();
+  form.set('refType', refType);
+  form.set('refId', String(refId));
+  form.set('file', new File([content], name, { type: 'application/pdf' }));
+  const res = await app.fetch(
+    new Request('http://localhost/api/v1/attachments', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${jwt}` },
+      body: form,
+    }),
+  );
+  const text = await res.text();
+  if (!res.ok) throw new Error(`upload -> ${res.status} ${text}`);
+  return text ? JSON.parse(text) : null;
+}
+
 async function mcp(token: string | null, message: unknown) {
   const res = await app.fetch(
     new Request('http://localhost/mcp', {
@@ -546,5 +564,58 @@ describe('mcp write catalog', () => {
     );
     // No delete tool in this pass.
     expect(names.some((n) => n.startsWith('delete'))).toBe(false);
+  });
+});
+
+describe('mcp home search journey (#69)', () => {
+  it('finds every brake service with dates, costs and receipt OCR through the tools', async () => {
+    const fam = await registerFamily('mcp-brakes@example.com');
+    const mazda = (await authedPost('/api/v1/home-assets', { name: 'The Mazda', category: 'vehicle' }, fam.token)).asset;
+    const truck = (await authedPost('/api/v1/home-assets', { name: 'The Truck', category: 'vehicle' }, fam.token)).asset;
+
+    // The task names say nothing about brakes; the receipts do.
+    const annual = (await authedPost(
+      `/api/v1/home-assets/${mazda.id}/maintenance`,
+      { task: 'Annual shop visit', performedAt: '2026-02-14', cost: 41_200 },
+      fam.token,
+    )).entry;
+    const service = (await authedPost(
+      `/api/v1/home-assets/${truck.id}/maintenance`,
+      { task: '60k service', performedAt: '2025-08-10', cost: 76_500 },
+      fam.token,
+    )).entry;
+    await authedUpload(fam.token, 'maintenance', annual.id, 'midtown-auto.pdf', 'Replaced front brake pads and rotors');
+    await authedUpload(fam.token, 'maintenance', service.id, '60k-invoice.pdf', 'Rear brake caliper service');
+
+    const { plaintext } = await mintToken(fam.token);
+
+    // The agent's question: "when did we last do brake work on the vehicles?"
+    const search = await callTool(plaintext, 'search_home_assets', { query: 'brake', category: 'vehicle' });
+    const searchBody = search.body.result.structuredContent as any;
+    const hits = searchBody.results.filter((r: any) => r.kind === 'maintenance');
+    expect(hits).toHaveLength(2);
+    expect(hits.map((h: any) => h.entry.performedAt).sort()).toEqual(['2025-08-10', '2026-02-14']);
+    expect(hits.every((h: any) => h.snippet.toLowerCase().includes('brake'))).toBe(true);
+    expect(hits.every((h: any) => h.attachments.some((a: any) => (a.ocrText ?? '').toLowerCase().includes('brake')))).toBe(true);
+
+    // The same journey through the maintenance log, filtered by category + query.
+    const log = await callTool(plaintext, 'get_maintenance_log', { category: 'vehicle', query: 'brake' });
+    const entries = (log.body.result.structuredContent as any).entries;
+    expect(entries).toHaveLength(2);
+    expect(entries.map((e: any) => e.performedAt).sort()).toEqual(['2025-08-10', '2026-02-14']);
+    expect(entries.map((e: any) => e.cost).sort((a: number, b: number) => a - b)).toEqual([41_200, 76_500]);
+    expect(entries.every((e: any) => e.attachments.some((a: any) => (a.ocrText ?? '').toLowerCase().includes('brake')))).toBe(true);
+
+    // Filtering by a category with no brake work returns nothing.
+    const empty = await callTool(plaintext, 'get_maintenance_log', { category: 'hvac', query: 'brake' });
+    expect((empty.body.result.structuredContent as any).entries).toHaveLength(0);
+  });
+
+  it('lists the search tool alongside the reads', async () => {
+    const fam = await registerFamily('mcp-search-list@example.com');
+    const { plaintext } = await mintToken(fam.token);
+    const list = await mcp(plaintext, { jsonrpc: '2.0', id: 1, method: 'tools/list' });
+    const names = (list.body.result.tools as Array<{ name: string }>).map((t) => t.name);
+    expect(names).toContain('search_home_assets');
   });
 });

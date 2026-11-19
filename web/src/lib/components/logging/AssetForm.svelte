@@ -23,6 +23,7 @@
 	let serial = editing?.identity.serial ?? '';
 	let acquiredAt = editing?.acquiredAt ?? '';
 	let purchasePrice = editing?.purchasePrice !== null && editing?.purchasePrice !== undefined ? String(editing.purchasePrice / 100) : '';
+	let manualUrl = editing?.manualUrl ?? '';
 	let notes = editing?.notes ?? '';
 	let error = '';
 	let saving = false;
@@ -50,6 +51,7 @@
 			// Empty means "not set", not zero — the API takes null for unset.
 			acquiredAt: acquiredAt || null,
 			purchasePrice: purchasePrice.trim() ? Math.round(Number(purchasePrice) * 100) : null,
+			manualUrl: manualUrl.trim() || null,
 			notes: notes.trim() || null,
 		};
 		try {
@@ -108,6 +110,10 @@
 		<label class="text-sm text-ink-soft">
 			Purchase price ($)
 			<input class="w-full mt-1 px-3 py-2 border border-line rounded-md bg-page text-ink" bind:value={purchasePrice} inputmode="decimal" placeholder="27400" />
+		</label>
+		<label class="text-sm text-ink-soft sm:col-span-2">
+			Manual link (URL, optional)
+			<input class="w-full mt-1 px-3 py-2 border border-line rounded-md bg-page text-ink" bind:value={manualUrl} placeholder="https://..." />
 		</label>
 		<label class="text-sm text-ink-soft sm:col-span-2">
 			Notes

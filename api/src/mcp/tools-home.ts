@@ -115,22 +115,26 @@ export function registerHomeTools(server: McpServer, ctx: ToolContext): void {
     {
       title: 'Get maintenance log',
       description:
-        'What was done, when, what it cost and who did it — for one asset or every active asset, with a cost rollup per asset.',
+        'What was done, when, what it cost and who did it — for one asset or every active asset, with a cost rollup per asset. Each entry includes its attached receipts and documents with the text extracted from them (OCR), and the log can be narrowed by asset category or a keyword query (e.g. "brake").',
       inputSchema: {
         assetId: z.number().int().positive().optional().describe('Limit to one asset id from list_assets'),
+        category: z.enum(['vehicle', 'appliance', 'hvac', 'structure', 'outdoor', 'other']).optional().describe('Limit to one asset category, e.g. vehicle'),
+        query: z.string().optional().describe('Filter maintenance entries by keyword across task, notes, and OCR text of attached receipts/records (e.g. "brake")'),
       },
       annotations: { readOnlyHint: true },
     },
-    async ({ assetId }) => {
+    async ({ assetId, category, query }) => {
       try {
-        const assets = assetId
+        let assets = assetId
           ? [{ id: assetId, name: String(assetId) } as RouteAsset]
           : await fetchActiveAssets(ctx);
+        if (!assetId && category) assets = assets.filter((asset) => asset.category === category);
+        const suffix = query ? `?q=${encodeURIComponent(query)}` : '';
         const perAsset = await Promise.all(
           assets.map(async (asset) => {
             const { entries, rollup } = await fetchObject<{ entries: Record<string, unknown>[]; rollup: unknown }>(
               ctx,
-              `/api/v1/home-assets/${asset.id}/maintenance`,
+              `/api/v1/home-assets/${asset.id}/maintenance${suffix}`,
               'get_maintenance_log',
             );
             return {
@@ -145,6 +149,42 @@ export function registerHomeTools(server: McpServer, ctx: ToolContext): void {
           assets: perAsset,
           entries: perAsset.flatMap((a) => a.entries),
         });
+      } catch (err) {
+        return toolError(err);
+      }
+    },
+  );
+
+  // ── Search ────────────────────────────────────────────────────────────────
+  server.registerTool(
+    'search_home_assets',
+    {
+      title: 'Search home assets & maintenance',
+      description:
+        'Search across home assets, maintenance records, schedules, manuals, and OCR text extracted from uploaded receipts and documents (e.g. find all "brake" work across vehicles, or search manuals for a filter size). Returns matching entries with dates, costs, and receipt OCR snippets.',
+      inputSchema: {
+        query: z.string().min(1).describe('Search keywords, e.g. "brake", "pad", "Midtown Auto", "16x25x1"'),
+        assetId: z.number().int().positive().optional().describe('Limit to one asset id from list_assets'),
+        category: z.enum(['vehicle', 'appliance', 'hvac', 'structure', 'outdoor', 'other']).optional().describe('Limit to one asset category, e.g. vehicle'),
+        homeId: z.number().int().positive().optional().describe('Limit to one home id from list_homes'),
+        includeArchived: z.boolean().optional().describe('Include archived assets'),
+      },
+      annotations: { readOnlyHint: true },
+    },
+    async ({ query, assetId, category, homeId, includeArchived }) => {
+      try {
+        const qs = new URLSearchParams();
+        qs.set('q', query);
+        if (assetId) qs.set('assetId', String(assetId));
+        if (category) qs.set('category', category);
+        if (homeId) qs.set('homeId', String(homeId));
+        if (includeArchived) qs.set('includeArchived', 'true');
+        const res = await fetchObject<{ query: string; results: unknown[] }>(
+          ctx,
+          `/api/v1/home-assets/search?${qs}`,
+          'search_home_assets',
+        );
+        return jsonResult({ query: res.query, results: res.results ?? [] });
       } catch (err) {
         return toolError(err);
       }

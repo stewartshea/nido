@@ -14,6 +14,9 @@ export interface PageOptions {
   offset?: number;
 }
 
+/** The outcome of reading text off a stored file, for search (HOME #69). */
+export type OcrStatus = 'done' | 'empty' | 'unavailable' | 'failed';
+
 /** The metadata for one stored file, as every attachment endpoint returns it. */
 export type AttachmentMeta = {
   id: number;
@@ -23,6 +26,12 @@ export type AttachmentMeta = {
   contentType: string;
   size: number;
   url: string;
+  /** Whether the file's text was extracted for search; absent when never tried. */
+  ocrStatus?: OcrStatus | null;
+  /** The extracted text, when the file was read; null when there is none. */
+  ocrText?: string | null;
+  createdAt?: string;
+  createdBy?: string | null;
 };
 
 /** A vital sign reading — blood pressure carries two numbers, the rest one. */
@@ -182,6 +191,8 @@ export interface Asset {
 	acquiredAt: string | null;
 	/** Cents. Kept integer so a cost rollup never invents precision. */
 	purchasePrice: number | null;
+	/** A manufacturer/parts manual link (PRD §7.4), alongside any manual files. */
+	manualUrl: string | null;
 	notes: string | null;
 	/** Attachment id of the asset's photo, or null. */
 	picture: number | null;
@@ -491,8 +502,65 @@ export interface MaintenanceEntry {
 	providerId: number | null;
 	notes: string | null;
 	consumedItems: ConsumedItem[];
+	/** Receipts and before/after photos attached to this entry. */
+	attachments?: AttachmentMeta[];
 	createdAt: string | null;
 	updatedAt: string | null;
+}
+
+/**
+ * The values OCR read off one or more receipt files, used to prefill the
+ * maintenance form before an entry exists (HOME receipt capture).
+ */
+export interface ReceiptHints {
+	task: string;
+	scheduleId: number | null;
+	performedAt: string;
+	cost: number | null;
+	notes: string | null;
+	combinedText: string | null;
+}
+
+/** One file's OCR result in a receipt preview, before an entry is saved. */
+export interface ReceiptOcrPreviewPage {
+	filename: string | null;
+	ocrStatus: OcrStatus;
+	ocrText: string | null;
+}
+
+/**
+ * One match from the cross-asset search (HOME #69): a maintenance entry, a
+ * document/manual, a schedule, or the asset itself. The asset identity is
+ * repeated so a result renders without a second lookup, and any attachments
+ * that matched carry their extracted text so the scan shows beside the snippet.
+ */
+export interface HomeAssetSearchResult {
+	kind: 'maintenance' | 'document' | 'schedule' | 'asset';
+	assetId: number;
+	assetName: string;
+	assetCategory: AssetCategoryId;
+	homeId: number | null;
+	identity: {
+		manufacturer: string | null;
+		model: string | null;
+		modelYear: number | null;
+		serial: string | null;
+	};
+	entry: {
+		id: number;
+		task: string;
+		performedAt: string;
+		cost: number | null;
+		notes: string | null;
+		scheduleId: number | null;
+	} | null;
+	schedule: {
+		id: number;
+		task: string;
+	} | null;
+	attachments: AttachmentMeta[];
+	matchedIn: ('task' | 'notes' | 'ocr' | 'filename' | 'schedule' | 'asset')[];
+	snippet: string;
 }
 
 export interface CostRollup {

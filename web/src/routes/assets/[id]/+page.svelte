@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, tick } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { tokenExpired, currentFamilyId } from '$lib/api/client';
 	import { userAPI, familiesAPI } from '$lib/api/family';
@@ -7,7 +7,7 @@
 	import { inventoryAPI } from '$lib/api/inventory';
 	import { authActions } from '$lib/stores/authStore';
 	import type {
-		AssetCare, ConditionState, InventoryItem, MaintenanceEntry, Meter, MeterKind, Schedule,
+		AssetCare, AttachmentMeta, ConditionState, InventoryItem, MaintenanceEntry, Meter, MeterKind, Schedule,
 	} from '$lib/api/types';
 	import ScheduleForm from '$lib/components/logging/ScheduleForm.svelte';
 	import MaintenanceForm from '$lib/components/logging/MaintenanceForm.svelte';
@@ -35,6 +35,11 @@
 	let editingSchedule: Schedule | null = null;
 	let showEntryForm = false;
 	let entrySchedule: Schedule | null = null;
+	let editingEntry: MaintenanceEntry | null = null;
+	// The form lives in the History section, so an action in "Needs attention"
+	// or the schedule list has to bring it into view when it opens.
+	let entryFormEl: HTMLDivElement | null = null;
+	let uploadingReceipt = false;
 	let showMeterForm = false;
 	let readingMeterId: number | null = null;
 	let readingValue = '';
@@ -45,6 +50,9 @@
 	let skipReasons: Record<number, string> = {};
 	let showArchivedSchedules = false;
 	let pictureError = '';
+	// History search (HOME #69): filters the log and pulls a receipt's
+	// extracted text up next to its scan, so a bad OCR read is visible.
+	let historyQuery = '';
 
 	$: homeName = (id: number | null) => (id === null ? '' : homes.find((h) => h.id === id)?.name ?? '');
 	$: activeSchedules = care?.schedules.filter((s) => s.archivedAt === null) ?? [];
@@ -55,6 +63,22 @@
 	$: seasonal = activeSchedules
 		.filter((s) => s.status.season !== null)
 		.map((s) => ({ schedule: s, season: s.status.season! }));
+
+	$: historyTokens = historyQuery.trim().toLowerCase().split(/\s+/).filter(Boolean);
+	$: historyActive = historyTokens.length > 0;
+	// Every token must appear somewhere on the entry — task, notes, date, or
+	// any file name or extracted receipt text.
+	$: filteredEntries = historyActive
+		? (care?.entries ?? []).filter((entry) => {
+			const hay = [
+				entry.task,
+				entry.notes ?? '',
+				entry.performedAt,
+				...entryAttachments(entry).flatMap((a) => [a.filename ?? '', a.ocrText ?? '']),
+			].join(' ').toLowerCase();
+			return historyTokens.every((t) => hay.includes(t));
+		})
+		: (care?.entries ?? []);
 
 	function formatMoney(cents: number | null): string {
 		if (cents === null || cents === undefined) return '—';
@@ -90,6 +114,40 @@
 		}).join(schedule.match === 'all' ? ' and ' : ' or ');
 	}
 
+	/**
+	 * The files on one maintenance entry: the care aggregate carries them all,
+	 * but an entry may also carry its own copy, so merge by id.
+	 */
+	function entryAttachments(entry: MaintenanceEntry): AttachmentMeta[] {
+		const byId = new Map<number, AttachmentMeta>();
+		for (const a of care?.attachments.filter((x) => x.refType === 'maintenance' && x.refId === entry.id) ?? []) {
+			byId.set(a.id, a);
+		}
+		for (const a of entry.attachments ?? []) byId.set(a.id, a);
+		return [...byId.values()];
+	}
+
+	function excerptAround(text: string, token: string): string {
+		const idx = text.toLowerCase().indexOf(token);
+		if (idx < 0) return text.slice(0, 160).trim();
+		const start = Math.max(0, idx - 60);
+		const end = Math.min(text.length, idx + token.length + 100);
+		return `${start > 0 ? '…' : ''}${text.slice(start, end).trim()}${end < text.length ? '…' : ''}`;
+	}
+
+	/** The matching slice of a receipt's text, or null when none matched. */
+	function ocrExcerpt(entry: MaintenanceEntry): string | null {
+		if (!historyActive) return null;
+		for (const a of entryAttachments(entry)) {
+			const text = a.ocrText;
+			if (!text) continue;
+			const lower = text.toLowerCase();
+			const hit = historyTokens.find((t) => lower.includes(t));
+			if (hit) return excerptAround(text, hit);
+		}
+		return null;
+	}
+
 	async function load() {
 		error = '';
 		try {
@@ -113,16 +171,47 @@
 	}
 
 	function onEntrySaved() {
+		notice = editingEntry ? 'Saved.' : 'Logged.';
 		showEntryForm = false;
 		entrySchedule = null;
-		notice = 'Logged.';
+		editingEntry = null;
 		load();
+	}
+
+	/** Bring the (History-mounted) entry form into view once it has rendered. */
+	async function revealEntryForm() {
+		await tick();
+		entryFormEl?.scrollIntoView({ behavior: 'smooth', block: 'center' });
 	}
 
 	function logIt(schedule: Schedule) {
 		entrySchedule = schedule;
+		editingEntry = null;
 		showEntryForm = true;
 		showScheduleForm = false;
+		revealEntryForm();
+	}
+
+	/** "+ Log maintenance" — a blank entry, opened in place in History. */
+	function toggleEntryForm() {
+		if (showEntryForm) {
+			showEntryForm = false;
+			entrySchedule = null;
+			editingEntry = null;
+			return;
+		}
+		entrySchedule = null;
+		editingEntry = null;
+		showEntryForm = true;
+		revealEntryForm();
+	}
+
+	/** Edit one history row in place, with its existing receipt already shown. */
+	function editEntry(entry: MaintenanceEntry) {
+		editingEntry = entry;
+		entrySchedule = null;
+		showEntryForm = true;
+		revealEntryForm();
 	}
 
 	async function archiveSchedule(schedule: Schedule) {
@@ -169,6 +258,41 @@
 			await load();
 		} catch (e: any) {
 			pictureError = e?.response?.data?.error || 'Could not upload that photo.';
+		}
+	}
+
+	/**
+	 * One-step receipt capture: upload 1+ receipt pages, let the API OCR them
+	 * and create the entry, then reopen the form with that entry so the user
+	 * can review and correct what was read.
+	 */
+	async function onReceiptQuickUpload(event: Event) {
+		const input = event.currentTarget as HTMLInputElement;
+		const rawFiles = Array.from(input.files ?? []);
+		input.value = '';
+		if (!rawFiles.length) return;
+		// Clone into memory before uploading: WebKit/Safari invalidates the
+		// picked File blobs once the input is reset, so reading the raw list
+		// later would upload an empty receipt that attaches to nothing.
+		const files: File[] = [];
+		for (const raw of rawFiles) {
+			const buf = await raw.arrayBuffer();
+			files.push(new File([buf], raw.name || 'receipt.jpg', { type: raw.type || 'image/jpeg' }));
+		}
+		uploadingReceipt = true;
+		error = '';
+		try {
+			const res = await assetsAPI.logMaintenanceFromReceipt(assetId, files);
+			await load();
+			editingEntry = res.data.entry;
+			entrySchedule = null;
+			showEntryForm = true;
+			notice = `Logged "${res.data.entry.task}" from ${files.length} receipt ${files.length === 1 ? 'file' : 'pages'}. Review or edit details below.`;
+			revealEntryForm();
+		} catch (e: any) {
+			error = e?.response?.data?.error || 'Could not read that receipt.';
+		} finally {
+			uploadingReceipt = false;
 		}
 	}
 
@@ -279,6 +403,11 @@
 		</header>
 
 		<div class="mb-6">
+			{#if asset.manualUrl}
+				<p class="mb-2 text-sm">
+					<a href={asset.manualUrl} target="_blank" rel="noopener noreferrer" class="underline text-accent font-semibold">Manual ↗</a>
+				</p>
+			{/if}
 			<AttachmentGallery
 				refType="asset"
 				refId={asset.id}
@@ -304,18 +433,6 @@
 					{/each}
 				</ul>
 			</div>
-		{/if}
-
-		{#if showEntryForm}
-			<MaintenanceForm
-				assetId={assetId}
-				meters={care.meters}
-				inventory={inventory}
-				schedule={entrySchedule}
-				today={care.today}
-				on:save={onEntrySaved}
-				on:cancel={() => { showEntryForm = false; entrySchedule = null; }}
-			/>
 		{/if}
 
 		{#if showScheduleForm}
@@ -508,10 +625,55 @@
 		<section data-testid="asset-history">
 			<div class="flex items-center justify-between mb-2">
 				<h2 class="font-display font-semibold text-lg text-ink">History</h2>
-				<button type="button" class="text-sm underline text-accent" on:click={() => { entrySchedule = null; showEntryForm = !showEntryForm; }}>
-					{showEntryForm ? 'Cancel' : '+ Log maintenance'}
-				</button>
+				<div class="flex items-center gap-3">
+					<label class="text-sm underline text-accent cursor-pointer" data-testid="log-from-receipt-label">
+						{uploadingReceipt ? 'Reading receipt…' : '+ Log from receipt'}
+						<input
+							type="file"
+							accept="image/*,application/pdf"
+							multiple
+							class="sr-only"
+							data-testid="log-from-receipt-input"
+							disabled={uploadingReceipt}
+							on:change={onReceiptQuickUpload}
+						/>
+					</label>
+					<button type="button" class="text-sm underline text-accent" on:click={toggleEntryForm}>
+						{showEntryForm ? 'Cancel' : '+ Log maintenance'}
+					</button>
+				</div>
 			</div>
+
+			<!-- The log form lives here, at the top of History: a receipt logged
+			     from a photo (or an entry opened for edit) shows up right where
+			     the user is looking, photo and all. `{#key}` rebuilds it when a
+			     different entry or schedule is opened. -->
+			{#if showEntryForm}
+				<div bind:this={entryFormEl}>
+					{#key editingEntry?.id ?? (entrySchedule?.id ? `sched-${entrySchedule.id}` : 'new')}
+						<MaintenanceForm
+							assetId={assetId}
+							meters={care.meters}
+							inventory={inventory}
+							schedule={entrySchedule}
+							editing={editingEntry}
+							today={care.today}
+							on:save={onEntrySaved}
+							on:cancel={() => { showEntryForm = false; entrySchedule = null; editingEntry = null; }}
+						/>
+					{/key}
+				</div>
+			{/if}
+
+			{#if care.entries.length > 0}
+				<input
+					type="search"
+					class="w-full px-3 py-2 mb-3 border border-line rounded-md bg-page text-ink text-sm"
+					placeholder="Filter history & receipt OCR (e.g. brake)…"
+					bind:value={historyQuery}
+					data-testid="asset-history-search"
+				/>
+			{/if}
 
 			{#if care.rollup.total !== null}
 				<p class="text-sm text-ink-soft mb-2">
@@ -525,9 +687,11 @@
 
 			{#if care.entries.length === 0}
 				<p class="text-sm text-ink-soft">No maintenance logged yet. Every entry keeps the history — and checks off a schedule.</p>
+			{:else if historyActive && filteredEntries.length === 0}
+				<p class="text-sm text-ink-soft">No history or receipt text matches "{historyQuery.trim()}".</p>
 			{:else}
 				<ul class="grid gap-2">
-					{#each care.entries as entry (entry.id)}
+					{#each filteredEntries as entry (entry.id)}
 						<li class="bg-surface border border-line-soft rounded-xl p-3" data-testid={`entry-${entry.id}`}>
 							<div class="flex items-start justify-between gap-3">
 								<div class="min-w-0">
@@ -543,11 +707,17 @@
 											Used {entry.consumedItems.map((item) => `${item.quantity} ${item.unit ?? ''} ${item.name ?? 'item'}`.trim()).join(', ')}
 										</p>
 									{/if}
+									{#if historyActive}
+										{@const excerpt = ocrExcerpt(entry)}
+										{#if excerpt}
+											<p class="text-xs text-ink-soft mt-2 bg-page border border-line-soft rounded px-2 py-1.5 whitespace-pre-wrap">Matched in receipt OCR: "{excerpt}"</p>
+										{/if}
+									{/if}
 									<div class="mt-2">
 										<AttachmentGallery
 											refType="maintenance"
 											refId={entry.id}
-											attachments={care.attachments.filter((a) => a.refType === 'maintenance' && a.refId === entry.id)}
+											attachments={entry.attachments?.length ? entry.attachments : care.attachments.filter((a) => a.refType === 'maintenance' && a.refId === entry.id)}
 											title="Receipts & photos"
 											accept="image/*,application/pdf"
 											compact
@@ -555,7 +725,10 @@
 										/>
 									</div>
 								</div>
-								<button type="button" class="text-xs underline text-ink-soft hover:text-danger-text shrink-0" on:click={() => deleteEntry(entry)}>Delete</button>
+								<div class="flex items-center gap-2 shrink-0">
+									<button type="button" class="text-xs underline text-ink-soft hover:text-ink" data-testid={`edit-entry-${entry.id}`} on:click={() => editEntry(entry)}>Edit</button>
+									<button type="button" class="text-xs underline text-ink-soft hover:text-danger-text" on:click={() => deleteEntry(entry)}>Delete</button>
+								</div>
 							</div>
 						</li>
 					{/each}

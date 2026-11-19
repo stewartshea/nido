@@ -1518,6 +1518,32 @@ ALTER TABLE inventory_adjustments ADD COLUMN source TEXT DEFAULT 'manual';
       raw.exec('CREATE INDEX IF NOT EXISTS idx_diapers_item ON diapers(item_id)');
     },
   },
+  {
+    version: 50,
+    name: 'attachments-ocr-and-manuals',
+    // HOME module milestone 5 (issue #69): best-effort OCR text stored beside
+    // the attachment row, plus an optional manufacturer manual URL on the
+    // asset itself (PRD §7.2, §7.4).
+    //
+    // ocr_status records what happened at upload ('done', 'empty',
+    // 'unavailable', 'failed') so the UI can show a visible "Not searchable"
+    // badge when OCR is unavailable without ever failing the upload itself.
+    run: (raw) => {
+      const attCols = raw.pragma('table_info(attachments)') as Array<{ name: string }>;
+      if (attCols.length) {
+        if (!attCols.some((c) => c.name === 'ocr_text')) {
+          raw.exec('ALTER TABLE attachments ADD COLUMN ocr_text TEXT');
+        }
+        if (!attCols.some((c) => c.name === 'ocr_status')) {
+          raw.exec('ALTER TABLE attachments ADD COLUMN ocr_status TEXT');
+        }
+      }
+      const assetCols = raw.pragma('table_info(home_assets)') as Array<{ name: string }>;
+      if (assetCols.length && !assetCols.some((c) => c.name === 'manual_url')) {
+        raw.exec('ALTER TABLE home_assets ADD COLUMN manual_url TEXT');
+      }
+    },
+  },
 ];
 
 /**
