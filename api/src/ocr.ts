@@ -115,6 +115,38 @@ export function normalizeText(raw: string | null | undefined): string {
 		.slice(0, MAX_TEXT);
 }
 
+/**
+ * Combine two Tesseract passes over the same page.
+ *
+ * The default `--psm 3` pass understands a whole page and is the better text,
+ * but it can drop a table row that touches a horizontal rule (it reads the
+ * rule as the row above). A `--psm 6` pass treats the page as one uniform
+ * block, which usually recovers that row but scrambles the surrounding
+ * columns. So `--psm 3` stays the primary text, in its original order, and any
+ * line from `--psm 6` that carries a token the primary did not already read is
+ * appended. A line whose words are all known adds nothing, which is what keeps
+ * a 2-column manual from being duplicated wholesale.
+ */
+export function mergeOcrPasses(primary: string, secondary: string): string {
+	const first = normalizeText(primary);
+	const second = normalizeText(secondary);
+	if (!first) return second;
+	if (!second) return first;
+
+	const seen = new Set(first.toLowerCase().match(/[a-z0-9]{2,}/g) ?? []);
+	const recovered: string[] = [];
+	for (const line of second.split('\n')) {
+		const tokens = line.toLowerCase().match(/[a-z0-9]{2,}/g) ?? [];
+		// Only recover a line that teaches us at least one new word.
+		if (!tokens.some((token) => !seen.has(token))) continue;
+		if (recovered.includes(line)) continue;
+		recovered.push(line);
+		for (const token of tokens) seen.add(token);
+	}
+
+	return recovered.length ? `${first}\n${recovered.join('\n')}` : first;
+}
+
 // ---------------------------------------------------------------------------
 // Receipt hints
 // ---------------------------------------------------------------------------
@@ -141,7 +173,7 @@ const ISO_DATE = /\b((?:19|20)\d{2})-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])\b/;
 const SLASH_DATE = /\b(0?[1-9]|1[0-2])\/(0?[1-9]|[12]\d|3[01])\/((?:19|20)\d{2})\b/;
 const NAMED_DATE = /\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+(\d{1,2}),?\s+((?:19|20)\d{2})/i;
 
-const LABELLED_TOTAL = /(?:grand\s*total|invoice\s*total|total\s*due|amount\s*due|balance\s*due|total\s*paid|total)\s*[:$-]*\s*\$?\s*(\d{1,6}(?:,\d{3})*\.\d{2})\b/gi;
+const LABELLED_TOTAL = /(?:grand\s*total|invoice\s*total|total\s*due|amount\s*due|balance\s*due|total\s*paid|subtotal|(?:^|\s)total|(?:^|\s)otal|payments?(?:\s*received)?|amount\s*paid)\s*[:$-]*\s*\$?\s*(\d{1,6}(?:,\d{3})*\.\d{2})\b/gim;
 const DOLLAR_AMOUNT = /\$\s*(\d{1,6}(?:,\d{3})*\.\d{2})\b/g;
 
 const MONTH_NUMBERS: Record<string, number> = {
@@ -212,10 +244,48 @@ function toCents(value: string | undefined): number | null {
 function taskFromFilename(name: string): string | null {
 	const base = name.replace(/\.[^.]*$/, '').replace(/[-_]+/g, ' ').trim();
 	if (!/[a-z]/i.test(base)) return null;
-	const generic = ['scan', 'receipt', 'photo', 'file', 'document', 'page'];
-	if (generic.some((word) => new RegExp(`^${word}[\\s\\d._-]*$`, 'i').test(base))) return null;
-	if (/^(img|dsc)[\s\d._-]/i.test(base)) return null;
+	// Camera, phone, screenshot and messaging app defaults carry no meaning.
+	if (/^(?:img|dsc|pxl|mvimg|whatsapp\s*image|screenshot|signal|photo|image|picture|scan|receipt|document|file|page)\b/i.test(base)) {
+		return null;
+	}
 	return base.charAt(0).toUpperCase() + base.slice(1);
+}
+
+/** Opening lines that describe a field, not the merchant or service. */
+const HEADER_STOPWORDS = [
+	'bill to', 'ship to', 'invoice', 'date', 'tel', 'phone', 'http', 'www',
+	'qty', 'description', 'price', 'total', 'subtotal', 'thank you',
+];
+
+/**
+ * A merchant or document title from the top of the text.
+ *
+ * A photographed receipt often opens with the business name, which is a far
+ * better task label than the camera's filename (`IMG_4821.jpeg`). Only the
+ * first few lines are considered, and address, phone, date and column-header
+ * lines are skipped so the guess lands on the name.
+ */
+function headerFromText(combined: string): string | null {
+	const lines = combined
+		.split(/\n+/)
+		.map((line) => line.trim())
+		.filter((line) => line.length > 0)
+		.slice(0, 5);
+	for (const line of lines) {
+		if (line.length < 3 || line.length > 60) continue;
+		if (!/[a-z]/i.test(line)) continue;
+		const lower = line.toLowerCase();
+		if (HEADER_STOPWORDS.some((word) => lower.startsWith(word))) continue;
+		// Addresses and postal codes start with a digit; a phone number is
+		// mostly digits. Neither names the merchant.
+		if (/^[\d(#]/.test(line)) continue;
+		if (/\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}/.test(line)) continue;
+		const digits = (line.match(/\d/g) ?? []).length;
+		const letters = (line.match(/[a-z]/gi) ?? []).length;
+		if (digits > letters) continue;
+		return line;
+	}
+	return null;
 }
 
 /**
@@ -271,19 +341,33 @@ export function parseReceiptHints(input: {
 		const filename = (input.filenames ?? []).find(
 			(name): name is string => typeof name === 'string' && name.trim().length > 0,
 		);
-		task = (filename ? taskFromFilename(filename) : null) ?? 'Maintenance receipt';
+		task =
+			(filename ? taskFromFilename(filename) : null) ??
+			headerFromText(combined) ??
+			'Maintenance receipt';
 	}
 
 	let cost: number | null = null;
-	const labelled = [...combined.matchAll(LABELLED_TOTAL)];
-	const lastTotal = labelled[labelled.length - 1];
-	if (lastTotal) {
-		cost = toCents(lastTotal[1]);
+	// A `$0.00` total on a receipt with real charges is almost always the tax
+	// line or the balance left after payment (e.g. `Patient Balance: $0.00`),
+	// so a positive labelled amount wins. OCR of a multi-column layout also
+	// splits the label (`otal: $130.50`), which the broadened pattern catches.
+	const labelled = [...combined.matchAll(LABELLED_TOTAL)]
+		.map((match) => toCents(match[1]))
+		.filter((value): value is number => value !== null);
+	const positiveLabelled = labelled.filter((value) => value > 0);
+	if (positiveLabelled.length) {
+		cost = positiveLabelled[positiveLabelled.length - 1] ?? null;
 	} else {
 		const amounts = [...combined.matchAll(DOLLAR_AMOUNT)]
 			.map((match) => toCents(match[1]))
-			.filter((value): value is number => value !== null);
-		if (amounts.length) cost = Math.max(...amounts);
+			.filter((value): value is number => value !== null)
+			.filter((value) => value > 0);
+		if (amounts.length) {
+			cost = Math.max(...amounts);
+		} else if (labelled.length) {
+			cost = labelled[labelled.length - 1] ?? 0;
+		}
 	}
 
 	const notes = combined ? combined.slice(0, 500) : null;
@@ -541,8 +625,14 @@ async function ocrPdfPages(buffer: Buffer): Promise<string> {
 		const files = (await fs.readdir(dir)).filter((name) => name.startsWith('page') && name.endsWith('.png')).sort();
 		const texts: string[] = [];
 		for (const file of files) {
-			const res = await run('tesseract', [join(dir, file), 'stdout', '-l', 'eng'], { timeout: 15_000 });
-			if (res.ok && res.stdout.trim()) texts.push(res.stdout);
+			const pngPath = join(dir, file);
+			// `--psm 3` reads the page as a whole; `--psm 6` is the fallback that
+			// recovers a table row touching a divider. Merge the two per page.
+			const psm3 = await run('tesseract', [pngPath, 'stdout', '-l', 'eng', '--psm', '3'], { timeout: 15_000 });
+			if (!psm3.ok) continue;
+			const psm6 = await run('tesseract', [pngPath, 'stdout', '-l', 'eng', '--psm', '6'], { timeout: 15_000 });
+			const merged = psm6.ok ? mergeOcrPasses(psm3.stdout, psm6.stdout) : psm3.stdout;
+			if (merged.trim()) texts.push(merged);
 		}
 		return texts.join('\n');
 	} catch {
@@ -583,9 +673,13 @@ function runTesseract(buffer: Buffer): Promise<RunResult> {
 		const file = join(tmpdir(), `nido-ocr-${randomBytes(8).toString('hex')}.png`);
 		try {
 			await fs.writeFile(file, buffer);
-			const res = await run('tesseract', [file, 'stdout', '-l', 'eng'], { timeout: 15_000 });
-			if (res.ok) return { ok: true, stdout: res.stdout };
-			return { ok: false, missing: res.missing };
+			const psm3 = await run('tesseract', [file, 'stdout', '-l', 'eng', '--psm', '3'], { timeout: 15_000 });
+			if (!psm3.ok) return { ok: false, missing: psm3.missing };
+			// The second pass is a supplement, never a reason to fail: if it does
+			// not run, the primary text is still a good answer.
+			const psm6 = await run('tesseract', [file, 'stdout', '-l', 'eng', '--psm', '6'], { timeout: 15_000 });
+			const merged = psm6.ok ? mergeOcrPasses(psm3.stdout, psm6.stdout) : psm3.stdout;
+			return { ok: true, stdout: merged };
 		} catch {
 			return { ok: false, missing: false };
 		} finally {
@@ -741,7 +835,14 @@ function run(
 			child = execFile(
 				command,
 				args,
-				{ timeout: options.timeout, maxBuffer: 32 * 1024 * 1024 },
+				{
+					timeout: options.timeout,
+					maxBuffer: 32 * 1024 * 1024,
+					// OpenMP spawns one thread per core by default, which thrashes
+					// a Kubernetes 200m CPU limit and makes tesseract take far
+					// longer than a single-threaded run.
+					env: { ...process.env, OMP_THREAD_LIMIT: '1' },
+				},
 				(err, stdout) => {
 					if (err) {
 						resolve({ ok: false, stdout: String(stdout ?? ''), missing: (err as NodeJS.ErrnoException).code === 'ENOENT' });

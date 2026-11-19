@@ -13,6 +13,7 @@ import {
 	extractAttachmentText,
 	extractPngTextChunks,
 	extractPdfTextFromStreams,
+	mergeOcrPasses,
 	parseReceiptHints,
 	setOcrExtractor,
 } from './ocr';
@@ -92,6 +93,66 @@ describe('ocr: plain text', () => {
 	});
 });
 
+describe('ocr: merging the psm 3 and psm 6 passes', () => {
+	it('recovers a table row clipped at a divider and keeps the psm 3 order', () => {
+		// `--psm 3` loses the row that touches a horizontal rule, leaving only a
+		// fragment; the header and total it read are correct and stay first.
+		const psm3 = [
+			'Qty Description Price Tx Discount Rebate Amount',
+			'S, Ceramic Brake Pad Set',
+			'Total: $130.50',
+		].join('\n');
+		// `--psm 6` reads the whole row, but repeats the header and total.
+		const psm6 = [
+			'Qty Description Price Tx Discount Rebate Amount',
+			'2 Front Ceramic Brake Pad Set 90mm $65.25 $130.50',
+			'Total: $130.50',
+		].join('\n');
+
+		const merged = mergeOcrPasses(psm3, psm6);
+
+		// The primary text is untouched and still comes first.
+		expect(merged.startsWith(psm3)).toBe(true);
+		// The row the primary clipped is recovered from the secondary pass.
+		expect(merged).toContain('2 Front Ceramic Brake Pad Set 90mm $65.25 $130.50');
+		// Lines whose words the primary already read are not duplicated.
+		expect(merged.match(/Qty Description Price/g)).toHaveLength(1);
+		expect(merged.match(/Total: \$130\.50/g)).toHaveLength(1);
+	});
+
+	it('leaves a 2-column manual unchanged when the passes agree', () => {
+		const psm3 = [
+			'Qty Description Price',
+			'1 Front Ceramic Brake Pad Set $65.25',
+			'2 Rear Rotor Assembly $65.25',
+			'Total: $130.50',
+		].join('\n');
+		// `--psm 6` interleaves the columns, but every word is already known.
+		const psm6 = [
+			'1 Front Ceramic Brake Pad Set $65.25',
+			'2 Rear Rotor Assembly $65.25',
+			'Total: $130.50',
+		].join('\n');
+
+		expect(mergeOcrPasses(psm3, psm6)).toBe(psm3);
+	});
+
+	it('appends only the new lines from the secondary pass, in their order', () => {
+		const psm3 = 'Header\nPrice $65.25';
+		const psm6 = 'Header\nPrice $65.25\n2 Rear Rotor Assembly $65.25\nAmount $130.50';
+
+		const merged = mergeOcrPasses(psm3, psm6);
+
+		expect(merged).toBe('Header\nPrice $65.25\n2 Rear Rotor Assembly $65.25\nAmount $130.50');
+	});
+
+	it('falls back to whichever pass produced text', () => {
+		expect(mergeOcrPasses('', 'Total: $5.00')).toBe('Total: $5.00');
+		expect(mergeOcrPasses('Total: $5.00', '')).toBe('Total: $5.00');
+		expect(mergeOcrPasses('', '')).toBe('');
+	});
+});
+
 describe('ocr: receipt hints across pages', () => {
 	it('reads the task, date and total from separate pages', () => {
 		const hints = parseReceiptHints({
@@ -136,6 +197,38 @@ describe('ocr: receipt hints across pages', () => {
 		});
 		expect(hints.performedAt).toBe('2026-07-04');
 		expect(hints.cost).toBe(12000);
+	});
+
+	it('reads a multi-column printed receipt: date, real total and merchant header', () => {
+		const hints = parseReceiptHints({
+			texts: [
+				[
+					'Harbourview Auto & Alignment',
+					'100 Industrial Pkwy',
+					'Springfield, Ontario',
+					'(555) 019-2834',
+					'Bill to: Alex Driver',
+					'2026-10-26',
+					'Invoice date:',
+					'Price Tx Rebate Amount',
+					'36520 $130.50',
+					's $0.00',
+					'Total: $0.00',
+					'otal: $130.50',
+					'Payments: $130.50',
+					'Third-P. Balance: $0.00',
+					'Account Balance: $0.00',
+				].join('\n'),
+			],
+			filenames: ['WhatsApp Image 2026-11-19 at 09.47.31.jpeg'],
+			today: '2026-11-19',
+		});
+		expect(hints.performedAt).toBe('2026-10-26');
+		// `$0.00` is the tax/remaining-balance line, not what was paid.
+		expect(hints.cost).toBe(13050);
+		// The camera filename is not a task; the merchant header is.
+		expect(hints.task).not.toBe('WhatsApp Image 2026 11 19 at 09.47.31');
+		expect(hints.task).toBe('Harbourview Auto & Alignment');
 	});
 });
 

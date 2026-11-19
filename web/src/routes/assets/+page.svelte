@@ -271,7 +271,7 @@
 			</div>
 			<select
 				class="px-3 py-2 border border-line rounded-md bg-page text-ink sm:w-52"
-				aria-label="Filter search by category"
+				aria-label="Filter search by kind"
 				data-testid="assets-search-category"
 				bind:value={searchCategory}
 				on:change={submitSearch}

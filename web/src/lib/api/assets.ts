@@ -118,7 +118,7 @@ export const assetsAPI = {
 		return api.post<{ entry: MaintenanceEntry; hints: ReceiptHints }>(
 			`/home-assets/${assetId}/maintenance/from-receipt`,
 			form,
-			{ headers: { 'Content-Type': undefined } },
+			{ headers: { 'Content-Type': undefined }, timeout: 60000 },
 		);
 	},
 	/**
@@ -131,7 +131,7 @@ export const assetsAPI = {
 		return api.post<{ hints: ReceiptHints; pages: ReceiptOcrPreviewPage[] }>(
 			`/home-assets/${assetId}/maintenance/ocr-preview`,
 			form,
-			{ headers: { 'Content-Type': undefined } },
+			{ headers: { 'Content-Type': undefined }, timeout: 60000 },
 		);
 	},
 

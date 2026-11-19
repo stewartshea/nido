@@ -14,7 +14,7 @@ export const attachmentsAPI = {
     return api.post<{ attachment: AttachmentMeta }>(
       '/attachments',
       form,
-      { headers: { 'Content-Type': undefined } },
+      { headers: { 'Content-Type': undefined }, timeout: 60000 },
     );
   },
   list: (refType: string, refId: number) =>
