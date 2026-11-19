@@ -25,6 +25,25 @@
 	let uploading = false;
 	let error = '';
 	let urls: Record<number, string> = {};
+	// Which attachment's extracted text is expanded below the gallery. One at
+	// a time keeps the compact view compact.
+	let openOcrId: number | null = null;
+
+	// Whether a file's text was read for search at all (PRD §7.2): a scan that
+	// could not be read must say so, not sit silently unsearchable.
+	function isSearchable(attachment: AttachmentMeta): boolean {
+		return attachment.ocrStatus === 'done' && !!attachment.ocrText;
+	}
+
+	function isNotSearchable(attachment: AttachmentMeta): boolean {
+		return attachment.ocrStatus === 'unavailable' || attachment.ocrStatus === 'failed';
+	}
+
+	function toggleOcr(id: number) {
+		openOcrId = openOcrId === id ? null : id;
+	}
+
+	$: openAttachment = attachments.find((a) => a.id === openOcrId) ?? null;
 
 	function isImage(attachment: AttachmentMeta): boolean {
 		return attachment.contentType.startsWith('image/');
@@ -124,6 +143,21 @@
 							{attachment.filename ?? 'File'}
 						</button>
 					{/if}
+					{#if isNotSearchable(attachment)}
+						<span
+							class="block w-fit mt-1 text-[11px] px-1.5 py-0.5 rounded border border-line text-ink-soft"
+							title="No text could be read from this file, so it is not searchable."
+							data-testid={`attachment-ocr-badge-${attachment.id}`}
+						>Not searchable</span>
+					{:else if isSearchable(attachment)}
+						<button
+							type="button"
+							class="block w-fit mt-1 text-[11px] px-1.5 py-0.5 rounded border border-line-soft text-accent underline"
+							title="Show the text read from this file."
+							data-testid={`attachment-ocr-badge-${attachment.id}`}
+							on:click={() => toggleOcr(attachment.id)}
+						>{openOcrId === attachment.id ? 'Hide text' : 'Searchable'}</button>
+					{/if}
 					<button
 						type="button"
 						class="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-page border border-line text-ink-soft text-xs leading-none"
@@ -133,5 +167,15 @@
 				</li>
 			{/each}
 		</ul>
+
+		{#if openAttachment}
+			<div class="mt-2 bg-surface2 border border-line-soft rounded-md p-2">
+				<div class="flex items-center justify-between gap-2">
+					<p class="text-xs font-semibold text-ink truncate">{openAttachment.filename ?? 'Scanned file'}</p>
+					<button type="button" class="text-xs underline text-accent shrink-0" on:click={() => download(openAttachment)}>Open original</button>
+				</div>
+				<pre class="text-xs text-ink-soft whitespace-pre-wrap bg-page border border-line-soft rounded-md p-2 mt-1 max-h-40 overflow-y-auto">{openAttachment.ocrText}</pre>
+			</div>
+		{/if}
 	{/if}
 </div>

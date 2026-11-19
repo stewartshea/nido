@@ -34,6 +34,8 @@ const createAssetSchema = z.object({
 	acquiredAt: z.string().regex(DATE_ONLY, 'Use a calendar date (YYYY-MM-DD)').nullable().optional(),
 	purchasePrice: z.number().int().min(0).max(100_000_000).nullable().optional(),   // cents
 	notes: z.string().max(2000).nullable().optional(),
+	/** Manufacturer manual or documentation URL (PRD §7.4). */
+	manualUrl: z.string().trim().url().max(2000).nullable().optional(),
 });
 
 const updateAssetSchema = z.object({
@@ -44,6 +46,7 @@ const updateAssetSchema = z.object({
 	acquiredAt: z.string().regex(DATE_ONLY).nullable().optional(),
 	purchasePrice: z.number().int().min(0).max(100_000_000).nullable().optional(),
 	notes: z.string().max(2000).nullable().optional(),
+	manualUrl: z.string().trim().url().max(2000).nullable().optional(),
 });
 
 /**
@@ -123,13 +126,14 @@ homeAssetRoutes.post('/', zValidator('json', createAssetSchema), async (c) => {
 		sql: `
 			INSERT INTO home_assets
 			  (household_id, home_id, name, category, manufacturer, model, model_year, serial,
-			   acquired_at, purchase_price, notes, created_by)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			   acquired_at, purchase_price, notes, manual_url, created_by)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		`,
 		args: [
 			householdId, body.homeId ?? null, body.name, body.category,
 			identity.manufacturer, identity.model, identity.model_year, identity.serial,
-			body.acquiredAt ?? null, body.purchasePrice ?? null, body.notes ?? null, c.get('userId'),
+			body.acquiredAt ?? null, body.purchasePrice ?? null, body.notes ?? null,
+			body.manualUrl ?? null, c.get('userId'),
 		],
 	});
 	const row = await assetFor(db, Number((res as any).lastInsertRowid), householdId);
@@ -166,7 +170,7 @@ homeAssetRoutes.put('/:id', zValidator('json', updateAssetSchema), async (c) => 
 		sql: `
 			UPDATE home_assets SET
 			  name = ?, category = ?, home_id = ?, manufacturer = ?, model = ?, model_year = ?,
-			  serial = ?, acquired_at = ?, purchase_price = ?, notes = ?, updated_at = ?
+			  serial = ?, acquired_at = ?, purchase_price = ?, notes = ?, manual_url = ?, updated_at = ?
 			WHERE id = ? AND household_id = ?
 		`,
 		args: [
@@ -177,6 +181,7 @@ homeAssetRoutes.put('/:id', zValidator('json', updateAssetSchema), async (c) => 
 			body.acquiredAt === undefined ? previous.acquired_at : (body.acquiredAt ?? null),
 			body.purchasePrice === undefined ? previous.purchase_price : (body.purchasePrice ?? null),
 			body.notes === undefined ? previous.notes : (body.notes ?? null),
+			body.manualUrl === undefined ? previous.manual_url ?? null : (body.manualUrl ?? null),
 			updatedAt, id, householdId,
 		],
 	});

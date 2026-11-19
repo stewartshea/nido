@@ -249,12 +249,14 @@ async function loadEntries(db: any, assetId: number): Promise<MaintenanceEntry[]
 		args: [assetId],
 	})).rows as unknown as MaintenanceEntryRow[];
 	if (!rows.length) return [];
+	const entryIds = rows.map((row) => Number(row.id));
+	const placeholders = entryIds.map(() => '?').join(', ');
 	const consumed = (await db.execute({
 		sql: `SELECT ci.entry_id, ci.item_id, ci.quantity, i.name, i.unit
 		      FROM maintenance_consumed_items ci
 		      LEFT JOIN inventory_items i ON i.id = ci.item_id
-		      WHERE ci.entry_id IN (${rows.map(() => '?').join(', ')})`,
-		args: rows.map((row) => row.id),
+		      WHERE ci.entry_id IN (${placeholders})`,
+		args: entryIds,
 	})).rows as any[];
 	const byEntry = new Map<number, ConsumedItem[]>();
 	for (const row of consumed) {
@@ -267,7 +269,22 @@ async function loadEntries(db: any, assetId: number): Promise<MaintenanceEntry[]
 		});
 		byEntry.set(Number(row.entry_id), list);
 	}
-	return rows.map((row) => shapeEntry(row, byEntry.get(Number(row.id)) ?? []));
+	const attachments = (await db.execute({
+		sql: `SELECT id, subject_id, ref_type, ref_id, filename, content_type, size, ocr_text, ocr_status, created_at, created_by
+		      FROM attachments
+		      WHERE ref_type = 'maintenance' AND ref_id IN (${placeholders})
+		      ORDER BY created_at DESC`,
+		args: entryIds,
+	})).rows as any[];
+	const attachmentsByEntry = new Map<number, any[]>();
+	for (const row of attachments) {
+		const list = attachmentsByEntry.get(Number(row.ref_id)) ?? [];
+		list.push(shapeAttachment(row));
+		attachmentsByEntry.set(Number(row.ref_id), list);
+	}
+	return rows.map((row) =>
+		shapeEntry(row, byEntry.get(Number(row.id)) ?? [], attachmentsByEntry.get(Number(row.id)) ?? []),
+	);
 }
 
 /**
@@ -279,7 +296,7 @@ async function loadEntries(db: any, assetId: number): Promise<MaintenanceEntry[]
  */
 async function loadAttachments(db: any, assetId: number) {
 	const rows = (await db.execute({
-		sql: `SELECT id, subject_id, ref_type, ref_id, filename, content_type, size, created_at, created_by
+		sql: `SELECT id, subject_id, ref_type, ref_id, filename, content_type, size, ocr_text, ocr_status, created_at, created_by
 		      FROM attachments
 		      WHERE (ref_type = 'asset' AND ref_id = ?)
 		         OR (ref_type = 'maintenance' AND ref_id IN (SELECT id FROM maintenance_entries WHERE asset_id = ?))
@@ -726,12 +743,22 @@ async function entryFor(db: any, id: number, householdId: number): Promise<Maint
 		      WHERE ci.entry_id = ?`,
 		args: [id],
 	})).rows as any[];
-	return shapeEntry(row, consumed.map((item) => ({
-		itemId: Number(item.item_id),
-		quantity: Number(item.quantity),
-		name: item.name ?? undefined,
-		unit: item.unit ?? undefined,
-	})));
+	const attachments = (await db.execute({
+		sql: `SELECT id, subject_id, ref_type, ref_id, filename, content_type, size, ocr_text, ocr_status, created_at, created_by
+		      FROM attachments WHERE ref_type = 'maintenance' AND ref_id = ?
+		      ORDER BY created_at DESC`,
+		args: [id],
+	})).rows;
+	return shapeEntry(
+		row,
+		consumed.map((item) => ({
+			itemId: Number(item.item_id),
+			quantity: Number(item.quantity),
+			name: item.name ?? undefined,
+			unit: item.unit ?? undefined,
+		})),
+		attachments.map(shapeAttachment),
+	);
 }
 
 careRoutes.get('/:id{[0-9]+}/maintenance', async (c) => {
@@ -739,9 +766,32 @@ careRoutes.get('/:id{[0-9]+}/maintenance', async (c) => {
 	if (!ctx) return c.json({ error: 'Not a member of any family' }, 403);
 	const asset = await assetFor(ctx.db, Number(c.req.param('id')), ctx.householdId);
 	if (!asset) return c.json({ error: 'Asset not found' }, 404);
-	const entries = await loadEntries(ctx.db, Number(asset.id));
+	let entries = await loadEntries(ctx.db, Number(asset.id));
+
+	// Optional keyword filter: every whitespace-separated term has to appear in
+	// the entry's own text or in the text of its attached receipts/records.
+	const q = (c.req.query('q') ?? '').trim();
+	if (q) entries = filterEntriesByQuery(entries, q);
+
 	return c.json({ entries, rollup: costRollup(entries) });
 });
+
+/** Every term in `query` must appear (case-insensitively) in the entry's text. */
+function filterEntriesByQuery(entries: MaintenanceEntry[], query: string): MaintenanceEntry[] {
+	const tokens = query.toLowerCase().split(/\s+/).filter(Boolean);
+	if (!tokens.length) return entries;
+	return entries.filter((entry) => {
+		const attachments = entry.attachments ?? [];
+		const haystack = [
+			entry.task,
+			entry.notes ?? '',
+			...attachments.flatMap((att: any) => [att.filename ?? '', att.ocrText ?? '']),
+		]
+			.join(' ')
+			.toLowerCase();
+		return tokens.every((token) => haystack.includes(token));
+	});
+}
 
 careRoutes.post('/:id{[0-9]+}/maintenance', zValidator('json', createEntrySchema), async (c) => {
 	const ctx = await familyContext(c);
@@ -912,6 +962,301 @@ careRoutes.get('/:id{[0-9]+}/care', async (c) => {
 		rollup: costRollup(entries),
 		attachments: await loadAttachments(ctx.db, Number(asset.id)),
 	});
+});
+
+// ---------------------------------------------------------------------------
+// Search (#69)
+// ---------------------------------------------------------------------------
+
+/**
+ * A short window of text around the first matched token, so a result reads
+ * like the receipt line that matched rather than the whole scan.
+ */
+function buildSnippet(text: string, tokens: string[], maxLen = 180): string {
+	const source = String(text ?? '').trim();
+	if (!source) return '';
+	const lower = source.toLowerCase();
+	let at = -1;
+	for (const token of tokens) {
+		const idx = lower.indexOf(token);
+		if (idx !== -1 && (at === -1 || idx < at)) at = idx;
+	}
+	if (at === -1) return source.length > maxLen ? `${source.slice(0, maxLen)}…` : source;
+	const half = Math.floor(maxLen / 2);
+	let start = Math.max(0, at - half);
+	let end = Math.min(source.length, start + maxLen);
+	start = Math.max(0, end - maxLen);
+	const prefix = start > 0 ? '…' : '';
+	const suffix = end < source.length ? '…' : '';
+	return `${prefix}${source.slice(start, end).trim()}${suffix}`;
+}
+
+/** The tokens that appear (case-insensitively) in `text`. */
+function tokensIn(text: string, tokens: string[]): string[] {
+	const lower = String(text ?? '').toLowerCase();
+	return tokens.filter((token) => lower.includes(token));
+}
+
+/**
+ * The one search surface behind the MCP `search_home_assets` tool and, later,
+ * the /home search box.
+ *
+ * It answers the question a family actually asks — "when did we last do the
+ * brakes?" — by matching across the asset, its maintenance entries, its
+ * schedules, and the OCR text of every receipt and manual attached to either.
+ * Every term in the query must match, so "brake mazda" narrows rather than
+ * widens. Results are one flat list, maintenance first and newest first within
+ * it, each carrying the asset and the attachment it matched so the UI never
+ * has to make a second request.
+ */
+careRoutes.get('/search', async (c) => {
+	const ctx = await familyContext(c);
+	if (!ctx) return c.json({ error: 'Not a member of any family' }, 403);
+
+	const query = c.req.query('q') ?? '';
+	const trimmed = query.trim();
+	if (!trimmed) return c.json({ query: '', results: [] });
+
+	const tokens = trimmed.toLowerCase().split(/\s+/).filter(Boolean).slice(0, 8);
+
+	const assetIdParam = c.req.query('assetId');
+	const category = c.req.query('category');
+	const homeIdParam = c.req.query('homeId');
+	const includeArchived = c.req.query('includeArchived') === 'true';
+
+	const clauses = ['household_id = ?'];
+	const args: any[] = [ctx.householdId];
+	if (!includeArchived) clauses.push('archived_at IS NULL');
+	if (assetIdParam && Number.isFinite(Number(assetIdParam))) {
+		clauses.push('id = ?');
+		args.push(Number(assetIdParam));
+	}
+	if (category) {
+		clauses.push('category = ?');
+		args.push(category);
+	}
+	if (homeIdParam && Number.isFinite(Number(homeIdParam))) {
+		clauses.push('home_id = ?');
+		args.push(Number(homeIdParam));
+	}
+
+	const assetRows = (await ctx.db.execute({
+		sql: `SELECT * FROM home_assets WHERE ${clauses.join(' AND ')} ORDER BY name COLLATE NOCASE, id`,
+		args,
+	})).rows as unknown as AssetRow[];
+	if (!assetRows.length) return c.json({ query: trimmed, results: [] });
+
+	const assets = assetRows.map(shapeAsset);
+	const assetById = new Map(assets.map((asset) => [asset.id, asset]));
+	const assetIds = assets.map((asset) => asset.id);
+	const placeholders = assetIds.map(() => '?').join(', ');
+
+	const entryRows = (await ctx.db.execute({
+		sql: `SELECT * FROM maintenance_entries WHERE asset_id IN (${placeholders})
+		      ORDER BY performed_at DESC, id DESC`,
+		args: assetIds,
+	})).rows as unknown as MaintenanceEntryRow[];
+
+	const attachmentRows = (await ctx.db.execute({
+		sql: `SELECT id, subject_id, ref_type, ref_id, filename, content_type, size, ocr_text, ocr_status, created_at, created_by
+		      FROM attachments
+		      WHERE (ref_type = 'asset' AND ref_id IN (${placeholders}))
+		         OR (ref_type = 'maintenance' AND ref_id IN (SELECT id FROM maintenance_entries WHERE asset_id IN (${placeholders})))
+		      ORDER BY created_at DESC`,
+		args: [...assetIds, ...assetIds],
+	})).rows as any[];
+
+	const entryAttachments = new Map<number, any[]>();
+	const assetAttachments = new Map<number, any[]>();
+	for (const row of attachmentRows) {
+		const shaped = shapeAttachment(row);
+		if (shaped.refType === 'maintenance') {
+			const list = entryAttachments.get(shaped.refId) ?? [];
+			list.push(shaped);
+			entryAttachments.set(shaped.refId, list);
+		} else if (shaped.refType === 'asset') {
+			const list = assetAttachments.get(shaped.refId) ?? [];
+			list.push(shaped);
+			assetAttachments.set(shaped.refId, list);
+		}
+	}
+
+	const scheduleRows = (await ctx.db.execute({
+		sql: `SELECT id, asset_id, task FROM asset_schedules
+		      WHERE household_id = ? AND archived_at IS NULL AND asset_id IN (${placeholders})`,
+		args: [ctx.householdId, ...assetIds],
+	})).rows as any[];
+
+	const results: any[] = [];
+
+	const assetContext = (asset: any): string =>
+		[
+			asset.name, asset.identity?.manufacturer, asset.identity?.model, asset.identity?.modelYear,
+			asset.identity?.serial, asset.category,
+		]
+			.filter((value) => value !== null && value !== undefined && value !== '')
+			.join(' ')
+			.toLowerCase();
+
+	// 1. Maintenance entries — the primary answer: what was done, when, cost.
+	for (const row of entryRows) {
+		const asset = assetById.get(Number(row.asset_id));
+		if (!asset) continue;
+		const attachments = entryAttachments.get(Number(row.id)) ?? [];
+		const taskText = String(row.task ?? '');
+		const notesText = String(row.notes ?? '');
+		const ocrText = attachments.map((att) => String(att.ocrText ?? '')).join(' ');
+		const filenameText = attachments.map((att) => String(att.filename ?? '')).join(' ');
+		const entryText = [taskText, notesText, datePart(String(row.performed_at)), ocrText, filenameText]
+			.filter(Boolean)
+			.join(' ');
+		const combined = `${assetContext(asset)} ${entryText}`.toLowerCase();
+		// Every term has to match somewhere in the asset+entry, and at least one
+		// has to land on the entry itself rather than only on the asset name.
+		if (!tokens.every((token) => combined.includes(token))) continue;
+		if (!tokensIn(entryText, tokens).length) continue;
+
+		const matchedIn: string[] = [];
+		if (tokensIn(taskText, tokens).length) matchedIn.push('task');
+		if (tokensIn(notesText, tokens).length) matchedIn.push('notes');
+		if (tokensIn(ocrText, tokens).length) matchedIn.push('ocr');
+		if (tokensIn(filenameText, tokens).length) matchedIn.push('filename');
+
+		let snippet = '';
+		if (matchedIn.includes('ocr')) {
+			const att = attachments.find((candidate) => tokensIn(String(candidate.ocrText ?? ''), tokens).length);
+			snippet = buildSnippet(String(att?.ocrText ?? ''), tokens);
+		} else if (matchedIn.includes('notes')) {
+			snippet = buildSnippet(notesText, tokens);
+		} else {
+			snippet = buildSnippet(taskText, tokens);
+		}
+
+		results.push({
+			kind: 'maintenance',
+			assetId: asset.id,
+			assetName: asset.name,
+			assetCategory: asset.category,
+			homeId: asset.homeId,
+			identity: asset.identity,
+			entry: {
+				id: Number(row.id),
+				task: String(row.task),
+				performedAt: datePart(String(row.performed_at)),
+				cost: row.cost === null || row.cost === undefined ? null : Number(row.cost),
+				notes: row.notes ?? null,
+				scheduleId: row.schedule_id === null || row.schedule_id === undefined ? null : Number(row.schedule_id),
+			},
+			schedule: null,
+			attachments,
+			matchedIn,
+			snippet,
+		});
+	}
+
+	// 2. Asset-level documents and manuals (a scanned furnace manual, say).
+	for (const asset of assets) {
+		const attachments = assetAttachments.get(asset.id) ?? [];
+		for (const att of attachments) {
+			const filenameText = String(att.filename ?? '');
+			const ocrText = String(att.ocrText ?? '');
+			const own = `${filenameText} ${ocrText}`.toLowerCase();
+			const ownMatches = tokensIn(own, tokens);
+			// The cover photo is only a hit when its own name or text matched;
+			// otherwise every asset photo would match every query.
+			if (asset.picture !== null && att.id === asset.picture && !ownMatches.length) continue;
+			const combined = `${assetContext(asset)} ${filenameText} ${ocrText}`.toLowerCase();
+			if (!tokens.every((token) => combined.includes(token))) continue;
+			if (!ownMatches.length) continue;
+
+			const matchedIn: string[] = [];
+			if (tokensIn(ocrText, tokens).length) matchedIn.push('ocr');
+			if (tokensIn(filenameText, tokens).length) matchedIn.push('filename');
+			if (!matchedIn.length) matchedIn.push('filename');
+			const snippet = matchedIn.includes('ocr') ? buildSnippet(ocrText, tokens) : String(att.filename ?? '');
+
+			results.push({
+				kind: 'document',
+				assetId: asset.id,
+				assetName: asset.name,
+				assetCategory: asset.category,
+				homeId: asset.homeId,
+				identity: asset.identity,
+				entry: null,
+				schedule: null,
+				attachments: [att],
+				matchedIn,
+				snippet,
+			});
+		}
+	}
+
+	// 3. Schedules — a recurring obligation whose task matches.
+	for (const row of scheduleRows) {
+		const asset = assetById.get(Number(row.asset_id));
+		if (!asset) continue;
+		const taskText = String(row.task ?? '');
+		const combined = `${assetContext(asset)} ${taskText}`.toLowerCase();
+		if (!tokens.every((token) => combined.includes(token))) continue;
+		if (!tokensIn(taskText, tokens).length) continue;
+		results.push({
+			kind: 'schedule',
+			assetId: asset.id,
+			assetName: asset.name,
+			assetCategory: asset.category,
+			homeId: asset.homeId,
+			identity: asset.identity,
+			entry: null,
+			schedule: { id: Number(row.id), task: String(row.task) },
+			attachments: [],
+			matchedIn: ['schedule'],
+			snippet: String(row.task),
+		});
+	}
+
+	// 4. The assets themselves.
+	for (const asset of assets) {
+		const own = [
+			asset.name, asset.identity.manufacturer, asset.identity.model, asset.identity.modelYear,
+			asset.identity.serial, asset.notes, asset.category,
+		]
+			.filter((value) => value !== null && value !== undefined && value !== '')
+			.join(' ')
+			.toLowerCase();
+		if (!tokens.every((token) => own.includes(token))) continue;
+		const snippet =
+			[asset.identity.manufacturer, asset.identity.model, asset.identity.modelYear, asset.notes]
+				.filter((value) => value !== null && value !== undefined && value !== '')
+				.join(' · ') || asset.name;
+		results.push({
+			kind: 'asset',
+			assetId: asset.id,
+			assetName: asset.name,
+			assetCategory: asset.category,
+			homeId: asset.homeId,
+			identity: asset.identity,
+			entry: null,
+			schedule: null,
+			attachments: [],
+			matchedIn: ['asset'],
+			snippet,
+		});
+	}
+
+	const rank: Record<string, number> = { maintenance: 0, document: 1, schedule: 2, asset: 3 };
+	results.sort((a, b) => {
+		const diff = (rank[a.kind] ?? 9) - (rank[b.kind] ?? 9);
+		if (diff !== 0) return diff;
+		if (a.kind === 'maintenance') {
+			const at = String(a.entry?.performedAt ?? '');
+			const bt = String(b.entry?.performedAt ?? '');
+			if (at !== bt) return bt.localeCompare(at);
+			return Number(b.entry?.id ?? 0) - Number(a.entry?.id ?? 0);
+		}
+		return 0;
+	});
+
+	return c.json({ query: trimmed, results });
 });
 
 /**

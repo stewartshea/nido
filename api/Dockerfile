@@ -6,7 +6,7 @@ FROM node:22-alpine
 # from source, which needs python3/make/g++. Without these the image build
 # works on some runners and not others depending on what prebuilds exist
 # that day.
-RUN apk add --no-cache python3 make g++
+RUN apk add --no-cache python3 make g++ tesseract-ocr tesseract-ocr-data-eng poppler-utils
 
 WORKDIR /app
 

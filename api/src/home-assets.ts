@@ -56,6 +56,8 @@ export interface AssetRow {
 	notes: string | null;
 	/** Attachment id of the asset's photo, or null. */
 	picture: string | null;
+	/** Manufacturer manual or documentation URL (PRD §7.4), or null. */
+	manual_url?: string | null;
 	archived_at: string | null;
 	created_by: string | null;
 	created_at: string | null;
@@ -90,6 +92,8 @@ export interface Asset {
 	notes: string | null;
 	/** Attachment id of the asset's photo, or null when it has none. */
 	picture: number | null;
+	/** Manufacturer manual or documentation URL (PRD §7.4), or null. */
+	manualUrl: string | null;
 	archivedAt: string | null;
 	createdAt: string | null;
 	updatedAt: string | null;
@@ -117,6 +121,7 @@ export function shapeAsset(row: AssetRow): Asset {
 		purchasePrice: row.purchase_price === null || row.purchase_price === undefined ? null : Number(row.purchase_price),
 		notes: row.notes ?? null,
 		picture: row.picture && /^[0-9]+$/.test(String(row.picture)) ? Number(row.picture) : null,
+		manualUrl: row.manual_url ?? null,
 		archivedAt: row.archived_at ?? null,
 		createdAt: row.created_at ?? null,
 		updatedAt: row.updated_at ?? null,

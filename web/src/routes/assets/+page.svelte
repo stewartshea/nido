@@ -1,13 +1,14 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, onDestroy } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { tokenExpired, currentFamilyId } from '$lib/api/client';
 	import { userAPI, familiesAPI } from '$lib/api/family';
 	import { assetsAPI } from '$lib/api/assets';
 	import { authActions } from '$lib/stores/authStore';
-	import type { Asset, AssetCategoryId } from '$lib/api/types';
+	import type { Asset, AssetCategoryId, HomeAssetSearchResult } from '$lib/api/types';
 	import AssetForm from '$lib/components/logging/AssetForm.svelte';
 	import AssetPicture from '$lib/components/AssetPicture.svelte';
+	import AttachmentGallery from '$lib/components/logging/AttachmentGallery.svelte';
 	import HouseholdNav from '$lib/components/HouseholdNav.svelte';
 
 	// The home asset registry (HOME module 1, issue #65): the car, the
@@ -38,7 +39,79 @@
 		{ id: 'outdoor', label: 'Yard & outdoor' }, { id: 'other', label: 'Other' },
 	];
 
+	// Cross-asset search (HOME #69): one query covers the assets themselves,
+	// their maintenance history, schedules, manual links, and the text read
+	// off scanned receipts. Debounced so typing never fires a request per key.
+	let searchQuery = '';
+	let searchCategory: '' | AssetCategoryId = '';
+	let searchResults: HomeAssetSearchResult[] = [];
+	let searching = false;
+	let searchTimer: ReturnType<typeof setTimeout> | null = null;
+
 	$: homeName = (id: number | null) => (id === null ? '' : homes.find((h) => h.id === id)?.name ?? '');
+
+	function categoryLabel(id: AssetCategoryId): string {
+		return categories.find((c) => c.id === id)?.label ?? id;
+	}
+
+	/** A short human label for where a result matched, from its matchedIn set. */
+	function matchedLabel(hit: HomeAssetSearchResult): string {
+		if (hit.matchedIn.includes('ocr')) return 'Matched in scanned receipt';
+		if (hit.kind === 'maintenance') return 'Matched in maintenance log';
+		if (hit.kind === 'schedule') return 'Matched in a schedule';
+		if (hit.kind === 'document') return 'Matched in a document';
+		if (hit.matchedIn.includes('filename')) return 'Matched in a file name';
+		return 'Matched in the asset';
+	}
+
+	async function runSearch() {
+		const q = searchQuery.trim();
+		if (!q) {
+			searchResults = [];
+			searching = false;
+			return;
+		}
+		searching = true;
+		try {
+			const res = await assetsAPI.search({
+				q,
+				category: searchCategory || null,
+				homeId: filterHomeId,
+				includeArchived: showArchived,
+			});
+			// Another keystroke may have moved the query on; only the newest wins.
+			if (searchQuery.trim() !== q) return;
+			searchResults = res.data.results ?? [];
+		} catch (e: any) {
+			if (e?.response?.status === 401) await goto('/login');
+			else error = e?.response?.data?.error || 'Could not search your assets.';
+			searchResults = [];
+		} finally {
+			if (searchQuery.trim() === q) searching = false;
+		}
+	}
+
+	function scheduleSearch() {
+		if (searchTimer) clearTimeout(searchTimer);
+		searchTimer = setTimeout(() => { runSearch(); }, 150);
+	}
+
+	/** Enter (or the form) searches now, without waiting out the debounce. */
+	function submitSearch() {
+		if (searchTimer) clearTimeout(searchTimer);
+		runSearch();
+	}
+
+	function clearSearch() {
+		if (searchTimer) clearTimeout(searchTimer);
+		searchQuery = '';
+		searchResults = [];
+		searching = false;
+	}
+
+	onDestroy(() => {
+		if (searchTimer) clearTimeout(searchTimer);
+	});
 
 	function identityLine(asset: Asset): string {
 		const i = asset.identity;
@@ -168,6 +241,106 @@
 			Showing assets at <span class="font-semibold text-ink">{homeName(filterHomeId) || 'one home'}</span>
 			<button type="button" class="ml-2 underline text-accent" on:click={clearHomeFilter}>Show all</button>
 		</div>
+	{/if}
+
+	<!-- Cross-asset search (HOME #69): assets, history, manuals & receipt OCR -->
+	<form
+		class="bg-surface border border-line-soft rounded-xl shadow-sm p-4 mb-4"
+		on:submit|preventDefault={submitSearch}
+	>
+		<label class="block text-sm font-semibold text-ink mb-1" for="assets-search-input">Search everything</label>
+		<div class="flex flex-col sm:flex-row gap-2">
+			<div class="relative flex-1">
+				<input
+					id="assets-search-input"
+					type="search"
+					class="w-full px-3 py-2 pr-8 border border-line rounded-md bg-page text-ink"
+					placeholder="Search assets, maintenance & scanned receipts (e.g. brake, oil, filter)…"
+					bind:value={searchQuery}
+					on:input={scheduleSearch}
+					data-testid="assets-search-input"
+				/>
+				{#if searchQuery.trim()}
+					<button
+						type="button"
+						class="absolute right-2 top-1/2 -translate-y-1/2 text-ink-soft hover:text-ink text-lg leading-none"
+						aria-label="Clear search"
+						on:click={clearSearch}
+					>×</button>
+				{/if}
+			</div>
+			<select
+				class="px-3 py-2 border border-line rounded-md bg-page text-ink sm:w-52"
+				aria-label="Filter search by category"
+				data-testid="assets-search-category"
+				bind:value={searchCategory}
+				on:change={submitSearch}
+			>
+				<option value="">All categories</option>
+				{#each categories as c (c.id)}
+					<option value={c.id}>{c.label}</option>
+				{/each}
+			</select>
+			<button type="submit" class="px-4 py-2 rounded-md bg-primary text-on-primary text-sm font-semibold">Search</button>
+		</div>
+	</form>
+
+	{#if searchQuery.trim()}
+		<section class="mb-4" data-testid="assets-search-results">
+			<h2 class="font-display font-semibold text-lg text-ink mb-2">
+				{searching
+					? 'Searching…'
+					: `${searchResults.length} ${searchResults.length === 1 ? 'match' : 'matches'} for "${searchQuery.trim()}"`}
+			</h2>
+
+			{#if searchResults.length === 0 && !searching}
+				<p class="text-sm text-ink-soft">No matching assets, maintenance entries, or scanned documents.</p>
+			{:else}
+				<ul class="grid gap-3">
+					{#each searchResults as hit, i (`${hit.kind}-${hit.entry?.id ?? hit.schedule?.id ?? hit.assetId}-${i}`)}
+						<li
+							class="bg-surface border border-line-soft rounded-xl shadow-sm p-4"
+							data-testid={`search-result-${hit.kind}-${hit.entry?.id ?? hit.schedule?.id ?? hit.assetId}`}
+						>
+							<div class="flex items-start justify-between gap-3">
+								<div class="min-w-0">
+									<p class="font-semibold text-ink">
+										<a href={`/assets/${hit.assetId}`} class="hover:underline">{hit.assetName}</a>
+										<span class="ml-2 text-xs font-normal border border-line-soft rounded-full px-2 py-0.5 text-ink-soft">{categoryLabel(hit.assetCategory)}</span>
+									</p>
+									<p class="text-sm text-ink-soft mt-0.5">
+										{#if hit.kind === 'maintenance' && hit.entry}
+											{hit.entry.task} · {hit.entry.performedAt}{#if hit.entry.cost !== null} · {formatPrice(hit.entry.cost)}{/if}
+										{:else if hit.kind === 'document'}
+											Document / Manual
+										{:else if hit.kind === 'schedule' && hit.schedule}
+											Schedule: {hit.schedule.task}
+										{:else}
+											Asset
+										{/if}
+									</p>
+								</div>
+							</div>
+
+							<p class="text-xs text-ink-soft mt-2 bg-page border border-line-soft rounded px-2.5 py-1.5 whitespace-pre-wrap">{hit.snippet}</p>
+							<p class="text-xs text-ink-soft mt-1">{matchedLabel(hit)}</p>
+
+							{#if hit.attachments.length}
+								<div class="mt-2">
+									<AttachmentGallery
+										compact
+										refType={hit.kind === 'maintenance' ? 'maintenance' : 'asset'}
+										refId={hit.entry ? hit.entry.id : hit.assetId}
+										attachments={hit.attachments}
+										title="Scanned file"
+									/>
+								</div>
+							{/if}
+						</li>
+					{/each}
+				</ul>
+			{/if}
+		</section>
 	{/if}
 
 	{#if loaded}

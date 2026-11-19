@@ -4,7 +4,7 @@
 // maintenance log (#68) hang off these rows.
 import api from './client';
 import type {
-	Asset, AssetCare, AssetCategoryId, DueItem, MaintenanceEntry, Meter, Schedule, ScheduleCondition,
+	Asset, AssetCare, AssetCategoryId, DueItem, HomeAssetSearchResult, MaintenanceEntry, Meter, Schedule, ScheduleCondition,
 } from './types';
 
 export const assetsAPI = {
@@ -25,6 +25,7 @@ export const assetsAPI = {
 		identity?: Partial<{ manufacturer: string | null; model: string | null; modelYear: number | null; serial: string | null }>;
 		acquiredAt?: string | null;
 		purchasePrice?: number | null;
+		manualUrl?: string | null;
 		notes?: string | null;
 	}) => api.post<{ asset: Asset }>('/home-assets', data),
 	update: (id: number, data: Partial<{
@@ -34,10 +35,28 @@ export const assetsAPI = {
 		identity?: Partial<{ manufacturer: string | null; model: string | null; modelYear: number | null; serial: string | null }>;
 		acquiredAt?: string | null;
 		purchasePrice?: number | null;
+		manualUrl?: string | null;
 		notes?: string | null;
 	}>) => api.put<{ asset: Asset }>(`/home-assets/${id}`, data),
 	archive: (id: number) => api.post<{ asset: Asset }>(`/home-assets/${id}/archive`),
 	unarchive: (id: number) => api.post<{ asset: Asset }>(`/home-assets/${id}/unarchive`),
+
+	/** Search across assets, maintenance entries, schedules, manuals, and OCR text. */
+	search: (params: {
+		q: string;
+		assetId?: number | null;
+		category?: AssetCategoryId | null;
+		homeId?: number | null;
+		includeArchived?: boolean;
+	}) => {
+		const qs = new URLSearchParams();
+		qs.set('q', params.q);
+		if (params.assetId != null) qs.set('assetId', String(params.assetId));
+		if (params.category) qs.set('category', params.category);
+		if (params.homeId != null) qs.set('homeId', String(params.homeId));
+		if (params.includeArchived) qs.set('includeArchived', 'true');
+		return api.get<{ query: string; results: HomeAssetSearchResult[] }>(`/home-assets/search?${qs.toString()}`);
+	},
 
 	// --- The care loop (#66, #67, #68) ---
 

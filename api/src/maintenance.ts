@@ -58,11 +58,13 @@ export interface MaintenanceEntry {
 	providerId: number | null;
 	notes: string | null;
 	consumedItems: ConsumedItem[];
+	/** Receipts, records and before/after photos attached to this entry. */
+	attachments?: any[];
 	createdAt: string | null;
 	updatedAt: string | null;
 }
 
-export function shapeEntry(row: MaintenanceEntryRow, consumed: ConsumedItem[] = []): MaintenanceEntry {
+export function shapeEntry(row: MaintenanceEntryRow, consumed: ConsumedItem[] = [], attachments: any[] = []): MaintenanceEntry {
 	return {
 		id: Number(row.id),
 		assetId: Number(row.asset_id),
@@ -73,6 +75,7 @@ export function shapeEntry(row: MaintenanceEntryRow, consumed: ConsumedItem[] = 
 		providerId: row.provider_id === null || row.provider_id === undefined ? null : Number(row.provider_id),
 		notes: row.notes ?? null,
 		consumedItems: consumed,
+		attachments,
 		createdAt: row.created_at ?? null,
 		updatedAt: row.updated_at ?? null,
 	};

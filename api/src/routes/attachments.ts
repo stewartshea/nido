@@ -18,6 +18,7 @@ import type { SqliteFacade } from '../db-core';
 import { type AuthEnv } from '../auth';
 import { EncryptedBlobStore } from '../blob-store';
 import { resolveTrackableMember } from '../member-scope';
+import { extractAttachmentText } from '../ocr';
 
 const attachmentRoutes = new Hono<AuthEnv>();
 
@@ -60,12 +61,14 @@ const LIST_LIMIT = 1000;
 export function shapeAttachment(r: any) {
 	return {
 		id: Number(r.id),
-		subjectId: r.subject_id === null ? null : Number(r.subject_id),
+		subjectId: r.subject_id === null || r.subject_id === undefined ? null : Number(r.subject_id),
 		refType: String(r.ref_type),
 		refId: Number(r.ref_id),
 		filename: r.filename ?? null,
 		contentType: String(r.content_type),
 		size: Number(r.size),
+		ocrStatus: (r.ocr_status ?? null) as 'done' | 'empty' | 'unavailable' | 'failed' | null,
+		ocrText: r.ocr_text ?? null,
 		createdAt: r.created_at,
 		createdBy: r.created_by ?? null,
 		url: `/api/v1/attachments/${Number(r.id)}/file`,
@@ -133,10 +136,20 @@ attachmentRoutes.post('/', async (c) => {
 	if (!ref) return c.json({ error: 'Record not found' }, 404);
 
 	try {
-		const put = await blobStore().put(familyId, Readable.fromWeb(file.stream() as any), { maxBytes: MAX_BYTES });
+		const bytes = Buffer.from(await file.arrayBuffer());
+		const contentType = file.type || 'application/octet-stream';
+		const put = await blobStore().put(familyId, Readable.from(bytes), { maxBytes: MAX_BYTES });
+		// Best-effort text extraction: the upload must never fail because a
+		// receipt could not be read. The status rides back on the row so the UI
+		// can show "Not searchable" instead of pretending it worked.
+		const ocr = await extractAttachmentText({
+			buffer: bytes,
+			contentType,
+			filename: file.name || null,
+		});
 		const ins = await db.execute({
-			sql: `INSERT INTO attachments (subject_id, ref_type, ref_id, blob_id, storage_key, filename, content_type, size, created_at, created_by)
-			      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			sql: `INSERT INTO attachments (subject_id, ref_type, ref_id, blob_id, storage_key, filename, content_type, size, ocr_text, ocr_status, created_at, created_by)
+			      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			args: [
 				ref.subjectId,
 				refType,
@@ -144,8 +157,10 @@ attachmentRoutes.post('/', async (c) => {
 				put.blobId,
 				put.storageKey,
 				file.name || null,
-				file.type || 'application/octet-stream',
+				contentType,
 				put.size,
+				ocr.text,
+				ocr.status,
 				new Date().toISOString(),
 				userId,
 			],
@@ -157,9 +172,11 @@ attachmentRoutes.post('/', async (c) => {
 					refType,
 					refId,
 					filename: file.name || null,
-					contentType: file.type || 'application/octet-stream',
+					contentType,
 					size: put.size,
 					sha256: put.sha256,
+					ocrStatus: ocr.status,
+					ocrText: ocr.text,
 					note: note ? String(note) : null,
 					url: `/api/v1/attachments/${Number(ins.lastInsertRowid)}/file`,
 				},
@@ -187,7 +204,7 @@ attachmentRoutes.get('/', async (c) => {
 		if (!scope) return c.json({ error: 'Member not found or access denied' }, 404);
 
 		const rows = (await db.execute({
-			sql: `SELECT id, subject_id, ref_type, ref_id, filename, content_type, size, created_at, created_by
+			sql: `SELECT id, subject_id, ref_type, ref_id, filename, content_type, size, ocr_text, ocr_status, created_at, created_by
 			      FROM attachments WHERE subject_id = ? ORDER BY created_at DESC LIMIT ?`,
 			args: [scope.subjectId, LIST_LIMIT],
 		})).rows;
@@ -200,7 +217,7 @@ attachmentRoutes.get('/', async (c) => {
 	if (!REF_TABLES[refType] || !refId) return c.json({ error: 'refType and refId are required' }, 400);
 
 	const rows = (await db.execute({
-		sql: `SELECT id, subject_id, ref_type, ref_id, filename, content_type, size, created_at, created_by
+		sql: `SELECT id, subject_id, ref_type, ref_id, filename, content_type, size, ocr_text, ocr_status, created_at, created_by
 		      FROM attachments WHERE ref_type = ? AND ref_id = ? ORDER BY created_at DESC`,
 		args: [refType, refId],
 	})).rows;

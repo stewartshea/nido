@@ -10,6 +10,7 @@ import { describe, it, expect, beforeAll } from 'vitest';
 import app from './server';
 import { estimateMeter, readingInEffect } from './meters';
 import { evaluateSchedule, seasonalWindow } from './schedules';
+import { setOcrExtractor } from './ocr';
 
 async function call(method: string, token: string, path: string, body?: unknown) {
 	const res = await app.fetch(new Request(`http://localhost${path}`, {
@@ -61,6 +62,19 @@ async function uploadAttachment(token: string, refType: string, refId: number, n
 	form.set('refType', refType);
 	form.set('refId', String(refId));
 	form.set('file', new File([`bytes of ${name}`], name, { type: 'application/pdf' }));
+	return app.fetch(new Request('http://localhost/api/v1/attachments', {
+		method: 'POST',
+		headers: { Authorization: `Bearer ${token}` },
+		body: form,
+	}));
+}
+
+/** Upload a file whose body is real, OCR-able text (a receipt or a scan). */
+async function uploadReceipt(token: string, refType: string, refId: number, name: string, text: string) {
+	const form = new FormData();
+	form.set('refType', refType);
+	form.set('refId', String(refId));
+	form.set('file', new File([text], name, { type: 'application/pdf' }));
 	return app.fetch(new Request('http://localhost/api/v1/attachments', {
 		method: 'POST',
 		headers: { Authorization: `Bearer ${token}` },
@@ -372,6 +386,124 @@ describe('home care: the routes', () => {
 		const after = await call('GET', token, `/api/v1/home-assets/${assetId}/care`);
 		expect(after.body.attachments.some((a: any) => a.refType === 'maintenance' && a.refId === entryId)).toBe(false);
 		expect(after.body.attachments.some((a: any) => a.refType === 'asset' && a.refId === assetId)).toBe(true);
+	});
+});
+
+describe('home care: OCR and search (#69)', () => {
+	let token = '';
+	let mazdaId = 0;
+	let truckId = 0;
+	let furnaceId = 0;
+	let annualId = 0;
+	let service60kId = 0;
+
+	beforeAll(async () => {
+		token = await register('home-ocr@example.com');
+
+		const mazda = await call('POST', token, '/api/v1/home-assets', { name: 'The Mazda', category: 'vehicle' });
+		mazdaId = mazda.body.asset.id;
+		const truck = await call('POST', token, '/api/v1/home-assets', { name: 'The Truck', category: 'vehicle' });
+		truckId = truck.body.asset.id;
+		const furnace = await call('POST', token, '/api/v1/home-assets', {
+			name: 'Furnace', category: 'hvac',
+			manualUrl: 'https://example.com/furnace-manual.pdf',
+		});
+		furnaceId = furnace.body.asset.id;
+
+		// The task names are deliberately generic: the searchable detail lives
+		// in the receipt, which is the whole point of the OCR path.
+		const annual = await call('POST', token, `/api/v1/home-assets/${mazdaId}/maintenance`, {
+			task: 'Annual shop visit', performedAt: '2026-02-14', cost: 41_200,
+		});
+		annualId = annual.body.entry.id;
+		const service = await call('POST', token, `/api/v1/home-assets/${truckId}/maintenance`, {
+			task: '60k service', performedAt: '2025-08-10', cost: 76_500,
+		});
+		service60kId = service.body.entry.id;
+
+		// A furnace manual whose filter size is only in the scan.
+		await uploadReceipt(token, 'asset', furnaceId, 'furnace-manual-2024.pdf', 'Replace filter with MERV 11 16x25x4 every 90 days');
+	});
+
+	it('stores the manual URL on the asset', async () => {
+		const res = await call('GET', token, `/api/v1/home-assets/${furnaceId}`);
+		expect(res.body.asset.manualUrl).toBe('https://example.com/furnace-manual.pdf');
+	});
+
+	it('extracts OCR text from uploaded receipts onto the entries', async () => {
+		const first = await uploadReceipt(token, 'maintenance', annualId, 'midtown-auto.pdf', 'Replaced front brake pads and rotors');
+		expect(first.status).toBe(201);
+		const firstBody = await first.json() as any;
+		expect(firstBody.attachment.ocrStatus).toBe('done');
+		expect(firstBody.attachment.ocrText).toContain('brake pads');
+
+		const second = await uploadReceipt(token, 'maintenance', service60kId, '60k-invoice.pdf', 'Rear brake caliper service');
+		expect(second.status).toBe(201);
+
+		const entries = await call('GET', token, `/api/v1/home-assets/${mazdaId}/maintenance`);
+		const annual = entries.body.entries.find((e: any) => e.id === annualId);
+		expect(annual.attachments).toHaveLength(1);
+		expect(annual.attachments[0].ocrStatus).toBe('done');
+		expect(annual.attachments[0].ocrText).toContain('Replaced front brake pads');
+	});
+
+	it('searches brake work across vehicles with dates, costs and OCR snippets', async () => {
+		const res = await call('GET', token, '/api/v1/home-assets/search?q=brake&category=vehicle');
+		expect(res.status).toBe(200);
+
+		const brake = res.body.results.filter((r: any) => r.kind === 'maintenance');
+		expect(brake).toHaveLength(2);
+		expect(brake.map((r: any) => r.assetName).sort()).toEqual(['The Mazda', 'The Truck']);
+		// Newest first.
+		expect(brake[0].entry.performedAt).toBe('2026-02-14');
+		expect(brake[1].entry.performedAt).toBe('2025-08-10');
+		expect(brake[0].entry.cost).toBe(41_200);
+		expect(brake[1].entry.cost).toBe(76_500);
+
+		for (const result of brake) {
+			expect(result.matchedIn).toContain('ocr');
+			expect(result.snippet.toLowerCase()).toContain('brake');
+			expect(result.attachments.length).toBeGreaterThanOrEqual(1);
+			expect(result.attachments[0].ocrText.toLowerCase()).toContain('brake');
+		}
+	});
+
+	it('filters one asset’s maintenance log by keyword', async () => {
+		const matching = await call('GET', token, `/api/v1/home-assets/${mazdaId}/maintenance?q=brake`);
+		expect(matching.body.entries.map((e: any) => e.id)).toEqual([annualId]);
+
+		const missing = await call('GET', token, `/api/v1/home-assets/${mazdaId}/maintenance?q=carburetor`);
+		expect(missing.body.entries).toHaveLength(0);
+	});
+
+	it('searches asset manuals by their OCR text', async () => {
+		const res = await call('GET', token, '/api/v1/home-assets/search?q=16x25x4');
+		expect(res.status).toBe(200);
+		const doc = res.body.results.find((r: any) => r.kind === 'document' && r.attachments[0].filename === 'furnace-manual-2024.pdf');
+		expect(doc).toBeTruthy();
+		expect(doc.assetName).toBe('Furnace');
+		expect(doc.matchedIn).toContain('ocr');
+		expect(doc.snippet).toContain('MERV 11');
+	});
+
+	it('still succeeds, with an unavailable status, when OCR cannot run', async () => {
+		setOcrExtractor(async () => ({ status: 'unavailable', text: null }));
+		try {
+			const up = await uploadReceipt(token, 'maintenance', annualId, 'unreadable-fax.pdf', 'anything');
+			expect(up.status).toBe(201);
+			const body = await up.json() as any;
+			expect(body.attachment.ocrStatus).toBe('unavailable');
+			expect(body.attachment.ocrText).toBeNull();
+		} finally {
+			setOcrExtractor(null);
+		}
+	});
+
+	it('keeps search scoped to the caller’s own family', async () => {
+		const otherToken = await register('home-ocr-other@example.com');
+		const res = await call('GET', otherToken, '/api/v1/home-assets/search?q=brake&category=vehicle');
+		expect(res.status).toBe(200);
+		expect(res.body.results).toHaveLength(0);
 	});
 });
 

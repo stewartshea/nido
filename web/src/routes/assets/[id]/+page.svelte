@@ -7,7 +7,7 @@
 	import { inventoryAPI } from '$lib/api/inventory';
 	import { authActions } from '$lib/stores/authStore';
 	import type {
-		AssetCare, ConditionState, InventoryItem, MaintenanceEntry, Meter, MeterKind, Schedule,
+		AssetCare, AttachmentMeta, ConditionState, InventoryItem, MaintenanceEntry, Meter, MeterKind, Schedule,
 	} from '$lib/api/types';
 	import ScheduleForm from '$lib/components/logging/ScheduleForm.svelte';
 	import MaintenanceForm from '$lib/components/logging/MaintenanceForm.svelte';
@@ -45,6 +45,9 @@
 	let skipReasons: Record<number, string> = {};
 	let showArchivedSchedules = false;
 	let pictureError = '';
+	// History search (HOME #69): filters the log and pulls a receipt's
+	// extracted text up next to its scan, so a bad OCR read is visible.
+	let historyQuery = '';
 
 	$: homeName = (id: number | null) => (id === null ? '' : homes.find((h) => h.id === id)?.name ?? '');
 	$: activeSchedules = care?.schedules.filter((s) => s.archivedAt === null) ?? [];
@@ -55,6 +58,22 @@
 	$: seasonal = activeSchedules
 		.filter((s) => s.status.season !== null)
 		.map((s) => ({ schedule: s, season: s.status.season! }));
+
+	$: historyTokens = historyQuery.trim().toLowerCase().split(/\s+/).filter(Boolean);
+	$: historyActive = historyTokens.length > 0;
+	// Every token must appear somewhere on the entry — task, notes, date, or
+	// any file name or extracted receipt text.
+	$: filteredEntries = historyActive
+		? (care?.entries ?? []).filter((entry) => {
+			const hay = [
+				entry.task,
+				entry.notes ?? '',
+				entry.performedAt,
+				...entryAttachments(entry).flatMap((a) => [a.filename ?? '', a.ocrText ?? '']),
+			].join(' ').toLowerCase();
+			return historyTokens.every((t) => hay.includes(t));
+		})
+		: (care?.entries ?? []);
 
 	function formatMoney(cents: number | null): string {
 		if (cents === null || cents === undefined) return '—';
@@ -88,6 +107,40 @@
 			}
 			return `${condition.start} – ${condition.end}`;
 		}).join(schedule.match === 'all' ? ' and ' : ' or ');
+	}
+
+	/**
+	 * The files on one maintenance entry: the care aggregate carries them all,
+	 * but an entry may also carry its own copy, so merge by id.
+	 */
+	function entryAttachments(entry: MaintenanceEntry): AttachmentMeta[] {
+		const byId = new Map<number, AttachmentMeta>();
+		for (const a of care?.attachments.filter((x) => x.refType === 'maintenance' && x.refId === entry.id) ?? []) {
+			byId.set(a.id, a);
+		}
+		for (const a of entry.attachments ?? []) byId.set(a.id, a);
+		return [...byId.values()];
+	}
+
+	function excerptAround(text: string, token: string): string {
+		const idx = text.toLowerCase().indexOf(token);
+		if (idx < 0) return text.slice(0, 160).trim();
+		const start = Math.max(0, idx - 60);
+		const end = Math.min(text.length, idx + token.length + 100);
+		return `${start > 0 ? '…' : ''}${text.slice(start, end).trim()}${end < text.length ? '…' : ''}`;
+	}
+
+	/** The matching slice of a receipt's text, or null when none matched. */
+	function ocrExcerpt(entry: MaintenanceEntry): string | null {
+		if (!historyActive) return null;
+		for (const a of entryAttachments(entry)) {
+			const text = a.ocrText;
+			if (!text) continue;
+			const lower = text.toLowerCase();
+			const hit = historyTokens.find((t) => lower.includes(t));
+			if (hit) return excerptAround(text, hit);
+		}
+		return null;
 	}
 
 	async function load() {
@@ -279,6 +332,11 @@
 		</header>
 
 		<div class="mb-6">
+			{#if asset.manualUrl}
+				<p class="mb-2 text-sm">
+					<a href={asset.manualUrl} target="_blank" rel="noopener noreferrer" class="underline text-accent font-semibold">Manual ↗</a>
+				</p>
+			{/if}
 			<AttachmentGallery
 				refType="asset"
 				refId={asset.id}
@@ -513,6 +571,16 @@
 				</button>
 			</div>
 
+			{#if care.entries.length > 0}
+				<input
+					type="search"
+					class="w-full px-3 py-2 mb-3 border border-line rounded-md bg-page text-ink text-sm"
+					placeholder="Filter history & receipt OCR (e.g. brake)…"
+					bind:value={historyQuery}
+					data-testid="asset-history-search"
+				/>
+			{/if}
+
 			{#if care.rollup.total !== null}
 				<p class="text-sm text-ink-soft mb-2">
 					Spent <span class="font-semibold text-ink">{formatMoney(care.rollup.total)}</span>
@@ -525,9 +593,11 @@
 
 			{#if care.entries.length === 0}
 				<p class="text-sm text-ink-soft">No maintenance logged yet. Every entry keeps the history — and checks off a schedule.</p>
+			{:else if historyActive && filteredEntries.length === 0}
+				<p class="text-sm text-ink-soft">No history or receipt text matches "{historyQuery.trim()}".</p>
 			{:else}
 				<ul class="grid gap-2">
-					{#each care.entries as entry (entry.id)}
+					{#each filteredEntries as entry (entry.id)}
 						<li class="bg-surface border border-line-soft rounded-xl p-3" data-testid={`entry-${entry.id}`}>
 							<div class="flex items-start justify-between gap-3">
 								<div class="min-w-0">
@@ -542,6 +612,12 @@
 										<p class="text-xs text-ink-soft mt-1">
 											Used {entry.consumedItems.map((item) => `${item.quantity} ${item.unit ?? ''} ${item.name ?? 'item'}`.trim()).join(', ')}
 										</p>
+									{/if}
+									{#if historyActive}
+										{@const excerpt = ocrExcerpt(entry)}
+										{#if excerpt}
+											<p class="text-xs text-ink-soft mt-2 bg-page border border-line-soft rounded px-2 py-1.5 whitespace-pre-wrap">Matched in receipt OCR: "{excerpt}"</p>
+										{/if}
 									{/if}
 									<div class="mt-2">
 										<AttachmentGallery
