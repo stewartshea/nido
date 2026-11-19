@@ -82,6 +82,26 @@ async function uploadReceipt(token: string, refType: string, refId: number, name
 	}));
 }
 
+/**
+ * A multi-page receipt as one multipart body: each page is a real, OCR-able
+ * PDF string under the `files` field, exactly what the upload screen sends.
+ */
+function receiptFormForPages(pages: Array<[string, string]>): FormData {
+	const form = new FormData();
+	for (const [name, text] of pages) {
+		form.append('files', new File([text], name, { type: 'application/pdf' }));
+	}
+	return form;
+}
+
+function postReceipt(token: string, assetId: number, suffix: string, pages: Array<[string, string]>) {
+	return app.fetch(new Request(`http://localhost/api/v1/home-assets/${assetId}/maintenance/${suffix}`, {
+		method: 'POST',
+		headers: { Authorization: `Bearer ${token}` },
+		body: receiptFormForPages(pages),
+	}));
+}
+
 describe('home care: meter interpolation', () => {
 	it('holds at the last reading with only one reading', () => {
 		const estimate = estimateMeter(
@@ -504,6 +524,65 @@ describe('home care: OCR and search (#69)', () => {
 		const res = await call('GET', otherToken, '/api/v1/home-assets/search?q=brake&category=vehicle');
 		expect(res.status).toBe(200);
 		expect(res.body.results).toHaveLength(0);
+	});
+});
+
+describe('home care: automatic maintenance from a receipt', () => {
+	let token = '';
+	let assetId = 0;
+
+	// The date and the itemized total live on different pages on purpose: a
+	// real multi-page receipt splits them, and the hints have to read both.
+	const RECEIPT: Array<[string, string]> = [
+		['page1.pdf', 'Midtown Auto - Date: 2026-03-15'],
+		['page2.pdf', 'Replaced front brake pads and rotors\nParts 320.00\nLabour 325.50\nTotal: $645.50'],
+	];
+
+	beforeAll(async () => {
+		token = await register('home-receipt@example.com');
+		const asset = await call('POST', token, '/api/v1/home-assets', { name: 'The Wagon', category: 'vehicle' });
+		assetId = asset.body.asset.id;
+	});
+
+	it('previews hints from a multi-page receipt without writing a row', async () => {
+		const res = await postReceipt(token, assetId, 'ocr-preview', RECEIPT);
+		expect(res.status).toBe(200);
+		const body = await res.json() as any;
+		expect(body.pages).toHaveLength(2);
+		expect(body.hints.task).toBe('Brake service');
+		expect(body.hints.performedAt).toBe('2026-03-15');
+		expect(body.hints.cost).toBe(64550);
+
+		// A preview must not touch the log.
+		const entries = await call('GET', token, `/api/v1/home-assets/${assetId}/maintenance`);
+		expect(entries.body.entries).toHaveLength(0);
+	});
+
+	it('logs the entry from the receipt and attaches every page', async () => {
+		const res = await postReceipt(token, assetId, 'from-receipt', RECEIPT);
+		expect(res.status).toBe(201);
+		const body = await res.json() as any;
+		expect(body.hints.task).toBe('Brake service');
+		expect(body.entry.task).toBe('Brake service');
+		expect(body.entry.performedAt).toBe('2026-03-15');
+		expect(body.entry.cost).toBe(64550);
+		expect(body.entry.attachments).toHaveLength(2);
+		expect(body.entry.attachments.map((a: any) => a.filename).sort()).toEqual(['page1.pdf', 'page2.pdf']);
+	});
+
+	it('makes the auto-logged receipt searchable with both pages', async () => {
+		const res = await call('GET', token, '/api/v1/home-assets/search?q=brake&category=vehicle');
+		expect(res.status).toBe(200);
+		const hit = res.body.results.find((r: any) => r.kind === 'maintenance' && r.assetName === 'The Wagon');
+		expect(hit).toBeTruthy();
+		expect(hit.matchedIn).toContain('ocr');
+		expect(hit.attachments).toHaveLength(2);
+		expect(hit.attachments.map((a: any) => a.filename).sort()).toEqual(['page1.pdf', 'page2.pdf']);
+	});
+
+	it('requires at least one file', async () => {
+		const res = await postReceipt(token, assetId, 'ocr-preview', []);
+		expect(res.status).toBe(400);
 	});
 });
 

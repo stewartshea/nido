@@ -509,6 +509,26 @@ export interface MaintenanceEntry {
 }
 
 /**
+ * The values OCR read off one or more receipt files, used to prefill the
+ * maintenance form before an entry exists (HOME receipt capture).
+ */
+export interface ReceiptHints {
+	task: string;
+	scheduleId: number | null;
+	performedAt: string;
+	cost: number | null;
+	notes: string | null;
+	combinedText: string | null;
+}
+
+/** One file's OCR result in a receipt preview, before an entry is saved. */
+export interface ReceiptOcrPreviewPage {
+	filename: string | null;
+	ocrStatus: OcrStatus;
+	ocrText: string | null;
+}
+
+/**
  * One match from the cross-asset search (HOME #69): a maintenance entry, a
  * document/manual, a schedule, or the asset itself. The asset identity is
  * repeated so a result renders without a second lookup, and any attachments

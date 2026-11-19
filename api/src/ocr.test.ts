@@ -13,6 +13,7 @@ import {
 	extractAttachmentText,
 	extractPngTextChunks,
 	extractPdfTextFromStreams,
+	parseReceiptHints,
 	setOcrExtractor,
 } from './ocr';
 
@@ -88,6 +89,53 @@ describe('ocr: plain text', () => {
 			filename: 'blank.txt',
 		});
 		expect(result).toEqual({ status: 'empty', text: null });
+	});
+});
+
+describe('ocr: receipt hints across pages', () => {
+	it('reads the task, date and total from separate pages', () => {
+		const hints = parseReceiptHints({
+			texts: [
+				'Midtown Auto - Date: 2026-03-15',
+				'Replaced front brake pads and rotors\nTotal: $645.50',
+			],
+			filenames: ['page1.pdf', 'page2.pdf'],
+			today: '2026-04-01',
+		});
+		expect(hints.task).toBe('Brake service');
+		expect(hints.performedAt).toBe('2026-03-15');
+		expect(hints.cost).toBe(64550);
+		// The page that carried the date and the page that carried the total are
+		// one receipt: both survive in the combined text.
+		expect(hints.combinedText).toContain('Midtown Auto');
+		expect(hints.combinedText).toContain('Total: $645.50');
+	});
+
+	it('prefers a schedule the family already tracks', () => {
+		const hints = parseReceiptHints({
+			texts: ['Midtown Auto\nSwap to winter tires — completed\nTotal: $120.00'],
+			schedules: [{ id: 7, task: 'Swap to winter tires' }],
+			today: '2026-11-02',
+		});
+		expect(hints.scheduleId).toBe(7);
+		expect(hints.task).toBe('Swap to winter tires');
+	});
+
+	it('joins the distinct common tasks a receipt names', () => {
+		const hints = parseReceiptHints({
+			texts: ['Oil change and front brake pads replaced'],
+			today: '2026-05-01',
+		});
+		expect(hints.task).toBe('Brake service & Oil change');
+	});
+
+	it('falls back to the caller’s date and the largest dollar amount', () => {
+		const hints = parseReceiptHints({
+			texts: ['Shop visit — parts $40.00, labour $120.00'],
+			today: '2026-07-04',
+		});
+		expect(hints.performedAt).toBe('2026-07-04');
+		expect(hints.cost).toBe(12000);
 	});
 });
 

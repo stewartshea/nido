@@ -65,13 +65,15 @@
 
 	async function onFile(event: Event) {
 		const input = event.currentTarget as HTMLInputElement;
-		const file = input.files?.[0];
+		const chosen = Array.from(input.files ?? []);
 		input.value = '';
-		if (!file) return;
+		if (!chosen.length) return;
 		error = '';
 		uploading = true;
 		try {
-			await attachmentsAPI.upload(refType, refId, file);
+			for (const file of chosen) {
+				await attachmentsAPI.upload(refType, refId, file);
+			}
 			dispatch('change');
 		} catch (e: any) {
 			error = e?.response?.data?.error || 'Could not upload that file.';
@@ -116,7 +118,7 @@
 		</p>
 		<label class="text-sm underline text-accent cursor-pointer">
 			{uploading ? 'Uploading…' : '+ Add'}
-			<input type="file" class="sr-only" {accept} on:change={onFile} disabled={uploading} />
+			<input type="file" class="sr-only" {accept} multiple on:change={onFile} disabled={uploading} />
 		</label>
 	</div>
 

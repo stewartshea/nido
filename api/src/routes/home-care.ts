@@ -33,6 +33,7 @@ import { datePart } from '../dates';
 import { DEFAULT_TIMEZONE, effectiveTimezone } from '../timezone';
 import { NAMESPACE_HOUSEHOLD_ID } from '../db-core';
 import { EncryptedBlobStore } from '../blob-store';
+import { extractAttachmentText, parseReceiptHints, type OcrResult } from '../ocr';
 import { shapeAttachment } from './attachments';
 
 const careRoutes = new Hono<AuthEnv>();
@@ -45,6 +46,11 @@ function blobStore(): EncryptedBlobStore {
 
 const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
 const MONTH_DAY = /^(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$/;
+
+/** The receipt upload ceiling, matching the attachment route's own limit. */
+const MAX_RECEIPT_BYTES = 25 * 1024 * 1024;
+/** A receipt set is a few photos, not an archive; a cap keeps OCR bounded. */
+const MAX_RECEIPT_FILES = 20;
 
 // ---------------------------------------------------------------------------
 // Shapes
@@ -843,6 +849,200 @@ careRoutes.post('/:id{[0-9]+}/maintenance', zValidator('json', createEntrySchema
 	}
 
 	return c.json({ entry: await entryFor(ctx.db, entryId, ctx.householdId) }, 201);
+});
+
+// ---------------------------------------------------------------------------
+// Receipts: automatic maintenance logging
+// ---------------------------------------------------------------------------
+//
+// A receipt is the record of work already done, so uploading one should not
+// mean retyping what the page already says. These two routes read the OCR text
+// of every uploaded page and hand back the entry it implies: the preview fills
+// the confirm form, and from-receipt writes the confirmed entry with every page
+// attached to it.
+
+/** Uploaded files from a multipart body, accepted under either field name. */
+function collectFormFiles(form: FormData): File[] {
+	const all = [...form.getAll('files'), ...form.getAll('file')];
+	return all.filter((f): f is File => Boolean(f) && typeof f !== 'string' && f.size > 0);
+}
+
+/** This asset's live schedules, the names a receipt might match. */
+async function activeSchedules(db: any, assetId: number): Promise<Array<{ id: number; task: string }>> {
+	return (await db.execute({
+		sql: 'SELECT id, task FROM asset_schedules WHERE asset_id = ? AND archived_at IS NULL',
+		args: [assetId],
+	})).rows as unknown as Array<{ id: number; task: string }>;
+}
+
+/**
+ * Preview the hints a receipt set implies without writing anything.
+ *
+ * This is what the upload screen calls to prefill the confirm form: the family
+ * sees the guessed task, date and total, corrects whatever is wrong, and only
+ * then does `/from-receipt` write the entry.
+ */
+careRoutes.post('/:id{[0-9]+}/maintenance/ocr-preview', async (c) => {
+	const ctx = await familyContext(c);
+	if (!ctx) return c.json({ error: 'Not a member of any family' }, 403);
+	const asset = await assetFor(ctx.db, Number(c.req.param('id')), ctx.householdId);
+	if (!asset) return c.json({ error: 'Asset not found' }, 404);
+
+	const form = await c.req.formData();
+	const files = collectFormFiles(form);
+	if (files.length === 0) return c.json({ error: 'Attach at least one receipt file' }, 400);
+	if (files.length > MAX_RECEIPT_FILES) return c.json({ error: 'Too many files (max 20)' }, 400);
+
+	const pages: Array<{
+		filename: string | null;
+		contentType: string;
+		size: number;
+		ocrStatus: OcrResult['status'];
+		ocrText: string | null;
+	}> = [];
+	for (const file of files) {
+		if (file.size > MAX_RECEIPT_BYTES) {
+			return c.json({ error: `File exceeds the ${MAX_RECEIPT_BYTES} byte limit` }, 413);
+		}
+		const contentType = file.type || 'application/octet-stream';
+		const bytes = Buffer.from(await file.arrayBuffer());
+		const ocr = await extractAttachmentText({ buffer: bytes, contentType, filename: file.name || null });
+		pages.push({
+			filename: file.name || null,
+			contentType,
+			size: file.size,
+			ocrStatus: ocr.status,
+			ocrText: ocr.text,
+		});
+	}
+
+	const [schedules, today] = await Promise.all([
+		activeSchedules(ctx.db, Number(asset.id)),
+		todayForAsset(ctx.db, asset),
+	]);
+	const hints = parseReceiptHints({
+		texts: pages.map((page) => page.ocrText),
+		filenames: pages.map((page) => page.filename),
+		schedules,
+		today,
+	});
+	return c.json({ hints, pages });
+});
+
+/**
+ * Log maintenance straight from a receipt set.
+ *
+ * The hints are computed exactly as the preview does, then any field the form
+ * supplied overrides its guess, so the values a person confirmed win. Every
+ * uploaded page is stored as an encrypted attachment on the new entry, which is
+ * what makes the receipt searchable the moment the entry exists.
+ */
+careRoutes.post('/:id{[0-9]+}/maintenance/from-receipt', async (c) => {
+	const ctx = await familyContext(c);
+	if (!ctx) return c.json({ error: 'Not a member of any family' }, 403);
+	const asset = await assetFor(ctx.db, Number(c.req.param('id')), ctx.householdId);
+	if (!asset) return c.json({ error: 'Asset not found' }, 404);
+
+	const form = await c.req.formData();
+	const files = collectFormFiles(form);
+	if (files.length === 0) return c.json({ error: 'Attach at least one receipt file' }, 400);
+	if (files.length > MAX_RECEIPT_FILES) return c.json({ error: 'Too many files (max 20)' }, 400);
+
+	const buffers: Buffer[] = [];
+	const ocrResults: OcrResult[] = [];
+	for (const file of files) {
+		if (file.size > MAX_RECEIPT_BYTES) {
+			return c.json({ error: `File exceeds the ${MAX_RECEIPT_BYTES} byte limit` }, 413);
+		}
+		const bytes = Buffer.from(await file.arrayBuffer());
+		buffers.push(bytes);
+		ocrResults.push(await extractAttachmentText({
+			buffer: bytes,
+			contentType: file.type || 'application/octet-stream',
+			filename: file.name || null,
+		}));
+	}
+
+	const [schedules, today] = await Promise.all([
+		activeSchedules(ctx.db, Number(asset.id)),
+		todayForAsset(ctx.db, asset),
+	]);
+	const hints = parseReceiptHints({
+		texts: ocrResults.map((result) => result.text),
+		filenames: files.map((file) => file.name || null),
+		schedules,
+		today,
+	});
+
+	// A confirmed value from the form beats the guess; an absent one falls back.
+	const textField = (name: string): string | null => {
+		const value = form.get(name);
+		return typeof value === 'string' && value.trim() !== '' ? value.trim() : null;
+	};
+
+	const task = textField('task') ?? hints.task;
+	const performedAtRaw = textField('performedAt');
+	const performedAt = performedAtRaw && DATE_ONLY.test(performedAtRaw) ? performedAtRaw : hints.performedAt;
+
+	let cost = hints.cost;
+	const costRaw = textField('cost');
+	if (costRaw !== null) {
+		const parsed = Math.round(Number(costRaw));
+		if (Number.isFinite(parsed) && parsed >= 0) cost = parsed;
+	}
+
+	const notesField = form.get('notes');
+	const notes = typeof notesField === 'string' ? notesField : hints.notes;
+
+	let scheduleId = hints.scheduleId;
+	const scheduleRaw = textField('scheduleId');
+	if (scheduleRaw !== null) {
+		const parsed = Number(scheduleRaw);
+		scheduleId = Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+	}
+	// A schedule from another asset would make "what's due" lie, so it is a
+	// refusal rather than a silent unlink — the same rule the JSON route keeps.
+	if (scheduleId != null) {
+		const found = (await ctx.db.execute({
+			sql: 'SELECT 1 FROM asset_schedules WHERE id = ? AND asset_id = ? AND household_id = ? LIMIT 1',
+			args: [scheduleId, asset.id, ctx.householdId],
+		})).rows[0];
+		if (!found) return c.json({ error: 'Schedule not found on this asset' }, 404);
+	}
+
+	const inserted = await ctx.db.execute({
+		sql: `INSERT INTO maintenance_entries
+		      (household_id, asset_id, schedule_id, task, performed_at, cost, notes, created_by)
+		      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		args: [ctx.householdId, asset.id, scheduleId, task, performedAt, cost, notes, c.get('userId')],
+	});
+	const entryId = Number((inserted as any).lastInsertRowid);
+
+	for (let i = 0; i < files.length; i += 1) {
+		const file = files[i];
+		const bytes = buffers[i];
+		const ocr = ocrResults[i];
+		if (!file || !bytes || !ocr) continue;
+		try {
+			const put = await blobStore().put(c.get('familyId'), Readable.from(bytes), { maxBytes: MAX_RECEIPT_BYTES });
+			await ctx.db.execute({
+				sql: `INSERT INTO attachments
+				      (subject_id, ref_type, ref_id, blob_id, storage_key, filename, content_type, size, ocr_text, ocr_status, created_at, created_by)
+				      VALUES (NULL, 'maintenance', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+				args: [
+					entryId, put.blobId, put.storageKey, file.name || null,
+					file.type || 'application/octet-stream', put.size, ocr.text, ocr.status,
+					new Date().toISOString(), c.get('userId'),
+				],
+			});
+		} catch (err) {
+			// The entry is already the truth; a page that could not be stored is
+			// skipped rather than losing the whole log with it.
+			c.get('log').error('receipt attachment store failed', { err });
+		}
+	}
+
+	return c.json({ entry: await entryFor(ctx.db, entryId, ctx.householdId), hints }, 201);
 });
 
 careRoutes.put('/maintenance/:entryId{[0-9]+}', zValidator('json', updateEntrySchema), async (c) => {

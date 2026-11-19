@@ -4,7 +4,7 @@
 // maintenance log (#68) hang off these rows.
 import api from './client';
 import type {
-	Asset, AssetCare, AssetCategoryId, DueItem, HomeAssetSearchResult, MaintenanceEntry, Meter, Schedule, ScheduleCondition,
+	Asset, AssetCare, AssetCategoryId, DueItem, HomeAssetSearchResult, MaintenanceEntry, Meter, ReceiptHints, ReceiptOcrPreviewPage, Schedule, ScheduleCondition,
 } from './types';
 
 export const assetsAPI = {
@@ -107,6 +107,33 @@ export const assetsAPI = {
 		notes: string | null;
 	}>) => api.put<{ entry: MaintenanceEntry }>(`/home-assets/maintenance/${entryId}`, data),
 	deleteEntry: (entryId: number) => api.delete<{ deleted: boolean }>(`/home-assets/maintenance/${entryId}`),
+
+	/**
+	 * Upload 1+ receipt photos/PDF pages to automatically OCR, extract task/date/cost,
+	 * create the maintenance entry, and attach all pages in one step.
+	 */
+	logMaintenanceFromReceipt: (assetId: number, files: File[]) => {
+		const form = new FormData();
+		for (const file of files) form.append('files', file);
+		return api.post<{ entry: MaintenanceEntry; hints: ReceiptHints }>(
+			`/home-assets/${assetId}/maintenance/from-receipt`,
+			form,
+			{ headers: { 'Content-Type': undefined } },
+		);
+	},
+	/**
+	 * Preview OCR hints across 1+ receipt files without saving an entry yet,
+	 * used to pre-populate the maintenance form.
+	 */
+	previewMaintenanceReceipt: (assetId: number, files: File[]) => {
+		const form = new FormData();
+		for (const file of files) form.append('files', file);
+		return api.post<{ hints: ReceiptHints; pages: ReceiptOcrPreviewPage[] }>(
+			`/home-assets/${assetId}/maintenance/ocr-preview`,
+			form,
+			{ headers: { 'Content-Type': undefined } },
+		);
+	},
 
 	/** Across every asset: overdue first, then due. */
 	due: () => api.get<{ today: string; items: DueItem[] }>('/home-assets/due'),

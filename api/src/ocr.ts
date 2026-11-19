@@ -116,6 +116,182 @@ export function normalizeText(raw: string | null | undefined): string {
 }
 
 // ---------------------------------------------------------------------------
+// Receipt hints
+// ---------------------------------------------------------------------------
+//
+// Automatic maintenance logging starts from the receipt text. The pages of a
+// multi-page receipt are OCR'd independently, so a header (and its date) often
+// lives on page one while the itemized total lives on page two. These helpers
+// read the combined text and make one best guess at what happened, when, and
+// what it cost — a starting point a person confirms, never a fact asserted on
+// its own.
+
+export interface ReceiptHints {
+	task: string;
+	scheduleId: number | null;
+	performedAt: string;
+	/** Cents, or null when no unambiguous total was found. */
+	cost: number | null;
+	notes: string | null;
+	/** Combined OCR text across all uploaded pages. */
+	combinedText: string | null;
+}
+
+const ISO_DATE = /\b((?:19|20)\d{2})-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])\b/;
+const SLASH_DATE = /\b(0?[1-9]|1[0-2])\/(0?[1-9]|[12]\d|3[01])\/((?:19|20)\d{2})\b/;
+const NAMED_DATE = /\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+(\d{1,2}),?\s+((?:19|20)\d{2})/i;
+
+const LABELLED_TOTAL = /(?:grand\s*total|invoice\s*total|total\s*due|amount\s*due|balance\s*due|total\s*paid|total)\s*[:$-]*\s*\$?\s*(\d{1,6}(?:,\d{3})*\.\d{2})\b/gi;
+const DOLLAR_AMOUNT = /\$\s*(\d{1,6}(?:,\d{3})*\.\d{2})\b/g;
+
+const MONTH_NUMBERS: Record<string, number> = {
+	jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6,
+	jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12,
+};
+
+/** What OCR commonly says, and the task name it maps to, in priority order. */
+const COMMON_TASKS: ReadonlyArray<{ pattern: RegExp; task: string }> = [
+	{ pattern: /brake\s*(?:pad|rotor|caliper|fluid|shoe|service|inspection|job|replacement)s?/i, task: 'Brake service' },
+	{ pattern: /oil\s*(?:and\s*filter\s*)?change|synthetic\s*\d+w-?\d+/i, task: 'Oil change' },
+	{ pattern: /tire\s*(?:rotation|swap|change|mount|balance|replacement)/i, task: 'Tire service' },
+	{ pattern: /wheel\s*alignment/i, task: 'Wheel alignment' },
+	{ pattern: /battery\s*(?:replacement|install|service|test)/i, task: 'Battery service' },
+	{ pattern: /air\s*filter|cabin\s*filter|furnace\s*filter|filter\s*(?:replacement|change)/i, task: 'Filter replacement' },
+	{ pattern: /coolant\s*(?:flush|service)|antifreeze/i, task: 'Coolant service' },
+	{ pattern: /transmission\s*(?:fluid|flush|service)/i, task: 'Transmission service' },
+	{ pattern: /spark\s*plug/i, task: 'Spark plug replacement' },
+	{ pattern: /wiper\s*blade/i, task: 'Wiper blade replacement' },
+];
+
+/** A real calendar date as YYYY-MM-DD, or null when the parts are not a day. */
+function isoIfValid(year: number, month: number, day: number): string | null {
+	if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+	const date = new Date(Date.UTC(year, month - 1, day));
+	if (date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day) {
+		return null;
+	}
+	return `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+}
+
+/** The first readable date in the text, trying the unambiguous shapes first. */
+function findDate(text: string): string | null {
+	const iso = text.match(ISO_DATE);
+	if (iso) {
+		const date = isoIfValid(Number(iso[1]), Number(iso[2]), Number(iso[3]));
+		if (date) return date;
+	}
+	const slash = text.match(SLASH_DATE);
+	if (slash) {
+		const date = isoIfValid(Number(slash[3]), Number(slash[1]), Number(slash[2]));
+		if (date) return date;
+	}
+	const named = text.match(NAMED_DATE);
+	const monthName = named?.[1];
+	if (monthName) {
+		const month = MONTH_NUMBERS[monthName.slice(0, 3).toLowerCase()];
+		if (month) {
+			const date = isoIfValid(Number(named?.[3]), month, Number(named?.[2]));
+			if (date) return date;
+		}
+	}
+	return null;
+}
+
+/** `"1,234.50"` -> `123450` cents, or null when it cannot be parsed. */
+function toCents(value: string | undefined): number | null {
+	if (!value) return null;
+	const parsed = Number.parseFloat(value.replace(/,/g, ''));
+	return Number.isFinite(parsed) ? Math.round(parsed * 100) : null;
+}
+
+/**
+ * A task name from a file's own name, when it is descriptive. A camera or
+ * scanner default (`IMG_4821.pdf`, `scan-0001.pdf`) carries no meaning, so it
+ * is rejected rather than turned into a task like "Img 4821".
+ */
+function taskFromFilename(name: string): string | null {
+	const base = name.replace(/\.[^.]*$/, '').replace(/[-_]+/g, ' ').trim();
+	if (!/[a-z]/i.test(base)) return null;
+	const generic = ['scan', 'receipt', 'photo', 'file', 'document', 'page'];
+	if (generic.some((word) => new RegExp(`^${word}[\\s\\d._-]*$`, 'i').test(base))) return null;
+	if (/^(img|dsc)[\s\d._-]/i.test(base)) return null;
+	return base.charAt(0).toUpperCase() + base.slice(1);
+}
+
+/**
+ * Read the OCR text of every page of a receipt and guess the log entry it
+ * describes.
+ *
+ * The order is deliberate: a schedule the family already tracks is the most
+ * specific answer, so it wins over a generic pattern; a known task pattern
+ * beats a guess from the file name; and a labeled total beats the largest
+ * dollar figure on the page. Nothing here is destructive — the caller shows
+ * these hints for confirmation.
+ */
+export function parseReceiptHints(input: {
+	texts: (string | null | undefined)[];
+	filenames?: (string | null | undefined)[];
+	schedules?: ReadonlyArray<{ id: number; task: string }>;
+	today: string;
+}): ReceiptHints {
+	const parts = input.texts
+		.filter((text): text is string => typeof text === 'string' && text.trim().length > 0)
+		.map((text) => text.trim());
+	const combined = parts.join('\n\n');
+	const combinedText = combined || null;
+	const lower = combined.toLowerCase();
+
+	const performedAt = findDate(combined) ?? input.today;
+
+	let scheduleId: number | null = null;
+	let task = '';
+	for (const schedule of input.schedules ?? []) {
+		const scheduleTask = String(schedule.task ?? '').trim();
+		if (!scheduleTask) continue;
+		const matchesWhole = lower.includes(scheduleTask.toLowerCase());
+		const words = scheduleTask.split(/\s+/).filter((word) => word.length >= 4);
+		const matchesWords = words.length > 0 && words.every((word) => lower.includes(word.toLowerCase()));
+		if (matchesWhole || matchesWords) {
+			scheduleId = schedule.id;
+			task = schedule.task;
+			break;
+		}
+	}
+
+	if (!task) {
+		const matches: string[] = [];
+		for (const { pattern, task: label } of COMMON_TASKS) {
+			if (matches.length >= 2) break;
+			if (pattern.test(combined) && !matches.includes(label)) matches.push(label);
+		}
+		if (matches.length) task = matches.join(' & ');
+	}
+
+	if (!task) {
+		const filename = (input.filenames ?? []).find(
+			(name): name is string => typeof name === 'string' && name.trim().length > 0,
+		);
+		task = (filename ? taskFromFilename(filename) : null) ?? 'Maintenance receipt';
+	}
+
+	let cost: number | null = null;
+	const labelled = [...combined.matchAll(LABELLED_TOTAL)];
+	const lastTotal = labelled[labelled.length - 1];
+	if (lastTotal) {
+		cost = toCents(lastTotal[1]);
+	} else {
+		const amounts = [...combined.matchAll(DOLLAR_AMOUNT)]
+			.map((match) => toCents(match[1]))
+			.filter((value): value is number => value !== null);
+		if (amounts.length) cost = Math.max(...amounts);
+	}
+
+	const notes = combined ? combined.slice(0, 500) : null;
+
+	return { task, scheduleId, performedAt, cost, notes, combinedText };
+}
+
+// ---------------------------------------------------------------------------
 // PDF
 // ---------------------------------------------------------------------------
 
@@ -349,8 +525,9 @@ function decodeEscape(content: string, i: number): [string, number] {
 
 /**
  * A scanned PDF has no text operators, so the pages are rasterized and OCR'd.
- * Only the first three pages are attempted: a receipt is one or two, and the
- * cost of OCR grows fast.
+ * Up to ten pages are attempted: a multi-page receipt is common (a statement,
+ * an itemized invoice and a payment slip), and capping too low silently drops
+ * the page that carries the total.
  */
 async function ocrPdfPages(buffer: Buffer): Promise<string> {
 	const dir = join(tmpdir(), `nido-ocr-${randomBytes(8).toString('hex')}`);
@@ -359,7 +536,7 @@ async function ocrPdfPages(buffer: Buffer): Promise<string> {
 	try {
 		await fs.mkdir(dir, { recursive: true });
 		await fs.writeFile(pdfPath, buffer);
-		const raster = await run('pdftoppm', ['-png', '-r', '150', '-f', '1', '-l', '3', pdfPath, prefix], { timeout: 30_000 });
+		const raster = await run('pdftoppm', ['-png', '-r', '150', '-f', '1', '-l', '10', pdfPath, prefix], { timeout: 30_000 });
 		if (!raster.ok) return '';
 		const files = (await fs.readdir(dir)).filter((name) => name.startsWith('page') && name.endsWith('.png')).sort();
 		const texts: string[] = [];

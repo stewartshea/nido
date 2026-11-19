@@ -2,7 +2,7 @@
 	import { createEventDispatcher } from 'svelte';
 	import { assetsAPI } from '$lib/api/assets';
 	import { attachmentsAPI } from '$lib/api/attachments';
-	import type { InventoryItem, Meter, Schedule } from '$lib/api/types';
+	import type { InventoryItem, MaintenanceEntry, Meter, Schedule } from '$lib/api/types';
 
 	// The maintenance entry form (HOME module 4, issue #68).
 	//
@@ -15,14 +15,17 @@
 	export let inventory: InventoryItem[] = [];
 	/** Prefill from a schedule's "Log it" action. */
 	export let schedule: Schedule | null = null;
+	/** An existing entry to edit in place, instead of creating a new one. */
+	export let editing: MaintenanceEntry | null = null;
 	export let today: string;
 
 	const dispatch = createEventDispatcher<{ save: void; cancel: void }>();
 
-	let task = schedule?.task ?? '';
-	let performedAt = today;
-	let cost = '';
-	let notes = '';
+	let task = editing?.task ?? schedule?.task ?? '';
+	let performedAt = editing?.performedAt ?? today;
+	let cost = editing?.cost != null ? (editing.cost / 100).toFixed(2) : '';
+	let notes = editing?.notes ?? '';
+	let matchedScheduleId: number | null = editing?.scheduleId ?? schedule?.id ?? null;
 	let meterValues: Record<number, string> = {};
 	let consumed: { itemId: number | null; quantity: string }[] = [];
 	// Files chosen before the entry exists. They are uploaded to the entry the
@@ -31,11 +34,41 @@
 	let files: File[] = [];
 	let error = '';
 	let saving = false;
+	// Receipt OCR prefill (HOME receipt capture): reading the chosen pages to
+	// fill the fields below, and whether a prefill happened.
+	let scanningReceipt = false;
+	let ocrNotice = '';
 
-	function onFiles(event: Event) {
+	async function onFiles(event: Event) {
 		const input = event.currentTarget as HTMLInputElement;
-		files = [...files, ...Array.from(input.files ?? [])];
+		const added = Array.from(input.files ?? []);
 		input.value = '';
+		if (!added.length) return;
+		files = [...files, ...added];
+		// Read the receipt(s) to prefill whatever the user has not typed yet.
+		// Only empty/default fields are touched, so a typed value always wins.
+		scanningReceipt = true;
+		ocrNotice = '';
+		try {
+			const res = await assetsAPI.previewMaintenanceReceipt(assetId, files);
+			if (!task.trim() && res.data.hints.task) task = res.data.hints.task;
+			if (matchedScheduleId === null && res.data.hints.scheduleId !== null) {
+				matchedScheduleId = res.data.hints.scheduleId;
+			}
+			if (res.data.hints.performedAt && (!performedAt || performedAt === today)) {
+				performedAt = res.data.hints.performedAt;
+			}
+			if (!cost.trim() && res.data.hints.cost !== null) {
+				cost = (res.data.hints.cost / 100).toFixed(2);
+			}
+			if (!notes.trim() && res.data.hints.notes) notes = res.data.hints.notes;
+			ocrNotice = 'Prefilled from receipt OCR — review and save.';
+		} catch {
+			// A receipt that cannot be read is not an error: the user can just
+			// fill the form in by hand, and the files still attach on save.
+		} finally {
+			scanningReceipt = false;
+		}
 	}
 
 	function removeFile(index: number) {
@@ -78,8 +111,22 @@
 
 		saving = true;
 		try {
+			if (editing) {
+				await assetsAPI.updateEntry(editing.id, {
+					scheduleId: matchedScheduleId,
+					task: task.trim(),
+					performedAt,
+					cost: costCents,
+					notes: notes.trim() || null,
+				});
+				for (const file of files) {
+					await attachmentsAPI.upload('maintenance', editing.id, file).catch(() => {});
+				}
+				dispatch('save');
+				return;
+			}
 			const created = await assetsAPI.logMaintenance(assetId, {
-				scheduleId: schedule?.id ?? null,
+				scheduleId: matchedScheduleId,
 				task: task.trim(),
 				performedAt,
 				// Empty means "not recorded", not free — the API stores null.
@@ -109,6 +156,25 @@
 	{/if}
 	<div class="grid gap-3 sm:grid-cols-2">
 		<label class="text-sm text-ink-soft sm:col-span-2">
+			Receipt or photo (optional — select 1 or more pages to auto-fill)
+			<input type="file" accept="image/*,application/pdf" multiple class="w-full mt-1 text-sm text-ink-soft" on:change={onFiles} disabled={scanningReceipt} />
+		</label>
+		{#if scanningReceipt}
+			<p class="sm:col-span-2 -mt-1 text-xs text-ink-soft">Reading receipt…</p>
+		{:else if ocrNotice}
+			<p class="sm:col-span-2 -mt-1 text-xs text-accent" role="status">{ocrNotice}</p>
+		{/if}
+		{#if files.length}
+			<ul class="sm:col-span-2 -mt-1 space-y-1">
+				{#each files as file, index (index)}
+					<li class="flex items-center gap-2 text-xs text-ink-soft">
+						<span class="truncate">{file.name}</span>
+						<button type="button" class="underline shrink-0" on:click={() => removeFile(index)}>Remove</button>
+					</li>
+				{/each}
+			</ul>
+		{/if}
+		<label class="text-sm text-ink-soft sm:col-span-2">
 			What was done
 			<input class="w-full mt-1 px-3 py-2 border border-line rounded-md bg-page text-ink" bind:value={task} placeholder="Oil change" />
 		</label>
@@ -124,20 +190,6 @@
 			Notes
 			<textarea rows="2" class="w-full mt-1 px-3 py-2 border border-line rounded-md bg-page text-ink" bind:value={notes} placeholder="Synthetic 5W-30, ask for Ray"></textarea>
 		</label>
-		<label class="text-sm text-ink-soft sm:col-span-2">
-			Receipt or photo (optional)
-			<input type="file" accept="image/*,application/pdf" multiple class="w-full mt-1 text-sm text-ink-soft" on:change={onFiles} />
-		</label>
-		{#if files.length}
-			<ul class="sm:col-span-2 -mt-1 space-y-1">
-				{#each files as file, index (index)}
-					<li class="flex items-center gap-2 text-xs text-ink-soft">
-						<span class="truncate">{file.name}</span>
-						<button type="button" class="underline shrink-0" on:click={() => removeFile(index)}>Remove</button>
-					</li>
-				{/each}
-			</ul>
-		{/if}
 	</div>
 
 	{#if meters.length}

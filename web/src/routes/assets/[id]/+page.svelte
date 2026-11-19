@@ -35,6 +35,8 @@
 	let editingSchedule: Schedule | null = null;
 	let showEntryForm = false;
 	let entrySchedule: Schedule | null = null;
+	let editingEntry: MaintenanceEntry | null = null;
+	let uploadingReceipt = false;
 	let showMeterForm = false;
 	let readingMeterId: number | null = null;
 	let readingValue = '';
@@ -166,14 +168,16 @@
 	}
 
 	function onEntrySaved() {
+		notice = editingEntry ? 'Saved.' : 'Logged.';
 		showEntryForm = false;
 		entrySchedule = null;
-		notice = 'Logged.';
+		editingEntry = null;
 		load();
 	}
 
 	function logIt(schedule: Schedule) {
 		entrySchedule = schedule;
+		editingEntry = null;
 		showEntryForm = true;
 		showScheduleForm = false;
 	}
@@ -222,6 +226,32 @@
 			await load();
 		} catch (e: any) {
 			pictureError = e?.response?.data?.error || 'Could not upload that photo.';
+		}
+	}
+
+	/**
+	 * One-step receipt capture: upload 1+ receipt pages, let the API OCR them
+	 * and create the entry, then reopen the form with that entry so the user
+	 * can review and correct what was read.
+	 */
+	async function onReceiptQuickUpload(event: Event) {
+		const input = event.currentTarget as HTMLInputElement;
+		const files = Array.from(input.files ?? []);
+		input.value = '';
+		if (!files.length) return;
+		uploadingReceipt = true;
+		error = '';
+		try {
+			const res = await assetsAPI.logMaintenanceFromReceipt(assetId, files);
+			await load();
+			editingEntry = res.data.entry;
+			entrySchedule = null;
+			showEntryForm = true;
+			notice = `Logged "${res.data.entry.task}" from ${files.length} receipt ${files.length === 1 ? 'file' : 'pages'}. Review or edit details below.`;
+		} catch (e: any) {
+			error = e?.response?.data?.error || 'Could not read that receipt.';
+		} finally {
+			uploadingReceipt = false;
 		}
 	}
 
@@ -370,9 +400,10 @@
 				meters={care.meters}
 				inventory={inventory}
 				schedule={entrySchedule}
+				editing={editingEntry}
 				today={care.today}
 				on:save={onEntrySaved}
-				on:cancel={() => { showEntryForm = false; entrySchedule = null; }}
+				on:cancel={() => { showEntryForm = false; entrySchedule = null; editingEntry = null; }}
 			/>
 		{/if}
 
@@ -566,9 +597,23 @@
 		<section data-testid="asset-history">
 			<div class="flex items-center justify-between mb-2">
 				<h2 class="font-display font-semibold text-lg text-ink">History</h2>
-				<button type="button" class="text-sm underline text-accent" on:click={() => { entrySchedule = null; showEntryForm = !showEntryForm; }}>
-					{showEntryForm ? 'Cancel' : '+ Log maintenance'}
-				</button>
+				<div class="flex items-center gap-3">
+					<label class="text-sm underline text-accent cursor-pointer" data-testid="log-from-receipt-label">
+						{uploadingReceipt ? 'Reading receipt…' : '+ Log from receipt'}
+						<input
+							type="file"
+							accept="image/*,application/pdf"
+							multiple
+							class="sr-only"
+							data-testid="log-from-receipt-input"
+							disabled={uploadingReceipt}
+							on:change={onReceiptQuickUpload}
+						/>
+					</label>
+					<button type="button" class="text-sm underline text-accent" on:click={() => { entrySchedule = null; editingEntry = null; showEntryForm = !showEntryForm; }}>
+						{showEntryForm ? 'Cancel' : '+ Log maintenance'}
+					</button>
+				</div>
 			</div>
 
 			{#if care.entries.length > 0}
@@ -631,7 +676,10 @@
 										/>
 									</div>
 								</div>
-								<button type="button" class="text-xs underline text-ink-soft hover:text-danger-text shrink-0" on:click={() => deleteEntry(entry)}>Delete</button>
+								<div class="flex items-center gap-2 shrink-0">
+									<button type="button" class="text-xs underline text-ink-soft hover:text-ink" data-testid={`edit-entry-${entry.id}`} on:click={() => { editingEntry = entry; entrySchedule = null; showEntryForm = true; }}>Edit</button>
+									<button type="button" class="text-xs underline text-ink-soft hover:text-danger-text" on:click={() => deleteEntry(entry)}>Delete</button>
+								</div>
 							</div>
 						</li>
 					{/each}
